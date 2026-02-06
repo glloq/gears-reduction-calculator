@@ -63,7 +63,7 @@
       this._legacySchema.displaySolution(solution);
     }
 
-    // Analyse mécanique
+    // Analyse mécanique - combiner params de base + type-spécifiques + matériaux
     var modValue = this.paramForm.getModuleValue();
     var params = {
       module: modValue,
@@ -71,7 +71,14 @@
       coupleEntree: this.paramForm.getCoupleEntree()
     };
 
-    var analyse = this.mechanicalPanel.show(solution, params);
+    // Enrichir avec les paramètres pro si disponibles
+    var typeParams = this.paramForm.getTypeSpecificParams();
+    var materialParams = this.paramForm.getMaterialParams();
+    for (var k in typeParams) { if (typeParams.hasOwnProperty(k)) params[k] = typeParams[k]; }
+    for (var m in materialParams) { if (materialParams.hasOwnProperty(m)) params[m] = materialParams[m]; }
+
+    var proMode = this.paramForm.isProMode();
+    var analyse = this.mechanicalPanel.show(solution, params, proMode);
 
     // Graphiques d'analyse
     if (analyse) {
@@ -107,13 +114,17 @@
 
     var modValue = this.paramForm.getModuleValue();
     if (modValue && document.getElementById("radarChart")) {
-      var params = {
+      var chartParams = {
         module: modValue,
         vitesseEntree: this.paramForm.getVitesseEntree(),
         coupleEntree: this.paramForm.getCoupleEntree()
       };
+      var tp = this.paramForm.getTypeSpecificParams();
+      var mp = this.paramForm.getMaterialParams();
+      for (var ck in tp) { if (tp.hasOwnProperty(ck)) chartParams[ck] = tp[ck]; }
+      for (var cm in mp) { if (mp.hasOwnProperty(cm)) chartParams[cm] = mp[cm]; }
       var analyses = solutions.slice(0, 5).map(function (sol) {
-        return GearApp.core.GearMechanics.analyserTrainEngrenages(sol, params);
+        return GearApp.core.GearMechanics.analyserTrainEngrenages(sol, chartParams);
       });
       charts.drawMechanicalRadar("radarChart", analyses);
     }

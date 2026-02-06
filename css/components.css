@@ -205,3 +205,109 @@
   margin-top: 6px;
   text-align: center;
 }
+
+/* ===== Sidebar header actions ===== */
+.sidebar-header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ===== Mode Pro toggle ===== */
+.btn-mode {
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pro-mode .btn-mode {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+/* ===== Pro-only sections ===== */
+.pro-only {
+  display: none !important;
+}
+
+.pro-mode .pro-only {
+  display: block !important;
+}
+
+/* ===== Type-specific parameters (Pro) ===== */
+.type-param-group {
+  margin-top: 10px;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+}
+
+.type-param-header {
+  margin-bottom: 6px;
+}
+
+.type-param-field {
+  margin-bottom: 4px;
+}
+
+.type-param-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.type-param-field input[type="number"],
+.type-param-field select {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.type-param-field select {
+  cursor: pointer;
+}
+
+/* ===== Pro analysis sections ===== */
+.pro-analysis {
+  margin-top: 16px;
+}
+
+.pro-analysis h4 {
+  color: var(--accent-color);
+  font-size: 14px;
+  margin: 0 0 12px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.pro-section {
+  margin-bottom: 16px;
+}
+
+.pro-section h5 {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin: 0 0 8px 0;
+}
+
+.pro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 4px 16px;
+  font-size: 12px;
+}
