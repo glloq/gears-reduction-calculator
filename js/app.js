@@ -3,7 +3,7 @@
 
 (function (GearApp) {
 
-  var engine, ui, legacySchema;
+  var engine, ui, legacySchema, comparisonManager;
   var isSearching = false;
 
   function init() {
@@ -15,6 +15,11 @@
 
     // Schéma legacy Canvas
     legacySchema = new GearApp.visualization.LegacySchema('gearCanvas');
+
+    // Comparaison multi-sorties
+    comparisonManager = new GearApp.ui.ComparisonManager('comparisonPanel', GearApp.eventBus);
+    comparisonManager.setEngine(engine);
+    GearApp._engine = engine; // expose pour ComparisonManager fallback
 
     // Connecter les composants de visualisation
     ui.setVisualizationComponents(null, legacySchema, window.GearCharts || null);
@@ -95,6 +100,11 @@
   window.arreterRecherche = arreterRecherche;
   window.sauvegarderParametres = function () { ui.paramForm.save(); ui.logger.log("Paramètres sauvegardés."); };
   window.toggleTheme = function () { ui.paramForm.toggleTheme(); };
+  window.toggleComparison = function () {
+    comparisonManager.toggle();
+    var btn = document.getElementById('toggleComparisonBtn');
+    if (btn) btn.classList.toggle('active', comparisonManager.isOpen());
+  };
 
   // Pont pour les boutons de visualisation (UI.xxx dans le HTML)
   window.UI = {

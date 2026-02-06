@@ -165,7 +165,10 @@
 
       <!-- Résultats -->
       <div class="result-container">
-        <h2>Résultats</h2>
+        <div class="result-header">
+          <h2>Résultats</h2>
+          <button class="btn-small" id="toggleComparisonBtn" onclick="toggleComparison()" title="Comparer plusieurs rapports cibles">Comparer</button>
+        </div>
         <p id="status">En attente...</p>
         <div class="table-scroll">
           <table>
@@ -186,6 +189,9 @@
           </table>
         </div>
       </div>
+
+      <!-- Comparaison multi-sorties -->
+      <div id="comparisonPanel" class="comparison-panel" style="display:none;"></div>
 
       <!-- Analyse mécanique -->
       <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
@@ -245,6 +251,7 @@
   <script src="js/ui/MechanicalPanel.js" defer></script>
   <script src="js/ui/ParameterForm.js" defer></script>
   <script src="js/ui/ExportManager.js" defer></script>
+  <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->
