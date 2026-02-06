@@ -357,9 +357,425 @@ class GearSVG {
     this.tooltip.setAttribute("visibility", "hidden");
   }
 
+  // ==================== DESSIN SPÉCIFIQUE PAR TYPE ====================
+
   /**
-   * Dessine un train d'engrenages complet à partir d'une solution.
-   * @param {Array} solution - [[A1,B1], [A2,B2], ...]
+   * Dessine un engrenage intérieur (couronne + pignon interne).
+   */
+  drawInternalGear(cx, cy, nbDentsPignon, nbDentsCouronne, mod, rotation, label, color) {
+    const group = document.createElementNS(this.svgNS, "g");
+    group.setAttribute("transform", `translate(${cx}, ${cy}) rotate(${(rotation || 0) * 180 / Math.PI})`);
+
+    const rCouronne = (mod * nbDentsCouronne) / 2;
+    const rPignon = (mod * nbDentsPignon) / 2;
+
+    // Couronne (anneau extérieur)
+    const anneau = document.createElementNS(this.svgNS, "circle");
+    anneau.setAttribute("r", rCouronne + mod * 2);
+    anneau.setAttribute("fill", "none");
+    anneau.setAttribute("stroke", "#666");
+    anneau.setAttribute("stroke-width", mod * 0.8);
+    group.appendChild(anneau);
+
+    // Cercle intérieur de la couronne (dents internes)
+    const interieur = document.createElementNS(this.svgNS, "circle");
+    interieur.setAttribute("r", rCouronne);
+    interieur.setAttribute("fill", "none");
+    interieur.setAttribute("stroke", color || "#fdebd0");
+    interieur.setAttribute("stroke-width", mod * 1.5);
+    interieur.setAttribute("stroke-dasharray", `${mod * 1.2},${mod * 0.6}`);
+    group.appendChild(interieur);
+
+    // Pignon au centre (décalé)
+    const entraxe = (rCouronne - rPignon);
+    const pignonGroup = this.drawGear(0, 0, nbDentsPignon, mod, 20, 0, "", color);
+    // Le pignon est déjà ajouté au mainGroup, on le retire pour le mettre dans notre groupe
+    this.mainGroup.removeChild(pignonGroup);
+    group.appendChild(pignonGroup);
+
+    // Label
+    const textElem = document.createElementNS(this.svgNS, "text");
+    textElem.setAttribute("x", 0);
+    textElem.setAttribute("y", -rCouronne - mod * 4);
+    textElem.setAttribute("text-anchor", "middle");
+    textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
+    textElem.setAttribute("font-weight", "bold");
+    textElem.setAttribute("fill", "#333");
+    textElem.textContent = label;
+    group.appendChild(textElem);
+
+    this.mainGroup.appendChild(group);
+    return group;
+  }
+
+  /**
+   * Dessine une vis sans fin (vue schématique).
+   */
+  drawWormGear(cx, cy, nbFilets, nbDentsRoue, mod, rotation, label, color) {
+    const group = document.createElementNS(this.svgNS, "g");
+    group.setAttribute("transform", `translate(${cx}, ${cy})`);
+
+    const rRoue = (mod * nbDentsRoue) / 2;
+    const diamVis = mod * nbFilets * 3;
+    const rVis = diamVis / 2;
+
+    // Roue (cercle avec dents stylisées)
+    const roue = document.createElementNS(this.svgNS, "circle");
+    roue.setAttribute("r", rRoue);
+    roue.setAttribute("fill", color || "#fcf3cf");
+    roue.setAttribute("stroke", "#666");
+    roue.setAttribute("stroke-width", "0.5");
+    group.appendChild(roue);
+
+    // Dents de la roue (simplifiées)
+    for (let i = 0; i < nbDentsRoue; i++) {
+      const angle = (2 * Math.PI * i) / nbDentsRoue;
+      const x1 = rRoue * Math.cos(angle);
+      const y1 = rRoue * Math.sin(angle);
+      const x2 = (rRoue + mod) * Math.cos(angle);
+      const y2 = (rRoue + mod) * Math.sin(angle);
+      const tick = document.createElementNS(this.svgNS, "line");
+      tick.setAttribute("x1", x1); tick.setAttribute("y1", y1);
+      tick.setAttribute("x2", x2); tick.setAttribute("y2", y2);
+      tick.setAttribute("stroke", "#888"); tick.setAttribute("stroke-width", "0.5");
+      group.appendChild(tick);
+    }
+
+    // Vis sans fin (rectangle avec hélice, positionnée au-dessus)
+    const visY = -rRoue - rVis - mod;
+    const longueurVis = rRoue * 0.8;
+
+    const visRect = document.createElementNS(this.svgNS, "rect");
+    visRect.setAttribute("x", -longueurVis / 2);
+    visRect.setAttribute("y", visY - rVis);
+    visRect.setAttribute("width", longueurVis);
+    visRect.setAttribute("height", rVis * 2);
+    visRect.setAttribute("rx", rVis);
+    visRect.setAttribute("fill", "#e0e0e0");
+    visRect.setAttribute("stroke", "#666");
+    visRect.setAttribute("stroke-width", "0.5");
+    group.appendChild(visRect);
+
+    // Filets de la vis (lignes en zigzag)
+    const pas = longueurVis / (nbFilets * 3);
+    let visPath = `M ${-longueurVis / 2} ${visY}`;
+    for (let x = -longueurVis / 2; x < longueurVis / 2; x += pas) {
+      visPath += ` L ${x + pas / 2} ${visY - rVis * 0.7} L ${x + pas} ${visY}`;
+    }
+    const filets = document.createElementNS(this.svgNS, "path");
+    filets.setAttribute("d", visPath);
+    filets.setAttribute("fill", "none");
+    filets.setAttribute("stroke", "#444");
+    filets.setAttribute("stroke-width", "0.8");
+    group.appendChild(filets);
+
+    // Axe de la vis
+    const axeVis = document.createElementNS(this.svgNS, "line");
+    axeVis.setAttribute("x1", -longueurVis); axeVis.setAttribute("y1", visY);
+    axeVis.setAttribute("x2", longueurVis); axeVis.setAttribute("y2", visY);
+    axeVis.setAttribute("stroke", "#999");
+    axeVis.setAttribute("stroke-width", "0.3");
+    axeVis.setAttribute("stroke-dasharray", "3,2");
+    group.appendChild(axeVis);
+
+    // Indicateur axes 90°
+    const angle90 = document.createElementNS(this.svgNS, "text");
+    angle90.setAttribute("x", longueurVis * 0.7);
+    angle90.setAttribute("y", visY + rVis + 8);
+    angle90.setAttribute("font-size", "7");
+    angle90.setAttribute("fill", "#999");
+    angle90.textContent = "90\u00b0";
+    group.appendChild(angle90);
+
+    // Trou central roue
+    const trou = document.createElementNS(this.svgNS, "circle");
+    trou.setAttribute("r", rVis * 0.6);
+    trou.setAttribute("fill", "#fafafa");
+    trou.setAttribute("stroke", "#666");
+    trou.setAttribute("stroke-width", "0.5");
+    group.appendChild(trou);
+
+    // Label
+    const textElem = document.createElementNS(this.svgNS, "text");
+    textElem.setAttribute("x", 0);
+    textElem.setAttribute("y", rRoue + mod * 3);
+    textElem.setAttribute("text-anchor", "middle");
+    textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
+    textElem.setAttribute("font-weight", "bold");
+    textElem.setAttribute("fill", "#333");
+    textElem.textContent = label;
+    group.appendChild(textElem);
+
+    this.mainGroup.appendChild(group);
+    return group;
+  }
+
+  /**
+   * Dessine une transmission courroie-poulie.
+   */
+  drawBeltPulley(cx, cy, diamA, diamB, mod, rotation, label, color) {
+    const group = document.createElementNS(this.svgNS, "g");
+    group.setAttribute("transform", `translate(${cx}, ${cy})`);
+
+    const rA = diamA / 2;
+    const rB = diamB / 2;
+    const entraxe = (diamA + diamB) * 1.5;
+
+    // Poulie menante (gauche)
+    const poulieA = document.createElementNS(this.svgNS, "circle");
+    poulieA.setAttribute("cx", 0); poulieA.setAttribute("cy", 0);
+    poulieA.setAttribute("r", rA);
+    poulieA.setAttribute("fill", color || "#fadbd8");
+    poulieA.setAttribute("stroke", "#666");
+    poulieA.setAttribute("stroke-width", "0.5");
+    group.appendChild(poulieA);
+
+    // Gorge poulie A
+    const gorgeA = document.createElementNS(this.svgNS, "circle");
+    gorgeA.setAttribute("cx", 0); gorgeA.setAttribute("cy", 0);
+    gorgeA.setAttribute("r", rA * 0.85);
+    gorgeA.setAttribute("fill", "none");
+    gorgeA.setAttribute("stroke", "#999");
+    gorgeA.setAttribute("stroke-width", "0.3");
+    gorgeA.setAttribute("stroke-dasharray", "1,2");
+    group.appendChild(gorgeA);
+
+    // Poulie menée (droite)
+    const poulieB = document.createElementNS(this.svgNS, "circle");
+    poulieB.setAttribute("cx", entraxe); poulieB.setAttribute("cy", 0);
+    poulieB.setAttribute("r", rB);
+    poulieB.setAttribute("fill", color || "#fadbd8");
+    poulieB.setAttribute("stroke", "#666");
+    poulieB.setAttribute("stroke-width", "0.5");
+    group.appendChild(poulieB);
+
+    // Gorge poulie B
+    const gorgeB = document.createElementNS(this.svgNS, "circle");
+    gorgeB.setAttribute("cx", entraxe); gorgeB.setAttribute("cy", 0);
+    gorgeB.setAttribute("r", rB * 0.85);
+    gorgeB.setAttribute("fill", "none");
+    gorgeB.setAttribute("stroke", "#999");
+    gorgeB.setAttribute("stroke-width", "0.3");
+    gorgeB.setAttribute("stroke-dasharray", "1,2");
+    group.appendChild(gorgeB);
+
+    // Courroie (tangentes entre les deux cercles)
+    const dy = rB - rA;
+    const dist = entraxe;
+    const sinA = dy / dist;
+    const cosA = Math.sqrt(1 - sinA * sinA);
+
+    // Brin supérieur
+    const brinSup = document.createElementNS(this.svgNS, "line");
+    brinSup.setAttribute("x1", rA * sinA);
+    brinSup.setAttribute("y1", -rA * cosA);
+    brinSup.setAttribute("x2", entraxe + rB * sinA);
+    brinSup.setAttribute("y2", -rB * cosA);
+    brinSup.setAttribute("stroke", "#333");
+    brinSup.setAttribute("stroke-width", "1");
+    group.appendChild(brinSup);
+
+    // Brin inférieur
+    const brinInf = document.createElementNS(this.svgNS, "line");
+    brinInf.setAttribute("x1", -rA * sinA);
+    brinInf.setAttribute("y1", rA * cosA);
+    brinInf.setAttribute("x2", entraxe - rB * sinA);
+    brinInf.setAttribute("y2", rB * cosA);
+    brinInf.setAttribute("stroke", "#333");
+    brinInf.setAttribute("stroke-width", "1");
+    group.appendChild(brinInf);
+
+    // Trous centraux
+    [{ x: 0, r: rA }, { x: entraxe, r: rB }].forEach(p => {
+      const trou = document.createElementNS(this.svgNS, "circle");
+      trou.setAttribute("cx", p.x); trou.setAttribute("cy", 0);
+      trou.setAttribute("r", Math.max(1, p.r * 0.15));
+      trou.setAttribute("fill", "#fafafa");
+      trou.setAttribute("stroke", "#666");
+      trou.setAttribute("stroke-width", "0.3");
+      group.appendChild(trou);
+    });
+
+    // Labels poulies
+    const lblA = document.createElementNS(this.svgNS, "text");
+    lblA.setAttribute("x", 0); lblA.setAttribute("y", rA + 10);
+    lblA.setAttribute("text-anchor", "middle");
+    lblA.setAttribute("font-size", Math.max(6, rA * 0.3));
+    lblA.setAttribute("fill", "#333");
+    lblA.textContent = `\u00d8${diamA}`;
+    group.appendChild(lblA);
+
+    const lblB = document.createElementNS(this.svgNS, "text");
+    lblB.setAttribute("x", entraxe); lblB.setAttribute("y", rB + 10);
+    lblB.setAttribute("text-anchor", "middle");
+    lblB.setAttribute("font-size", Math.max(6, rB * 0.2));
+    lblB.setAttribute("fill", "#333");
+    lblB.textContent = `\u00d8${diamB}`;
+    group.appendChild(lblB);
+
+    // Label général
+    const textElem = document.createElementNS(this.svgNS, "text");
+    textElem.setAttribute("x", entraxe / 2);
+    textElem.setAttribute("y", -Math.max(rA, rB) - 8);
+    textElem.setAttribute("text-anchor", "middle");
+    textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
+    textElem.setAttribute("font-weight", "bold");
+    textElem.setAttribute("fill", "#333");
+    textElem.textContent = label;
+    group.appendChild(textElem);
+
+    this.mainGroup.appendChild(group);
+    return { group, entraxe };
+  }
+
+  /**
+   * Dessine un engrenage conique (vue schématique de côté).
+   */
+  drawBevelGear(cx, cy, nbDentsA, nbDentsB, mod, rotation, label, color) {
+    const group = document.createElementNS(this.svgNS, "g");
+    group.setAttribute("transform", `translate(${cx}, ${cy})`);
+
+    const rA = (mod * nbDentsA) / 2;
+    const rB = (mod * nbDentsB) / 2;
+
+    // Cône pignon (horizontal, entrée à gauche)
+    const pignon = document.createElementNS(this.svgNS, "polygon");
+    pignon.setAttribute("points", `${-rA},${-rA} ${rA * 0.5},${-rA * 0.2} ${rA * 0.5},${rA * 0.2} ${-rA},${rA}`);
+    pignon.setAttribute("fill", color || "#e8daef");
+    pignon.setAttribute("stroke", "#666");
+    pignon.setAttribute("stroke-width", "0.5");
+    group.appendChild(pignon);
+
+    // Cône roue (vertical, sortie en bas)
+    const roue = document.createElementNS(this.svgNS, "polygon");
+    roue.setAttribute("points", `${-rB * 0.2},${rB * 0.5} ${rB * 0.2},${rB * 0.5} ${rB},${rB + rA} ${-rB},${rB + rA}`);
+    roue.setAttribute("fill", color || "#e8daef");
+    roue.setAttribute("stroke", "#666");
+    roue.setAttribute("stroke-width", "0.5");
+    roue.setAttribute("opacity", "0.8");
+    group.appendChild(roue);
+
+    // Indicateur 90°
+    const arc90 = document.createElementNS(this.svgNS, "path");
+    const arcR = Math.min(rA, rB) * 0.4;
+    arc90.setAttribute("d", `M ${arcR},0 A ${arcR},${arcR} 0 0,1 0,${arcR}`);
+    arc90.setAttribute("fill", "none");
+    arc90.setAttribute("stroke", "#999");
+    arc90.setAttribute("stroke-width", "0.5");
+    group.appendChild(arc90);
+
+    const txt90 = document.createElementNS(this.svgNS, "text");
+    txt90.setAttribute("x", arcR + 3); txt90.setAttribute("y", arcR + 3);
+    txt90.setAttribute("font-size", "7"); txt90.setAttribute("fill", "#999");
+    txt90.textContent = "90\u00b0";
+    group.appendChild(txt90);
+
+    // Axes
+    const axeH = document.createElementNS(this.svgNS, "line");
+    axeH.setAttribute("x1", -rA * 1.5); axeH.setAttribute("y1", 0);
+    axeH.setAttribute("x2", rA); axeH.setAttribute("y2", 0);
+    axeH.setAttribute("stroke", "#bbb"); axeH.setAttribute("stroke-width", "0.3");
+    axeH.setAttribute("stroke-dasharray", "3,2");
+    group.appendChild(axeH);
+
+    const axeV = document.createElementNS(this.svgNS, "line");
+    axeV.setAttribute("x1", 0); axeV.setAttribute("y1", rB * 0.3);
+    axeV.setAttribute("x2", 0); axeV.setAttribute("y2", rB + rA + rB * 0.3);
+    axeV.setAttribute("stroke", "#bbb"); axeV.setAttribute("stroke-width", "0.3");
+    axeV.setAttribute("stroke-dasharray", "3,2");
+    group.appendChild(axeV);
+
+    // Label
+    const textElem = document.createElementNS(this.svgNS, "text");
+    textElem.setAttribute("x", 0);
+    textElem.setAttribute("y", -rA - 8);
+    textElem.setAttribute("text-anchor", "middle");
+    textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
+    textElem.setAttribute("font-weight", "bold");
+    textElem.setAttribute("fill", "#333");
+    textElem.textContent = label;
+    group.appendChild(textElem);
+
+    this.mainGroup.appendChild(group);
+    return group;
+  }
+
+  /**
+   * Dessine un train épicycloïdal schématique.
+   */
+  drawEpicyclicGear(cx, cy, dentsSolaire, dentsCouronne, mod, rotation, label, color) {
+    const group = document.createElementNS(this.svgNS, "g");
+    group.setAttribute("transform", `translate(${cx}, ${cy})`);
+
+    const rSolaire = (mod * dentsSolaire) / 2;
+    const rCouronne = (mod * dentsCouronne) / 2;
+    const dentsSatellite = (dentsCouronne - dentsSolaire) / 2;
+    const rSatellite = (mod * dentsSatellite) / 2;
+    const rOrbiteSat = rSolaire + rSatellite;
+
+    // Couronne extérieure (anneau)
+    const couronne = document.createElementNS(this.svgNS, "circle");
+    couronne.setAttribute("r", rCouronne + mod);
+    couronne.setAttribute("fill", "none");
+    couronne.setAttribute("stroke", "#555");
+    couronne.setAttribute("stroke-width", mod * 1.5);
+    group.appendChild(couronne);
+
+    // Denture intérieure de la couronne
+    const couronneInt = document.createElementNS(this.svgNS, "circle");
+    couronneInt.setAttribute("r", rCouronne);
+    couronneInt.setAttribute("fill", "none");
+    couronneInt.setAttribute("stroke", "#999");
+    couronneInt.setAttribute("stroke-width", mod * 0.5);
+    couronneInt.setAttribute("stroke-dasharray", `${mod * 0.8},${mod * 0.5}`);
+    group.appendChild(couronneInt);
+
+    // Solaire au centre
+    const solaireGroup = this.drawGear(0, 0, dentsSolaire, mod, 20, 0, "", color || "#d6eaf8");
+    this.mainGroup.removeChild(solaireGroup);
+    group.appendChild(solaireGroup);
+
+    // Satellites (3 par défaut)
+    const nbSat = 3;
+    for (let s = 0; s < nbSat; s++) {
+      const angle = (2 * Math.PI * s) / nbSat;
+      const satX = rOrbiteSat * Math.cos(angle);
+      const satY = rOrbiteSat * Math.sin(angle);
+
+      const satGroup = this.drawGear(satX, satY, Math.max(6, Math.round(dentsSatellite)), mod * 0.9, 20, 0, "", "#fef9e7");
+      this.mainGroup.removeChild(satGroup);
+      group.appendChild(satGroup);
+    }
+
+    // Porte-satellites (cercle pointillé)
+    const porteSat = document.createElementNS(this.svgNS, "circle");
+    porteSat.setAttribute("r", rOrbiteSat);
+    porteSat.setAttribute("fill", "none");
+    porteSat.setAttribute("stroke", "#aaa");
+    porteSat.setAttribute("stroke-width", "0.5");
+    porteSat.setAttribute("stroke-dasharray", "4,3");
+    group.appendChild(porteSat);
+
+    // Label
+    const textElem = document.createElementNS(this.svgNS, "text");
+    textElem.setAttribute("x", 0);
+    textElem.setAttribute("y", -rCouronne - mod * 3);
+    textElem.setAttribute("text-anchor", "middle");
+    textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
+    textElem.setAttribute("font-weight", "bold");
+    textElem.setAttribute("fill", "#333");
+    textElem.textContent = label;
+    group.appendChild(textElem);
+
+    this.mainGroup.appendChild(group);
+    return group;
+  }
+
+  // ==================== DESSIN DU TRAIN COMPLET (multi-types) ====================
+
+  /**
+   * Dessine un train de transmission complet, supportant différents types par étage.
+   * @param {Array} solution - [[A1,B1,type?], [A2,B2,type?], ...]
    * @param {number} mod - Module des engrenages
    * @param {number} angleContact - Angle de pression
    */
@@ -371,7 +787,6 @@ class GearSVG {
     angleContact = angleContact || 20;
 
     const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const colors = ["#d4e6f1", "#d5f5e3", "#fdebd0", "#e8daef", "#fadbd8", "#d6eaf8"];
 
     let cx = 100;
     let cy = 200;
@@ -379,54 +794,134 @@ class GearSVG {
     let prevRotation = 0;
 
     for (let i = 0; i < solution.length; i++) {
-      const [A, B] = solution[i];
-      const rA = (mod * A) / 2;
-      const rB = (mod * B) / 2;
+      const A = solution[i][0];
+      const B = solution[i][1];
+      const typeId = solution[i][2] || 'spur';
+      const type = getTransmissionType(typeId);
+      const color = type.couleur;
 
-      const labelA = `${letters[gearIndex]}: ${A}`;
-      const labelB = `${letters[gearIndex + 1]}: ${B}`;
+      const labelA = `${letters[gearIndex]}: ${A} ${type.uniteA}`;
+      const labelB = `${letters[gearIndex + 1]}: ${B} ${type.uniteB}`;
+      const stageLabel = `${type.icone} ${letters[gearIndex]}${letters[gearIndex + 1]}`;
 
-      // Rotation inverse pour engrenages engrenés
       const rotA = prevRotation;
       const rotB = -rotA * (A / B);
 
-      // Dessiner le pignon (menante)
-      const gearAGroup = this.drawGear(cx, cy, A, mod, angleContact, rotA, labelA, colors[i % colors.length]);
-      this.gearData.push({ group: gearAGroup, cx, cy, nbDents: A, ratio: A / B, rotation: rotA });
+      let stageGroup, maxR, stageCx2;
 
-      // Dessiner la roue (menée), positionnée à l'entraxe
-      const entraxe = rA + rB;
-      const gearBCx = cx + entraxe;
+      if (typeId === 'belt') {
+        // Courroie et poulie
+        const result = this.drawBeltPulley(cx, cy, A, B, mod, 0, stageLabel, color);
+        stageGroup = result.group;
+        const entraxe = result.entraxe;
+        stageCx2 = cx + entraxe;
+        maxR = Math.max(A, B) / 2;
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: A, typeId, rotation: 0 });
+        this.gearData.push({ group: stageGroup, cx: stageCx2, cy, nbDents: B, typeId, rotation: 0 });
 
-      const gearBGroup = this.drawGear(gearBCx, cy, B, mod, angleContact, rotB, labelB, colors[(i + 1) % colors.length]);
-      this.gearData.push({ group: gearBGroup, cx: gearBCx, cy, nbDents: B, ratio: B / A, rotation: rotB });
+      } else if (typeId === 'worm') {
+        // Vis sans fin
+        stageGroup = this.drawWormGear(cx, cy, A, B, mod, 0, stageLabel, color);
+        const rRoue = (mod * B) / 2;
+        stageCx2 = cx;
+        maxR = rRoue + mod * A * 3;
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: A, typeId, rotation: 0 });
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: B, typeId, rotation: 0 });
 
-      // Ligne d'entraxe (cotation)
-      this._drawDimensionLine(cx, cy + rA + 10, gearBCx, cy + rA + 10, `${entraxe.toFixed(1)} mm`);
+      } else if (typeId === 'epicyclic') {
+        // Train épicycloïdal
+        stageGroup = this.drawEpicyclicGear(cx, cy, A, B, mod, 0, stageLabel, color);
+        stageCx2 = cx; // Coaxial
+        maxR = (mod * B) / 2 + mod * 2;
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: A, typeId, rotation: 0 });
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: B, typeId, rotation: 0 });
 
-      // Pour l'étage suivant, on repart depuis l'engrenage menée
-      // avec un décalage vertical pour le prochain étage coaxial
+      } else if (typeId === 'bevel') {
+        // Engrenage conique
+        stageGroup = this.drawBevelGear(cx, cy, A, B, mod, 0, stageLabel, color);
+        stageCx2 = cx;
+        maxR = Math.max((mod * A) / 2, (mod * B) / 2) + mod;
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: A, typeId, rotation: 0 });
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: B, typeId, rotation: 0 });
+
+      } else if (typeId === 'internal') {
+        // Engrenage intérieur
+        stageGroup = this.drawInternalGear(cx, cy, A, B, mod, 0, stageLabel, color);
+        stageCx2 = cx;
+        maxR = (mod * B) / 2 + mod * 3;
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: A, typeId, rotation: 0 });
+        this.gearData.push({ group: stageGroup, cx, cy, nbDents: B, typeId, rotation: 0 });
+
+      } else {
+        // Engrenage droit ou hélicoïdal (même rendu visuel)
+        const rA = (mod * A) / 2;
+        const rB = (mod * B) / 2;
+        const entraxe = rA + rB;
+
+        const gearAGroup = this.drawGear(cx, cy, A, mod, angleContact, rotA, labelA, color);
+        this.gearData.push({ group: gearAGroup, cx, cy, nbDents: A, typeId, rotation: rotA });
+
+        const gearBCx = cx + entraxe;
+        const gearBGroup = this.drawGear(gearBCx, cy, B, mod, angleContact, rotB, labelB, color);
+        this.gearData.push({ group: gearBGroup, cx: gearBCx, cy, nbDents: B, typeId, rotation: rotB });
+
+        this._drawDimensionLine(cx, cy + rA + 10, gearBCx, cy + rA + 10, `${entraxe.toFixed(1)} mm`);
+
+        stageCx2 = gearBCx;
+        maxR = Math.max(rA, rB);
+
+        // Label hélicoïdal
+        if (typeId === 'helical') {
+          const helLabel = document.createElementNS(this.svgNS, "text");
+          helLabel.setAttribute("x", (cx + gearBCx) / 2);
+          helLabel.setAttribute("y", cy - maxR - mod * 3);
+          helLabel.setAttribute("text-anchor", "middle");
+          helLabel.setAttribute("font-size", "7");
+          helLabel.setAttribute("fill", "#888");
+          helLabel.textContent = "H\u00e9lico\u00efdal";
+          this.mainGroup.appendChild(helLabel);
+        }
+      }
+
+      // Type badge (petit label de type au-dessus de l'étage)
+      const typeBadge = document.createElementNS(this.svgNS, "text");
+      typeBadge.setAttribute("x", (cx + (stageCx2 || cx)) / 2);
+      typeBadge.setAttribute("y", cy - (maxR || 30) - mod * 5);
+      typeBadge.setAttribute("text-anchor", "middle");
+      typeBadge.setAttribute("font-size", "6");
+      typeBadge.setAttribute("fill", "#aaa");
+      typeBadge.textContent = `\u2500 ${type.nomCourt} \u2500`;
+      this.mainGroup.appendChild(typeBadge);
+
+      // Avancer pour l'étage suivant
       if (i < solution.length - 1) {
-        // Liaison coaxiale - la menée et la menante suivante partagent le même axe
-        cx = gearBCx;
-        cy += 0; // Même ligne
+        if (typeId === 'belt') {
+          cx = stageCx2 + 20;
+        } else if (typeId === 'worm' || typeId === 'bevel') {
+          cx += (maxR || 50) + 40;
+        } else if (typeId === 'epicyclic' || typeId === 'internal') {
+          cx += (maxR || 50) * 2 + 20;
+        } else {
+          cx = stageCx2;
+        }
         prevRotation = rotB;
       }
 
       gearIndex += 2;
     }
 
-    // Labels IN / OUT
-    const firstGear = this.gearData[0];
-    const lastGear = this.gearData[this.gearData.length - 1];
+    // Labels ENTRÉE / SORTIE
+    const firstData = this.gearData[0];
+    const lastData = this.gearData[this.gearData.length - 1];
+    if (firstData && lastData) {
+      const firstR = (mod * firstData.nbDents) / 2;
+      const lastR = (mod * lastData.nbDents) / 2;
+      this._drawIOLabel(firstData.cx, firstData.cy + Math.max(firstR, 30) + 25, "ENTR\u00c9E", "#2ecc71");
+      this._drawIOLabel(lastData.cx, lastData.cy + Math.max(lastR, 30) + 25, "SORTIE", "#e74c3c");
+    }
 
-    this._drawIOLabel(firstGear.cx, firstGear.cy + (mod * solution[0][0]) / 2 + 25, "ENTRÉE", "#2ecc71");
-    this._drawIOLabel(lastGear.cx, lastGear.cy + (mod * solution[solution.length - 1][1]) / 2 + 25, "SORTIE", "#e74c3c");
-
-    // Ajuster le viewBox pour contenir tout le dessin
     this._fitViewBox();
 
-    // Stocker la solution pour l'animation
     this._currentSolution = solution;
     this._currentMod = mod;
     this._currentAngleContact = angleContact;

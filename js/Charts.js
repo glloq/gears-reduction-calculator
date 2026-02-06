@@ -28,7 +28,13 @@ class GearCharts {
     if (!ctx) return;
 
     const labels = solutions.map((_, i) => `Solution ${i + 1}`);
-    const rapports = solutions.map(sol => sol.reduce((acc, [m, n]) => acc * (n / m), 1));
+    const rapports = solutions.map(sol => sol.reduce((acc, stage) => {
+      const A = stage[0], B = stage[1], typeId = stage[2] || 'spur';
+      if (typeof calculerRapportEtage === 'function') {
+        return acc * calculerRapportEtage(typeId, A, B);
+      }
+      return acc * (B / A);
+    }, 1));
     const ecarts = rapports.map(r => Math.abs((r - rapportCible) / rapportCible * 100));
 
     this.charts[canvasId] = new Chart(ctx, {

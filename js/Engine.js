@@ -13,7 +13,8 @@ class Engine {
     rapportCible, maxEtages, precisionToleree,
     maxSolutions, maxIterations,
     dentMenanteFixe, dentMeneeFixe,
-    allowReductionOnly
+    allowReductionOnly,
+    typesActifs
   ) {
     // Tenter d'utiliser un Web Worker
     if (window.Worker) {
@@ -23,7 +24,8 @@ class Engine {
         rapportCible, maxEtages, precisionToleree,
         maxSolutions, maxIterations,
         dentMenanteFixe, dentMeneeFixe,
-        allowReductionOnly: allowReductionOnly !== false
+        allowReductionOnly: allowReductionOnly !== false,
+        typesActifs: typesActifs || ['spur']
       });
     }
 

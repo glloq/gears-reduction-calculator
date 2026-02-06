@@ -30,6 +30,41 @@
       </div>
 
       <div class="param-section">
+        <h3>Types de transmission</h3>
+        <div class="types-grid">
+          <label class="type-option" title="Engrenage cylindrique à denture droite. Axes parallèles.">
+            <input type="checkbox" class="type-checkbox" value="spur" checked>
+            <span class="type-label">Droit</span>
+          </label>
+          <label class="type-option" title="Denture en hélice. Plus silencieux. Axes parallèles.">
+            <input type="checkbox" class="type-checkbox" value="helical">
+            <span class="type-label">Hélicoïdal</span>
+          </label>
+          <label class="type-option" title="Pignon à l'intérieur d'une couronne. Compact.">
+            <input type="checkbox" class="type-checkbox" value="internal">
+            <span class="type-label">Intérieur</span>
+          </label>
+          <label class="type-option" title="Axes à 90°. Changement de direction.">
+            <input type="checkbox" class="type-checkbox" value="bevel">
+            <span class="type-label">Conique</span>
+          </label>
+          <label class="type-option" title="Transmission par courroie entre poulies.">
+            <input type="checkbox" class="type-checkbox" value="belt">
+            <span class="type-label">Courroie</span>
+          </label>
+          <label class="type-option" title="Train planétaire. Très haut rapport, compact.">
+            <input type="checkbox" class="type-checkbox" value="epicyclic">
+            <span class="type-label">Épicycloïdal</span>
+          </label>
+          <label class="type-option" title="Vis sans fin. Très haut rapport, irréversible. Axes à 90°.">
+            <input type="checkbox" class="type-checkbox" value="worm">
+            <span class="type-label">Vis sans fin</span>
+          </label>
+        </div>
+        <div class="shortcut-hint">Cochez les types à inclure dans la recherche</div>
+      </div>
+
+      <div class="param-section">
         <h3>Paramètres de Calcul</h3>
         <label>Intervalle de précision (%) :</label>
         <input type="number" id="precision" value="0.1" step="0.1" min="0">
@@ -126,6 +161,7 @@
             <thead>
               <tr>
                 <th>Engrenages</th>
+                <th>Types</th>
                 <th>Rapport obtenu</th>
                 <th>Écart (%)</th>
                 <th>Étages</th>
@@ -134,7 +170,7 @@
               </tr>
             </thead>
             <tbody id="resultats">
-              <tr><td colspan="6">Aucun résultat</td></tr>
+              <tr><td colspan="7">Aucun résultat</td></tr>
             </tbody>
           </table>
         </div>
@@ -217,6 +253,7 @@
       }
     });
   </script>
+  <script src="js/TransmissionTypes.js" defer></script>
   <script src="js/GearMechanics.js" defer></script>
   <script src="js/GearSVG.js" defer></script>
   <script src="js/Charts.js" defer></script>

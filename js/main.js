@@ -40,6 +40,13 @@ async function lancerRecherche() {
   const reductionOnlyEl = document.getElementById("reduction_only");
   const allowReductionOnly = reductionOnlyEl ? reductionOnlyEl.checked : true;
 
+  // Types de transmission actifs
+  const typesActifs = [];
+  document.querySelectorAll('.type-checkbox:checked').forEach(cb => {
+    typesActifs.push(cb.value);
+  });
+  if (typesActifs.length === 0) typesActifs.push('spur');
+
   // Validation des entrées
   if (isNaN(rapport) || rapport <= 0) {
     UI.afficherMessageStatus("Erreur : rapport cible invalide");
@@ -59,7 +66,8 @@ async function lancerRecherche() {
       rapport, maxEtages, precision,
       maxSolutions, maxIterations,
       dentMenanteFixe, dentMeneeFixe,
-      allowReductionOnly
+      allowReductionOnly,
+      typesActifs
     );
     UI.afficherResultats(resultats);
     progressBar.style.width = "100%";
