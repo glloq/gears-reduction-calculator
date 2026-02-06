@@ -1,0 +1,80 @@
+/* ===== Barre de progression ===== */
+.progress-container {
+  background: var(--border-light);
+  height: 6px;
+  margin-bottom: 16px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#progress-bar {
+  background: linear-gradient(90deg, var(--accent-color), var(--success-color));
+  height: 100%;
+  width: 0%;
+  transition: width 0.3s;
+  border-radius: 3px;
+}
+
+/* ===== Tableau des résultats ===== */
+.result-container {
+  margin-bottom: 20px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+th {
+  background-color: var(--bg-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-secondary);
+}
+
+.result-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.result-row:hover {
+  background-color: rgba(0, 123, 255, 0.05);
+}
+
+.selected-row {
+  background-color: rgba(0, 123, 255, 0.1) !important;
+  border-left: 3px solid var(--accent-color);
+}
+
+/* Indicateurs visuels */
+.excellent { color: var(--success-color); font-weight: 600; }
+.good { color: #17a2b8; }
+.warning { color: var(--danger-color); font-weight: 600; }
+
+.warning-icon {
+  display: inline-block;
+  background: var(--danger-color);
+  color: white;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 16px;
+  margin-left: 4px;
+  cursor: help;
+}

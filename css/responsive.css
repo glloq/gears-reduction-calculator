@@ -1,0 +1,53 @@
+/* ===== Responsive ===== */
+@media (max-width: 1024px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    max-height: none;
+    position: static;
+  }
+
+  .content {
+    padding: 12px;
+  }
+
+  .viz-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mech-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .geom-grid {
+    grid-template-columns: 1fr;
+  }
+
+  table {
+    font-size: 11px;
+  }
+
+  th, td {
+    padding: 4px 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .mech-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .viz-controls {
+    flex-wrap: wrap;
+  }
+}

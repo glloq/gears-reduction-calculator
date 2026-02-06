@@ -4,7 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Calculateur d'Engrenages - Rapport de Réduction</title>
-  <link rel="stylesheet" href="styles.css">
+
+  <!-- CSS modulaire -->
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/results.css">
+  <link rel="stylesheet" href="css/mechanical.css">
+  <link rel="stylesheet" href="css/visualization.css">
+  <link rel="stylesheet" href="css/responsive.css">
+
+  <!-- Dépendances CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -205,61 +216,38 @@
     </div>
   </div>
 
-  <script>
-    function initSliders() {
-      let sliderMenante = document.getElementById('dent_menante_slider');
-      let sliderMenee = document.getElementById('dent_menee_slider');
+  <!-- ===== JavaScript - Architecture modulaire ===== -->
 
-      noUiSlider.create(sliderMenante, {
-        start: [10, 30],
-        connect: true,
-        range: { 'min': 5, 'max': 80 },
-        step: 1
-      });
+  <!-- Namespace (doit être chargé en premier) -->
+  <script src="js/namespace.js" defer></script>
 
-      noUiSlider.create(sliderMenee, {
-        start: [20, 50],
-        connect: true,
-        range: { 'min': 10, 'max': 120 },
-        step: 1
-      });
+  <!-- Modèles -->
+  <script src="js/models/TransmissionTypeRegistry.js" defer></script>
+  <script src="js/models/SearchParams.js" defer></script>
 
-      sliderMenante.noUiSlider.on('update', function(values) {
-        document.getElementById("val_menante_min").innerText = Math.round(values[0]);
-        document.getElementById("val_menante_max").innerText = Math.round(values[1]);
-      });
+  <!-- Core -->
+  <script src="js/core/EventBus.js" defer></script>
+  <script src="js/core/GearMechanics.js" defer></script>
+  <script src="js/core/Engine.js" defer></script>
 
-      sliderMenee.noUiSlider.on('update', function(values) {
-        document.getElementById("val_menee_min").innerText = Math.round(values[0]);
-        document.getElementById("val_menee_max").innerText = Math.round(values[1]);
-      });
-    }
-
-    // Thème sombre/clair
-    function toggleTheme() {
-      document.body.classList.toggle('dark-theme');
-      const isDark = document.body.classList.contains('dark-theme');
-      localStorage.setItem('gearCalcTheme', isDark ? 'dark' : 'light');
-      document.getElementById('themeBtn').innerText = isDark ? 'Clair' : 'Sombre';
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      initSliders();
-      // Restaurer le thème
-      const savedTheme = localStorage.getItem('gearCalcTheme');
-      if (savedTheme === 'dark') {
-        document.body.classList.add('dark-theme');
-        document.getElementById('themeBtn').innerText = 'Clair';
-      }
-    });
-  </script>
-  <script src="js/TransmissionTypes.js" defer></script>
-  <script src="js/GearMechanics.js" defer></script>
+  <!-- Visualisation (fichiers originaux conservés pour le code actif) -->
   <script src="js/GearSVG.js" defer></script>
   <script src="js/Charts.js" defer></script>
-  <script src="js/Engine.js" defer></script>
-  <script src="js/UI.js" defer></script>
-  <script src="js/schema.js" defer></script>
-  <script src="js/main.js" defer></script>
+
+  <!-- Proxies de visualisation (enregistrement namespace) -->
+  <script src="js/visualization/GearSVG.js" defer></script>
+  <script src="js/visualization/GearCharts.js" defer></script>
+  <script src="js/visualization/LegacySchema.js" defer></script>
+
+  <!-- UI -->
+  <script src="js/ui/Logger.js" defer></script>
+  <script src="js/ui/ResultsTable.js" defer></script>
+  <script src="js/ui/MechanicalPanel.js" defer></script>
+  <script src="js/ui/ParameterForm.js" defer></script>
+  <script src="js/ui/ExportManager.js" defer></script>
+  <script src="js/ui/UIController.js" defer></script>
+
+  <!-- Point d'entrée (doit être chargé en dernier) -->
+  <script src="js/app.js" defer></script>
 </body>
 </html>

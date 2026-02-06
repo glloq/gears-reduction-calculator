@@ -1,0 +1,95 @@
+/* ===== Visualisation SVG ===== */
+.viz-section {
+  margin-bottom: 20px;
+}
+
+.viz-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.viz-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.svg-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  min-height: 300px;
+  overflow: hidden;
+}
+
+.dark-theme .svg-container svg {
+  background: #1e1e3f !important;
+}
+
+.viz-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 4px 0 0 0;
+}
+
+/* ===== Canvas legacy ===== */
+.legacy-canvas-section {
+  margin-bottom: 16px;
+}
+
+.legacy-canvas-section summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 6px;
+}
+
+/* ===== Graphiques ===== */
+.charts-section {
+  margin-bottom: 20px;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+.chart-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ===== Logs ===== */
+.logs-section {
+  margin-bottom: 20px;
+}
+
+.logs-section summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 6px;
+}
+
+.logs-container {
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.logs-container p {
+  margin: 2px 0;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border-light);
+}

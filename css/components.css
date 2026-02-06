@@ -1,0 +1,207 @@
+/* ===== Sections de paramètres ===== */
+.param-section {
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  border: 1px solid var(--border-light);
+}
+
+.param-section h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-color);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.param-section label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+}
+
+.param-section input[type="number"] {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+
+.param-section input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+}
+
+/* ===== Checkbox ===== */
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  margin-top: 10px !important;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+}
+
+/* ===== Grille des types de transmission ===== */
+.types-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.type-option {
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  margin: 0 !important;
+}
+
+.type-option:hover {
+  background: rgba(0, 123, 255, 0.05);
+  border-color: var(--accent-color);
+}
+
+.type-option input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.type-option input[type="checkbox"]:checked + .type-label {
+  color: var(--accent-color);
+  font-weight: 700 !important;
+}
+
+.type-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Badge type dans le tableau des résultats */
+.type-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  margin: 1px 2px;
+  white-space: nowrap;
+}
+
+.type-badge.spur     { background: #d4e6f1; color: #2471a3; }
+.type-badge.helical  { background: #d5f5e3; color: #1e8449; }
+.type-badge.internal { background: #fdebd0; color: #b9770e; }
+.type-badge.bevel    { background: #e8daef; color: #7d3c98; }
+.type-badge.belt     { background: #fadbd8; color: #cb4335; }
+.type-badge.epicyclic { background: #d6eaf8; color: #2e86c1; }
+.type-badge.worm     { background: #fcf3cf; color: #b7950b; }
+
+/* ===== Sliders ===== */
+.slider {
+  margin: 8px 0;
+}
+
+.slider-values {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ===== Boutons ===== */
+.btn-group {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.btn-primary {
+  flex: 1;
+  padding: 8px 16px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary.running { background: var(--danger-color); }
+
+.btn-secondary {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover { background: var(--border-light); }
+
+.btn-icon {
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-small:hover { background: var(--border-light); }
+
+.btn-schema {
+  padding: 3px 10px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.shortcut-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  text-align: center;
+}
