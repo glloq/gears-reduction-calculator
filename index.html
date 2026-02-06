@@ -3,81 +3,169 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recherche d'Engrenages - Rapport de Réduction</title>
+  <title>Calculateur d'Engrenages - Rapport de Réduction</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css">
-  <!-- noUiSlider doit être chargé sans defer -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="main-container">
     <!-- Barre latérale (paramètres) -->
     <div class="sidebar">
-      <div class="rapport-container">
-        <h2>🎯 Rapport cible :</h2>
-        <label>(nombre de tours entrée pour un tour sortie)</label>
-        <input type="number" id="rapport" value="12" step="0.1">
-        <button id="startStopBtn" onclick="lancerRecherche()">🔍 Rechercher</button>
+      <div class="sidebar-header">
+        <h2>Calculateur d'Engrenages</h2>
+        <button class="btn-icon" onclick="toggleTheme()" title="Mode sombre/clair" id="themeBtn">Thème</button>
       </div>
-      <div class="parametres-container">
-        <div class="parametres">
-          <h3>⚙️ Paramètres de Calcul</h3>
-          <label>Intervalle de précision (%) :</label>
-          <input type="number" id="precision" value="0.1" step="0.1">
-          <label>Nombre max d'étages :</label>
-          <input type="number" id="etages" value="4" min="1" max="8">
-          <label>Dents menante (min/max) :</label>
-          <div id="dent_menante_slider" class="slider"></div>
-          <span>Min: <span id="val_menante_min">10</span></span> | 
-          <span>Max: <span id="val_menante_max">30</span></span>
-          <label>Dents menée (min/max) :</label>
-          <div id="dent_menee_slider" class="slider"></div>
-          <span>Min: <span id="val_menee_min">20</span></span> | 
-          <span>Max: <span id="val_menee_max">50</span></span>
-          <h3>📊 Options</h3>
-          <label>Nombre de résultats à afficher :</label>
-          <input type="number" id="max_solutions" value="10" min="1" max="100">
-          <label>Limite d'itérations :</label>
-          <input type="number" id="max_iterations" value="500000" min="1000" max="1000000" step="1000">
-          <label>Nombre de dents du premier engrenage :</label>
-          <input type="number" id="dent_menante_fixe" placeholder="Vide pour plage">
-          <label>Nombre de dents du dernier engrenage :</label>
-          <input type="number" id="dent_menee_fixe" placeholder="Vide pour plage">
-          <label>Module des engrenages :</label>
-          <input type="number" id="module" placeholder="Ex: 2.5">
+
+      <div class="param-section">
+        <h3>Rapport cible</h3>
+        <label>Nombre de tours entrée pour un tour sortie :</label>
+        <input type="number" id="rapport" value="12" step="0.1" min="0.1">
+        <div class="btn-group">
+          <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary">Rechercher</button>
+          <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres">Sauver</button>
         </div>
+        <div class="shortcut-hint">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
       </div>
-      <!-- Zone de logs (si souhaité dans la sidebar, sinon déplacez-la ci-dessous) -->
-      <!-- Ici nous la plaçons dans la zone principale (voir ci-dessous) -->
+
+      <div class="param-section">
+        <h3>Paramètres de Calcul</h3>
+        <label>Intervalle de précision (%) :</label>
+        <input type="number" id="precision" value="0.1" step="0.1" min="0">
+
+        <label>Nombre max d'étages :</label>
+        <input type="number" id="etages" value="4" min="1" max="8">
+
+        <label>Dents menante (min/max) :</label>
+        <div id="dent_menante_slider" class="slider"></div>
+        <div class="slider-values">
+          <span>Min: <strong id="val_menante_min">10</strong></span>
+          <span>Max: <strong id="val_menante_max">30</strong></span>
+        </div>
+
+        <label>Dents menée (min/max) :</label>
+        <div id="dent_menee_slider" class="slider"></div>
+        <div class="slider-values">
+          <span>Min: <strong id="val_menee_min">20</strong></span>
+          <span>Max: <strong id="val_menee_max">50</strong></span>
+        </div>
+
+        <label class="checkbox-label">
+          <input type="checkbox" id="reduction_only" checked>
+          Réduction uniquement (menée > menante)
+        </label>
+      </div>
+
+      <div class="param-section">
+        <h3>Options avancées</h3>
+        <label>Nombre de résultats :</label>
+        <input type="number" id="max_solutions" value="10" min="1" max="100">
+
+        <label>Limite d'itérations :</label>
+        <input type="number" id="max_iterations" value="500000" min="1000" max="5000000" step="1000">
+
+        <label>Dents premier engrenage (fixe) :</label>
+        <input type="number" id="dent_menante_fixe" placeholder="Vide = plage">
+
+        <label>Dents dernier engrenage (fixe) :</label>
+        <input type="number" id="dent_menee_fixe" placeholder="Vide = plage">
+      </div>
+
+      <div class="param-section">
+        <h3>Paramètres mécaniques</h3>
+        <label>Module des engrenages (mm) :</label>
+        <input type="number" id="module" placeholder="Ex: 2.5" step="0.1" min="0.1">
+
+        <label>Vitesse d'entrée (tr/min) :</label>
+        <input type="number" id="vitesse_entree" value="1500" step="10" min="1">
+
+        <label>Couple d'entrée (N.m) :</label>
+        <input type="number" id="couple_entree" value="10" step="0.1" min="0.01">
+      </div>
     </div>
-    <!-- Zone principale (schéma, barre de progression, résultats, logs) -->
+
+    <!-- Zone principale -->
     <div class="content">
-      <h1>🔧 Recherche d'Engrenages - Rapport de Réduction</h1>
-      <!-- Canvas étendu à 100% de la largeur et hauteur de 200px -->
-      <canvas id="gearCanvas" width="1000" height="200" style="border:1px solid #ccc; margin-bottom: 20px; width:100%;"></canvas>
+      <div class="content-header">
+        <h1>Recherche d'Engrenages - Rapport de Réduction</h1>
+      </div>
+
+      <!-- Visualisation SVG interactive -->
+      <div class="viz-section">
+        <div class="viz-header">
+          <h2>Schéma interactif</h2>
+          <div class="viz-controls">
+            <button onclick="UI.toggleAnimation()" class="btn-small" title="Animer les engrenages">Animer</button>
+            <button onclick="UI.resetSVGView()" class="btn-small" title="Réinitialiser la vue">Recentrer</button>
+            <button onclick="UI.exporterSVG()" class="btn-small" title="Exporter en SVG">SVG</button>
+            <button onclick="UI.exporterPNG()" class="btn-small" title="Exporter en PNG">PNG</button>
+          </div>
+        </div>
+        <div id="svgContainer" class="svg-container"></div>
+        <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, survol pour les détails</p>
+      </div>
+
+      <!-- Schéma Canvas legacy -->
+      <details class="legacy-canvas-section">
+        <summary>Schéma linéaire (vue classique)</summary>
+        <canvas id="gearCanvas" width="1000" height="200" style="border:1px solid #ccc; width:100%;"></canvas>
+      </details>
+
+      <!-- Barre de progression -->
       <div class="progress-container">
         <div id="progress-bar"></div>
       </div>
-      <div class="result-container">
-        <h2>📊 Résultats</h2>
-        <p id="status">⏳ En attente...</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Engrenages</th>
-              <th>Rapport obtenu</th>
-              <th>Écart (%)</th>
-              <th>Schéma</th>
 
-            </tr>
-          </thead>
-          <tbody id="resultats">
-            <tr><td colspan="5">Aucun résultat</td></tr>
-          </tbody>
-        </table>
-        <!-- Zone de logs placée sous le tableau -->
-        <div id="logs" class="logs-container"></div>
+      <!-- Résultats -->
+      <div class="result-container">
+        <h2>Résultats</h2>
+        <p id="status">En attente...</p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Engrenages</th>
+                <th>Rapport obtenu</th>
+                <th>Écart (%)</th>
+                <th>Étages</th>
+                <th>Rendement</th>
+                <th>Schéma</th>
+              </tr>
+            </thead>
+            <tbody id="resultats">
+              <tr><td colspan="6">Aucun résultat</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      <!-- Analyse mécanique -->
+      <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
+
+      <!-- Graphiques d'analyse -->
+      <div class="charts-section">
+        <div class="charts-grid">
+          <div class="chart-container">
+            <canvas id="ratioChart"></canvas>
+          </div>
+          <div class="chart-container">
+            <canvas id="radarChart"></canvas>
+          </div>
+          <div class="chart-container">
+            <canvas id="cascadeChart"></canvas>
+          </div>
+          <div class="chart-container">
+            <canvas id="powerLossChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <details class="logs-section">
+        <summary>Logs de recherche</summary>
+        <div id="logs" class="logs-container"></div>
+      </details>
     </div>
   </div>
 
@@ -87,34 +175,54 @@
       let sliderMenee = document.getElementById('dent_menee_slider');
 
       noUiSlider.create(sliderMenante, {
-          start: [10, 30],
-          connect: true,
-          range: { 'min': 5, 'max': 80 },
-          step: 1
+        start: [10, 30],
+        connect: true,
+        range: { 'min': 5, 'max': 80 },
+        step: 1
       });
 
       noUiSlider.create(sliderMenee, {
-          start: [20, 50],
-          connect: true,
-          range: { 'min': 10, 'max': 120 },
-          step: 1
+        start: [20, 50],
+        connect: true,
+        range: { 'min': 10, 'max': 120 },
+        step: 1
       });
 
       sliderMenante.noUiSlider.on('update', function(values) {
-          document.getElementById("val_menante_min").innerText = Math.round(values[0]);
-          document.getElementById("val_menante_max").innerText = Math.round(values[1]);
+        document.getElementById("val_menante_min").innerText = Math.round(values[0]);
+        document.getElementById("val_menante_max").innerText = Math.round(values[1]);
       });
 
       sliderMenee.noUiSlider.on('update', function(values) {
-          document.getElementById("val_menee_min").innerText = Math.round(values[0]);
-          document.getElementById("val_menee_max").innerText = Math.round(values[1]);
+        document.getElementById("val_menee_min").innerText = Math.round(values[0]);
+        document.getElementById("val_menee_max").innerText = Math.round(values[1]);
       });
     }
-    document.addEventListener("DOMContentLoaded", initSliders);
+
+    // Thème sombre/clair
+    function toggleTheme() {
+      document.body.classList.toggle('dark-theme');
+      const isDark = document.body.classList.contains('dark-theme');
+      localStorage.setItem('gearCalcTheme', isDark ? 'dark' : 'light');
+      document.getElementById('themeBtn').innerText = isDark ? 'Clair' : 'Sombre';
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      initSliders();
+      // Restaurer le thème
+      const savedTheme = localStorage.getItem('gearCalcTheme');
+      if (savedTheme === 'dark') {
+        document.body.classList.add('dark-theme');
+        document.getElementById('themeBtn').innerText = 'Clair';
+      }
+    });
   </script>
-  <script src="js/main.js" defer></script>
+  <script src="js/GearMechanics.js" defer></script>
+  <script src="js/GearSVG.js" defer></script>
+  <script src="js/Charts.js" defer></script>
   <script src="js/Engine.js" defer></script>
   <script src="js/UI.js" defer></script>
   <script src="js/schema.js" defer></script>
+  <script src="js/main.js" defer></script>
 </body>
 </html>
