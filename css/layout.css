@@ -1,0 +1,46 @@
+/* ===== Layout principal ===== */
+.main-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+  width: var(--sidebar-width);
+  background-color: var(--bg-secondary);
+  padding: 16px;
+  box-shadow: var(--shadow-md);
+  overflow-y: auto;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--accent-color);
+}
+
+.sidebar-header h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+/* ===== Zone de contenu principal ===== */
+.content {
+  flex: 1;
+  padding: 20px;
+  overflow-x: hidden;
+}
+
+.content-header {
+  margin-bottom: 16px;
+}
+
+.content-header h1 {
+  text-align: center;
+}
