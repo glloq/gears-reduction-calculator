@@ -95,7 +95,7 @@ class GearCharts {
   /**
    * Graphique radar comparant les propriétés mécaniques des solutions.
    */
-  drawMechanicalRadar(canvasId, analysesArray) {
+  drawMechanicalRadar(canvasId, analysesArray, rapportCible) {
     this._destroyChart(canvasId);
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;
@@ -109,7 +109,7 @@ class GearCharts {
       const securite = Math.min(100, analyse.etages.reduce((sum, e) => {
         return sum + Math.min(e.resistanceMenante.facteurSecurite, e.resistanceMenee.facteurSecurite);
       }, 0) / analyse.etages.length * 25);
-      const precision = Math.max(0, 100 - Math.abs((analyse.rapportTotal - analyse.rapportTotal) / analyse.rapportTotal * 100) * 10);
+      const precision = rapportCible ? Math.max(0, 100 - Math.abs((analyse.rapportTotal - rapportCible) / rapportCible * 100) * 10) : 50;
 
       const colors = [
         'rgba(54, 162, 235, 0.5)',

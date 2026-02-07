@@ -28,6 +28,7 @@
     ui.paramForm.initSliders();
     ui.paramForm.restore();
     ui.paramForm.restoreTheme();
+    ui.paramForm.restoreProMode();
 
     // Raccourcis clavier
     document.addEventListener('keydown', function (e) {
@@ -100,6 +101,7 @@
   window.arreterRecherche = arreterRecherche;
   window.sauvegarderParametres = function () { ui.paramForm.save(); ui.logger.log("Paramètres sauvegardés."); };
   window.toggleTheme = function () { ui.paramForm.toggleTheme(); };
+  window.toggleProMode = function () { ui.paramForm.toggleProMode(); };
   window.toggleComparison = function () {
     comparisonManager.toggle();
     var btn = document.getElementById('toggleComparisonBtn');

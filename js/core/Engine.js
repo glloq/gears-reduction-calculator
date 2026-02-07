@@ -59,6 +59,12 @@
                 '] rapport: ' + data.rapport.toFixed(3) + ' (écart: ' + data.ecart.toFixed(2) + '%)'
             });
             break;
+          case 'partial_results':
+            self._eventBus.emit('search:partial', {
+              solutions: data.solutions,
+              totalSolutions: data.totalSolutions
+            });
+            break;
           case 'log':
             self._eventBus.emit('search:log', { message: data.message });
             break;

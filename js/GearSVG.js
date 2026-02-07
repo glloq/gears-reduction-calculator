@@ -320,6 +320,45 @@ class GearSVG {
     return pts;
   }
 
+  /**
+   * Ajoute une zone de survol interactive avec tooltip sur un groupe SVG.
+   */
+  _addTooltipHitArea(group, cx, cy, rayon, tooltipLines) {
+    const hitArea = document.createElementNS(this.svgNS, "circle");
+    hitArea.setAttribute("r", rayon);
+    hitArea.setAttribute("fill", "transparent");
+    hitArea.setAttribute("cursor", "pointer");
+    hitArea.addEventListener("mouseenter", () => this._showTooltipLines(cx, cy - rayon - 15, tooltipLines));
+    hitArea.addEventListener("mouseleave", () => this._hideTooltip());
+    group.appendChild(hitArea);
+  }
+
+  _showTooltipLines(x, y, lines) {
+    const text = this.tooltip.querySelector(".tooltip-text");
+    const bg = this.tooltip.querySelector(".tooltip-bg");
+
+    while (text.firstChild) text.removeChild(text.firstChild);
+
+    lines.forEach((line, i) => {
+      const tspan = document.createElementNS(this.svgNS, "tspan");
+      tspan.setAttribute("x", x);
+      tspan.setAttribute("dy", i === 0 ? 0 : 14);
+      tspan.textContent = line;
+      text.appendChild(tspan);
+    });
+
+    text.setAttribute("x", x);
+    text.setAttribute("y", y - 30);
+
+    const textBBox = { width: 140, height: lines.length * 14 + 8 };
+    bg.setAttribute("x", x - textBBox.width / 2 - 5);
+    bg.setAttribute("y", y - 35 - textBBox.height / 2);
+    bg.setAttribute("width", textBBox.width + 10);
+    bg.setAttribute("height", textBBox.height + 4);
+
+    this.tooltip.setAttribute("visibility", "visible");
+  }
+
   _showTooltip(x, y, label, nbDents, mod, rayonPrimitive) {
     const text = this.tooltip.querySelector(".tooltip-text");
     const bg = this.tooltip.querySelector(".tooltip-bg");
@@ -404,6 +443,14 @@ class GearSVG {
     textElem.textContent = label;
     group.appendChild(textElem);
 
+    // Tooltip interactif
+    this._addTooltipHitArea(group, 0, 0, rCouronne + mod * 2, [
+      `${label} - Engrenage intérieur`,
+      `Pignon: ${nbDentsPignon} dents, Couronne: ${nbDentsCouronne} dents`,
+      `Entraxe: ${entraxe.toFixed(1)} mm`,
+      `Rapport: ${(nbDentsCouronne / nbDentsPignon).toFixed(3)}`
+    ]);
+
     this.mainGroup.appendChild(group);
     return group;
   }
@@ -416,7 +463,8 @@ class GearSVG {
     group.setAttribute("transform", `translate(${cx}, ${cy})`);
 
     const rRoue = (mod * nbDentsRoue) / 2;
-    const diamVis = mod * nbFilets * 3;
+    const q = 10; // quotient de diamètre standard (cohérent avec TransmissionTypeRegistry)
+    const diamVis = q * mod;
     const rVis = diamVis / 2;
 
     // Roue (cercle avec dents stylisées)
@@ -505,6 +553,15 @@ class GearSVG {
     textElem.setAttribute("fill", "#333");
     textElem.textContent = label;
     group.appendChild(textElem);
+
+    // Tooltip interactif
+    var angleAvance = Math.atan(nbFilets / 10) * 180 / Math.PI; // q=10
+    this._addTooltipHitArea(group, 0, 0, rRoue + mod, [
+      `${label} - Vis sans fin`,
+      `Filets: ${nbFilets}, Dents roue: ${nbDentsRoue}`,
+      `Rapport: ${(nbDentsRoue / nbFilets).toFixed(1)}:1`,
+      `Angle avance: ${angleAvance.toFixed(1)}\u00b0`
+    ]);
 
     this.mainGroup.appendChild(group);
     return group;
@@ -624,6 +681,23 @@ class GearSVG {
     textElem.textContent = label;
     group.appendChild(textElem);
 
+    // Tooltip interactif (sur la plus grande poulie)
+    const hitBelt = document.createElementNS(this.svgNS, "rect");
+    hitBelt.setAttribute("x", -rA);
+    hitBelt.setAttribute("y", -Math.max(rA, rB) - 5);
+    hitBelt.setAttribute("width", entraxe + rA + rB);
+    hitBelt.setAttribute("height", Math.max(rA, rB) * 2 + 10);
+    hitBelt.setAttribute("fill", "transparent");
+    hitBelt.setAttribute("cursor", "pointer");
+    hitBelt.addEventListener("mouseenter", () => this._showTooltipLines(entraxe / 2, -Math.max(rA, rB) - 15, [
+      `${label} - Courroie & Poulie`,
+      `Poulie menante: \u00d8${diamA} mm`,
+      `Poulie men\u00e9e: \u00d8${diamB} mm`,
+      `Rapport: ${(diamB / diamA).toFixed(3)}`
+    ]));
+    hitBelt.addEventListener("mouseleave", () => this._hideTooltip());
+    group.appendChild(hitBelt);
+
     this.mainGroup.appendChild(group);
     return { group, entraxe };
   }
@@ -696,6 +770,14 @@ class GearSVG {
     textElem.textContent = label;
     group.appendChild(textElem);
 
+    // Tooltip interactif
+    this._addTooltipHitArea(group, 0, 0, Math.max(rA, rB) + mod, [
+      `${label} - Engrenage conique`,
+      `Pignon: ${nbDentsA} dents, Roue: ${nbDentsB} dents`,
+      `Rapport: ${(nbDentsB / nbDentsA).toFixed(3)}`,
+      `Axes \u00e0 90\u00b0`
+    ]);
+
     this.mainGroup.appendChild(group);
     return group;
   }
@@ -766,6 +848,14 @@ class GearSVG {
     textElem.setAttribute("fill", "#333");
     textElem.textContent = label;
     group.appendChild(textElem);
+
+    // Tooltip interactif
+    this._addTooltipHitArea(group, 0, 0, rCouronne + mod, [
+      `${label} - Train \u00e9picyclo\u00efdal`,
+      `Solaire: ${dentsSolaire} dents, Couronne: ${dentsCouronne} dents`,
+      `Satellite: ${Math.round(dentsSatellite)} dents`,
+      `Rapport: ${(1 + dentsCouronne / dentsSolaire).toFixed(3)}`
+    ]);
 
     this.mainGroup.appendChild(group);
     return group;
@@ -1036,32 +1126,49 @@ class GearSVG {
     }
   }
 
+  /**
+   * Calcule le ratio d'un étage en utilisant la formule correcte par type.
+   */
+  _stageRatio(stageIndex) {
+    const [A, B, typeId] = this._currentSolution[stageIndex];
+    if (typeId === 'epicyclic') return 1 + B / A;
+    return B / A; // spur, helical, internal, bevel, belt, worm
+  }
+
   _animate() {
     if (!this.isAnimating) return;
 
     this.animationAngle += 0.02;
 
     this.gearData.forEach((gear, index) => {
-      // Calculer la rotation basée sur le rapport de transmission
-      let totalRatio = 1;
       const pairIndex = Math.floor(index / 2);
       const isDriver = index % 2 === 0;
 
-      // Calculer le rapport cumulé
+      // Rapport cumulé jusqu'à cet engrenage (utilise les formules par type)
+      let cumulRatio = 1;
+      for (let i = 0; i < pairIndex; i++) {
+        cumulRatio *= this._stageRatio(i);
+      }
+      if (!isDriver) {
+        cumulRatio *= this._stageRatio(pairIndex);
+      }
+
+      // Vitesse angulaire inversée par rapport au rapport cumulé
+      const typeId = this._currentSolution[pairIndex] ? this._currentSolution[pairIndex][2] || 'spur' : 'spur';
+
+      // Sens de rotation : alternance pour spur/helical/bevel, même sens pour internal/belt/epicyclic
+      let sensSign = 1;
       for (let i = 0; i <= pairIndex; i++) {
-        if (i < this._currentSolution.length) {
-          const [A, B] = this._currentSolution[i];
-          if (i < pairIndex || !isDriver) {
-            totalRatio *= B / A;
+        const stageType = this._currentSolution[i] ? this._currentSolution[i][2] || 'spur' : 'spur';
+        if (i < pairIndex || !isDriver) {
+          if (stageType === 'spur' || stageType === 'helical' || stageType === 'bevel' || stageType === 'worm') {
+            sensSign *= -1;
           }
+          // internal, belt, epicyclic : même sens (sensSign inchangé)
         }
       }
 
-      const sign = index % 2 === 0 ? 1 : -1;
-      const speedFactor = isDriver ? (pairIndex === 0 ? 1 : 1 / totalRatio * this._currentSolution[pairIndex][1] / this._currentSolution[pairIndex][0]) : 1 / totalRatio;
-      const angle = this.animationAngle * sign / (index === 0 ? 1 : totalRatio / (isDriver ? this._currentSolution[pairIndex][1] / this._currentSolution[pairIndex][0] : 1));
-
-      const angleDeg = (angle * 180 / Math.PI) * (index % 2 === 0 ? 1 : -1);
+      const angleDeg = (this.animationAngle / cumulRatio) * sensSign * (180 / Math.PI);
       gear.group.setAttribute("transform", `translate(${gear.cx}, ${gear.cy}) rotate(${angleDeg})`);
     });
 
