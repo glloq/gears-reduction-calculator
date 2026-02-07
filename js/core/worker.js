@@ -31,6 +31,9 @@ self.onmessage = function (e) {
   let compteurIterations = 0;
   const LOG_FREQUENCY = 10000;
 
+  // Pré-calcul du ratio max par étage (évite un O(n) dans la boucle interne)
+  const maxRapportRestantGlobal = Math.max(...activeTypes.map(t => TYPES[t] ? TYPES[t].maxRatio : 1));
+
   function rechercher(chaine, profondeur, rapportActuel, etageLimite) {
     if (compteurIterations > maxIterations) return;
 
@@ -42,6 +45,7 @@ self.onmessage = function (e) {
           rapport: rapportActuel,
           ecart: ecartPourcentage
         });
+        // Résultats incrémentaux : envoyer les meilleures solutions triées périodiquement
         if (solutions.length % 10 === 1) {
           self.postMessage({
             type: 'solution_found',
@@ -49,6 +53,16 @@ self.onmessage = function (e) {
             rapport: rapportActuel,
             ecart: ecartPourcentage,
             solutionsCount: solutions.length
+          });
+        }
+        if (solutions.length === 5 || solutions.length % 25 === 0) {
+          var sorted = solutions.slice().sort(function (a, b) {
+            return Math.abs(a.rapport - rapportCible) - Math.abs(b.rapport - rapportCible);
+          });
+          self.postMessage({
+            type: 'partial_results',
+            solutions: sorted.slice(0, maxSolutions).map(function (s) { return s.chaine; }),
+            totalSolutions: solutions.length
           });
         }
       }
@@ -117,9 +131,7 @@ self.onmessage = function (e) {
           // Élagage : si le rapport est trop petit pour pouvoir atteindre la cible
           const etagesRestants = etageLimite - profondeur - 1;
           if (etagesRestants > 0) {
-            // Le max rapport par étage restant
-            const maxRapportRestant = Math.max(...activeTypes.map(t => TYPES[t] ? TYPES[t].maxRatio : 1));
-            if (nouveauRapport * Math.pow(maxRapportRestant, etagesRestants) < rapportCible * (1 - precisionToleree / 100)) continue;
+            if (nouveauRapport * Math.pow(maxRapportRestantGlobal, etagesRestants) < rapportCible * (1 - precisionToleree / 100)) continue;
           }
 
           let nouvelleChaine = [...chaine, [A, B, typeId]];

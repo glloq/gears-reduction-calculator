@@ -75,7 +75,8 @@
         if (typeId === 'spur' || typeId === 'helical' || typeId === 'bevel' || typeId === 'internal') {
           hertzContact = GearMechanics.calculerContrainteHertz(A, B, mod, largeurDent, coupleCourant, {
             angleContact: angleContact,
-            limiteContact: params.limiteContact
+            limiteContact: params.limiteContact,
+            isInternal: typeId === 'internal'
           });
         }
         if (typeId === 'spur' || typeId === 'helical') {
@@ -162,8 +163,12 @@
     // Facteur de zone ZH
     var ZH = Math.sqrt(2 * Math.cos(alpha) / Math.sin(2 * alpha));
 
+    // Facteur de rapport : (u-1)/u pour contact interne (concave), (u+1)/u pour externe
+    var isInternal = params.isInternal || false;
+    var uFactor = isInternal ? (u - 1) / u : (u + 1) / u;
+
     // Contrainte de Hertz σH
-    var sigmaH = ZH * ZE * Math.sqrt(Ft / (d1 * largeurDent) * (u + 1) / u);
+    var sigmaH = ZH * ZE * Math.sqrt(Ft / (d1 * largeurDent) * uFactor);
 
     // Limite de contact (MPa) — acier trempé par défaut
     var limiteContact = params.limiteContact || 1200;
