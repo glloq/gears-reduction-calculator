@@ -1,0 +1,9 @@
+{
+  "name": "gears-reduction-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Calculateur d'engrenages — rapport de réduction",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

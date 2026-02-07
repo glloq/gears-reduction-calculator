@@ -48,6 +48,14 @@ gears-reduction-calculator/
 │   ├── GearSVG.js             # Noyau SVG : constructeur, train, export
 │   ├── Charts.js              # Graphiques Chart.js (code actif)
 │   └── app.js                 # Point d'entrée : bootstrap et câblage
+├── test/                      # Tests unitaires (Phase 3)
+│   ├── helpers/
+│   │   └── context.js         # Harnais VM pour charger les modules IIFE
+│   ├── EventBus.test.js       # Tests pub/sub, chaînage, cas limites
+│   ├── GearMechanics.test.js  # Tests calculs mécaniques (Lewis, Hertz, etc.)
+│   ├── TransmissionTypeRegistry.test.js  # Tests 7 types, rapports, validation
+│   └── SearchParams.test.js   # Tests paramètres, validation, conversion Worker
+├── package.json               # Scripts npm (test)
 └── docs/
     ├── ARCHITECTURE.md        # Ce document
     ├── TECHNICAL_CHOICES.md   # Choix techniques détaillés
@@ -190,9 +198,11 @@ sans changer l'API publique ni le comportement.
 - ✅ Constantes de dessin extraites dans Constants.js (SVG_CFG)
 - ✅ Conversion de la classe ES6 en IIFE + prototype (cohérent avec le reste)
 
-### Phase 3 — Tests unitaires
-- Ajouter un framework de test léger (ex: Mocha/Chai ou Vitest)
-- Tester GearMechanics, TransmissionTypeRegistry, SearchParams, EventBus
+### Phase 3 — Tests unitaires ✅
+- ✅ Framework : `node:test` + `node:assert` (zéro dépendance, Node 22 natif)
+- ✅ Harnais VM (`test/helpers/context.js`) pour charger les IIFE en isolation
+- ✅ 77 tests couvrant : EventBus, GearMechanics, TransmissionTypeRegistry, SearchParams
+- ✅ `npm test` exécute tous les tests via `node --test test/*.test.js`
 
 ### Phase 4 — Module 3D
 - Voir `docs/3D_MODULE_ARCHITECTURE.md` pour les plans détaillés
