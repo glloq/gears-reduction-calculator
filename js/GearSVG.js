@@ -97,7 +97,7 @@ class GearSVG {
     // Zoom avec la molette
     this.svg.addEventListener("wheel", (e) => {
       e.preventDefault();
-      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       this.viewBox.w *= zoomFactor;
       this.viewBox.h *= zoomFactor;
       this.scale *= zoomFactor;

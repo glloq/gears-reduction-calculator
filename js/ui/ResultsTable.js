@@ -237,27 +237,17 @@
 
   /**
    * Prépare les données de cache pour le tri et le filtrage.
+   * Le rendement est calculé en lazy (à la demande) pour éviter de bloquer l'UI.
    */
   ResultsTable.prototype._prepareDisplayData = function () {
     var self = this;
     var registry = GearApp.models.typeRegistry;
     var target = this._params ? this._params.rapportCible : parseFloat(document.getElementById("rapport").value);
-    var modValue = this._params ? this._params.module : null;
 
     this._displayData = this._solutions.map(function (solution, originalIndex) {
       var ratio = self._calculerRapport(solution);
       var error = Math.abs((ratio - target) / target * 100);
       var types = self._getTypes(solution);
-      var efficiency = null;
-
-      if (modValue) {
-        var analyse = GearApp.core.GearMechanics.analyserTrainEngrenages(solution, {
-          module: modValue,
-          vitesseEntree: self._params.vitesseEntree || 1500,
-          coupleEntree: self._params.coupleEntree || 10
-        });
-        efficiency = analyse.rendementTotal;
-      }
 
       return {
         originalIndex: originalIndex,
@@ -267,10 +257,29 @@
         stages: solution.length,
         types: types,
         typesStr: types.map(function (t) { return registry.get(t).nomCourt; }).join(', '),
-        efficiency: efficiency,
+        efficiency: null,
+        _efficiencyComputed: false,
         totalTeeth: solution.reduce(function (sum, s) { return sum + s[0] + s[1]; }, 0)
       };
     });
+  };
+
+  /**
+   * Calcule le rendement d'une solution à la demande (lazy).
+   */
+  ResultsTable.prototype._computeEfficiency = function (dataItem) {
+    if (dataItem._efficiencyComputed) return dataItem.efficiency;
+    var modValue = this._params ? this._params.module : null;
+    if (modValue) {
+      var analyse = GearApp.core.GearMechanics.analyserTrainEngrenages(dataItem.solution, {
+        module: modValue,
+        vitesseEntree: this._params.vitesseEntree || 1500,
+        coupleEntree: this._params.coupleEntree || 10
+      });
+      dataItem.efficiency = analyse.rendementTotal;
+    }
+    dataItem._efficiencyComputed = true;
+    return dataItem.efficiency;
   };
 
   /**
@@ -303,7 +312,7 @@
         case 'stages':
           va = a.stages; vb = b.stages; break;
         case 'efficiency':
-          va = a.efficiency || 0; vb = b.efficiency || 0; break;
+          va = self._computeEfficiency(a) || 0; vb = self._computeEfficiency(b) || 0; break;
         default:
           va = a.error; vb = b.error;
       }
@@ -395,12 +404,13 @@
       var stagesCell = document.createElement("td");
       stagesCell.innerText = data.stages;
 
-      // Rendement
+      // Rendement (calculé en lazy pour les lignes visibles)
       var effCell = document.createElement("td");
-      if (data.efficiency !== null) {
-        effCell.innerText = (data.efficiency * 100).toFixed(1) + "%";
-        if (data.efficiency > 0.95) effCell.classList.add("excellent");
-        else if (data.efficiency > 0.90) effCell.classList.add("good");
+      var eff = self._computeEfficiency(data);
+      if (eff !== null) {
+        effCell.innerText = (eff * 100).toFixed(1) + "%";
+        if (eff > 0.95) effCell.classList.add("excellent");
+        else if (eff > 0.90) effCell.classList.add("good");
       } else {
         effCell.innerText = "-";
       }

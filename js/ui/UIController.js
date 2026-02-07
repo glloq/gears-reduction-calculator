@@ -40,9 +40,20 @@
     this._eventBus.on('solution:selected', function (data) {
       self._onSolutionSelected(data.index, data.solution);
     });
+
+    // Résultats incrémentaux : affichage progressif pendant la recherche
+    this._eventBus.on('search:partial', function (data) {
+      if (data.solutions && data.solutions.length > 0) {
+        self._eventBus.emit('search:log', {
+          message: data.totalSolutions + ' solutions en cours... affichage partiel.'
+        });
+        self.resultsTable.display(data.solutions, self._lastSearchParams);
+      }
+    });
   };
 
   UIController.prototype.afficherResultats = function (solutions, searchParams) {
+    this._lastSearchParams = searchParams;
     this.resultsTable.display(solutions, searchParams);
 
     if (solutions.length === 0) {
@@ -126,7 +137,7 @@
       var analyses = solutions.slice(0, 5).map(function (sol) {
         return GearApp.core.GearMechanics.analyserTrainEngrenages(sol, chartParams);
       });
-      charts.drawMechanicalRadar("radarChart", analyses);
+      charts.drawMechanicalRadar("radarChart", analyses, target);
     }
   };
 

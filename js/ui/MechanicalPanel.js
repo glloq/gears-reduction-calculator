@@ -203,6 +203,32 @@
 
     html += '</tbody></table></div>';
 
+    // Contrainte de Hertz (contact) par étage
+    var hasHertz = analyse.etages.some(function (e) { return e.hertzContact !== null; });
+    if (hasHertz) {
+      html += '<div class="pro-section">';
+      html += '<h5>Contrainte de Hertz (contact) par étage</h5>';
+      html += '<table class="stages-table"><thead><tr>';
+      html += '<th>Étage</th><th>Type</th><th>σH (MPa)</th><th>Sécurité contact</th><th>ZH</th><th>Force tang. (N)</th>';
+      html += '</tr></thead><tbody>';
+
+      analyse.etages.forEach(function (etage, i) {
+        if (!etage.hertzContact) return;
+        var h = etage.hertzContact;
+        var secClass = h.facteurSecuriteContact >= 1.3 ? 'excellent' : h.facteurSecuriteContact >= 1.0 ? 'good' : 'warning';
+        html += '<tr>';
+        html += '<td>' + (i + 1) + '</td>';
+        html += '<td><span class="type-badge ' + etage.typeId + '">' + etage.typeNomCourt + '</span></td>';
+        html += '<td>' + h.contrainteHertz.toFixed(1) + '</td>';
+        html += '<td class="' + secClass + '">' + h.facteurSecuriteContact.toFixed(2) + '</td>';
+        html += '<td>' + h.ZH.toFixed(3) + '</td>';
+        html += '<td>' + h.forceTangentielle.toFixed(1) + '</td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table></div>';
+    }
+
     // Vérification d'interférence détaillée
     html += '<div class="pro-section">';
     html += '<h5>Interférence</h5>';

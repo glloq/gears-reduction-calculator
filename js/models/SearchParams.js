@@ -101,7 +101,7 @@
   };
 
   /**
-   * Sauvegarde dans localStorage.
+   * Sauvegarde dans localStorage (incluant sliders, types cochés, réduction).
    */
   SearchParams.prototype.save = function () {
     var data = {
@@ -116,21 +116,79 @@
       vitesse_entree: document.getElementById("vitesse_entree") ? document.getElementById("vitesse_entree").value : "",
       couple_entree: document.getElementById("couple_entree") ? document.getElementById("couple_entree").value : ""
     };
+
+    // Sliders noUiSlider
+    var sliderMenante = document.getElementById('dent_menante_slider');
+    if (sliderMenante && sliderMenante.noUiSlider) {
+      data.sliderMenante = sliderMenante.noUiSlider.get();
+    }
+    var sliderMenee = document.getElementById('dent_menee_slider');
+    if (sliderMenee && sliderMenee.noUiSlider) {
+      data.sliderMenee = sliderMenee.noUiSlider.get();
+    }
+
+    // Types de transmission cochés
+    var types = [];
+    document.querySelectorAll('.type-checkbox:checked').forEach(function (cb) {
+      types.push(cb.value);
+    });
+    data.typesActifs = types;
+
+    // Réduction uniquement
+    var reductionEl = document.getElementById("reduction_only");
+    if (reductionEl) data.reductionOnly = reductionEl.checked;
+
     localStorage.setItem("gearCalcParams", JSON.stringify(data));
   };
 
+  /** Liste des champs input simples à sauvegarder/restaurer. */
+  var SIMPLE_FIELDS = [
+    'rapport', 'precision', 'etages', 'max_solutions', 'max_iterations',
+    'dent_menante_fixe', 'dent_menee_fixe', 'module', 'vitesse_entree', 'couple_entree'
+  ];
+
   /**
-   * Restaure depuis localStorage.
+   * Restaure depuis localStorage (incluant sliders, types cochés, réduction).
    */
   SearchParams.restore = function () {
     var saved = localStorage.getItem("gearCalcParams");
     if (!saved) return;
     try {
       var data = JSON.parse(saved);
-      Object.keys(data).forEach(function (id) {
+      if (!data || typeof data !== 'object') return;
+
+      // Champs input simples
+      SIMPLE_FIELDS.forEach(function (id) {
         var el = document.getElementById(id);
-        if (el && data[id]) el.value = data[id];
+        if (el && data[id] !== undefined && data[id] !== '') el.value = data[id];
       });
+
+      // Sliders noUiSlider
+      if (data.sliderMenante) {
+        var sliderMenante = document.getElementById('dent_menante_slider');
+        if (sliderMenante && sliderMenante.noUiSlider) {
+          sliderMenante.noUiSlider.set(data.sliderMenante);
+        }
+      }
+      if (data.sliderMenee) {
+        var sliderMenee = document.getElementById('dent_menee_slider');
+        if (sliderMenee && sliderMenee.noUiSlider) {
+          sliderMenee.noUiSlider.set(data.sliderMenee);
+        }
+      }
+
+      // Types de transmission cochés
+      if (data.typesActifs && Array.isArray(data.typesActifs)) {
+        document.querySelectorAll('.type-checkbox').forEach(function (cb) {
+          cb.checked = data.typesActifs.indexOf(cb.value) !== -1;
+        });
+      }
+
+      // Réduction uniquement
+      if (data.reductionOnly !== undefined) {
+        var reductionEl = document.getElementById("reduction_only");
+        if (reductionEl) reductionEl.checked = data.reductionOnly;
+      }
     } catch (e) {
       console.error("Erreur restauration paramètres:", e);
     }

@@ -315,8 +315,9 @@
       calculerRendement: function (A, B, params) {
         params = params || {};
         var mod = params.module || 2;
-        var diamVis = mod * A * 3;
-        var angleAvance = Math.atan(A * mod / (Math.PI * diamVis));
+        var q = 10; // quotient de diamètre standard (dw = q * m)
+        var diamVis = q * mod;
+        var angleAvance = Math.atan(A * mod / diamVis); // λ = atan(n·m / dw) = atan(A/q)
         var mu = params.coeffFrottement || 0.08;
         var alpha = (params.angleContact || 20) * Math.PI / 180;
         var phi = Math.atan(mu / Math.cos(alpha));
@@ -324,9 +325,10 @@
         return Math.max(0.30, Math.min(0.95, rendement));
       },
       calculerGeometrie: function (A, B, mod) {
-        var diamVis = mod * A * 3;
+        var q = 10; // quotient de diamètre standard
+        var diamVis = q * mod;
         var dpRoue = mod * B;
-        var angleAvance = Math.atan(A * mod * Math.PI / (Math.PI * diamVis));
+        var angleAvance = Math.atan(A * mod / diamVis);
         return {
           type: 'worm', entraxe: (diamVis + dpRoue) / 2,
           diamPrimitiveVis: diamVis, diamPrimitiveRoue: dpRoue,

@@ -54,6 +54,7 @@
 
       var resistanceMenante = { facteurSecurite: Infinity, estValide: true, contrainteFlexion: 0, forceTangentielle: 0, facteurLewis: 0 };
       var resistanceMenee = { facteurSecurite: Infinity, estValide: true, contrainteFlexion: 0, forceTangentielle: 0, facteurLewis: 0 };
+      var hertzContact = null;
       var rapportConduite = null;
       var vitessePeripherique = 0;
 
@@ -63,11 +64,19 @@
           resistanceMenante = { facteurSecurite: 3.0, estValide: true, contrainteFlexion: 0, forceTangentielle: 0, facteurLewis: 0 };
         } else if (typeId === 'epicyclic') {
           var dentsSat = (B - A) / 2;
+          var nbSat = params.nbSatellites || 3;
           resistanceMenante = GearMechanics.calculerResistanceLewis(A, mod, largeurDent, coupleCourant, limiteElastique);
-          resistanceMenee = GearMechanics.calculerResistanceLewis(Math.max(6, dentsSat), mod, largeurDent, coupleSortie / 3, limiteElastique);
+          resistanceMenee = GearMechanics.calculerResistanceLewis(Math.max(6, dentsSat), mod, largeurDent, coupleSortie / nbSat, limiteElastique);
         } else {
           resistanceMenante = GearMechanics.calculerResistanceLewis(A, mod, largeurDent, coupleCourant, limiteElastique);
           resistanceMenee = GearMechanics.calculerResistanceLewis(B, mod, largeurDent, coupleSortie, limiteElastique);
+        }
+        // Contrainte de Hertz (contact) pour les engrenages cylindriques
+        if (typeId === 'spur' || typeId === 'helical' || typeId === 'bevel' || typeId === 'internal') {
+          hertzContact = GearMechanics.calculerContrainteHertz(A, B, mod, largeurDent, coupleCourant, {
+            angleContact: angleContact,
+            limiteContact: params.limiteContact
+          });
         }
         if (typeId === 'spur' || typeId === 'helical') {
           rapportConduite = GearMechanics.calculerRapportConduite(A, B, angleContact);
@@ -90,6 +99,7 @@
         puissanceEntree: puissanceEntree, puissanceSortie: puissanceSortie,
         pertePuissance: pertePuissance,
         resistanceMenante: resistanceMenante, resistanceMenee: resistanceMenee,
+        hertzContact: hertzContact,
         rapportConduite: rapportConduite, vitessePeripherique: vitessePeripherique
       });
 
@@ -133,6 +143,40 @@
 
   GearMechanics.calculerVitessePeripherique = function (nbDents, mod, vitesseRotation) {
     return (Math.PI * mod * nbDents * vitesseRotation) / 60000;
+  };
+
+  /**
+   * Calcul de la contrainte de Hertz (contact) selon ISO 6336.
+   * Complète l'analyse Lewis (flexion) pour une évaluation résistance complète.
+   */
+  GearMechanics.calculerContrainteHertz = function (nbDentsA, nbDentsB, mod, largeurDent, couple, params) {
+    params = params || {};
+    var alpha = (params.angleContact || 20) * Math.PI / 180;
+    var ZE = 190; // facteur d'élasticité (√MPa) — acier/acier
+    var d1 = mod * nbDentsA;
+    var u = nbDentsB / nbDentsA;
+
+    // Force tangentielle (N) — couple en N·m, d1 en mm
+    var Ft = (2 * couple * 1000) / d1;
+
+    // Facteur de zone ZH
+    var ZH = Math.sqrt(2 * Math.cos(alpha) / Math.sin(2 * alpha));
+
+    // Contrainte de Hertz σH
+    var sigmaH = ZH * ZE * Math.sqrt(Ft / (d1 * largeurDent) * (u + 1) / u);
+
+    // Limite de contact (MPa) — acier trempé par défaut
+    var limiteContact = params.limiteContact || 1200;
+    var facteurSecurite = limiteContact / sigmaH;
+
+    return {
+      contrainteHertz: sigmaH,
+      facteurSecuriteContact: facteurSecurite,
+      estValide: facteurSecurite >= 1.0,
+      ZE: ZE,
+      ZH: ZH,
+      forceTangentielle: Ft
+    };
   };
 
   GearMechanics.genererProfilDeveloppante = function (nbDents, mod, angleContact, points) {
