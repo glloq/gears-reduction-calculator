@@ -9,7 +9,7 @@ Application web monopage (SPA) en JavaScript vanilla pour le calcul et la visual
 ```
 gears-reduction-calculator/
 ├── index.html                 # Page unique, point d'entrée HTML
-├── css/                       # Styles modulaires
+├── css/                       # Styles modulaires (8 fichiers)
 │   ├── variables.css          # Custom properties CSS + thème sombre
 │   ├── base.css               # Reset, typographie, animations
 │   ├── layout.css             # Layout flex principal, sidebar, content
@@ -20,6 +20,8 @@ gears-reduction-calculator/
 │   └── responsive.css         # Media queries (@media 1024/768/480px)
 ├── js/
 │   ├── namespace.js           # Namespace GearApp (chargé en premier)
+│   ├── config/
+│   │   └── Constants.js       # Constantes globales, seuils, paramètres par défaut
 │   ├── models/
 │   │   ├── TransmissionTypeRegistry.js  # Registre des 7 types de transmission
 │   │   └── SearchParams.js              # Paramètres de recherche (value object)
@@ -30,10 +32,11 @@ gears-reduction-calculator/
 │   │   └── worker.js          # Web Worker autonome pour recherche non-bloquante
 │   ├── ui/
 │   │   ├── Logger.js          # Gestion des logs et statut
-│   │   ├── ResultsTable.js    # Tableau de résultats et sélection
+│   │   ├── ResultsTable.js    # Tableau de résultats, tri, filtrage, sélection
 │   │   ├── MechanicalPanel.js # Panneau d'analyse mécanique détaillée
 │   │   ├── ParameterForm.js   # Formulaire, sliders, thème, sauvegarde
 │   │   ├── ExportManager.js   # Export SVG/PNG, contrôle animation
+│   │   ├── ComparisonManager.js # Comparaison multi-rapports cibles
 │   │   └── UIController.js    # Orchestrateur UI principal
 │   ├── visualization/
 │   │   ├── GearSVG.js         # Proxy namespace pour GearSVG
@@ -41,15 +44,23 @@ gears-reduction-calculator/
 │   │   └── LegacySchema.js    # Schéma Canvas 2D encapsulé en classe
 │   ├── GearSVG.js             # Visualisation SVG interactive (code actif)
 │   ├── Charts.js              # Graphiques Chart.js (code actif)
-│   ├── app.js                 # Point d'entrée : bootstrap et câblage
-│   └── [fichiers legacy]      # Conservés pour compatibilité
+│   └── app.js                 # Point d'entrée : bootstrap et câblage
 └── docs/
     ├── ARCHITECTURE.md        # Ce document
     ├── TECHNICAL_CHOICES.md   # Choix techniques détaillés
-    └── DEVELOPMENT_HISTORY.md # Historique des étapes de développement
+    ├── DEVELOPMENT_HISTORY.md # Historique des étapes de développement
+    ├── UX_STUDY.md            # Étude UX initiale
+    ├── UX_STUDY_V2.md         # Étude UX v2
+    ├── IMPROVEMENTS_STUDY.md  # Analyse détaillée des améliorations possibles
+    └── 3D_MODULE_ARCHITECTURE.md # Plans pour la visualisation 3D future
 ```
 
 ## Couches architecturales
+
+### 0. Config (`js/config/`)
+Constantes globales partagées entre tous les modules.
+
+- **Constants.js** : Centralise les magic numbers, seuils de qualité, paramètres par défaut, constantes d'ingénierie mécanique, et paramètres de visualisation. Évite la duplication de valeurs entre les fichiers.
 
 ### 1. Models (`js/models/`)
 Données et structures. Aucune dépendance vers l'UI ou la visualisation.
@@ -61,25 +72,26 @@ Données et structures. Aucune dépendance vers l'UI ou la visualisation.
 Logique métier et infrastructure. Dépend uniquement des models.
 
 - **EventBus** : Système pub/sub simple (`on`, `off`, `emit`). Découple le moteur de recherche de l'UI.
-- **GearMechanics** : Calculs d'ingénierie (Lewis, rendement Merritt, rapport de conduite, interférence, jeu de denture).
+- **GearMechanics** : Calculs d'ingénierie (Lewis, rendement Merritt, rapport de conduite, interférence, jeu de denture, Hertz).
 - **Engine** : Orchestrateur de recherche. Utilise un Web Worker si disponible, sinon fallback synchrone. Communique via EventBus.
-- **worker.js** : Web Worker autonome. Duplique les contraintes des types (le worker n'a pas accès au DOM).
+- **worker.js** : Web Worker autonome. Duplique les contraintes des types (le worker n'a pas accès au DOM). Algorithme Branch & Bound avec approfondissement itératif.
 
 ### 3. UI (`js/ui/`)
 Composants d'interface. Dépend de core et models.
 
 - **Logger** : Gestion du panneau de logs et du statut.
-- **ResultsTable** : Affichage du tableau, sélection de solution, émet `solution:selected`.
-- **MechanicalPanel** : Construction HTML de l'analyse mécanique détaillée.
-- **ParameterForm** : Sliders noUiSlider, thème, sauvegarde/restauration localStorage.
-- **ExportManager** : Export SVG/PNG, animation.
+- **ResultsTable** : Affichage du tableau, tri multi-colonnes, filtrage par type, sélection de solution, émet `solution:selected`.
+- **MechanicalPanel** : Construction HTML de l'analyse mécanique détaillée (standard + mode pro).
+- **ParameterForm** : Sliders noUiSlider, thème, mode pro, paramètres contextuels par type, sauvegarde/restauration localStorage.
+- **ExportManager** : Export SVG/PNG, contrôle d'animation.
+- **ComparisonManager** : Définition de N rapports cibles, recherche parallèle, tableau de comparaison.
 - **UIController** : Orchestrateur qui connecte tous les sous-composants via EventBus.
 
 ### 4. Visualization (`js/visualization/`)
 Rendu graphique. Dépend de core pour les données.
 
-- **GearSVG** : SVG interactif avec zoom/pan/tooltips. Dessins spécifiques par type.
-- **GearCharts** : 4 graphiques Chart.js (ratio, radar, cascade, pertes).
+- **GearSVG** : SVG interactif avec zoom/pan/tooltips/animation. Dessins spécifiques par type de transmission.
+- **GearCharts** : 4 graphiques Chart.js (comparaison des rapports, radar multicritères, cascade couple/vitesse, répartition des pertes).
 - **LegacySchema** : Schéma Canvas 2D classique (conservé dans `<details>`).
 
 ## Flux de données
@@ -88,6 +100,7 @@ Rendu graphique. Dépend de core pour les données.
 [Utilisateur] → ParameterForm → SearchParams → Engine → Worker
                                                           ↓
 [Worker] → EventBus:search:progress → Logger + ProgressBar
+[Worker] → EventBus:search:partial  → ResultsTable (affichage progressif)
 [Worker] → EventBus:search:done → ResultsTable.display()
                                        ↓
                               EventBus:solution:selected
@@ -103,11 +116,59 @@ Rendu graphique. Dépend de core pour les données.
 |---|---|---|
 | `search:log` | Engine | Logger |
 | `search:progress` | Engine | ProgressBar |
+| `search:partial` | Engine | ResultsTable (affichage incrémental) |
 | `solution:selected` | ResultsTable | UIController → SVG, Panel, Charts, Legacy |
+
+## Gestion des actions HTML
+
+Les boutons utilisent des attributs `data-action` au lieu de `onclick` inline.
+La correspondance action → fonction est définie dans `app.js` via `ACTION_MAP`,
+avec délégation d'événements sur le document.
+
+Actions disponibles :
+- `lancerRecherche` — Lancer/arrêter la recherche
+- `sauvegarderParametres` — Sauvegarder dans localStorage
+- `toggleTheme` — Basculer thème clair/sombre
+- `toggleProMode` — Basculer mode Standard/Pro
+- `toggleComparison` — Ouvrir/fermer le panneau de comparaison
+- `toggleAnimation` — Animer/arrêter les engrenages SVG
+- `resetSVGView` — Recentrer la vue SVG
+- `exporterSVG` / `exporterPNG` — Exporter le schéma
+
+## Raccourcis clavier
+
+| Raccourci | Action |
+|---|---|
+| `Ctrl+Entrée` | Lancer la recherche |
+| `Échap` | Arrêter la recherche en cours |
 
 ## Compatibilité
 
 - Pas de build step (no Webpack/Vite)
 - Pas de modules ES (compatibilité Worker)
-- Shims `window.*` pour transition progressive
+- Shims `window.*` pour transition progressive (legacy bridges dans app.js)
 - Fonctionne avec `<script defer>` (ordre d'exécution garanti)
+- Constantes partagées via `GearApp.config` (Constants.js)
+
+## Conventions de code
+
+- **IIFE + Namespace** : Tous les modules utilisent `(function(GearApp) { ... })(GearApp);`
+- **Prototype pattern** : Constructeurs avec méthodes sur `Constructor.prototype.*`
+- **JSDoc** : Tous les fichiers ont des en-têtes de module et des annotations JSDoc
+- **Commentaires en français** : Cohérent avec l'interface utilisateur
+- **Séparateurs de section** : `// ===== Nom de section =====` pour la lisibilité
+- **Préfixe `_`** : Convention pour les méthodes/propriétés privées
+
+## Pistes d'amélioration (phases futures)
+
+### Phase 2 — Refactoring GearSVG.js
+- Découper en sous-modules : GearDrawer, SVGInteraction, AnimationEngine
+- Extraire les constantes de dessin dans Constants.js
+
+### Phase 3 — Tests unitaires
+- Ajouter un framework de test léger (ex: Mocha/Chai ou Vitest)
+- Tester GearMechanics, TransmissionTypeRegistry, SearchParams, EventBus
+
+### Phase 4 — Module 3D
+- Voir `docs/3D_MODULE_ARCHITECTURE.md` pour les plans détaillés
+- Three.js pour le rendu 3D des engrenages

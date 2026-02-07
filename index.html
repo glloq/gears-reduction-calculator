@@ -27,8 +27,8 @@
       <div class="sidebar-header">
         <h2>Calculateur d'Engrenages</h2>
         <div class="sidebar-header-actions">
-          <button class="btn-mode" id="proModeBtn" onclick="toggleProMode()" title="Activer le mode expert avec paramètres avancés">Standard</button>
-          <button class="btn-icon" onclick="toggleTheme()" title="Mode sombre/clair" id="themeBtn">Thème</button>
+          <button class="btn-mode" id="proModeBtn" data-action="toggleProMode" title="Activer le mode expert avec paramètres avancés">Standard</button>
+          <button class="btn-icon" id="themeBtn" data-action="toggleTheme" title="Mode sombre/clair">Thème</button>
         </div>
       </div>
 
@@ -37,8 +37,8 @@
         <label>Nombre de tours entrée pour un tour sortie :</label>
         <input type="number" id="rapport" value="12" step="0.1" min="0.1">
         <div class="btn-group">
-          <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary">Rechercher</button>
-          <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres">Sauver</button>
+          <button id="startStopBtn" data-action="lancerRecherche" class="btn-primary">Rechercher</button>
+          <button id="saveParamsBtn" data-action="sauvegarderParametres" class="btn-secondary" title="Sauvegarder les paramètres">Sauver</button>
         </div>
         <div class="shortcut-hint">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
       </div>
@@ -166,10 +166,10 @@
         <div class="viz-header">
           <h2>Schéma interactif</h2>
           <div class="viz-controls">
-            <button onclick="UI.toggleAnimation()" class="btn-small" title="Animer les engrenages">Animer</button>
-            <button onclick="UI.resetSVGView()" class="btn-small" title="Réinitialiser la vue">Recentrer</button>
-            <button onclick="UI.exporterSVG()" class="btn-small" title="Exporter en SVG">SVG</button>
-            <button onclick="UI.exporterPNG()" class="btn-small" title="Exporter en PNG">PNG</button>
+            <button id="btnAnimer" data-action="toggleAnimation" class="btn-small" title="Animer les engrenages">Animer</button>
+            <button id="btnRecentrer" data-action="resetSVGView" class="btn-small" title="Réinitialiser la vue">Recentrer</button>
+            <button id="btnExportSVG" data-action="exporterSVG" class="btn-small" title="Exporter en SVG">SVG</button>
+            <button id="btnExportPNG" data-action="exporterPNG" class="btn-small" title="Exporter en PNG">PNG</button>
           </div>
         </div>
         <div id="svgContainer" class="svg-container"></div>
@@ -191,7 +191,7 @@
       <div class="result-container">
         <div class="result-header">
           <h2>Résultats</h2>
-          <button class="btn-small" id="toggleComparisonBtn" onclick="toggleComparison()" title="Comparer plusieurs rapports cibles">Comparer</button>
+          <button class="btn-small" id="toggleComparisonBtn" data-action="toggleComparison" title="Comparer plusieurs rapports cibles">Comparer</button>
         </div>
         <p id="status">En attente...</p>
         <div class="table-scroll">
@@ -248,8 +248,9 @@
 
   <!-- ===== JavaScript - Architecture modulaire ===== -->
 
-  <!-- Namespace (doit être chargé en premier) -->
+  <!-- Namespace et configuration (doivent être chargés en premier) -->
   <script src="js/namespace.js" defer></script>
+  <script src="js/config/Constants.js" defer></script>
 
   <!-- Modèles -->
   <script src="js/models/TransmissionTypeRegistry.js" defer></script>
@@ -260,7 +261,7 @@
   <script src="js/core/GearMechanics.js" defer></script>
   <script src="js/core/Engine.js" defer></script>
 
-  <!-- Visualisation (fichiers originaux conservés pour le code actif) -->
+  <!-- Visualisation -->
   <script src="js/GearSVG.js" defer></script>
   <script src="js/Charts.js" defer></script>
 
