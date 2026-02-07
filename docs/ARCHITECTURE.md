@@ -39,10 +39,13 @@ gears-reduction-calculator/
 │   │   ├── ComparisonManager.js # Comparaison multi-rapports cibles
 │   │   └── UIController.js    # Orchestrateur UI principal
 │   ├── visualization/
+│   │   ├── GearDrawer.js      # Mixin dessin : profils, types spéciaux, cotation
+│   │   ├── SVGInteraction.js  # Mixin interaction : zoom, pan, tooltips
+│   │   ├── AnimationEngine.js # Mixin animation : rotation des engrenages
 │   │   ├── GearSVG.js         # Proxy namespace pour GearSVG
 │   │   ├── GearCharts.js      # Proxy namespace pour GearCharts
 │   │   └── LegacySchema.js    # Schéma Canvas 2D encapsulé en classe
-│   ├── GearSVG.js             # Visualisation SVG interactive (code actif)
+│   ├── GearSVG.js             # Noyau SVG : constructeur, train, export
 │   ├── Charts.js              # Graphiques Chart.js (code actif)
 │   └── app.js                 # Point d'entrée : bootstrap et câblage
 └── docs/
@@ -90,7 +93,15 @@ Composants d'interface. Dépend de core et models.
 ### 4. Visualization (`js/visualization/`)
 Rendu graphique. Dépend de core pour les données.
 
-- **GearSVG** : SVG interactif avec zoom/pan/tooltips/animation. Dessins spécifiques par type de transmission.
+**GearSVG** — Architecture modulaire par mixins :
+- **GearSVG.js** (noyau) : Constructeur, initialisation SVG, orchestration `drawGearTrain()`, export SVG/PNG, nettoyage. Définit la classe et expose `window.GearSVG`.
+- **GearDrawer.js** (mixin) : Dessin individuel des 7 types de transmission : `drawGear()` (profil en développante de cercle), `drawInternalGear()`, `drawWormGear()`, `drawBeltPulley()`, `drawBevelGear()`, `drawEpicyclicGear()`, lignes de cote et labels E/S.
+- **SVGInteraction.js** (mixin) : Zoom (molette), pan (clic-glisser), tooltips (hit areas + info-bulles SVG), cadrage automatique `_fitViewBox()`, `resetView()`.
+- **AnimationEngine.js** (mixin) : Animation de rotation (`requestAnimationFrame`), calcul des rapports cumulés, sens de rotation par type, contrôle start/stop/toggle.
+
+Les mixins ajoutent des méthodes à `GearSVG.prototype` après le chargement du noyau. L'ordre de chargement est garanti par `<script defer>`.
+
+**Autres modules :**
 - **GearCharts** : 4 graphiques Chart.js (comparaison des rapports, radar multicritères, cascade couple/vitesse, répartition des pertes).
 - **LegacySchema** : Schéma Canvas 2D classique (conservé dans `<details>`).
 
@@ -154,16 +165,30 @@ Actions disponibles :
 
 - **IIFE + Namespace** : Tous les modules utilisent `(function(GearApp) { ... })(GearApp);`
 - **Prototype pattern** : Constructeurs avec méthodes sur `Constructor.prototype.*`
+- **Mixin pattern** : Les sous-modules de GearSVG ajoutent des méthodes au prototype via des IIFE séparées
 - **JSDoc** : Tous les fichiers ont des en-têtes de module et des annotations JSDoc
 - **Commentaires en français** : Cohérent avec l'interface utilisateur
 - **Séparateurs de section** : `// ===== Nom de section =====` pour la lisibilité
 - **Préfixe `_`** : Convention pour les méthodes/propriétés privées
 
+## Conventions de nommage des mixins
+
+Les sous-modules de `GearSVG` utilisent le pattern **mixin par prototype** :
+```javascript
+(function () {
+  var proto = GearSVG.prototype;
+  proto.nomMethode = function () { ... };
+})();
+```
+Ce pattern permet de découper une classe monolithique en fichiers thématiques
+sans changer l'API publique ni le comportement.
+
 ## Pistes d'amélioration (phases futures)
 
-### Phase 2 — Refactoring GearSVG.js
-- Découper en sous-modules : GearDrawer, SVGInteraction, AnimationEngine
-- Extraire les constantes de dessin dans Constants.js
+### Phase 2 — Refactoring GearSVG.js ✅
+- ✅ Découpé en sous-modules : GearDrawer, SVGInteraction, AnimationEngine
+- ✅ Constantes de dessin extraites dans Constants.js (SVG_CFG)
+- ✅ Conversion de la classe ES6 en IIFE + prototype (cohérent avec le reste)
 
 ### Phase 3 — Tests unitaires
 - Ajouter un framework de test léger (ex: Mocha/Chai ou Vitest)

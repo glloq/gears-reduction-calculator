@@ -128,15 +128,42 @@
   // SVG & VISUALISATION
   // =====================================================================
 
-  /** Constantes pour le rendu SVG interactif */
+  /**
+   * Constantes pour le rendu SVG interactif.
+   * Utilisées par GearSVG.js et ses sous-modules
+   * (GearDrawer, SVGInteraction, AnimationEngine).
+   */
   GearApp.config.SVG = {
+    /** Hauteur par défaut du SVG (pixels) */
+    HEIGHT: 400,
+    /** ViewBox initiale du SVG */
+    VIEWBOX: { X: 0, Y: 0, W: 800, H: 400 },
     /** Facteur de zoom par pas de molette */
     ZOOM_FACTOR_IN: 1.1,
     ZOOM_FACTOR_OUT: 0.9,
-    /** Nombre de points pour le profil en développante */
-    POINTS_PROFIL_DEVELOPPANTE: 50,
-    /** Padding autour du schéma SVG */
-    PADDING: 60
+    /** Paramètres du profil de dent */
+    TOOTH: {
+      /** Facteur d'addendum (rayon tête = Rp + module × facteur) */
+      ADDENDUM_FACTOR: 1,
+      /** Facteur de dédendum (rayon pied = Rp − module × facteur, norme ISO) */
+      DEDENDUM_FACTOR: 1.25,
+      /** Nombre de points d'échantillonnage de la courbe involute */
+      INVOLUTE_POINTS: 8
+    },
+    /** Vitesse angulaire d'animation (radians par frame) */
+    ANIMATION_SPEED: 0.02,
+    /** Facteur de mise à l'échelle pour l'export PNG */
+    EXPORT_SCALE: 2,
+    /** Padding autour du train lors du cadrage automatique */
+    FIT_PADDING: 60,
+    /** Position de départ pour le dessin du train */
+    TRAIN_START: { X: 100, Y: 200 },
+    /** Couleurs des labels Entrée/Sortie */
+    IO_COLORS: { ENTREE: '#2ecc71', SORTIE: '#e74c3c' },
+    /** Gradient radial métallique pour les engrenages */
+    GRADIENT: { CENTER: '#e8e8e8', EDGE: '#b0b0b0' },
+    /** Paramètres du filtre d'ombre portée SVG */
+    SHADOW: { DX: 1, DY: 1, BLUR: 2 }
   };
 
   // =====================================================================
