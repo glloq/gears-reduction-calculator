@@ -1,6 +1,51 @@
 // SearchParams.js - Objet valeur encapsulant les paramètres de recherche
+// Supporte la sauvegarde complète, l'URL partageable et les presets
 
 (function (GearApp) {
+
+  // ===== Presets nommés =====
+  var PRESETS = {
+    robotique: {
+      nom: 'Robotique',
+      description: 'Compact, épicycloïdal, haute précision',
+      rapport: 50, precision: 0.5, maxEtages: 3, maxSolutions: 20,
+      typesActifs: ['epicyclic', 'spur', 'helical'],
+      dentMenanteSlider: [12, 40], dentMeneeSlider: [30, 100],
+      reductionOnly: true
+    },
+    industriel: {
+      nom: 'Industriel',
+      description: 'Robuste, engrenages droits, haute fiabilité',
+      rapport: 12, precision: 0.1, maxEtages: 4, maxSolutions: 15,
+      typesActifs: ['spur', 'helical'],
+      dentMenanteSlider: [15, 40], dentMeneeSlider: [30, 80],
+      reductionOnly: true
+    },
+    automobile: {
+      nom: 'Automobile',
+      description: 'Haut rendement, hélicoïdal, silencieux',
+      rapport: 4, precision: 0.1, maxEtages: 2, maxSolutions: 10,
+      typesActifs: ['helical', 'spur'],
+      dentMenanteSlider: [15, 30], dentMeneeSlider: [20, 60],
+      reductionOnly: true
+    },
+    convoyeur: {
+      nom: 'Convoyeur',
+      description: 'Très haut rapport, vis sans fin ou épicycloïdal',
+      rapport: 100, precision: 1, maxEtages: 3, maxSolutions: 10,
+      typesActifs: ['worm', 'epicyclic', 'spur'],
+      dentMenanteSlider: [10, 30], dentMeneeSlider: [20, 120],
+      reductionOnly: true
+    },
+    impression3d: {
+      nom: 'Impression 3D',
+      description: 'Petits modules, engrenages imprimables',
+      rapport: 5, precision: 0.5, maxEtages: 2, maxSolutions: 10,
+      typesActifs: ['spur', 'internal'],
+      dentMenanteSlider: [10, 25], dentMeneeSlider: [20, 60],
+      reductionOnly: true
+    }
+  };
 
   function SearchParams() {
     this.rapportCible = 12;
@@ -64,7 +109,6 @@
 
   /**
    * Valide les paramètres.
-   * @returns {{ valid: boolean, message?: string }}
    */
   SearchParams.prototype.validate = function () {
     if (isNaN(this.rapportCible) || this.rapportCible <= 0) {
@@ -101,7 +145,7 @@
   };
 
   /**
-   * Sauvegarde dans localStorage (incluant sliders, types cochés, réduction).
+   * Sauvegarde complète dans localStorage.
    */
   SearchParams.prototype.save = function () {
     var data = {
@@ -138,17 +182,24 @@
     var reductionEl = document.getElementById("reduction_only");
     if (reductionEl) data.reductionOnly = reductionEl.checked;
 
+    // Paramètres matériaux (pro)
+    PRO_FIELDS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && el.value.trim() !== '') data[id] = el.value;
+    });
+
     localStorage.setItem("gearCalcParams", JSON.stringify(data));
   };
 
-  /** Liste des champs input simples à sauvegarder/restaurer. */
   var SIMPLE_FIELDS = [
     'rapport', 'precision', 'etages', 'max_solutions', 'max_iterations',
     'dent_menante_fixe', 'dent_menee_fixe', 'module', 'vitesse_entree', 'couple_entree'
   ];
 
+  var PRO_FIELDS = ['angle_pression', 'coeff_frottement', 'largeur_dent', 'limite_elastique', 'qualite_iso'];
+
   /**
-   * Restaure depuis localStorage (incluant sliders, types cochés, réduction).
+   * Restaure depuis localStorage avec validation des données.
    */
   SearchParams.restore = function () {
     var saved = localStorage.getItem("gearCalcParams");
@@ -157,8 +208,20 @@
       var data = JSON.parse(saved);
       if (!data || typeof data !== 'object') return;
 
+      // Validation de base
+      if (data.rapport !== undefined) {
+        var r = parseFloat(data.rapport);
+        if (isNaN(r) || r <= 0 || r > 100000) delete data.rapport;
+      }
+
       // Champs input simples
       SIMPLE_FIELDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && data[id] !== undefined && data[id] !== '') el.value = data[id];
+      });
+
+      // Champs pro
+      PRO_FIELDS.forEach(function (id) {
         var el = document.getElementById(id);
         if (el && data[id] !== undefined && data[id] !== '') el.value = data[id];
       });
@@ -192,6 +255,175 @@
     } catch (e) {
       console.error("Erreur restauration paramètres:", e);
     }
+  };
+
+  // ===== URL partageable =====
+
+  SearchParams.toURL = function () {
+    var params = SearchParams.fromForm();
+    var q = new URLSearchParams();
+    q.set('r', params.rapportCible);
+    q.set('p', params.precision);
+    q.set('e', params.maxEtages);
+    q.set('s', params.maxSolutions);
+    q.set('t', params.typesActifs.join(','));
+    q.set('amin', params.dentMenanteMin);
+    q.set('amax', params.dentMenanteMax);
+    q.set('bmin', params.dentMeneeMin);
+    q.set('bmax', params.dentMeneeMax);
+    if (params.reductionOnly) q.set('red', '1');
+    if (params.module) q.set('mod', params.module);
+    if (params.dentMenanteFixe) q.set('fa', params.dentMenanteFixe);
+    if (params.dentMeneeFixe) q.set('fb', params.dentMeneeFixe);
+    return window.location.origin + window.location.pathname + '?' + q.toString();
+  };
+
+  SearchParams.fromURL = function () {
+    var q = new URLSearchParams(window.location.search);
+    if (!q.has('r')) return false;
+
+    var el;
+    el = document.getElementById('rapport');
+    if (el && q.has('r')) el.value = q.get('r');
+
+    el = document.getElementById('precision');
+    if (el && q.has('p')) el.value = q.get('p');
+
+    el = document.getElementById('etages');
+    if (el && q.has('e')) el.value = q.get('e');
+
+    el = document.getElementById('max_solutions');
+    if (el && q.has('s')) el.value = q.get('s');
+
+    if (q.has('t')) {
+      var activeTypes = q.get('t').split(',');
+      document.querySelectorAll('.type-checkbox').forEach(function (cb) {
+        cb.checked = activeTypes.indexOf(cb.value) !== -1;
+      });
+    }
+
+    if (q.has('amin') && q.has('amax')) {
+      var sliderMenante = document.getElementById('dent_menante_slider');
+      if (sliderMenante && sliderMenante.noUiSlider) {
+        sliderMenante.noUiSlider.set([parseFloat(q.get('amin')), parseFloat(q.get('amax'))]);
+      }
+    }
+    if (q.has('bmin') && q.has('bmax')) {
+      var sliderMenee = document.getElementById('dent_menee_slider');
+      if (sliderMenee && sliderMenee.noUiSlider) {
+        sliderMenee.noUiSlider.set([parseFloat(q.get('bmin')), parseFloat(q.get('bmax'))]);
+      }
+    }
+
+    var reductionEl = document.getElementById('reduction_only');
+    if (reductionEl) reductionEl.checked = q.get('red') === '1';
+
+    if (q.has('mod')) {
+      el = document.getElementById('module');
+      if (el) el.value = q.get('mod');
+    }
+    if (q.has('fa')) {
+      el = document.getElementById('dent_menante_fixe');
+      if (el) el.value = q.get('fa');
+    }
+    if (q.has('fb')) {
+      el = document.getElementById('dent_menee_fixe');
+      if (el) el.value = q.get('fb');
+    }
+
+    return true;
+  };
+
+  // ===== Presets =====
+
+  SearchParams.getPresets = function () {
+    return PRESETS;
+  };
+
+  SearchParams.applyPreset = function (presetId) {
+    var preset = PRESETS[presetId];
+    if (!preset) return;
+
+    var el;
+    el = document.getElementById('rapport');
+    if (el) el.value = preset.rapport;
+    el = document.getElementById('precision');
+    if (el) el.value = preset.precision;
+    el = document.getElementById('etages');
+    if (el) el.value = preset.maxEtages;
+    el = document.getElementById('max_solutions');
+    if (el) el.value = preset.maxSolutions;
+
+    if (preset.typesActifs) {
+      document.querySelectorAll('.type-checkbox').forEach(function (cb) {
+        cb.checked = preset.typesActifs.indexOf(cb.value) !== -1;
+      });
+    }
+
+    if (preset.dentMenanteSlider) {
+      var sliderMenante = document.getElementById('dent_menante_slider');
+      if (sliderMenante && sliderMenante.noUiSlider) {
+        sliderMenante.noUiSlider.set(preset.dentMenanteSlider);
+      }
+    }
+    if (preset.dentMeneeSlider) {
+      var sliderMenee = document.getElementById('dent_menee_slider');
+      if (sliderMenee && sliderMenee.noUiSlider) {
+        sliderMenee.noUiSlider.set(preset.dentMeneeSlider);
+      }
+    }
+
+    var reductionEl = document.getElementById('reduction_only');
+    if (reductionEl && preset.reductionOnly !== undefined) {
+      reductionEl.checked = preset.reductionOnly;
+    }
+  };
+
+  // ===== Export/Import JSON =====
+
+  SearchParams.exportJSON = function () {
+    var params = SearchParams.fromForm();
+    var blob = new Blob([JSON.stringify(params, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'gear-config.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  SearchParams.importJSON = function (file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          var data = JSON.parse(e.target.result);
+          if (data.rapportCible) {
+            var el2 = document.getElementById('rapport');
+            if (el2) el2.value = data.rapportCible;
+          }
+          if (data.precision) {
+            var el3 = document.getElementById('precision');
+            if (el3) el3.value = data.precision;
+          }
+          if (data.maxEtages) {
+            var el4 = document.getElementById('etages');
+            if (el4) el4.value = data.maxEtages;
+          }
+          if (data.typesActifs && Array.isArray(data.typesActifs)) {
+            document.querySelectorAll('.type-checkbox').forEach(function (cb) {
+              cb.checked = data.typesActifs.indexOf(cb.value) !== -1;
+            });
+          }
+          resolve(data);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsText(file);
+    });
   };
 
   GearApp.models.SearchParams = SearchParams;

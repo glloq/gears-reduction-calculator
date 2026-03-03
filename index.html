@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Calculateur d'engrenages - Recherche et visualisation de trains de réduction multi-types">
   <title>Calculateur d'Engrenages - Rapport de Réduction</title>
 
   <!-- CSS modulaire -->
@@ -21,57 +22,87 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
+  <!-- Skip link pour accessibilité -->
+  <a href="#resultats" class="skip-link">Aller aux résultats</a>
+
+  <!-- Indicateur de chargement -->
+  <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
+    <div class="loading-spinner"></div>
+    <span>Chargement...</span>
+  </div>
+
+  <noscript>
+    <div style="padding: 40px; text-align: center; font-family: sans-serif;">
+      <h1>JavaScript requis</h1>
+      <p>Cette application nécessite JavaScript pour fonctionner. Veuillez l'activer dans votre navigateur.</p>
+    </div>
+  </noscript>
+
   <div class="main-container">
+    <!-- Bouton hamburger mobile -->
+    <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileSidebar()" aria-label="Ouvrir le menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+
+    <!-- Overlay mobile -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
+
     <!-- Barre latérale (paramètres) -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar" role="navigation" aria-label="Paramètres de recherche">
       <div class="sidebar-header">
         <h2>Calculateur d'Engrenages</h2>
         <div class="sidebar-header-actions">
-          <button class="btn-mode" id="proModeBtn" onclick="toggleProMode()" title="Activer le mode expert avec paramètres avancés">Standard</button>
-          <button class="btn-icon" onclick="toggleTheme()" title="Mode sombre/clair" id="themeBtn">Thème</button>
+          <button class="btn-mode" id="proModeBtn" onclick="toggleProMode()" title="Activer le mode expert avec paramètres avancés" aria-pressed="false">Standard</button>
+          <button class="btn-icon" onclick="toggleTheme()" title="Mode sombre/clair" id="themeBtn" aria-label="Changer le thème">Thème</button>
         </div>
+      </div>
+
+      <!-- Presets -->
+      <div class="param-section presets-section">
+        <h3>Presets</h3>
+        <div class="presets-grid" id="presetsGrid"></div>
       </div>
 
       <div class="param-section">
         <h3>Rapport cible</h3>
-        <label>Nombre de tours entrée pour un tour sortie :</label>
-        <input type="number" id="rapport" value="12" step="0.1" min="0.1">
+        <label for="rapport">Nombre de tours entrée pour un tour sortie :</label>
+        <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
         <div class="btn-group">
-          <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary">Rechercher</button>
-          <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres">Sauver</button>
+          <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary" aria-label="Lancer la recherche">Rechercher</button>
+          <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres" aria-label="Sauvegarder">Sauver</button>
         </div>
-        <div class="shortcut-hint">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
+        <div class="shortcut-hint" id="rapport-desc">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
       </div>
 
       <div class="param-section">
         <h3>Types de transmission</h3>
-        <div class="types-grid">
+        <div class="types-grid" role="group" aria-label="Types de transmission">
           <label class="type-option" title="Engrenage cylindrique à denture droite. Axes parallèles.">
-            <input type="checkbox" class="type-checkbox" value="spur" checked>
+            <input type="checkbox" class="type-checkbox" value="spur" id="type-spur" checked>
             <span class="type-label">Droit</span>
           </label>
           <label class="type-option" title="Denture en hélice. Plus silencieux. Axes parallèles.">
-            <input type="checkbox" class="type-checkbox" value="helical">
+            <input type="checkbox" class="type-checkbox" value="helical" id="type-helical">
             <span class="type-label">Hélicoïdal</span>
           </label>
           <label class="type-option" title="Pignon à l'intérieur d'une couronne. Compact.">
-            <input type="checkbox" class="type-checkbox" value="internal">
+            <input type="checkbox" class="type-checkbox" value="internal" id="type-internal">
             <span class="type-label">Intérieur</span>
           </label>
           <label class="type-option" title="Axes à 90°. Changement de direction.">
-            <input type="checkbox" class="type-checkbox" value="bevel">
+            <input type="checkbox" class="type-checkbox" value="bevel" id="type-bevel">
             <span class="type-label">Conique</span>
           </label>
           <label class="type-option" title="Transmission par courroie entre poulies.">
-            <input type="checkbox" class="type-checkbox" value="belt">
+            <input type="checkbox" class="type-checkbox" value="belt" id="type-belt">
             <span class="type-label">Courroie</span>
           </label>
           <label class="type-option" title="Train planétaire. Très haut rapport, compact.">
-            <input type="checkbox" class="type-checkbox" value="epicyclic">
+            <input type="checkbox" class="type-checkbox" value="epicyclic" id="type-epicyclic">
             <span class="type-label">Épicycloïdal</span>
           </label>
           <label class="type-option" title="Vis sans fin. Très haut rapport, irréversible. Axes à 90°.">
-            <input type="checkbox" class="type-checkbox" value="worm">
+            <input type="checkbox" class="type-checkbox" value="worm" id="type-worm">
             <span class="type-label">Vis sans fin</span>
           </label>
         </div>
@@ -83,21 +114,21 @@
 
       <div class="param-section">
         <h3>Paramètres de Calcul</h3>
-        <label>Intervalle de précision (%) :</label>
+        <label for="precision">Intervalle de précision (%) :</label>
         <input type="number" id="precision" value="0.1" step="0.1" min="0">
 
-        <label>Nombre max d'étages :</label>
+        <label for="etages">Nombre max d'étages :</label>
         <input type="number" id="etages" value="4" min="1" max="8">
 
         <label>Dents menante (min/max) :</label>
-        <div id="dent_menante_slider" class="slider"></div>
+        <div id="dent_menante_slider" class="slider" role="slider" aria-label="Plage de dents menante"></div>
         <div class="slider-values">
           <span>Min: <strong id="val_menante_min">10</strong></span>
           <span>Max: <strong id="val_menante_max">30</strong></span>
         </div>
 
         <label>Dents menée (min/max) :</label>
-        <div id="dent_menee_slider" class="slider"></div>
+        <div id="dent_menee_slider" class="slider" role="slider" aria-label="Plage de dents menée"></div>
         <div class="slider-values">
           <span>Min: <strong id="val_menee_min">20</strong></span>
           <span>Max: <strong id="val_menee_max">50</strong></span>
@@ -111,91 +142,111 @@
 
       <div class="param-section">
         <h3>Options avancées</h3>
-        <label>Nombre de résultats :</label>
+        <label for="max_solutions">Nombre de résultats :</label>
         <input type="number" id="max_solutions" value="10" min="1" max="100">
 
-        <label>Limite d'itérations :</label>
+        <label for="max_iterations">Limite d'itérations :</label>
         <input type="number" id="max_iterations" value="500000" min="1000" max="5000000" step="1000">
 
-        <label>Dents premier engrenage (fixe) :</label>
+        <label for="dent_menante_fixe">Dents premier engrenage (fixe) :</label>
         <input type="number" id="dent_menante_fixe" placeholder="Vide = plage">
 
-        <label>Dents dernier engrenage (fixe) :</label>
+        <label for="dent_menee_fixe">Dents dernier engrenage (fixe) :</label>
         <input type="number" id="dent_menee_fixe" placeholder="Vide = plage">
       </div>
 
       <div class="param-section">
         <h3>Paramètres mécaniques</h3>
-        <label>Module des engrenages (mm) :</label>
+        <label for="module">Module des engrenages (mm) :</label>
         <input type="number" id="module" placeholder="Ex: 2.5" step="0.1" min="0.1">
 
-        <label>Vitesse d'entrée (tr/min) :</label>
+        <label for="vitesse_entree">Vitesse d'entrée (tr/min) :</label>
         <input type="number" id="vitesse_entree" value="1500" step="10" min="1">
 
-        <label>Couple d'entrée (N.m) :</label>
+        <label for="couple_entree">Couple d'entrée (N.m) :</label>
         <input type="number" id="couple_entree" value="10" step="0.1" min="0.01">
       </div>
 
       <div class="param-section pro-only" id="proMaterialSection" style="display:none;">
         <h3>Paramètres matériaux</h3>
-        <label>Angle de pression (°) :</label>
+        <label for="angle_pression">Angle de pression (°) :</label>
         <input type="number" id="angle_pression" value="20" step="0.5" min="14.5" max="25" title="Angle de contact normalisé (14.5° ou 20°)">
 
-        <label>Coefficient de frottement :</label>
+        <label for="coeff_frottement">Coefficient de frottement :</label>
         <input type="number" id="coeff_frottement" placeholder="Auto (0.04-0.08)" step="0.005" min="0.01" max="0.20">
 
-        <label>Largeur de dent (mm) :</label>
+        <label for="largeur_dent">Largeur de dent (mm) :</label>
         <input type="number" id="largeur_dent" placeholder="Auto (10×module)" step="0.5" min="1">
 
-        <label>Limite élastique (MPa) :</label>
+        <label for="limite_elastique">Limite élastique (MPa) :</label>
         <input type="number" id="limite_elastique" value="250" step="10" min="50" max="2000" title="Acier doux ~250, Acier traité ~600, Acier cémenté ~1200">
 
-        <label>Qualité ISO (jeu denture) :</label>
+        <label for="qualite_iso">Qualité ISO (jeu denture) :</label>
         <input type="number" id="qualite_iso" value="7" min="0" max="12" title="0=très précis, 12=grossier">
+      </div>
+
+      <!-- Aide (?) -->
+      <div class="param-section">
+        <details class="help-section">
+          <summary>Aide et raccourcis</summary>
+          <div class="help-content">
+            <p><strong>Raccourcis clavier :</strong></p>
+            <ul>
+              <li><kbd>Ctrl</kbd>+<kbd>Entrée</kbd> : Lancer la recherche</li>
+              <li><kbd>Échap</kbd> : Arrêter la recherche</li>
+              <li><kbd>?</kbd> : Ouvrir/fermer l'aide</li>
+            </ul>
+            <p><strong>SVG :</strong> Molette = zoom, clic-glisser = déplacer</p>
+            <p><strong>Mode Pro :</strong> Accès aux paramètres matériaux, indicateurs de sécurité, analyse Hertz</p>
+          </div>
+        </details>
       </div>
     </div>
 
     <!-- Zone principale -->
-    <div class="content">
+    <div class="content" role="main">
       <div class="content-header">
         <h1>Recherche d'Engrenages - Rapport de Réduction</h1>
       </div>
+
+      <!-- Carte résumé de la solution sélectionnée -->
+      <div id="solutionCard" class="solution-card" style="display:none;" aria-live="polite"></div>
 
       <!-- Visualisation SVG interactive -->
       <div class="viz-section">
         <div class="viz-header">
           <h2>Schéma interactif</h2>
           <div class="viz-controls">
-            <button onclick="UI.toggleAnimation()" class="btn-small" title="Animer les engrenages">Animer</button>
-            <button onclick="UI.resetSVGView()" class="btn-small" title="Réinitialiser la vue">Recentrer</button>
-            <button onclick="UI.exporterSVG()" class="btn-small" title="Exporter en SVG">SVG</button>
-            <button onclick="UI.exporterPNG()" class="btn-small" title="Exporter en PNG">PNG</button>
+            <button onclick="UI.toggleAnimation()" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
+            <button onclick="UI.resetSVGView()" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
+            <button onclick="UI.exporterSVG()" class="btn-small" title="Exporter en SVG" aria-label="Exporter SVG">SVG</button>
+            <button onclick="UI.exporterPNG()" class="btn-small" title="Exporter en PNG" aria-label="Exporter PNG">PNG</button>
           </div>
         </div>
-        <div id="svgContainer" class="svg-container"></div>
+        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
         <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, survol pour les détails</p>
       </div>
 
       <!-- Schéma Canvas legacy -->
       <details class="legacy-canvas-section">
         <summary>Schéma linéaire (vue classique)</summary>
-        <canvas id="gearCanvas" width="1000" height="200" style="border:1px solid #ccc; width:100%;"></canvas>
+        <canvas id="gearCanvas" width="1000" height="200" style="border:1px solid var(--border-color); width:100%;" aria-label="Schéma linéaire classique"></canvas>
       </details>
 
       <!-- Barre de progression -->
-      <div class="progress-container">
+      <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
         <div id="progress-bar"></div>
       </div>
 
       <!-- Résultats -->
-      <div class="result-container">
+      <div class="result-container" id="result-container">
         <div class="result-header">
           <h2>Résultats</h2>
-          <button class="btn-small" id="toggleComparisonBtn" onclick="toggleComparison()" title="Comparer plusieurs rapports cibles">Comparer</button>
+          <button class="btn-small" id="toggleComparisonBtn" onclick="toggleComparison()" title="Comparer plusieurs rapports cibles" aria-label="Comparer">Comparer</button>
         </div>
-        <p id="status">En attente...</p>
+        <p id="status" aria-live="polite">En attente...</p>
         <div class="table-scroll">
-          <table>
+          <table aria-label="Tableau des résultats de recherche">
             <thead>
               <tr>
                 <th>Engrenages</th>
@@ -222,18 +273,27 @@
 
       <!-- Graphiques d'analyse -->
       <div class="charts-section">
+        <div class="charts-header">
+          <h2>Graphiques d'analyse</h2>
+          <div class="charts-export-controls">
+            <button onclick="exportAllCharts()" class="btn-small" title="Exporter tous les graphiques">Exporter graphiques</button>
+          </div>
+        </div>
         <div class="charts-grid">
           <div class="chart-container">
-            <canvas id="ratioChart"></canvas>
+            <canvas id="ratioChart" aria-label="Graphique de comparaison des rapports"></canvas>
           </div>
           <div class="chart-container">
-            <canvas id="radarChart"></canvas>
+            <canvas id="radarChart" aria-label="Graphique radar multicritères"></canvas>
           </div>
           <div class="chart-container">
-            <canvas id="cascadeChart"></canvas>
+            <canvas id="cascadeChart" aria-label="Graphique cascade couple/vitesse"></canvas>
           </div>
           <div class="chart-container">
-            <canvas id="powerLossChart"></canvas>
+            <canvas id="powerLossChart" aria-label="Graphique des pertes de puissance"></canvas>
+          </div>
+          <div class="chart-container pro-only" style="display:none;">
+            <canvas id="safetyChart" aria-label="Graphique des facteurs de sécurité"></canvas>
           </div>
         </div>
       </div>
@@ -241,7 +301,7 @@
       <!-- Logs -->
       <details class="logs-section">
         <summary>Logs de recherche</summary>
-        <div id="logs" class="logs-container"></div>
+        <div id="logs" class="logs-container" aria-live="off"></div>
       </details>
     </div>
   </div>

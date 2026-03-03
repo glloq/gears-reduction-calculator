@@ -20,6 +20,14 @@ class GearSVG {
     this._initSVG();
   }
 
+  _getTextColor() {
+    return document.body.classList.contains('dark-theme') ? '#e0e0e0' : '#333';
+  }
+
+  _getStrokeColor() {
+    return document.body.classList.contains('dark-theme') ? '#b0b0b0' : '#333';
+  }
+
   _initSVG() {
     if (this.svg) this.container.removeChild(this.svg);
 
@@ -27,8 +35,9 @@ class GearSVG {
     this.svg.setAttribute("width", "100%");
     this.svg.setAttribute("height", "400");
     this.svg.setAttribute("viewBox", `${this.viewBox.x} ${this.viewBox.y} ${this.viewBox.w} ${this.viewBox.h}`);
-    this.svg.style.border = "1px solid #ccc";
-    this.svg.style.background = "#fafafa";
+    var isDark = document.body.classList.contains('dark-theme');
+    this.svg.style.border = "1px solid " + (isDark ? "#333" : "#ccc");
+    this.svg.style.background = isDark ? "#1a1a2e" : "#fafafa";
     this.svg.style.cursor = "grab";
     this.svg.style.borderRadius = "8px";
 
@@ -97,7 +106,7 @@ class GearSVG {
     // Zoom avec la molette
     this.svg.addEventListener("wheel", (e) => {
       e.preventDefault();
-      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       this.viewBox.w *= zoomFactor;
       this.viewBox.h *= zoomFactor;
       this.scale *= zoomFactor;
@@ -220,7 +229,7 @@ class GearSVG {
     textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
     textElem.setAttribute("font-family", "Arial");
     textElem.setAttribute("font-weight", "bold");
-    textElem.setAttribute("fill", "#333");
+    textElem.setAttribute("fill", this._getTextColor());
     // Counter-rotate text so it stays readable
     textElem.setAttribute("transform", `rotate(${-(rotation || 0) * 180 / Math.PI})`);
     textElem.textContent = label || "";
@@ -439,7 +448,7 @@ class GearSVG {
     textElem.setAttribute("text-anchor", "middle");
     textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
     textElem.setAttribute("font-weight", "bold");
-    textElem.setAttribute("fill", "#333");
+    textElem.setAttribute("fill", this._getTextColor());
     textElem.textContent = label;
     group.appendChild(textElem);
 
@@ -550,7 +559,7 @@ class GearSVG {
     textElem.setAttribute("text-anchor", "middle");
     textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
     textElem.setAttribute("font-weight", "bold");
-    textElem.setAttribute("fill", "#333");
+    textElem.setAttribute("fill", this._getTextColor());
     textElem.textContent = label;
     group.appendChild(textElem);
 
@@ -628,7 +637,7 @@ class GearSVG {
     brinSup.setAttribute("y1", -rA * cosA);
     brinSup.setAttribute("x2", entraxe + rB * sinA);
     brinSup.setAttribute("y2", -rB * cosA);
-    brinSup.setAttribute("stroke", "#333");
+    brinSup.setAttribute("stroke", this._getStrokeColor());
     brinSup.setAttribute("stroke-width", "1");
     group.appendChild(brinSup);
 
@@ -638,7 +647,7 @@ class GearSVG {
     brinInf.setAttribute("y1", rA * cosA);
     brinInf.setAttribute("x2", entraxe - rB * sinA);
     brinInf.setAttribute("y2", rB * cosA);
-    brinInf.setAttribute("stroke", "#333");
+    brinInf.setAttribute("stroke", this._getStrokeColor());
     brinInf.setAttribute("stroke-width", "1");
     group.appendChild(brinInf);
 
@@ -658,7 +667,7 @@ class GearSVG {
     lblA.setAttribute("x", 0); lblA.setAttribute("y", rA + 10);
     lblA.setAttribute("text-anchor", "middle");
     lblA.setAttribute("font-size", Math.max(6, rA * 0.3));
-    lblA.setAttribute("fill", "#333");
+    lblA.setAttribute("fill", this._getTextColor());
     lblA.textContent = `\u00d8${diamA}`;
     group.appendChild(lblA);
 
@@ -666,7 +675,7 @@ class GearSVG {
     lblB.setAttribute("x", entraxe); lblB.setAttribute("y", rB + 10);
     lblB.setAttribute("text-anchor", "middle");
     lblB.setAttribute("font-size", Math.max(6, rB * 0.2));
-    lblB.setAttribute("fill", "#333");
+    lblB.setAttribute("fill", this._getTextColor());
     lblB.textContent = `\u00d8${diamB}`;
     group.appendChild(lblB);
 
@@ -677,7 +686,7 @@ class GearSVG {
     textElem.setAttribute("text-anchor", "middle");
     textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
     textElem.setAttribute("font-weight", "bold");
-    textElem.setAttribute("fill", "#333");
+    textElem.setAttribute("fill", this._getTextColor());
     textElem.textContent = label;
     group.appendChild(textElem);
 
@@ -766,7 +775,7 @@ class GearSVG {
     textElem.setAttribute("text-anchor", "middle");
     textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
     textElem.setAttribute("font-weight", "bold");
-    textElem.setAttribute("fill", "#333");
+    textElem.setAttribute("fill", this._getTextColor());
     textElem.textContent = label;
     group.appendChild(textElem);
 
@@ -845,7 +854,7 @@ class GearSVG {
     textElem.setAttribute("text-anchor", "middle");
     textElem.setAttribute("font-size", Math.max(8, mod * 2.5));
     textElem.setAttribute("font-weight", "bold");
-    textElem.setAttribute("fill", "#333");
+    textElem.setAttribute("fill", this._getTextColor());
     textElem.textContent = label;
     group.appendChild(textElem);
 
