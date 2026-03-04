@@ -34,14 +34,17 @@
 
     this._eventBus.on('search:progress', function (data) {
       var bar = document.getElementById('progress-bar');
-      if (bar) bar.style.width = data.percent + '%';
+      if (bar) {
+        bar.style.width = data.percent + '%';
+        var container = bar.parentElement;
+        if (container) container.setAttribute('aria-valuenow', Math.round(data.percent));
+      }
     });
 
     this._eventBus.on('solution:selected', function (data) {
       self._onSolutionSelected(data.index, data.solution);
     });
 
-    // Résultats incrémentaux : affichage progressif pendant la recherche
     this._eventBus.on('search:partial', function (data) {
       if (data.solutions && data.solutions.length > 0) {
         self._eventBus.emit('search:log', {
@@ -58,10 +61,10 @@
 
     if (solutions.length === 0) {
       this.mechanicalPanel.hide();
+      this._hideSolutionCard();
       return;
     }
 
-    // Graphiques de comparaison
     this._updateComparisonCharts(solutions, searchParams);
   };
 
@@ -74,7 +77,7 @@
       this._legacySchema.displaySolution(solution);
     }
 
-    // Analyse mécanique - combiner params de base + type-spécifiques + matériaux
+    // Analyse mécanique
     var modValue = this.paramForm.getModuleValue();
     var params = {
       module: modValue,
@@ -82,7 +85,6 @@
       coupleEntree: this.paramForm.getCoupleEntree()
     };
 
-    // Enrichir avec les paramètres pro si disponibles
     var typeParams = this.paramForm.getTypeSpecificParams();
     var materialParams = this.paramForm.getMaterialParams();
     for (var k in typeParams) { if (typeParams.hasOwnProperty(k)) params[k] = typeParams[k]; }
@@ -91,10 +93,46 @@
     var proMode = this.paramForm.isProMode();
     var analyse = this.mechanicalPanel.show(solution, params, proMode);
 
+    // Carte résumé
+    this._updateSolutionCard(solution, analyse, index);
+
     // Graphiques d'analyse
     if (analyse) {
-      this._updateAnalysisCharts(analyse);
+      this._updateAnalysisCharts(analyse, proMode);
     }
+  };
+
+  // ===== Solution card =====
+
+  UIController.prototype._updateSolutionCard = function (solution, analyse, index) {
+    var card = document.getElementById('solutionCard');
+    if (!card) return;
+
+    if (!analyse) {
+      this._hideSolutionCard();
+      return;
+    }
+
+    var registry = GearApp.models.typeRegistry;
+    var types = solution.map(function (s) {
+      return '<span class="type-badge ' + (s[2] || 'spur') + '">' + registry.get(s[2] || 'spur').nomCourt + '</span>';
+    }).join(' ');
+
+    var rendClass = analyse.rendementTotal > 0.95 ? 'excellent' : analyse.rendementTotal > 0.90 ? 'good' : 'warning';
+
+    card.innerHTML =
+      '<div class="card-item"><span class="card-label">Solution #' + (index + 1) + '</span></div>' +
+      '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">' + analyse.rapportTotal.toFixed(4) + '</span></div>' +
+      '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (analyse.rendementTotal * 100).toFixed(1) + '%</span></div>' +
+      '<div class="card-item"><span class="card-label">Étages</span><span class="card-value">' + analyse.nombreEtages + '</span></div>' +
+      '<div class="card-item">' + types + '</div>';
+
+    card.style.display = 'flex';
+  };
+
+  UIController.prototype._hideSolutionCard = function () {
+    var card = document.getElementById('solutionCard');
+    if (card) card.style.display = 'none';
   };
 
   UIController.prototype._drawSVGSchematic = function (solution) {
@@ -141,7 +179,7 @@
     }
   };
 
-  UIController.prototype._updateAnalysisCharts = function (analyse) {
+  UIController.prototype._updateAnalysisCharts = function (analyse, proMode) {
     var charts = this._charts || window.GearCharts;
     if (!charts) return;
     if (document.getElementById("cascadeChart")) {
@@ -149,6 +187,10 @@
     }
     if (document.getElementById("powerLossChart")) {
       charts.drawPowerLossBreakdown("powerLossChart", analyse);
+    }
+    // Safety factor chart (pro mode)
+    if (proMode && document.getElementById("safetyChart")) {
+      charts.drawSafetyFactors("safetyChart", analyse);
     }
   };
 

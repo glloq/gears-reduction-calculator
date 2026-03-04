@@ -1,4 +1,4 @@
-// ResultsTable.js - Affichage, tri, filtrage et gestion du tableau des résultats
+// ResultsTable.js - Affichage, tri, filtrage, pagination et export CSV
 
 (function (GearApp) {
 
@@ -12,26 +12,35 @@
     { id: 'action', label: 'Schéma', sortable: false }
   ];
 
+  var PAGE_SIZE = 25;
+
   function ResultsTable(tbodyId, eventBus) {
     this._tbody = document.getElementById(tbodyId);
     this._table = this._tbody ? this._tbody.closest('table') : null;
     this._eventBus = eventBus || GearApp.eventBus;
     this._solutions = [];
-    this._displayData = []; // cache: { solution, ratio, error, efficiency, types }
+    this._displayData = [];
     this._selectedIndex = 0;
     this._params = null;
 
     // Tri
-    this._sortColumn = 'error'; // tri par défaut sur l'écart
+    this._sortColumn = 'error';
     this._sortDirection = 'asc';
 
     // Filtres par type
-    this._typeFilters = {}; // typeId -> bool (true = visible)
-    this._allTypes = []; // types présents dans les résultats
+    this._typeFilters = {};
+    this._allTypes = [];
 
     // Comparaison
     this._comparisonMode = false;
     this._comparedIndices = new Set();
+
+    // Pagination
+    this._currentPage = 0;
+    this._filteredData = [];
+
+    // Recherche textuelle
+    this._searchText = '';
 
     this._initSortableHeaders();
   }
@@ -48,9 +57,6 @@
     return this._selectedIndex;
   };
 
-  /**
-   * Calcule le rapport total type-aware d'une solution.
-   */
   ResultsTable.prototype._calculerRapport = function (solution) {
     var registry = GearApp.models.typeRegistry;
     return solution.reduce(function (acc, stage) {
@@ -59,9 +65,6 @@
     }, 1);
   };
 
-  /**
-   * Récupère les types uniques d'une solution.
-   */
   ResultsTable.prototype._getTypes = function (solution) {
     var seen = {};
     var types = [];
@@ -75,9 +78,6 @@
     return types;
   };
 
-  /**
-   * Construit les en-têtes triables dans le <thead>.
-   */
   ResultsTable.prototype._initSortableHeaders = function () {
     if (!this._table) return;
     var thead = this._table.querySelector('thead');
@@ -95,6 +95,8 @@
 
       if (col.sortable) {
         th.classList.add('sortable-th');
+        th.setAttribute('role', 'columnheader');
+        th.setAttribute('aria-sort', 'none');
         th.onclick = function () { self._onHeaderClick(col.id); };
 
         var indicator = document.createElement('span');
@@ -102,6 +104,7 @@
         if (col.id === self._sortColumn) {
           indicator.textContent = self._sortDirection === 'asc' ? ' ▲' : ' ▼';
           th.classList.add('sorted');
+          th.setAttribute('aria-sort', self._sortDirection === 'asc' ? 'ascending' : 'descending');
         }
         th.appendChild(indicator);
       }
@@ -109,9 +112,6 @@
     });
   };
 
-  /**
-   * Click sur un en-tête de colonne.
-   */
   ResultsTable.prototype._onHeaderClick = function (colId) {
     if (this._sortColumn === colId) {
       this._sortDirection = this._sortDirection === 'asc' ? 'desc' : 'asc';
@@ -119,13 +119,11 @@
       this._sortColumn = colId;
       this._sortDirection = 'asc';
     }
+    this._currentPage = 0;
     this._updateSortIndicators();
     this._renderFiltered();
   };
 
-  /**
-   * Met à jour les indicateurs visuels de tri.
-   */
   ResultsTable.prototype._updateSortIndicators = function () {
     if (!this._table) return;
     var ths = this._table.querySelectorAll('thead th');
@@ -134,68 +132,104 @@
       var colId = th.getAttribute('data-col');
       var indicator = th.querySelector('.sort-indicator');
       th.classList.remove('sorted');
+      th.setAttribute('aria-sort', 'none');
       if (indicator) indicator.textContent = '';
 
       if (colId === self._sortColumn) {
         th.classList.add('sorted');
+        th.setAttribute('aria-sort', self._sortDirection === 'asc' ? 'ascending' : 'descending');
         if (indicator) indicator.textContent = self._sortDirection === 'asc' ? ' ▲' : ' ▼';
       }
     });
   };
 
-  /**
-   * Construit la barre de filtres par type au-dessus du tableau.
-   */
-  ResultsTable.prototype._buildTypeFilterBar = function () {
-    var container = this._table ? this._table.parentElement : null;
+  ResultsTable.prototype._buildToolbar = function () {
+    var container = this._table ? this._table.parentElement.parentElement : null;
     if (!container) return;
 
-    // Supprimer l'ancienne barre si elle existe
-    var existing = container.parentElement.querySelector('.type-filter-bar');
-    if (existing) existing.remove();
+    // Supprimer les anciennes barres
+    var existingFilter = container.querySelector('.type-filter-bar');
+    if (existingFilter) existingFilter.remove();
+    var existingToolbar = container.querySelector('.results-toolbar');
+    if (existingToolbar) existingToolbar.remove();
 
-    if (this._allTypes.length <= 1) return; // pas utile s'il n'y a qu'un seul type
+    // Barre d'outils (recherche + export CSV + partage URL)
+    var toolbar = document.createElement('div');
+    toolbar.className = 'results-toolbar';
 
-    var bar = document.createElement('div');
-    bar.className = 'type-filter-bar';
-
-    var label = document.createElement('span');
-    label.className = 'filter-label';
-    label.textContent = 'Filtrer :';
-    bar.appendChild(label);
-
+    // Recherche textuelle
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'results-search';
+    searchInput.placeholder = 'Rechercher (dents, type, ratio...)';
+    searchInput.setAttribute('aria-label', 'Rechercher dans les résultats');
     var self = this;
-    var registry = GearApp.models.typeRegistry;
+    searchInput.oninput = function () {
+      self._searchText = searchInput.value.toLowerCase().trim();
+      self._currentPage = 0;
+      self._renderFiltered();
+    };
+    toolbar.appendChild(searchInput);
 
-    // Bouton Tous
-    var allBtn = document.createElement('button');
-    allBtn.className = 'filter-chip filter-chip-all active';
-    allBtn.textContent = 'Tous';
-    allBtn.onclick = function () { self._resetFilters(); };
-    bar.appendChild(allBtn);
+    // Bouton CSV
+    var csvBtn = document.createElement('button');
+    csvBtn.className = 'btn-small';
+    csvBtn.textContent = 'CSV';
+    csvBtn.title = 'Exporter les résultats filtrés en CSV';
+    csvBtn.onclick = function () { self.exportCSV(); };
+    toolbar.appendChild(csvBtn);
 
-    this._allTypes.forEach(function (typeId) {
-      var type = registry.get(typeId);
-      var chip = document.createElement('button');
-      chip.className = 'filter-chip ' + typeId;
-      chip.setAttribute('data-type', typeId);
-      if (self._typeFilters[typeId]) chip.classList.add('active');
-      chip.textContent = type.nomCourt;
-      chip.onclick = function () { self._toggleTypeFilter(typeId); };
-      bar.appendChild(chip);
-    });
+    // Bouton Copier URL
+    var urlBtn = document.createElement('button');
+    urlBtn.className = 'btn-small';
+    urlBtn.textContent = 'Partager';
+    urlBtn.title = 'Copier le lien de cette configuration';
+    urlBtn.onclick = function () {
+      var url = GearApp.models.SearchParams.toURL();
+      navigator.clipboard.writeText(url).then(function () {
+        urlBtn.textContent = 'Copié !';
+        setTimeout(function () { urlBtn.textContent = 'Partager'; }, 2000);
+      });
+    };
+    toolbar.appendChild(urlBtn);
 
-    // Insérer avant la table-scroll
-    container.parentElement.insertBefore(bar, container);
+    container.insertBefore(toolbar, container.querySelector('.table-scroll'));
+
+    // Barre de filtres par type
+    if (this._allTypes.length > 1) {
+      var bar = document.createElement('div');
+      bar.className = 'type-filter-bar';
+
+      var label = document.createElement('span');
+      label.className = 'filter-label';
+      label.textContent = 'Filtrer :';
+      bar.appendChild(label);
+
+      var allBtn = document.createElement('button');
+      allBtn.className = 'filter-chip filter-chip-all active';
+      allBtn.textContent = 'Tous';
+      allBtn.onclick = function () { self._resetFilters(); };
+      bar.appendChild(allBtn);
+
+      var registry = GearApp.models.typeRegistry;
+      this._allTypes.forEach(function (typeId) {
+        var type = registry.get(typeId);
+        var chip = document.createElement('button');
+        chip.className = 'filter-chip ' + typeId;
+        chip.setAttribute('data-type', typeId);
+        if (self._typeFilters[typeId]) chip.classList.add('active');
+        chip.textContent = type.nomCourt;
+        chip.onclick = function () { self._toggleTypeFilter(typeId); };
+        bar.appendChild(chip);
+      });
+
+      container.insertBefore(bar, container.querySelector('.table-scroll'));
+    }
   };
 
-  /**
-   * Active/désactive un filtre de type.
-   */
   ResultsTable.prototype._toggleTypeFilter = function (typeId) {
     this._typeFilters[typeId] = !this._typeFilters[typeId];
 
-    // Vérifier si aucun filtre actif -> réactiver tous
     var anyActive = false;
     for (var key in this._typeFilters) {
       if (this._typeFilters[key]) { anyActive = true; break; }
@@ -205,6 +239,7 @@
       return;
     }
 
+    this._currentPage = 0;
     this._updateFilterChips();
     this._renderFiltered();
   };
@@ -214,6 +249,7 @@
     this._allTypes.forEach(function (typeId) {
       self._typeFilters[typeId] = true;
     });
+    this._currentPage = 0;
     this._updateFilterChips();
     this._renderFiltered();
   };
@@ -235,19 +271,24 @@
     if (allChip) allChip.classList.toggle('active', allActive);
   };
 
-  /**
-   * Prépare les données de cache pour le tri et le filtrage.
-   * Le rendement est calculé en lazy (à la demande) pour éviter de bloquer l'UI.
-   */
   ResultsTable.prototype._prepareDisplayData = function () {
     var self = this;
     var registry = GearApp.models.typeRegistry;
     var target = this._params ? this._params.rapportCible : parseFloat(document.getElementById("rapport").value);
+    var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     this._displayData = this._solutions.map(function (solution, originalIndex) {
       var ratio = self._calculerRapport(solution);
       var error = Math.abs((ratio - target) / target * 100);
       var types = self._getTypes(solution);
+
+      // Texte cherchable
+      var searchText = '';
+      solution.forEach(function (stage, i) {
+        searchText += stage[0] + ' ' + stage[1] + ' ';
+        searchText += (registry.get(stage[2] || 'spur').nomCourt) + ' ';
+      });
+      searchText += ratio.toFixed(4) + ' ' + error.toFixed(3);
 
       return {
         originalIndex: originalIndex,
@@ -259,14 +300,12 @@
         typesStr: types.map(function (t) { return registry.get(t).nomCourt; }).join(', '),
         efficiency: null,
         _efficiencyComputed: false,
-        totalTeeth: solution.reduce(function (sum, s) { return sum + s[0] + s[1]; }, 0)
+        totalTeeth: solution.reduce(function (sum, s) { return sum + s[0] + s[1]; }, 0),
+        _searchText: searchText.toLowerCase()
       };
     });
   };
 
-  /**
-   * Calcule le rendement d'une solution à la demande (lazy).
-   */
   ResultsTable.prototype._computeEfficiency = function (dataItem) {
     if (dataItem._efficiencyComputed) return dataItem.efficiency;
     var modValue = this._params ? this._params.module : null;
@@ -282,19 +321,22 @@
     return dataItem.efficiency;
   };
 
-  /**
-   * Filtre et trie les données, puis re-rend les lignes.
-   */
   ResultsTable.prototype._renderFiltered = function () {
     var self = this;
 
-    // Filtrer
+    // Filtrer par type
     var filtered = this._displayData.filter(function (d) {
-      // Au moins un type de la solution doit être dans les filtres actifs
       return d.types.some(function (typeId) {
         return self._typeFilters[typeId];
       });
     });
+
+    // Filtrer par recherche textuelle
+    if (this._searchText) {
+      filtered = filtered.filter(function (d) {
+        return d._searchText.indexOf(self._searchText) !== -1;
+      });
+    }
 
     // Trier
     filtered.sort(function (a, b) {
@@ -320,16 +362,69 @@
       return self._sortDirection === 'asc' ? diff : -diff;
     });
 
-    // Rendre
-    this._renderRows(filtered);
+    this._filteredData = filtered;
 
-    // Compteur de résultats
+    // Paginer
+    var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (this._currentPage >= totalPages) this._currentPage = totalPages - 1;
+    var start = this._currentPage * PAGE_SIZE;
+    var pageData = filtered.slice(start, start + PAGE_SIZE);
+
+    // Rendre
+    this._renderRows(pageData);
     this._updateCounter(filtered.length, this._displayData.length);
+    this._renderPagination(totalPages);
   };
 
-  /**
-   * Met à jour le compteur de résultats filtrés.
-   */
+  ResultsTable.prototype._renderPagination = function (totalPages) {
+    var container = this._table ? this._table.parentElement.parentElement : null;
+    if (!container) return;
+
+    var existingPag = container.querySelector('.pagination-bar');
+    if (existingPag) existingPag.remove();
+
+    if (totalPages <= 1) return;
+
+    var self = this;
+    var bar = document.createElement('div');
+    bar.className = 'pagination-bar';
+
+    var prevBtn = document.createElement('button');
+    prevBtn.className = 'btn-small pagination-btn';
+    prevBtn.textContent = 'Précédent';
+    prevBtn.disabled = this._currentPage === 0;
+    prevBtn.onclick = function () {
+      if (self._currentPage > 0) {
+        self._currentPage--;
+        self._renderFiltered();
+      }
+    };
+    bar.appendChild(prevBtn);
+
+    var info = document.createElement('span');
+    info.className = 'pagination-info';
+    info.textContent = 'Page ' + (this._currentPage + 1) + ' / ' + totalPages;
+    bar.appendChild(info);
+
+    var nextBtn = document.createElement('button');
+    nextBtn.className = 'btn-small pagination-btn';
+    nextBtn.textContent = 'Suivant';
+    nextBtn.disabled = this._currentPage >= totalPages - 1;
+    nextBtn.onclick = function () {
+      if (self._currentPage < totalPages - 1) {
+        self._currentPage++;
+        self._renderFiltered();
+      }
+    };
+    bar.appendChild(nextBtn);
+
+    // Insert after table-scroll
+    var tableScroll = container.querySelector('.table-scroll');
+    if (tableScroll) {
+      tableScroll.parentNode.insertBefore(bar, tableScroll.nextSibling);
+    }
+  };
+
   ResultsTable.prototype._updateCounter = function (shown, total) {
     var container = this._table ? this._table.parentElement.parentElement : null;
     if (!container) return;
@@ -337,6 +432,7 @@
     if (!counter) {
       counter = document.createElement('div');
       counter.className = 'results-counter';
+      counter.setAttribute('aria-live', 'polite');
       var h2 = container.querySelector('h2');
       if (h2) h2.parentNode.insertBefore(counter, h2.nextSibling);
     }
@@ -347,9 +443,6 @@
     }
   };
 
-  /**
-   * Rend les lignes de la table.
-   */
   ResultsTable.prototype._renderRows = function (dataItems) {
     this._tbody.innerHTML = '';
 
@@ -361,14 +454,23 @@
     var self = this;
     var registry = GearApp.models.typeRegistry;
     var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    var proMode = document.body.classList.contains('pro-mode');
 
     dataItems.forEach(function (data, displayIdx) {
       var row = document.createElement("tr");
       row.classList.add("result-row");
       row.setAttribute('data-original-idx', data.originalIndex);
+      row.setAttribute('tabindex', '0');
+      row.setAttribute('role', 'row');
       if (data.originalIndex === self._selectedIndex) row.classList.add("selected-row");
 
       row.onclick = function () { self.selectSolution(data.originalIndex); };
+      row.onkeydown = function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          self.selectSolution(data.originalIndex);
+        }
+      };
 
       // Engrenages
       var gearsCell = document.createElement("td");
@@ -404,7 +506,7 @@
       var stagesCell = document.createElement("td");
       stagesCell.innerText = data.stages;
 
-      // Rendement (calculé en lazy pour les lignes visibles)
+      // Rendement
       var effCell = document.createElement("td");
       var eff = self._computeEfficiency(data);
       if (eff !== null) {
@@ -415,12 +517,55 @@
         effCell.innerText = "-";
       }
 
+      // Pro mode: micro-indicators
+      if (proMode && eff !== null) {
+        // Safety indicator
+        var modValue = self._params ? self._params.module : null;
+        if (modValue) {
+          var analyse = GearApp.core.GearMechanics.analyserTrainEngrenages(data.solution, {
+            module: modValue,
+            vitesseEntree: self._params.vitesseEntree || 1500,
+            coupleEntree: self._params.coupleEntree || 10
+          });
+          var minSec = Infinity;
+          var hasIrreversible = false;
+          analyse.etages.forEach(function (etage) {
+            var secA = etage.resistanceMenante.facteurSecurite;
+            var secB = etage.resistanceMenee.facteurSecurite;
+            if (secA !== Infinity) minSec = Math.min(minSec, secA);
+            if (secB !== Infinity) minSec = Math.min(minSec, secB);
+            if (!etage.reversible) hasIrreversible = true;
+          });
+
+          // Safety dot
+          if (minSec !== Infinity) {
+            var dot = document.createElement('span');
+            dot.className = 'safety-dot';
+            if (minSec >= 2) dot.classList.add('safe');
+            else if (minSec >= 1.5) dot.classList.add('caution');
+            else dot.classList.add('danger');
+            dot.title = 'Sécurité min: ' + minSec.toFixed(1);
+            effCell.appendChild(dot);
+          }
+
+          // Irreversibility icon
+          if (hasIrreversible) {
+            var icon = document.createElement('span');
+            icon.className = 'irreversible-icon';
+            icon.textContent = ' \u26A0';
+            icon.title = 'Contient un étage irréversible (vis sans fin)';
+            typesCell.appendChild(icon);
+          }
+        }
+      }
+
       // Bouton Voir / Comparer
       var buttonCell = document.createElement("td");
       if (self._comparisonMode) {
         var checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.checked = self._comparedIndices.has(data.originalIndex);
+        checkbox.setAttribute('aria-label', 'Comparer cette solution');
         checkbox.onchange = function () {
           if (checkbox.checked) self._comparedIndices.add(data.originalIndex);
           else self._comparedIndices.delete(data.originalIndex);
@@ -433,11 +578,31 @@
       var btn = document.createElement("button");
       btn.innerText = "Voir";
       btn.classList.add("btn-schema");
+      btn.setAttribute('aria-label', 'Voir le schéma de cette solution');
       btn.onclick = function (e) {
         e.stopPropagation();
         self.selectSolution(data.originalIndex);
       };
       buttonCell.appendChild(btn);
+
+      // Copy button
+      var copyBtn = document.createElement("button");
+      copyBtn.className = 'btn-copy';
+      copyBtn.textContent = '\u2398';
+      copyBtn.title = 'Copier cette ligne';
+      copyBtn.onclick = function (e) {
+        e.stopPropagation();
+        var text = data.solution.map(function (s, i) {
+          return letters[2 * i] + ':' + s[0] + ' ' + letters[2 * i + 1] + ':' + s[1] + ' (' + (registry.get(s[2] || 'spur').nomCourt) + ')';
+        }).join(' | ');
+        text += ' | Rapport: ' + data.ratio.toFixed(4) + ' | Écart: ' + data.error.toFixed(3) + '%';
+        if (eff !== null) text += ' | Rend: ' + (eff * 100).toFixed(1) + '%';
+        navigator.clipboard.writeText(text).then(function () {
+          copyBtn.textContent = '\u2713';
+          setTimeout(function () { copyBtn.textContent = '\u2398'; }, 1500);
+        });
+      };
+      buttonCell.appendChild(copyBtn);
 
       row.appendChild(gearsCell);
       row.appendChild(typesCell);
@@ -450,14 +615,13 @@
     });
   };
 
-  /**
-   * Affiche les résultats dans le tableau.
-   */
   ResultsTable.prototype.display = function (solutions, params) {
     this._solutions = solutions;
     this._params = params;
     this._selectedIndex = 0;
     this._comparedIndices.clear();
+    this._currentPage = 0;
+    this._searchText = '';
 
     if (solutions.length === 0) {
       this._tbody.innerHTML = "<tr><td colspan='7'>Aucun résultat</td></tr>";
@@ -465,7 +629,6 @@
       return;
     }
 
-    // Collecter les types présents
     var typesSet = {};
     solutions.forEach(function (sol) {
       sol.forEach(function (stage) {
@@ -474,14 +637,13 @@
     });
     this._allTypes = Object.keys(typesSet);
 
-    // Initialiser filtres (tous actifs)
     var self = this;
     this._allTypes.forEach(function (t) {
       if (self._typeFilters[t] === undefined) self._typeFilters[t] = true;
     });
 
     this._prepareDisplayData();
-    this._buildTypeFilterBar();
+    this._buildToolbar();
     this._updateSortIndicators();
     this._renderFiltered();
 
@@ -501,9 +663,6 @@
     }
   };
 
-  /**
-   * Active/désactive le mode comparaison.
-   */
   ResultsTable.prototype.setComparisonMode = function (enabled) {
     this._comparisonMode = enabled;
     if (!enabled) this._comparedIndices.clear();
@@ -515,6 +674,38 @@
     return Array.from(this._comparedIndices).map(function (idx) {
       return self._solutions[idx];
     });
+  };
+
+  // ===== Export CSV =====
+
+  ResultsTable.prototype.exportCSV = function () {
+    var data = this._filteredData.length > 0 ? this._filteredData : this._displayData;
+    var registry = GearApp.models.typeRegistry;
+    var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    var lines = ['Engrenages;Types;Rapport;Écart (%);Étages;Rendement (%)'];
+
+    var self = this;
+    data.forEach(function (d) {
+      var gears = d.solution.map(function (s, i) {
+        return letters[2 * i] + ':' + s[0] + ' ' + letters[2 * i + 1] + ':' + s[1];
+      }).join(' | ');
+      var types = d.typesStr;
+      var eff = self._computeEfficiency(d);
+      var effStr = eff !== null ? (eff * 100).toFixed(1) : '-';
+      lines.push(gears + ';' + types + ';' + d.ratio.toFixed(4) + ';' + d.error.toFixed(3) + ';' + d.stages + ';' + effStr);
+    });
+
+    var csv = lines.join('\n');
+    var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'resultats-engrenages.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   GearApp.ui.ResultsTable = ResultsTable;

@@ -1,5 +1,6 @@
 // Charts.js - Module de graphiques de comparaison et d'analyse
 // Utilise Chart.js pour afficher les données mécaniques sous forme visuelle
+// Supporte la mise à jour in-place (sans destruction/re-création) et l'export PNG
 
 class GearCharts {
   constructor() {
@@ -7,7 +8,28 @@ class GearCharts {
   }
 
   /**
-   * Détruit un graphique existant avant d'en créer un nouveau.
+   * Met à jour un graphique existant ou en crée un nouveau.
+   * Évite le scintillement causé par la destruction/re-création.
+   */
+  _updateOrCreate(canvasId, config) {
+    var existing = this.charts[canvasId];
+    if (existing) {
+      existing.data = config.data;
+      if (config.options) {
+        existing.options = config.options;
+      }
+      existing.update('none');
+      return existing;
+    }
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return null;
+    var chart = new Chart(ctx, config);
+    this.charts[canvasId] = chart;
+    return chart;
+  }
+
+  /**
+   * Détruit un graphique existant.
    */
   _destroyChart(chartId) {
     if (this.charts[chartId]) {
@@ -17,16 +39,24 @@ class GearCharts {
   }
 
   /**
+   * Exporte un graphique en image PNG.
+   */
+  exportChart(canvasId, filename) {
+    var chart = this.charts[canvasId];
+    if (!chart) return;
+    var url = chart.toBase64Image('image/png', 1);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename || (canvasId + '.png');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  /**
    * Graphique de comparaison des rapports obtenus vs cible.
-   * @param {string} canvasId - ID du canvas
-   * @param {Array} solutions - Tableau de solutions
-   * @param {number} rapportCible - Rapport cible
    */
   drawRatioComparison(canvasId, solutions, rapportCible) {
-    this._destroyChart(canvasId);
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
     const labels = solutions.map((_, i) => `Solution ${i + 1}`);
     const rapports = solutions.map(sol => sol.reduce((acc, stage) => {
       const A = stage[0], B = stage[1], typeId = stage[2] || 'spur';
@@ -37,7 +67,10 @@ class GearCharts {
     }, 1));
     const ecarts = rapports.map(r => Math.abs((r - rapportCible) / rapportCible * 100));
 
-    this.charts[canvasId] = new Chart(ctx, {
+    // Ligne cible simulée via un dataset constant (pas besoin du plugin annotation)
+    const cibleData = rapports.map(() => rapportCible);
+
+    var config = {
       type: 'bar',
       data: {
         labels: labels,
@@ -48,6 +81,17 @@ class GearCharts {
             backgroundColor: 'rgba(54, 162, 235, 0.7)',
             borderColor: 'rgba(54, 162, 235, 1)',
             borderWidth: 1,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Cible: ' + rapportCible,
+            data: cibleData,
+            type: 'line',
+            borderColor: 'rgba(0, 200, 0, 0.8)',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [6, 3],
+            pointRadius: 0,
             yAxisID: 'y'
           },
           {
@@ -65,50 +109,46 @@ class GearCharts {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          title: { display: true, text: 'Comparaison des rapports de réduction' },
-          annotation: {
-            annotations: {
-              targetLine: {
-                type: 'line',
-                yMin: rapportCible,
-                yMax: rapportCible,
-                borderColor: 'rgba(0, 200, 0, 0.8)',
-                borderWidth: 2,
-                borderDash: [6, 3],
-                label: {
-                  content: `Cible: ${rapportCible}`,
-                  enabled: true,
-                  position: 'end'
-                }
-              }
-            }
-          }
+          title: { display: true, text: 'Comparaison des rapports de réduction' }
         },
         scales: {
           y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Rapport' } },
           y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Écart (%)' }, grid: { drawOnChartArea: false } }
         }
       }
-    });
+    };
+
+    this._updateOrCreate(canvasId, config);
   }
 
   /**
    * Graphique radar comparant les propriétés mécaniques des solutions.
    */
   drawMechanicalRadar(canvasId, analysesArray, rapportCible) {
-    this._destroyChart(canvasId);
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
     const labels = ['Rendement', 'Compacité', 'Rapport conduite', 'Sécurité dent', 'Précision ratio'];
 
     const datasets = analysesArray.slice(0, 5).map((analyse, i) => {
       const rendement = analyse.rendementTotal * 100;
-      const compacite = Math.max(0, 100 - analyse.nombreEtages * 20); // Moins d'étages = plus compact
-      const rapportConduite = Math.min(100, analyse.etages.reduce((sum, e) => sum + e.rapportConduite, 0) / analyse.etages.length * 50);
+      const compacite = Math.max(0, 100 - analyse.nombreEtages * 20);
+
+      // Gérer les étages sans rapport de conduite (courroie, vis sans fin)
+      var sommeConduite = 0, countConduite = 0;
+      analyse.etages.forEach(function (e) {
+        if (e.rapportConduite !== null && e.rapportConduite !== undefined) {
+          sommeConduite += e.rapportConduite;
+          countConduite++;
+        }
+      });
+      const rapportConduite = countConduite > 0 ? Math.min(100, (sommeConduite / countConduite) * 50) : 50;
+
       const securite = Math.min(100, analyse.etages.reduce((sum, e) => {
-        return sum + Math.min(e.resistanceMenante.facteurSecurite, e.resistanceMenee.facteurSecurite);
+        var secA = e.resistanceMenante.facteurSecurite;
+        var secB = e.resistanceMenee.facteurSecurite;
+        if (secA === Infinity) secA = 10;
+        if (secB === Infinity) secB = 10;
+        return sum + Math.min(secA, secB);
       }, 0) / analyse.etages.length * 25);
+
       const precision = rapportCible ? Math.max(0, 100 - Math.abs((analyse.rapportTotal - rapportCible) / rapportCible * 100) * 10) : 50;
 
       const colors = [
@@ -129,7 +169,7 @@ class GearCharts {
       };
     });
 
-    this.charts[canvasId] = new Chart(ctx, {
+    var config = {
       type: 'radar',
       data: { labels, datasets },
       options: {
@@ -141,17 +181,15 @@ class GearCharts {
           r: { min: 0, max: 100, ticks: { stepSize: 20 } }
         }
       }
-    });
+    };
+
+    this._updateOrCreate(canvasId, config);
   }
 
   /**
    * Graphique de cascade couple/vitesse à travers les étages.
    */
   drawTorqueSpeedCascade(canvasId, analyse) {
-    this._destroyChart(canvasId);
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
     const labels = ['Entrée', ...analyse.etages.map((_, i) => `Étage ${i + 1}`)];
     const vitesses = [analyse.vitesseEntree, ...analyse.etages.map(e => e.vitesseSortie)];
     const couples = [analyse.coupleEntree, ...analyse.etages.map(e => e.coupleSortie)];
@@ -161,7 +199,7 @@ class GearCharts {
       return r * 100;
     })];
 
-    this.charts[canvasId] = new Chart(ctx, {
+    var config = {
       type: 'line',
       data: {
         labels: labels,
@@ -207,22 +245,20 @@ class GearCharts {
           y2: { type: 'linear', display: true, position: 'right', min: 0, max: 100, title: { display: true, text: 'Rendement (%)' }, grid: { drawOnChartArea: false } }
         }
       }
-    });
+    };
+
+    this._updateOrCreate(canvasId, config);
   }
 
   /**
    * Graphique en barres horizontales pour la répartition des pertes.
    */
   drawPowerLossBreakdown(canvasId, analyse) {
-    this._destroyChart(canvasId);
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
     const labels = analyse.etages.map((_, i) => `Étage ${i + 1}`);
     const pertes = analyse.etages.map(e => e.pertePuissance);
     const puissancesUtiles = analyse.etages.map(e => e.puissanceSortie);
 
-    this.charts[canvasId] = new Chart(ctx, {
+    var config = {
       type: 'bar',
       data: {
         labels: labels,
@@ -254,7 +290,62 @@ class GearCharts {
           y: { stacked: true }
         }
       }
+    };
+
+    this._updateOrCreate(canvasId, config);
+  }
+
+  /**
+   * Graphique des facteurs de sécurité par étage (Lewis + Hertz).
+   */
+  drawSafetyFactors(canvasId, analyse) {
+    const labels = analyse.etages.map((_, i) => `Étage ${i + 1}`);
+    const lewisMin = analyse.etages.map(e => {
+      var a = e.resistanceMenante.facteurSecurite;
+      var b = e.resistanceMenee.facteurSecurite;
+      if (a === Infinity) a = 10;
+      if (b === Infinity) b = 10;
+      return Math.min(a, b);
     });
+    var hasHertz = analyse.etages.some(function (e) { return e.hertzContact !== null; });
+    var hertzFactors = analyse.etages.map(function (e) {
+      return e.hertzContact ? e.hertzContact.facteurSecuriteContact : null;
+    });
+
+    var datasets = [
+      {
+        label: 'Sécurité Lewis (flexion)',
+        data: lewisMin,
+        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        borderWidth: 1
+      }
+    ];
+    if (hasHertz) {
+      datasets.push({
+        label: 'Sécurité Hertz (contact)',
+        data: hertzFactors,
+        backgroundColor: 'rgba(255, 159, 64, 0.7)',
+        borderColor: 'rgba(255, 159, 64, 1)',
+        borderWidth: 1
+      });
+    }
+
+    var config = {
+      type: 'bar',
+      data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true,
+        plugins: {
+          title: { display: true, text: 'Facteurs de sécurité par étage' }
+        },
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'Facteur de sécurité' } }
+        }
+      }
+    };
+
+    this._updateOrCreate(canvasId, config);
   }
 
   /**

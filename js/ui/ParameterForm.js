@@ -80,10 +80,19 @@
     document.body.classList.toggle('pro-mode', this._proMode);
 
     var btn = document.getElementById('proModeBtn');
-    if (btn) btn.textContent = this._proMode ? 'Pro' : 'Standard';
+    if (btn) {
+      btn.textContent = this._proMode ? 'Pro' : 'Standard';
+      btn.setAttribute('aria-pressed', this._proMode ? 'true' : 'false');
+    }
 
-    // Afficher/masquer les sections pro via CSS
-    // .pro-only éléments visibles seulement quand body.pro-mode
+    // Afficher/masquer les sections pro via CSS (.pro-only visible quand body.pro-mode)
+    var proSection = document.getElementById('proMaterialSection');
+    if (proSection) proSection.style.display = this._proMode ? '' : 'none';
+
+    // Graphique sécurité (pro only)
+    var safetyContainer = document.querySelector('.chart-container.pro-only');
+    if (safetyContainer) safetyContainer.style.display = this._proMode ? '' : 'none';
+
     if (this._proMode) {
       this._updateTypeParams();
     }
