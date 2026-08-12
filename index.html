@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/mechanical.css">
   <link rel="stylesheet" href="css/visualization.css">
   <link rel="stylesheet" href="css/responsive.css">
+  <link rel="stylesheet" href="css/workbench.css">
 
   <!-- Dépendances CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css">
@@ -22,6 +23,10 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><div><strong>Gear Reduction Calculator</strong><small>Transmission Design Workbench</small></div></div>
+    <div class="header-actions" id="workbenchHeaderActions"></div>
+  </header>
   <!-- Skip link pour accessibilité -->
   <a href="#resultats" class="skip-link">Aller aux résultats</a>
 
@@ -48,7 +53,7 @@
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
 
     <!-- Barre latérale (paramètres) -->
-    <div class="sidebar" id="sidebar" role="navigation" aria-label="Paramètres de recherche">
+    <aside class="sidebar" id="sidebar" aria-label="Configuration de la transmission">
       <div class="sidebar-header">
         <h2>Calculateur d'Engrenages</h2>
         <div class="sidebar-header-actions">
@@ -229,7 +234,8 @@
           </div>
         </details>
       </div>
-    </div>
+      <div class="search-action-bar"><div id="configurationSummary" class="configuration-summary" aria-live="polite"></div><div id="validationMessage" class="field-error" role="alert"></div><div class="progress-container compact" aria-hidden="true"><div class="sticky-progress"></div></div></div>
+    </aside>
 
     <!-- Zone principale -->
     <div class="content" role="main">
@@ -239,6 +245,8 @@
 
       <!-- Carte résumé de la solution sélectionnée -->
       <div id="solutionCard" class="solution-card" style="display:none;" aria-live="polite"></div>
+
+      <section id="workspaceEmpty" class="workspace-empty"><div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div><h2>Concevez votre transmission</h2><p>Configurez votre besoin puis lancez une recherche. Les architectures les mieux classées apparaîtront ici.</p></section>
 
       <!-- Visualisation SVG interactive -->
       <div class="viz-section">
@@ -273,9 +281,11 @@
       <div class="result-container" id="result-container">
         <div class="result-header">
           <h2>Résultats</h2>
+          <div class="segmented" role="tablist" aria-label="Mode d’affichage"><button id="cardsViewBtn" class="active" role="tab" aria-selected="true">Cartes</button><button id="tableViewBtn" role="tab" aria-selected="false">Tableau</button></div>
           <button class="btn-small" id="toggleComparisonBtn" onclick="toggleComparison()" title="Comparer plusieurs rapports cibles" aria-label="Comparer">Comparer</button>
         </div>
         <p id="status" aria-live="polite">En attente...</p>
+        <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
         <div class="table-scroll">
           <table aria-label="Tableau des résultats de recherche">
             <thead>
@@ -376,6 +386,7 @@
   <script src="js/ui/ExportManager.js" defer></script>
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
+  <script src="js/ui/WorkbenchUI.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->
   <script src="js/app.js" defer></script>

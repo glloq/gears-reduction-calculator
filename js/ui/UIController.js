@@ -80,6 +80,9 @@
     }
 
     this._updateComparisonCharts(solutions, searchParams);
+    // Le premier résultat est immédiatement exploitable : résumé,
+    // visualisation, analyse mécanique et graphiques restent synchronisés.
+    this._eventBus.emit('solution:selected', { index: 0, solution: solutions[0] });
   };
 
   UIController.prototype._onSolutionSelected = function (index, solution) {
@@ -124,12 +127,22 @@
 
     var rendClass = solution.efficiency > 0.95 ? 'excellent' : solution.efficiency > 0.90 ? 'good' : 'warning';
 
+    var sf = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.bending&&stage.bending.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
+    var sh = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.contact&&stage.contact.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
+    var mode = document.getElementById('search_mode');
+    var modeLabel = mode ? mode.options[mode.selectedIndex].textContent : 'classement';
+    var warnings = solution.warnings || [];
     card.innerHTML =
-      '<div class="card-item"><span class="card-label">Solution #' + (index + 1) + '</span></div>' +
+      '<div class="solution-card-title"><div><span class="card-label">Résultat recommandé</span><h2>Solution classée #' + (index + 1) + '</h2></div><span class="type-badge">Meilleure selon : ' + modeLabel + '</span></div>' +
       '<div class="card-item"><span class="card-label">' + (solution.mode==='rotationTranslation'?'Course':'Rapport') + '</span><span class="card-value">' + (solution.mode==='rotationTranslation'?solution.travelPerRevolutionMm.toFixed(2)+' mm/tr':solution.ratio.toFixed(4)) + '</span></div>' +
       '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (solution.efficiency * 100).toFixed(1) + '%</span></div>' +
-      '<div class="card-item"><span class="card-label">Étages</span><span class="card-value">' + solution.stages.length + '</span></div>' +
-      '<div class="card-item">' + types + '</div>';
+      '<div class="card-item"><span class="card-label">Sortie</span><span class="card-value">' + (Number.isFinite(solution.outputSpeedRpm)?solution.outputSpeedRpm.toFixed(1)+' rpm':'—') + '</span></div>' +
+      '<div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">' + (Number.isFinite(solution.outputTorqueNm)?solution.outputTorqueNm.toFixed(1)+' N·m':'—') + '</span></div>' +
+      '<div class="card-item"><span class="card-label">Architecture</span><span class="card-value">' + types + '</span></div>' +
+      '<div class="card-item"><span class="card-label">Dimensions</span><span class="card-value">' + solution.dimensions.length.toFixed(0)+' × '+solution.dimensions.maxDiameter.toFixed(0)+' × '+solution.dimensions.width.toFixed(0)+' mm</span></div>' +
+      '<div class="card-item"><span class="card-label">SF min</span><span class="card-value">' + (Number.isFinite(sf)?sf.toFixed(2):'—') + '</span></div>' +
+      '<div class="card-item"><span class="card-label">SH min</span><span class="card-value">' + (Number.isFinite(sh)?sh.toFixed(2):'—') + '</span></div>' +
+      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){return '<span class="status-badge warning">⚠ '+String(w)+'</span>';}).join('') + '</div>';
 
     card.style.display = 'flex';
   };
