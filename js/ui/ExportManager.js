@@ -33,6 +33,16 @@
     if (this._gearSvg) this._gearSvg.resetView();
   };
 
+  ExportManager.prototype.exportJSON = function (payload) {
+    this._download(new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'}), 'gear-solution.json');
+  };
+
+  ExportManager.prototype.exportCSV = function (solution) {
+    var rows=['stage,type,input,output'];
+    (solution||[]).forEach(function(s,i){rows.push([i+1,s[2]||'spur',s[0],s[1]].join(','));});
+    this._download(new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8'}), 'gear-solution.csv');
+  };
+
   ExportManager.prototype._download = function (blob, filename) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");

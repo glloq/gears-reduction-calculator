@@ -1,0 +1,1 @@
+{"name":"gears-reduction-calculator","private":true,"scripts":{"test":"node --test tests/*.test.js","check:pages":"node tests/pages-check.js"}}

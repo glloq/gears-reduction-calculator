@@ -69,6 +69,7 @@
   };
 
   UIController.prototype._onSolutionSelected = function (index, solution) {
+    window.GearApp.currentSolution = solution;
     // Schéma SVG
     this._drawSVGSchematic(solution);
 

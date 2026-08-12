@@ -64,6 +64,9 @@
     this.module = null;
     this.vitesseEntree = 1500;
     this.coupleEntree = 10;
+    this.searchMode = 'minimumStages';
+    this.typeParameters = {};
+    this.constraints = {};
   }
 
   /**
@@ -104,6 +107,24 @@
     var cplEl = document.getElementById("couple_entree");
     p.coupleEntree = (cplEl && cplEl.value.trim() !== "") ? parseFloat(cplEl.value) : 10;
 
+    function value(id, fallback) { var el=document.getElementById(id); return el&&el.value!==''?el.value:fallback; }
+    p.searchMode = value('search_mode','minimumStages');
+    p.moduleMode = value('module_mode','fixed');
+    if (value('objective_mode','ratio') === 'need') {
+      var desiredRpm=parseFloat(value('rpm_sortie_cible',0));
+      if (desiredRpm>0) p.rapportCible=p.vitesseEntree/desiredRpm;
+    }
+    p.typeParameters = {
+      worm:{wormStartsMin:parseInt(value('worm_starts_min',1),10),wormStartsMax:parseInt(value('worm_starts_max',6),10),leadAngle:parseFloat(value('worm_lead_angle',20)),module:p.module||1},
+      helical:{helixAngle:parseFloat(value('helix_angle',20)),pressureAngle:parseFloat(value('angle_pression',20)),module:p.module||1},
+      bevel:{shaftAngle:parseFloat(value('bevel_shaft_angle',90)),module:p.module||1},
+      planetary:{planetCount:parseInt(value('planet_count',3),10),inputMember:value('planet_input','S'),outputMember:value('planet_output','C'),fixed:value('planet_fixed','R'),module:p.module||1},
+      belt:{beltType:value('belt_type','timing'),pitch:parseFloat(value('belt_pitch',2)),centerDistance:parseFloat(value('belt_center',100)),crossed:!!(document.getElementById('belt_crossed')&&document.getElementById('belt_crossed').checked),module:p.module||1},
+      chain:{pitch:parseFloat(value('chain_pitch',12.7)),centerDistance:parseFloat(value('chain_center',200)),module:p.module||1},
+      spur:{module:p.module||1,pressureAngle:parseFloat(value('angle_pression',20))}, internal:{module:p.module||1,pressureAngle:parseFloat(value('angle_pression',20))}
+    };
+    p.constraints={maxDiameter:parseFloat(value('max_diameter',0))||null,maxLength:parseFloat(value('max_length',0))||null,maxWidth:parseFloat(value('max_width',0))||null};
+
     return p;
   };
 
@@ -141,6 +162,9 @@
       dentMeneeFixe: this.dentMeneeFixe,
       allowReductionOnly: this.reductionOnly,
       typesActifs: this.typesActifs
+      ,typeParameters: this.typeParameters
+      ,searchMode: this.searchMode
+      ,constraints: this.constraints
     };
   };
 
@@ -160,6 +184,7 @@
       vitesse_entree: document.getElementById("vitesse_entree") ? document.getElementById("vitesse_entree").value : "",
       couple_entree: document.getElementById("couple_entree") ? document.getElementById("couple_entree").value : ""
     };
+    document.querySelectorAll('[data-persist]').forEach(function(el){data[el.id]=el.type==='checkbox'?el.checked:el.value;});
 
     // Sliders noUiSlider
     var sliderMenante = document.getElementById('dent_menante_slider');
@@ -191,7 +216,7 @@
     localStorage.setItem("gearCalcParams", JSON.stringify(data));
   };
 
-  var SIMPLE_FIELDS = [
+    var SIMPLE_FIELDS = [
     'rapport', 'precision', 'etages', 'max_solutions', 'max_iterations',
     'dent_menante_fixe', 'dent_menee_fixe', 'module', 'vitesse_entree', 'couple_entree'
   ];
@@ -219,6 +244,7 @@
         var el = document.getElementById(id);
         if (el && data[id] !== undefined && data[id] !== '') el.value = data[id];
       });
+      document.querySelectorAll('[data-persist]').forEach(function(el){if(data[el.id]!==undefined){if(el.type==='checkbox')el.checked=!!data[el.id];else el.value=data[el.id];}});
 
       // Champs pro
       PRO_FIELDS.forEach(function (id) {
