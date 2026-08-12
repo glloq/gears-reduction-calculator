@@ -214,7 +214,7 @@
     resetSVGView: function () { ui.exportManager.resetView(); },
     exporterSVG: function () { ui.exportManager.exportSVG(); },
     exporterPNG: function () { ui.exportManager.exportPNG(); },
-    exporterJSON: function () { ui.exportManager.exportJSON({input:ui._lastSearchParams||{},constraints:(ui._lastSearchParams&&ui._lastSearchParams.constraints)||{},solution:GearApp.currentSolution||[],stages:GearApp.currentSolution||[],geometry:null,mechanical:null,materials:null,score:null,warnings:[]}); },
+    exporterJSON: function () { ui.exportManager.exportJSON({input:ui._lastSearchParams||{},constraints:(ui._lastSearchParams&&ui._lastSearchParams.constraints)||{},solution:GearApp.currentSolution||null,materials:{input:ui._lastSearchParams&&ui._lastSearchParams.inputMaterial,output:ui._lastSearchParams&&ui._lastSearchParams.outputMaterial}}); },
     exporterCSV: function () { ui.exportManager.exportCSV(GearApp.currentSolution||[]); }
   };
 

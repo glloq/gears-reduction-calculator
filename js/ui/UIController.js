@@ -16,6 +16,7 @@
     this._charts = null;
 
     this._bindEvents();
+    var controller=this,visualContainer=document.getElementById('svgContainer');if(visualContainer)visualContainer.addEventListener('visualization:renderer',function(event){controller.exportManager.setRenderer(event.detail.renderer);});
   }
 
   UIController.prototype.setVisualizationComponents = function (gearSvg, legacySchema, charts) {
@@ -39,6 +40,19 @@
         var container = bar.parentElement;
         if (container) container.setAttribute('aria-valuenow', Math.round(data.percent));
       }
+    });
+
+    this._eventBus.on('search:stats', function (stats) {
+      var element = document.getElementById('searchStats'); if (!element) return;
+      var rejected = stats.rejections || {}, ratio = Number.isFinite(stats.currentRatio) ? stats.currentRatio.toFixed(3) : '—';
+      element.innerHTML = '<strong>Branches :</strong> ' + (stats.tested || 0) +
+        ' · <strong>Profondeur :</strong> ' + (stats.depth || 0) +
+        ' · <strong>Rapport courant :</strong> ' + ratio +
+        ' · <strong>Valides :</strong> ' + (stats.valid || 0) +
+        ' · <strong>Rejets :</strong> ratio ' + (rejected.ratio || 0) +
+        ', géométrie ' + (rejected.geometry || 0) + ', dimensions ' + (rejected.dimensions || 0) +
+        ', mécanique ' + (rejected.mechanics || 0) + ', fabrication ' + (rejected.manufacturing || 0) +
+        ' · <strong>Temps :</strong> ' + ((stats.elapsedMs || 0) / 1000).toFixed(2) + ' s';
     });
 
     this._eventBus.on('solution:selected', function (data) {
@@ -74,25 +88,13 @@
     this._drawSVGSchematic(solution);
 
     // Schéma legacy Canvas
-    if (this._legacySchema) {
-      this._legacySchema.displaySolution(solution);
+    var legacyStages = solution.mode==='rotationTranslation'?[]:solution.stages.map(GearTransmissionRegistry.toLegacy);
+    if (this._legacySchema && legacyStages.length) {
+      this._legacySchema.displaySolution(legacyStages);
     }
 
-    // Analyse mécanique
-    var modValue = this.paramForm.getModuleValue();
-    var params = {
-      module: modValue,
-      vitesseEntree: this.paramForm.getVitesseEntree(),
-      coupleEntree: this.paramForm.getCoupleEntree()
-    };
-
-    var typeParams = this.paramForm.getTypeSpecificParams();
-    var materialParams = this.paramForm.getMaterialParams();
-    for (var k in typeParams) { if (typeParams.hasOwnProperty(k)) params[k] = typeParams[k]; }
-    for (var m in materialParams) { if (materialParams.hasOwnProperty(m)) params[m] = materialParams[m]; }
-
     var proMode = this.paramForm.isProMode();
-    var analyse = this.mechanicalPanel.show(solution, params, proMode);
+    var analyse = this.mechanicalPanel.show(solution, null, proMode);
 
     // Carte résumé
     this._updateSolutionCard(solution, analyse, index);
@@ -115,17 +117,18 @@
     }
 
     var registry = GearApp.models.typeRegistry;
-    var types = solution.map(function (s) {
-      return '<span class="type-badge ' + (s[2] || 'spur') + '">' + registry.get(s[2] || 'spur').nomCourt + '</span>';
+    var types = solution.stages.map(function (s) {
+      var id=s.type==='planetary'?'epicyclic':s.type;
+      return '<span class="type-badge ' + id + '">' + registry.get(id).nomCourt + '</span>';
     }).join(' ');
 
-    var rendClass = analyse.rendementTotal > 0.95 ? 'excellent' : analyse.rendementTotal > 0.90 ? 'good' : 'warning';
+    var rendClass = solution.efficiency > 0.95 ? 'excellent' : solution.efficiency > 0.90 ? 'good' : 'warning';
 
     card.innerHTML =
       '<div class="card-item"><span class="card-label">Solution #' + (index + 1) + '</span></div>' +
-      '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">' + analyse.rapportTotal.toFixed(4) + '</span></div>' +
-      '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (analyse.rendementTotal * 100).toFixed(1) + '%</span></div>' +
-      '<div class="card-item"><span class="card-label">Étages</span><span class="card-value">' + analyse.nombreEtages + '</span></div>' +
+      '<div class="card-item"><span class="card-label">' + (solution.mode==='rotationTranslation'?'Course':'Rapport') + '</span><span class="card-value">' + (solution.mode==='rotationTranslation'?solution.travelPerRevolutionMm.toFixed(2)+' mm/tr':solution.ratio.toFixed(4)) + '</span></div>' +
+      '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (solution.efficiency * 100).toFixed(1) + '%</span></div>' +
+      '<div class="card-item"><span class="card-label">Étages</span><span class="card-value">' + solution.stages.length + '</span></div>' +
       '<div class="card-item">' + types + '</div>';
 
     card.style.display = 'flex';
@@ -138,6 +141,7 @@
 
   UIController.prototype._drawSVGSchematic = function (solution) {
     var modValue = this.paramForm.getModuleValue() || 2;
+    if(solution.mode==='rotationTranslation'&&GearApp.visualization.kinematicRenderer){var section=document.getElementById('svgContainer').closest('.viz-section');if(section)section.classList.add('kinematic-active');GearApp.visualization.kinematicRenderer.render(solution);return;}
 
     if (!this._gearSvg) {
       var container = document.getElementById("svgContainer");
@@ -148,7 +152,7 @@
     }
 
     if (this._gearSvg) {
-      this._gearSvg.drawGearTrain(solution, modValue, 20);
+      this._gearSvg.drawGearTrain(solution.stages.map(GearTransmissionRegistry.toLegacy), modValue, 20);
     }
   };
 
@@ -158,8 +162,9 @@
 
     var target = searchParams ? searchParams.rapportCible : parseFloat(document.getElementById("rapport").value);
 
+    if (solutions.length&&solutions[0].mode==='rotationTranslation') { if(document.getElementById('radarChart'))charts.drawStructuredScore('radarChart',solutions[0]); return; }
     if (document.getElementById("ratioChart")) {
-      charts.drawRatioComparison("ratioChart", solutions, target);
+      charts.drawRatioComparison("ratioChart", solutions.map(function(s){return s.stages.map(GearTransmissionRegistry.toLegacy);}), target);
     }
 
     var modValue = this.paramForm.getModuleValue();
@@ -173,26 +178,16 @@
       var mp = this.paramForm.getMaterialParams();
       for (var ck in tp) { if (tp.hasOwnProperty(ck)) chartParams[ck] = tp[ck]; }
       for (var cm in mp) { if (mp.hasOwnProperty(cm)) chartParams[cm] = mp[cm]; }
-      var analyses = solutions.slice(0, 5).map(function (sol) {
-        return GearApp.core.GearMechanics.analyserTrainEngrenages(sol, chartParams);
-      });
-      charts.drawMechanicalRadar("radarChart", analyses, target);
+      if (solutions.length) charts.drawStructuredScore("radarChart", solutions[0]);
     }
   };
 
   UIController.prototype._updateAnalysisCharts = function (analyse, proMode) {
     var charts = this._charts || window.GearCharts;
     if (!charts) return;
-    if (document.getElementById("cascadeChart")) {
-      charts.drawTorqueSpeedCascade("cascadeChart", analyse);
-    }
-    if (document.getElementById("powerLossChart")) {
-      charts.drawPowerLossBreakdown("powerLossChart", analyse);
-    }
-    // Safety factor chart (pro mode)
-    if (proMode && document.getElementById("safetyChart")) {
-      charts.drawSafetyFactors("safetyChart", analyse);
-    }
+    charts.drawStructuredCascade('cascadeChart', analyse);
+    charts.drawStructuredLosses('powerLossChart', analyse);
+    if (proMode) charts.drawStructuredSafety('safetyChart', analyse);
   };
 
   GearApp.ui.UIController = UIController;

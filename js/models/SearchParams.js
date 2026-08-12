@@ -108,22 +108,30 @@
     p.coupleEntree = (cplEl && cplEl.value.trim() !== "") ? parseFloat(cplEl.value) : 10;
 
     function value(id, fallback) { var el=document.getElementById(id); return el&&el.value!==''?el.value:fallback; }
+    p.objectiveMode=value('objective_mode','ratio');
+    p.linearTravelPerRevolutionMm=parseFloat(value('linear_travel_per_rev',0))||null;
     p.searchMode = value('search_mode','minimumStages');
     p.moduleMode = value('module_mode','fixed');
+    p.moduleMin=parseFloat(value('module_min',0))||null;p.moduleMax=parseFloat(value('module_max',0))||null;
     if (value('objective_mode','ratio') === 'need') {
       var desiredRpm=parseFloat(value('rpm_sortie_cible',0));
       if (desiredRpm>0) p.rapportCible=p.vitesseEntree/desiredRpm;
     }
-    p.typeParameters = {
-      worm:{wormStartsMin:parseInt(value('worm_starts_min',1),10),wormStartsMax:parseInt(value('worm_starts_max',6),10),leadAngle:parseFloat(value('worm_lead_angle',20)),module:p.module||1},
-      helical:{helixAngle:parseFloat(value('helix_angle',20)),pressureAngle:parseFloat(value('angle_pression',20)),module:p.module||1},
-      bevel:{shaftAngle:parseFloat(value('bevel_shaft_angle',90)),module:p.module||1},
-      planetary:{planetCount:parseInt(value('planet_count',3),10),inputMember:value('planet_input','S'),outputMember:value('planet_output','C'),fixed:value('planet_fixed','R'),module:p.module||1},
-      belt:{beltType:value('belt_type','timing'),pitch:parseFloat(value('belt_pitch',2)),centerDistance:parseFloat(value('belt_center',100)),crossed:!!(document.getElementById('belt_crossed')&&document.getElementById('belt_crossed').checked),module:p.module||1},
-      chain:{pitch:parseFloat(value('chain_pitch',12.7)),centerDistance:parseFloat(value('chain_center',200)),module:p.module||1},
-      spur:{module:p.module||1,pressureAngle:parseFloat(value('angle_pression',20))}, internal:{module:p.module||1,pressureAngle:parseFloat(value('angle_pression',20))}
-    };
-    p.constraints={maxDiameter:parseFloat(value('max_diameter',0))||null,maxLength:parseFloat(value('max_length',0))||null,maxWidth:parseFloat(value('max_width',0))||null};
+    p.typeParameters = {};
+    Object.keys(GearTransmissionRegistry.parameterDefinitions).forEach(function(typeId){
+      var values={module:p.module||1};
+      Object.keys(GearTransmissionRegistry.parameterDefinitions[typeId]).forEach(function(key){var def=GearTransmissionRegistry.parameterDefinitions[typeId][key],el=document.getElementById('tp_'+typeId+'_'+key),raw=el?(def.type==='checkbox'?el.checked:el.value):def.default;values[key]=def.type==='number'?parseFloat(raw):raw;});
+      p.typeParameters[typeId]=values;
+    });
+    p.typeParameters.belt.pitch=GearTransmissionRegistry.beltPitches[p.typeParameters.belt.profile]||2;
+    p.typeParameters.belt.beltType='timing';
+    p.constraints={maxDiameter:parseFloat(value('max_diameter',0))||null,maxLength:parseFloat(value('max_length',0))||null,maxWidth:parseFloat(value('max_width',0))||null,minimumEfficiency:parseFloat(value('minimum_efficiency',0))||null,minimumOutputTorqueNm:parseFloat(value('minimum_output_torque',0))||null,minimumOutputSpeedRpm:parseFloat(value('rpm_sortie_min',0))||null,maximumOutputSpeedRpm:parseFloat(value('rpm_sortie_max',0))||null};
+    p.inputMaterial=value('input_material','C45');p.outputMaterial=value('output_material','C45');p.additiveDerating=parseFloat(value('additive_derating',1))||1;
+    var weightKeys=['ratio','size','efficiency','stress','stages','noise','manufacturing','cost'],weightTotal=0;p.weights={};weightKeys.forEach(function(k){var w=Math.max(0,parseFloat(value('weight_'+k,1))||0);p.weights[k]=w;weightTotal+=w;});if(weightTotal)weightKeys.forEach(function(k){p.weights[k]/=weightTotal;});
+    p.manufacturing={mode:value('manufacturing_mode','standard'),minimumModule:parseFloat(value('manufacturing_min_module',0))||undefined,minimumTeeth:parseInt(value('manufacturing_min_teeth',0),10)||undefined,minimumFaceWidth:parseFloat(value('manufacturing_min_width',0))||undefined,printerDiameter:parseFloat(value('printer_diameter',0))||undefined};
+    if(p.manufacturing.mode==='printing3d')p.additiveDerating=parseFloat(value('additive_derating',.55))||.55;
+    p.fatigue={enabled:!!(document.getElementById('fatigue_enabled')&&document.getElementById('fatigue_enabled').checked),hoursPerDay:parseFloat(value('hours_per_day',8)),daysPerYear:parseFloat(value('days_per_year',250)),years:parseFloat(value('service_years',10)),loadType:value('load_type','constant')};
+    p.shaft={supportDistanceMm:parseFloat(value('support_distance',0))||null,allowableShearMPa:parseFloat(value('shaft_allowable_shear',80))||80};
 
     return p;
   };
@@ -165,6 +173,21 @@
       ,typeParameters: this.typeParameters
       ,searchMode: this.searchMode
       ,constraints: this.constraints
+      ,module: this.module
+      ,moduleMode: this.moduleMode
+      ,moduleMin: this.moduleMin
+      ,moduleMax: this.moduleMax
+      ,vitesseEntree: this.vitesseEntree
+      ,coupleEntree: this.coupleEntree
+      ,inputMaterial: this.inputMaterial
+      ,outputMaterial: this.outputMaterial
+      ,additiveDerating: this.additiveDerating
+      ,weights: this.weights
+      ,manufacturing: this.manufacturing
+      ,objectiveMode: this.objectiveMode
+      ,linearTravelPerRevolutionMm: this.linearTravelPerRevolutionMm
+      ,fatigue: this.fatigue
+      ,shaft: this.shaft
     };
   };
 
@@ -301,6 +324,7 @@
     if (params.module) q.set('mod', params.module);
     if (params.dentMenanteFixe) q.set('fa', params.dentMenanteFixe);
     if (params.dentMeneeFixe) q.set('fb', params.dentMeneeFixe);
+    var expert={};document.querySelectorAll('[data-persist]').forEach(function(el){if(el.id)expert[el.id]=el.type==='checkbox'?el.checked:el.value;});q.set('expert',JSON.stringify(expert));
     return window.location.origin + window.location.pathname + '?' + q.toString();
   };
 
@@ -356,6 +380,7 @@
       el = document.getElementById('dent_menee_fixe');
       if (el) el.value = q.get('fb');
     }
+    if(q.has('expert')){try{var expert=JSON.parse(q.get('expert'));SearchParams._pendingExpert=expert;Object.keys(expert).forEach(function(id){var field=document.getElementById(id);if(field){if(field.type==='checkbox')field.checked=!!expert[id];else field.value=expert[id];}});}catch(ignore){/* Ignore malformed shared expert state. */}}
 
     return true;
   };
