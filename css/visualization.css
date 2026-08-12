@@ -113,3 +113,6 @@
 .kinematic-projections { display: none; gap: 4px; margin-left: 8px; }
 .viz-section.kinematic-active .kinematic-projections { display: inline-flex; }
 tr.selected { outline: 2px solid var(--accent-color); }
+
+/* Geometry V2 uses calculated millimetres directly as SVG user units. */
+.geometry-svg{width:100%;height:100%;min-height:440px}.geometry-member{fill:color-mix(in srgb,var(--accent) 12%,transparent);stroke:var(--accent);stroke-width:2}.geometry-member.output-member{stroke:var(--success-color,#2f9e73)}.internal-ring{fill:none;stroke-width:4}.planet{fill:var(--surface-2)}.pitch-diameter{stroke:var(--muted);stroke-width:.8;stroke-dasharray:5 4}.belt-span,.chain-span{fill:none;stroke:var(--ink);stroke-width:4}.chain-span{stroke-dasharray:8 5}.rack-profile{fill:none;stroke:var(--accent);stroke-width:3}.shaft-axis{stroke:var(--ink);stroke-width:3}.geometry-dimension,.member-role{fill:var(--muted);font-size:13px}.geometry-svg.is-animated .input-member{transform-box:fill-box;transform-origin:center;animation:geometry-spin 4s linear infinite}@keyframes geometry-spin{to{transform:rotate(360deg)}}

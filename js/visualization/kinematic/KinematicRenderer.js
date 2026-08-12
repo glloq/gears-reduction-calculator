@@ -14,43 +14,11 @@
   GearApp.visualization.KinematicRenderer=KinematicRenderer;
   document.addEventListener('DOMContentLoaded',function(){
     var container=document.getElementById('svgContainer');
-    var legacy=document.querySelector('.legacy-canvas-section');
     var renderer=new KinematicRenderer(container);
     GearApp.visualization.kinematicRenderer=renderer;
 
     document.addEventListener('click',function(e){
-      var btn=e.target.closest&&e.target.closest('.view-mode');
       var current=GearApp.currentSolution;
-
-      if(btn){
-        document.querySelectorAll('.view-mode').forEach(function(b){
-          b.classList.toggle('active',b===btn);
-        });
-        var section=container.closest('.viz-section');
-        if(section){
-          section.classList.toggle('kinematic-active',btn.dataset.view==='kinematic');
-        }
-        if(btn.dataset.view==='linear'){
-          legacy.open=true;
-          legacy.scrollIntoView({behavior:'smooth'});
-        }else if(btn.dataset.view==='kinematic'&&current){
-          renderer.render(current);
-        }else if(btn.dataset.view==='geometric'&&current){
-          var accurate=current.stages.every(function(s){
-            var capabilities=GearTransmissionRegistry.get(s.type).capabilities;
-            return capabilities.geometricView==='evaluated';
-          });
-          if(!accurate){
-            renderer.render(current);
-          }else if(window.GearSVG){
-            var module=GearTransmissionRegistry.getCharacteristicModule(current.stages[0])||1;
-            new GearSVG('svgContainer').drawGearTrain(
-              current.stages.map(GearTransmissionRegistry.toLegacy),module,20
-            );
-          }
-        }
-      }
-
       var projection=e.target.closest&&e.target.closest('[data-projection]');
       if(projection&&current){
         document.querySelectorAll('[data-projection]').forEach(function(b){
