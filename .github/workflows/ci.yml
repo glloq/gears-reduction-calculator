@@ -1,14 +1,14 @@
 name: CI
-on:
-  push:
-  pull_request:
+on: [push, pull_request]
 jobs:
-  static-app:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+        with: {node-version: 20, cache: npm}
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: npm run check:pages
+      - run: npm run test:e2e

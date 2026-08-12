@@ -1,1 +1,11 @@
-{"name":"gears-reduction-calculator","private":true,"scripts":{"test":"node --test tests/*.test.js","check:pages":"node tests/pages-check.js"}}
+{
+  "name": "gears-reduction-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check:pages": "node tests/pages-check.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": { "@playwright/test": "1.54.2" }
+}

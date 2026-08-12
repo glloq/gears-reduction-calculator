@@ -77,7 +77,13 @@
         <label for="rpm_sortie_cible">RPM sortie cible (mode besoin) :</label><input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
         <div class="inline-fields"><input id="rpm_sortie_min" data-persist type="number" placeholder="RPM sortie min"><input id="rpm_sortie_max" data-persist type="number" placeholder="RPM sortie max"></div>
         <div class="inline-fields"><input id="minimum_output_torque" data-persist type="number" placeholder="Couple sortie min N·m"><input id="minimum_efficiency" data-persist type="number" min="0" max="1" step="0.01" placeholder="Rendement min 0–1"></div>
-        <label for="linear_travel_per_rev">Course cible par tour (mm, mode crémaillère) :</label><input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
+        <div class="objective-linear-fields">
+          <label for="linear_travel_per_rev">Course cible par tour (mm, mode crémaillère) :</label><input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
+          <label for="linear_speed_min">Vitesse linéaire min (mm/min) :</label><input id="linear_speed_min" data-persist type="number" min="0">
+          <label for="linear_speed_max">Vitesse linéaire max (mm/min) :</label><input id="linear_speed_max" data-persist type="number" min="0">
+          <label for="linear_force_min">Force sortie minimum (N) :</label><input id="linear_force_min" data-persist type="number" min="0">
+          <p class="formula">Le solveur linéaire traite directement un pignon + crémaillère (sans étages de réduction).</p>
+        </div>
         <div class="btn-group">
           <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary" aria-label="Lancer la recherche">Rechercher</button>
           <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres" aria-label="Sauvegarder">Sauver</button>
@@ -117,7 +123,7 @@
             <span class="type-label">Vis sans fin</span>
           </label>
           <label class="type-option"><input type="checkbox" class="type-checkbox" value="chain" id="type-chain"><span class="type-label">Chaîne</span></label>
-          <label class="type-option"><input type="checkbox" class="type-checkbox" value="rack" id="type-rack"><span class="type-label">Crémaillère</span></label>
+          <label class="type-option" id="rack-type-option" title="Disponible uniquement en mode Rotation → translation"><input type="checkbox" class="type-checkbox" value="rack" id="type-rack" disabled><span class="type-label">Crémaillère</span></label>
         </div>
         <div class="shortcut-hint">Cochez les types à inclure dans la recherche</div>
 
@@ -173,7 +179,7 @@
         <h3>Paramètres mécaniques</h3>
         <label for="module_mode">Sélection du module :</label><select id="module_mode" data-persist><option value="fixed">Module fixe</option><option value="automatic">Module automatique normalisé</option></select>
         <label for="module">Module des engrenages (mm) :</label>
-        <input type="number" id="module" placeholder="Ex: 2.5" step="0.1" min="0.1">
+        <input type="number" id="module" value="1" step="0.1" min="0.1">
         <div class="inline-fields"><input id="module_min" data-persist type="number" step="0.1" placeholder="Module auto min"><input id="module_max" data-persist type="number" step="0.1" placeholder="Module auto max"></div>
 
         <label for="vitesse_entree">Vitesse d'entrée (tr/min) :</label>
@@ -192,7 +198,7 @@
         <label>Limites de fabrication :</label><div class="inline-fields"><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="Module min"><input id="manufacturing_min_teeth" data-persist type="number" placeholder="Dents min"><input id="manufacturing_min_width" data-persist type="number" placeholder="Largeur min"></div>
         <label for="printer_diameter">Diamètre imprimante (mm) :</label><input id="printer_diameter" data-persist type="number" value="220">
         <label for="additive_derating">Déclassement fabrication additive :</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05">
-        <label>Critères de pré-dimensionnement (estimations, non normatifs) :</label><div class="inline-fields"><input id="minimum_bending_safety" data-persist type="number" value="1.5" min="0.1" step="0.1" aria-label="SF minimum flexion"><input id="minimum_contact_safety" data-persist type="number" value="1.2" min="0.1" step="0.1" aria-label="SH minimum contact"></div>
+        <label>Critères de pré-dimensionnement (estimations, non normatifs) :</label><div class="inline-fields"><input id="minimum_bending_safety" data-persist type="number" placeholder="SF min (ex. 1.5)" min="0.1" step="0.1" aria-label="SF minimum flexion"><input id="minimum_contact_safety" data-persist type="number" placeholder="SH min (ex. 1.2)" min="0.1" step="0.1" aria-label="SH minimum contact"></div>
       </div>
 
       <div class="param-section pro-only" style="display:none;">
