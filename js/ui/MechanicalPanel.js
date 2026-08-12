@@ -11,6 +11,15 @@
     if(proMode&&solution.fatigue)html+='<details><summary>Fatigue — Engineering estimate</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Cycles</th><th>Heures</th><th>Facteur usage</th></tr></thead><tbody>'+solution.fatigue.map(function(f,i){return '<tr><td>'+(i+1)+'</td><td>'+n(f.cycles,0)+'</td><td>'+n(f.operatingHours,0)+'</td><td>'+n(f.usageFactor,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation de fatigue, non conforme ISO 6336-6.</p></details>';
     if(proMode&&solution.shaft)html+='<details><summary>Arbres — Engineering estimate</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Moment (N·mm)</th><th>Couple (N·mm)</th><th>Ø minimum (mm)</th></tr></thead><tbody>'+solution.shaft.map(function(s,i){return '<tr><td>'+(i+1)+'</td><td>'+n(s&&s.bendingMomentNmm,0)+'</td><td>'+n(s&&s.torqueNmm,0)+'</td><td>'+n(s&&s.minimumDiameterMm,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation combinée flexion/torsion.</p></details>';
     if(solution.warnings.length)html+='<section class="warnings"><h4>Avertissements</h4>'+solution.warnings.map(function(w){return '<p class="warning"><strong>'+w.code+'</strong> — '+w.message+' <small>'+w.recommendation+'</small></p>';}).join('')+'</section>';
-    this._container.innerHTML=html;this._container.style.display='block';return solution;};
+    this._container.innerHTML=html;
+    var title=this._container.querySelector('h3'),summary=this._container.querySelector('.mechanical-summary'),stages=this._container.querySelector('.stages-table');
+    var tabs=document.createElement('div');tabs.className='analysis-tabs';tabs.setAttribute('role','tablist');
+    var panels=[];
+    function addTab(label,node){if(!node)return;var button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('role','tab');var panel=document.createElement('section');panel.className='analysis-panel';node.parentNode.insertBefore(panel,node);panel.appendChild(node);panels.push(panel);button.addEventListener('click',function(){Array.from(tabs.children).forEach(function(item){item.classList.toggle('active',item===button);item.setAttribute('aria-selected',String(item===button));});panels.forEach(function(item){item.hidden=item!==panel;});});tabs.appendChild(button);}
+    addTab('Résumé',summary);addTab('Étages',stages);
+    Array.from(this._container.querySelectorAll(':scope>details')).forEach(function(detail){addTab(detail.querySelector('summary').textContent.split('—')[0].trim(),detail);});
+    addTab('Avertissements',this._container.querySelector('.warnings'));
+    if(title)title.insertAdjacentElement('afterend',tabs);if(tabs.firstElementChild)tabs.firstElementChild.click();
+    this._container.style.display='block';return solution;};
   GearApp.ui.MechanicalPanel=MechanicalPanel;
 })(GearApp);

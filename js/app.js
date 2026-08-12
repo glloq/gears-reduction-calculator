@@ -3,7 +3,7 @@
 
 (function (GearApp) {
 
-  var engine, ui, legacySchema, comparisonManager;
+  var engine, ui, legacySchema, comparisonManager, workbench;
   var isSearching = false;
 
   function init() {
@@ -26,6 +26,11 @@
 
     // Initialiser le formulaire
     ui.paramForm.initSliders();
+
+    // La couche Workbench réorganise uniquement la présentation et conserve
+    // les identifiants historiques lus par SearchParams.
+    workbench = new GearApp.ui.WorkbenchUI(GearApp.eventBus);
+    workbench.init();
 
     // Restaurer depuis l'URL d'abord, sinon depuis localStorage
     var hasURLParams = GearApp.models.SearchParams.fromURL();
@@ -108,6 +113,16 @@
     ui.logger.setStatus("Calcul en cours...");
 
     var searchParams = ui.paramForm.getSearchParams();
+    var validationMessage = document.getElementById('validationMessage');
+    if (validationMessage) validationMessage.textContent = '';
+    if (searchParams.moduleMode === 'automatic' && searchParams.moduleMin && searchParams.moduleMax && searchParams.moduleMax <= searchParams.moduleMin) {
+      if (validationMessage) validationMessage.textContent = '⚠ Le module maximum doit être supérieur au minimum.';
+      document.getElementById('module_max').setAttribute('aria-invalid', 'true');
+      ui.logger.setStatus('Corrigez les paramètres signalés.');
+      _resetButton();
+      return;
+    }
+    if (document.getElementById('module_max')) document.getElementById('module_max').removeAttribute('aria-invalid');
     var validation = searchParams.validate();
     if (!validation.valid) {
       ui.logger.setStatus(validation.message);
@@ -120,6 +135,7 @@
 
     engine.rechercher(searchParams).then(function (resultats) {
       ui.afficherResultats(resultats, searchParams);
+      workbench.renderSolutions(resultats);
       progressBar.style.width = "100%";
       ui.logger.setStatus(resultats.length > 0
         ? 'Calcul terminé - ' + resultats.length + ' solution(s) trouvée(s)'
@@ -144,6 +160,8 @@
     btn.innerText = "Rechercher";
     btn.classList.remove("running");
     isSearching = false;
+    var sticky = document.querySelector('.sticky-progress');
+    if (sticky) sticky.style.width = '0%';
   }
 
   // ===== Historique des recherches =====
