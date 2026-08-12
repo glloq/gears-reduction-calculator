@@ -19,7 +19,7 @@ test('default Standard interface search returns at least one solution', () => {
     typesActifs: ['spur'],
     typeParameters: { spur: { module: 1 } },
     searchMode: 'minimumStages',
-    module: null,
+    module: 1,
     moduleMode: 'fixed',
     vitesseEntree: 1500,
     coupleEntree: 10,

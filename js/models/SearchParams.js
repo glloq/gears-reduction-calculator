@@ -74,6 +74,16 @@
    */
   SearchParams.fromForm = function () {
     var p = new SearchParams();
+    function element(id) { return document.getElementById(id); }
+    function value(id, fallback) { var el=element(id); return el&&el.value!==''?el.value:fallback; }
+    // Empty, zero and malformed values deliberately remain distinct. Constraints
+    // use null for "not requested"; callers can therefore legitimately supply 0.
+    function optionalNumber(id) {
+      var el=element(id), raw=el&&String(el.value).trim();
+      if(raw==='') return null;
+      var parsed=Number(raw);
+      return Number.isFinite(parsed)?parsed:null;
+    }
     p.rapportCible = parseFloat(document.getElementById("rapport").value);
     p.dentMenanteMin = parseInt(document.getElementById("val_menante_min").innerText);
     p.dentMenanteMax = parseInt(document.getElementById("val_menante_max").innerText);
@@ -107,25 +117,37 @@
     var cplEl = document.getElementById("couple_entree");
     p.coupleEntree = (cplEl && cplEl.value.trim() !== "") ? parseFloat(cplEl.value) : 10;
 
-    function value(id, fallback) { var el=document.getElementById(id); return el&&el.value!==''?el.value:fallback; }
     p.objectiveMode=value('objective_mode','ratio');
-    p.linearTravelPerRevolutionMm=parseFloat(value('linear_travel_per_rev',0))||null;
+    p.linearTravelPerRevolutionMm=optionalNumber('linear_travel_per_rev');
     p.searchMode = value('search_mode','minimumStages');
     p.moduleMode = value('module_mode','fixed');
-    p.moduleMin=parseFloat(value('module_min',0))||null;p.moduleMax=parseFloat(value('module_max',0))||null;
+    p.moduleMin=optionalNumber('module_min');p.moduleMax=optionalNumber('module_max');
     if (value('objective_mode','ratio') === 'need') {
       var desiredRpm=parseFloat(value('rpm_sortie_cible',0));
       if (desiredRpm>0) p.rapportCible=p.vitesseEntree/desiredRpm;
     }
     p.typeParameters = {};
     Object.keys(GearTransmissionRegistry.parameterDefinitions).forEach(function(typeId){
-      var values={module:p.module||1};
+      var values={module:p.module};
       Object.keys(GearTransmissionRegistry.parameterDefinitions[typeId]).forEach(function(key){var def=GearTransmissionRegistry.parameterDefinitions[typeId][key],el=document.getElementById('tp_'+typeId+'_'+key),raw=el?(def.type==='checkbox'?el.checked:el.value):def.default;values[key]=def.type==='number'?parseFloat(raw):raw;});
       p.typeParameters[typeId]=values;
     });
     p.typeParameters.belt.pitch=GearTransmissionRegistry.beltPitches[p.typeParameters.belt.profile]||2;
     p.typeParameters.belt.beltType='timing';
-    p.constraints={maxDiameter:parseFloat(value('max_diameter',0))||null,maxLength:parseFloat(value('max_length',0))||null,maxWidth:parseFloat(value('max_width',0))||null,minimumEfficiency:parseFloat(value('minimum_efficiency',0))||null,minimumOutputTorqueNm:parseFloat(value('minimum_output_torque',0))||null,minimumOutputSpeedRpm:parseFloat(value('rpm_sortie_min',0))||null,maximumOutputSpeedRpm:parseFloat(value('rpm_sortie_max',0))||null,minimumBendingSafety:parseFloat(value('minimum_bending_safety',1.5)),minimumContactSafety:parseFloat(value('minimum_contact_safety',1.2))};
+    p.constraints={maxDiameter:optionalNumber('max_diameter'),maxLength:optionalNumber('max_length'),maxWidth:optionalNumber('max_width'),minimumEfficiency:optionalNumber('minimum_efficiency'),minimumBendingSafety:optionalNumber('minimum_bending_safety'),minimumContactSafety:optionalNumber('minimum_contact_safety')};
+    if(p.objectiveMode==='ratio'||p.objectiveMode==='need') {
+      p.constraints.minimumOutputTorqueNm=optionalNumber('minimum_output_torque');
+      p.constraints.minimumOutputSpeedRpm=optionalNumber('rpm_sortie_min');
+      p.constraints.maximumOutputSpeedRpm=optionalNumber('rpm_sortie_max');
+      p.linearTravelPerRevolutionMm=null;
+      p.typesActifs=p.typesActifs.filter(function(type){return type!=='rack';});
+    } else {
+      p.constraints.minimumLinearSpeedMmMin=optionalNumber('linear_speed_min');
+      p.constraints.maximumLinearSpeedMmMin=optionalNumber('linear_speed_max');
+      p.constraints.minimumOutputForceN=optionalNumber('linear_force_min');
+      p.typesActifs=['rack'];
+      p.rapportCible=null;
+    }
     p.inputMaterial=value('input_material','C45');p.outputMaterial=value('output_material','C45');p.additiveDerating=parseFloat(value('additive_derating',1))||1;
     var weightKeys=['ratio','size','efficiency','stress','stages','noise','manufacturing','cost'],weightTotal=0;p.weights={};weightKeys.forEach(function(k){var w=Math.max(0,parseFloat(value('weight_'+k,1))||0);p.weights[k]=w;weightTotal+=w;});if(weightTotal)weightKeys.forEach(function(k){p.weights[k]/=weightTotal;});
     p.manufacturing={mode:value('manufacturing_mode','standard'),minimumModule:parseFloat(value('manufacturing_min_module',0))||undefined,minimumTeeth:parseInt(value('manufacturing_min_teeth',0),10)||undefined,minimumFaceWidth:parseFloat(value('manufacturing_min_width',0))||undefined,printerDiameter:parseFloat(value('printer_diameter',0))||undefined};
@@ -140,15 +162,24 @@
    * Valide les paramètres.
    */
   SearchParams.prototype.validate = function () {
-    if (isNaN(this.rapportCible) || this.rapportCible <= 0) {
+    var mode=this.objectiveMode||'ratio', c=this.constraints||{};
+    if (mode==='ratio' && (!Number.isFinite(this.rapportCible) || this.rapportCible <= 0)) {
       return { valid: false, message: "Erreur : rapport cible invalide" };
     }
+    if(mode==='ratio'&&(!Number.isFinite(this.precision)||this.precision<0))return {valid:false,message:'Erreur : tolérance invalide',field:'precision'};
+    if((mode==='ratio'||mode==='need')&&!(this.typesActifs||[]).some(function(t){return t!=='rack';}))return {valid:false,message:'Aucune transmission rotative sélectionnée',field:'types'};
+    if(mode==='need'&&(!Number.isFinite(this.vitesseEntree)||this.vitesseEntree<=0||!Number.isFinite(this.rapportCible)||this.rapportCible<=0))return {valid:false,message:'RPM entrée et RPM sortie cible doivent être supérieurs à zéro',field:'rpm_sortie_cible'};
+    if(mode==='rotationTranslation'&&(!Number.isFinite(this.vitesseEntree)||this.vitesseEntree<=0||!Number.isFinite(this.coupleEntree)||this.coupleEntree<=0||!Number.isFinite(this.linearTravelPerRevolutionMm)||this.linearTravelPerRevolutionMm<=0))return {valid:false,message:'RPM, couple et course doivent être supérieurs à zéro',field:'linear_travel_per_rev'};
     if (this.dentMenanteMin > this.dentMenanteMax || this.dentMeneeMin > this.dentMeneeMax) {
       return { valid: false, message: "Erreur : intervalles de dents invalides" };
     }
     if (isNaN(this.maxEtages) || this.maxEtages < 1) {
       return { valid: false, message: "Erreur : nombre d'étages invalide" };
     }
+    if(this.moduleMode==='fixed'&&(!Number.isFinite(this.module)||this.module<=0))return {valid:false,message:'Le module fixe est obligatoire',field:'module'};
+    if(this.moduleMin!=null&&this.moduleMax!=null&&this.moduleMin>this.moduleMax)return {valid:false,message:'La plage de modules est inversée',field:'module_min'};
+    if((mode==='ratio'||mode==='need')&&c.minimumOutputSpeedRpm!=null&&c.maximumOutputSpeedRpm!=null&&c.minimumOutputSpeedRpm>c.maximumOutputSpeedRpm)return {valid:false,message:'La plage RPM sortie est inversée',field:'rpm_sortie_min'};
+    if(mode==='rotationTranslation'&&c.minimumLinearSpeedMmMin!=null&&c.maximumLinearSpeedMmMin!=null&&c.minimumLinearSpeedMmMin>c.maximumLinearSpeedMmMin)return {valid:false,message:'La plage de vitesse linéaire est inversée',field:'linear_speed_min'};
     return { valid: true };
   };
 

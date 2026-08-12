@@ -18,7 +18,7 @@ test('objective modes use contextual groups and expose a live derived ratio', ()
   assert.match(ui, /objective-need/);
   assert.match(ui, /objective-linear/);
   assert.match(ui, /Rapport cible dérivé/);
-  assert.match(ui, /course\/tour = π × diamètre primitif/);
+  assert.match(html, /solveur linéaire traite directement un pignon \+ crémaillère/);
 });
 
 test('successful searches automatically select solution zero', () => {
@@ -30,10 +30,9 @@ test('pure view changes do not invoke the search engine', () => {
   assert.doesNotMatch(viewMethods, /rechercher|lancerRecherche/);
 });
 
-test('hidden expert safety defaults do not constrain standard searches', () => {
-  assert.match(ui, /document\.body\.classList\.contains\('pro-mode'\)/);
-  assert.match(ui, /delete params\.constraints\.minimumBendingSafety/);
-  assert.match(ui, /delete params\.constraints\.minimumContactSafety/);
+test('optional safety presentation does not monkey-patch SearchParams', () => {
+  assert.doesNotMatch(ui, /SearchParams\.fromForm\s*=/);
+  assert.doesNotMatch(ui, /installSearchConstraintPolicy/);
   assert.match(ui, /bending\.value=''/);
   assert.match(ui, /contact\.value=''/);
 });

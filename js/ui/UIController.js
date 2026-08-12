@@ -132,17 +132,19 @@
     var mode = document.getElementById('search_mode');
     var modeLabel = mode ? mode.options[mode.selectedIndex].textContent : 'classement';
     var warnings = solution.warnings || [];
+    var linear=solution.mode==='rotationTranslation';
+    var outputs=linear
+      ? '<div class="card-item"><span class="card-label">Course / tour</span><span class="card-value">'+solution.travelPerRevolutionMm.toFixed(2)+' mm/tr</span></div><div class="card-item"><span class="card-label">Vitesse linéaire</span><span class="card-value">'+solution.outputLinearSpeedMmMin.toFixed(0)+' mm/min</span></div><div class="card-item"><span class="card-label">Force sortie</span><span class="card-value">'+solution.outputForceN.toFixed(1)+' N</span></div>'
+      : '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">'+solution.ratio.toFixed(4)+'</span></div><div class="card-item"><span class="card-label">RPM sortie</span><span class="card-value">'+solution.outputSpeedRpm.toFixed(1)+' rpm</span></div><div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">'+solution.outputTorqueNm.toFixed(1)+' N·m</span></div>';
     card.innerHTML =
       '<div class="solution-card-title"><div><span class="card-label">Résultat recommandé</span><h2>Solution classée #' + (index + 1) + '</h2></div><span class="type-badge">Meilleure selon : ' + modeLabel + '</span></div>' +
-      '<div class="card-item"><span class="card-label">' + (solution.mode==='rotationTranslation'?'Course':'Rapport') + '</span><span class="card-value">' + (solution.mode==='rotationTranslation'?solution.travelPerRevolutionMm.toFixed(2)+' mm/tr':solution.ratio.toFixed(4)) + '</span></div>' +
+      outputs +
       '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (solution.efficiency * 100).toFixed(1) + '%</span></div>' +
-      '<div class="card-item"><span class="card-label">Sortie</span><span class="card-value">' + (Number.isFinite(solution.outputSpeedRpm)?solution.outputSpeedRpm.toFixed(1)+' rpm':'—') + '</span></div>' +
-      '<div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">' + (Number.isFinite(solution.outputTorqueNm)?solution.outputTorqueNm.toFixed(1)+' N·m':'—') + '</span></div>' +
       '<div class="card-item"><span class="card-label">Architecture</span><span class="card-value">' + types + '</span></div>' +
       '<div class="card-item"><span class="card-label">Dimensions</span><span class="card-value">' + solution.dimensions.length.toFixed(0)+' × '+solution.dimensions.maxDiameter.toFixed(0)+' × '+solution.dimensions.width.toFixed(0)+' mm</span></div>' +
       '<div class="card-item"><span class="card-label">SF min</span><span class="card-value">' + (Number.isFinite(sf)?sf.toFixed(2):'—') + '</span></div>' +
       '<div class="card-item"><span class="card-label">SH min</span><span class="card-value">' + (Number.isFinite(sh)?sh.toFixed(2):'—') + '</span></div>' +
-      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){return '<span class="status-badge warning">⚠ '+String(w)+'</span>';}).join('') + '</div>';
+      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){var code=w&&w.code||'WARNING',message=w&&w.message||String(w);return '<span class="status-badge warning" title="'+(w&&w.recommendation||'')+'">⚠ '+code+' — '+message+'</span>';}).join('') + '</div>';
 
     card.style.display = 'flex';
   };
@@ -154,7 +156,9 @@
 
   UIController.prototype._drawSVGSchematic = function (solution) {
     var modValue = this.paramForm.getModuleValue() || 2;
-    if(solution.mode==='rotationTranslation'&&GearApp.visualization.kinematicRenderer){var section=document.getElementById('svgContainer').closest('.viz-section');if(section)section.classList.add('kinematic-active');GearApp.visualization.kinematicRenderer.render(solution);return;}
+    var section=document.getElementById('svgContainer').closest('.viz-section');
+    if(section)section.classList.toggle('kinematic-active',solution.mode==='rotationTranslation');
+    if(solution.mode==='rotationTranslation'&&GearApp.visualization.kinematicRenderer){GearApp.visualization.kinematicRenderer.render(solution);this.exportManager.setRenderer(GearApp.visualization.kinematicRenderer);return;}
 
     if (!this._gearSvg) {
       var container = document.getElementById("svgContainer");

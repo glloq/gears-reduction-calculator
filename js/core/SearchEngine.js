@@ -20,7 +20,7 @@
     weights:p.weights||{},fatigue:p.fatigue,shaft:p.shaft
   };}
   function moduleChoices(p){
-    if(p.moduleMode!=='automatic')return [p.module||1];
+    if(p.moduleMode!=='automatic')return Number.isFinite(p.module)&&p.module>0?[p.module]:[];
     return STANDARD_MODULES.filter(function(m){return (!p.moduleMin||m>=p.moduleMin)&&(!p.moduleMax||m<=p.moduleMax);});
   }
   function applyModule(stages,m){stages.forEach(function(s){s.parameters=s.parameters||{};s.parameters.module=m;});}
@@ -89,7 +89,7 @@
       if(found.length&&(p.searchMode||'minimumStages')==='minimumStages')break;
     }
     found.sort(compare(p.searchMode||'minimumStages'));
-    var stats={tested:tested,rejected:Object.keys(rejections).reduce(function(n,k){return n+rejections[k];},0),rejections:rejections,valid:found.length,elapsedMs:Date.now()-start};
+    var stats={tested:tested,rejected:Object.keys(rejections).reduce(function(n,k){return n+rejections[k];},0),rejections:rejections,valid:found.length,elapsedMs:Date.now()-start};if(candidates.length===0)stats.reason='NO_CANDIDATES';
     found.forEach(function(s){s.stats.search=stats;});
     return {solutions:found.slice(0,p.maxSolutions||10),stats:stats};
   }
