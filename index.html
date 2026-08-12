@@ -4,18 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Calculateur d'engrenages - Recherche et visualisation de trains de réduction multi-types">
-  <title>Calculateur d'Engrenages - Rapport de Réduction</title>
+  <title>Calculateur d'Engrenages - Trains de Réduction</title>
 
-  <!-- CSS modulaire -->
-  <link rel="stylesheet" href="css/variables.css">
+  <!-- Système de design modulaire -->
+  <link rel="stylesheet" href="css/theme.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/results.css">
-  <link rel="stylesheet" href="css/mechanical.css">
-  <link rel="stylesheet" href="css/visualization.css">
-  <link rel="stylesheet" href="css/responsive.css">
-  <link rel="stylesheet" href="css/workbench.css">
+  <link rel="stylesheet" href="css/workspace.css">
 
   <!-- Dépendances CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css">
@@ -23,334 +19,459 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <header class="app-header">
-    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><div><strong>Gear Reduction Calculator</strong><small>Transmission Design Workbench</small></div></div>
-    <div class="header-actions" id="workbenchHeaderActions"></div>
-  </header>
-  <!-- Skip link pour accessibilité -->
-  <a href="#resultats" class="skip-link">Aller aux résultats</a>
+  <a href="#result-container" class="skip-link">Aller aux résultats</a>
 
-  <!-- Indicateur de chargement -->
   <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
     <div class="loading-spinner"></div>
     <span>Chargement...</span>
   </div>
 
   <noscript>
-    <div style="padding: 40px; text-align: center; font-family: sans-serif;">
+    <div class="noscript-warning">
       <h1>JavaScript requis</h1>
       <p>Cette application nécessite JavaScript pour fonctionner. Veuillez l'activer dans votre navigateur.</p>
     </div>
   </noscript>
 
-  <div class="main-container">
-    <!-- Bouton hamburger mobile -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileSidebar()" aria-label="Ouvrir le menu" aria-expanded="false">
+  <header class="app-header">
+    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Ouvrir la configuration" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div><strong>Calculateur d'engrenages</strong><small>Recherche de trains de réduction</small></div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-mode" id="proModeBtn" title="Basculer les paramètres experts (matériaux, fatigue, pondération)" aria-pressed="false">Standard</button>
+      <button class="btn-icon" id="themeBtn" title="Mode sombre/clair" aria-label="Changer le thème">Thème</button>
+      <button class="btn-icon" id="shareBtn" title="Copier un lien partageable de la configuration" aria-label="Partager">Partager</button>
+    </div>
+  </header>
 
-    <!-- Overlay mobile -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
+  <div class="app-body">
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-    <!-- Barre latérale (paramètres) -->
-    <aside class="sidebar" id="sidebar" aria-label="Configuration de la transmission">
-      <div class="sidebar-header">
-        <h2>Calculateur d'Engrenages</h2>
-        <div class="sidebar-header-actions">
-          <button class="btn-mode" id="proModeBtn" onclick="toggleProMode()" title="Activer le mode expert avec paramètres avancés" aria-pressed="false">Standard</button>
-          <button class="btn-icon" onclick="toggleTheme()" title="Mode sombre/clair" id="themeBtn" aria-label="Changer le thème">Thème</button>
-        </div>
-      </div>
+    <!-- ===== Configuration (barre latérale modulaire) ===== -->
+    <aside class="sidebar" id="sidebar" aria-label="Configuration de la recherche">
 
-      <!-- Presets -->
-      <div class="param-section presets-section">
-        <h3>Presets</h3>
-        <div class="presets-grid" id="presetsGrid"></div>
-      </div>
-
-      <div class="param-section">
-        <h3>Rapport cible</h3>
-        <label for="objective_mode">Mode principal :</label>
-        <select id="objective_mode" data-persist><option value="ratio">Je connais le rapport</option><option value="need">Je connais mon besoin</option><option value="rotationTranslation">Rotation → translation (crémaillère)</option></select>
-        <label for="rapport">Nombre de tours entrée pour un tour sortie :</label>
-        <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
-        <label for="rpm_sortie_cible">RPM sortie cible (mode besoin) :</label><input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
-        <div class="inline-fields"><input id="rpm_sortie_min" data-persist type="number" placeholder="RPM sortie min"><input id="rpm_sortie_max" data-persist type="number" placeholder="RPM sortie max"></div>
-        <div class="inline-fields"><input id="minimum_output_torque" data-persist type="number" placeholder="Couple sortie min N·m"><input id="minimum_efficiency" data-persist type="number" min="0" max="1" step="0.01" placeholder="Rendement min 0–1"></div>
-        <div class="objective-linear-fields">
-          <label for="linear_travel_per_rev">Course cible par tour (mm, mode crémaillère) :</label><input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
-          <label for="linear_speed_min">Vitesse linéaire min (mm/min) :</label><input id="linear_speed_min" data-persist type="number" min="0">
-          <label for="linear_speed_max">Vitesse linéaire max (mm/min) :</label><input id="linear_speed_max" data-persist type="number" min="0">
-          <label for="linear_force_min">Force sortie minimum (N) :</label><input id="linear_force_min" data-persist type="number" min="0">
-          <p class="formula">Le solveur linéaire traite directement un pignon + crémaillère (sans étages de réduction).</p>
-        </div>
-        <div class="btn-group">
-          <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary">Rechercher</button>
-          <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres" aria-label="Sauvegarder">Sauver</button>
-        </div>
-        <div class="shortcut-hint" id="rapport-desc">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
-      </div>
-
-      <div class="param-section">
-        <h3>Types de transmission</h3>
-        <div class="types-grid" role="group" aria-label="Types de transmission">
-          <label class="type-option" title="Engrenage cylindrique à denture droite. Axes parallèles.">
-            <input type="checkbox" class="type-checkbox" value="spur" id="type-spur" checked>
-            <span class="type-label">Droit</span>
-          </label>
-          <label class="type-option" title="Denture en hélice. Plus silencieux. Axes parallèles.">
-            <input type="checkbox" class="type-checkbox" value="helical" id="type-helical">
-            <span class="type-label">Hélicoïdal</span>
-          </label>
-          <label class="type-option" title="Pignon à l'intérieur d'une couronne. Compact.">
-            <input type="checkbox" class="type-checkbox" value="internal" id="type-internal">
-            <span class="type-label">Intérieur</span>
-          </label>
-          <label class="type-option" title="Axes à 90°. Changement de direction.">
-            <input type="checkbox" class="type-checkbox" value="bevel" id="type-bevel">
-            <span class="type-label">Conique</span>
-          </label>
-          <label class="type-option" title="Transmission par courroie entre poulies.">
-            <input type="checkbox" class="type-checkbox" value="belt" id="type-belt">
-            <span class="type-label">Courroie</span>
-          </label>
-          <label class="type-option" title="Train planétaire. Très haut rapport, compact.">
-            <input type="checkbox" class="type-checkbox" value="epicyclic" id="type-epicyclic">
-            <span class="type-label">Épicycloïdal</span>
-          </label>
-          <label class="type-option" title="Vis sans fin. Très haut rapport, irréversible. Axes à 90°.">
-            <input type="checkbox" class="type-checkbox" value="worm" id="type-worm">
-            <span class="type-label">Vis sans fin</span>
-          </label>
-          <label class="type-option"><input type="checkbox" class="type-checkbox" value="chain" id="type-chain"><span class="type-label">Chaîne</span></label>
-          <label class="type-option" id="rack-type-option" title="Disponible uniquement en mode Rotation → translation"><input type="checkbox" class="type-checkbox" value="rack" id="type-rack" disabled><span class="type-label">Crémaillère</span></label>
-        </div>
-        <div class="shortcut-hint">Cochez les types à inclure dans la recherche</div>
-
-        <!-- Paramètres par type (Mode Pro) -->
-        <div id="typeParamsContainer" class="pro-only" style="display:none;"></div>
-      </div>
-
-      <div class="param-section">
-        <h3>Paramètres de Calcul</h3>
-        <label for="precision">Intervalle de précision (%) :</label>
-        <input type="number" id="precision" value="0.1" step="0.1" min="0">
-
-        <label for="etages">Nombre max d'étages :</label>
-        <input type="number" id="etages" value="4" min="1" max="8">
-
-        <label>Dents menante (min/max) :</label>
-        <div id="dent_menante_slider" class="slider" role="slider" aria-label="Plage de dents menante"></div>
-        <div class="slider-values">
-          <span>Min: <strong id="val_menante_min">10</strong></span>
-          <span>Max: <strong id="val_menante_max">30</strong></span>
-        </div>
-
-        <label>Dents menée (min/max) :</label>
-        <div id="dent_menee_slider" class="slider" role="slider" aria-label="Plage de dents menée"></div>
-        <div class="slider-values">
-          <span>Min: <strong id="val_menee_min">20</strong></span>
-          <span>Max: <strong id="val_menee_max">50</strong></span>
-        </div>
-
-        <label class="checkbox-label">
-          <input type="checkbox" id="reduction_only" checked>
-          Réduction uniquement (menée > menante)
-        </label>
-      </div>
-
-      <div class="param-section">
-        <h3>Options avancées</h3>
-        <label for="search_mode">Optimisation :</label><select id="search_mode" data-persist><option value="minimumStages">Minimum d'étages (rapide)</option><option value="precision">Meilleure précision</option><option value="efficiency">Meilleur rendement</option><option value="compact">Plus compact</option><option value="robust">Plus robuste</option><option value="manufacturing">Fabrication simple</option><option value="global">Optimisation globale</option></select>
-        <label for="max_solutions">Nombre de résultats :</label>
-        <input type="number" id="max_solutions" value="10" min="1" max="100">
-
-        <label for="max_iterations">Limite d'itérations :</label>
-        <input type="number" id="max_iterations" value="500000" min="1000" max="5000000" step="1000">
-
-        <label for="dent_menante_fixe">Dents premier engrenage (fixe) :</label>
-        <input type="number" id="dent_menante_fixe" placeholder="Vide = plage">
-
-        <label for="dent_menee_fixe">Dents dernier engrenage (fixe) :</label>
-        <input type="number" id="dent_menee_fixe" placeholder="Vide = plage">
-      </div>
-
-      <div class="param-section">
-        <h3>Paramètres mécaniques</h3>
-        <label for="module_mode">Sélection du module :</label><select id="module_mode" data-persist><option value="fixed">Module fixe</option><option value="automatic">Module automatique normalisé</option></select>
-        <label for="module">Module des engrenages (mm) :</label>
-        <input type="number" id="module" value="1" step="0.1" min="0.1">
-        <div class="inline-fields"><input id="module_min" data-persist type="number" step="0.1" placeholder="Module auto min"><input id="module_max" data-persist type="number" step="0.1" placeholder="Module auto max"></div>
-
-        <label for="vitesse_entree">Vitesse d'entrée (tr/min) :</label>
-        <input type="number" id="vitesse_entree" value="1500" step="10" min="1">
-
-        <label for="couple_entree">Couple d'entrée (N.m) :</label>
-        <input type="number" id="couple_entree" value="10" step="0.1" min="0.01">
-        <label>Encombrement maximal (mm) :</label><div class="inline-fields"><input id="max_diameter" data-persist type="number" placeholder="Ø"><input id="max_length" data-persist type="number" placeholder="Longueur"><input id="max_width" data-persist type="number" placeholder="Largeur"></div>
-      </div>
-
-      <div class="param-section pro-only" id="proMaterialSection" style="display:none;">
-        <h3>Matériaux et fabrication</h3>
-        <label for="input_material">Matériau entrée :</label><select id="input_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
-        <label for="output_material">Matériau sortie :</label><select id="output_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
-        <label for="manufacturing_mode">Procédé :</label><select id="manufacturing_mode" data-persist><option value="standard">Standard</option><option value="CNC">CNC</option><option value="laser">Laser</option><option value="printing3d">Impression 3D</option><option value="custom">Personnalisé</option></select>
-        <label>Limites de fabrication :</label><div class="inline-fields"><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="Module min"><input id="manufacturing_min_teeth" data-persist type="number" placeholder="Dents min"><input id="manufacturing_min_width" data-persist type="number" placeholder="Largeur min"></div>
-        <label for="printer_diameter">Diamètre imprimante (mm) :</label><input id="printer_diameter" data-persist type="number" value="220">
-        <label for="additive_derating">Déclassement fabrication additive :</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05">
-        <label>Critères de pré-dimensionnement (estimations, non normatifs) :</label><div class="inline-fields"><input id="minimum_bending_safety" data-persist type="number" placeholder="SF min (ex. 1.5)" min="0.1" step="0.1" aria-label="SF minimum flexion"><input id="minimum_contact_safety" data-persist type="number" placeholder="SH min (ex. 1.2)" min="0.1" step="0.1" aria-label="SH minimum contact"></div>
-      </div>
-
-      <div class="param-section pro-only" style="display:none;">
-        <h3>Fatigue et arbre — estimations</h3>
-        <label class="checkbox-label"><input id="fatigue_enabled" data-persist type="checkbox"> Calculer l'estimation de fatigue</label>
-        <div class="inline-fields"><input id="hours_per_day" data-persist type="number" value="8" min="0" max="24" step="0.5" placeholder="Heures/jour"><input id="days_per_year" data-persist type="number" value="250" min="1" max="366" placeholder="Jours/an"><input id="service_years" data-persist type="number" value="10" min="0.1" step="0.5" placeholder="Années"></div>
-        <label for="load_type">Type de charge :</label><select id="load_type" data-persist><option value="constant">Constante</option><option value="light">Légère</option><option value="heavy">Lourde</option><option value="moderateShock">Chocs modérés</option><option value="severeShock">Chocs sévères</option></select>
-        <label for="support_distance">Distance entre appuis (mm) :</label><input id="support_distance" data-persist type="number" min="1" placeholder="Vide = calcul arbre désactivé">
-        <label for="shaft_allowable_shear">Contrainte admissible arbre (MPa) :</label><input id="shaft_allowable_shear" data-persist type="number" value="80" min="1">
-        <p class="shortcut-hint">Pré-dimensionnements Engineering estimate, non conformes ISO 6336.</p>
-      </div>
-
-      <div class="param-section pro-only" style="display:none;">
-        <h3>Pondération multicritère</h3>
-        <p class="shortcut-hint">Les poids sont normalisés automatiquement.</p>
-        <label>Précision <input id="weight_ratio" data-persist type="range" min="0" max="10" value="5"></label>
-        <label>Compacité <input id="weight_size" data-persist type="range" min="0" max="10" value="5"></label>
-        <label>Rendement <input id="weight_efficiency" data-persist type="range" min="0" max="10" value="5"></label>
-        <label>Résistance <input id="weight_stress" data-persist type="range" min="0" max="10" value="5"></label>
-        <label>Nombre d'étages <input id="weight_stages" data-persist type="range" min="0" max="10" value="5"></label>
-        <label>Bruit <input id="weight_noise" data-persist type="range" min="0" max="10" value="5"></label>
-        <label>Fabrication <input id="weight_manufacturing" data-persist type="range" min="0" max="10" value="5"></label>
-        <label>Coût relatif <input id="weight_cost" data-persist type="range" min="0" max="10" value="5"></label>
-      </div>
-
-      <!-- Aide (?) -->
-      <div class="param-section">
-        <details class="help-section">
-          <summary>Aide et raccourcis</summary>
-          <div class="help-content">
-            <p><strong>Raccourcis clavier :</strong></p>
-            <ul>
-              <li><kbd>Ctrl</kbd>+<kbd>Entrée</kbd> : Lancer la recherche</li>
-              <li><kbd>Échap</kbd> : Arrêter la recherche</li>
-              <li><kbd>?</kbd> : Ouvrir/fermer l'aide</li>
-            </ul>
-            <p><strong>SVG :</strong> Molette = zoom, clic-glisser = déplacer</p>
-            <p><strong>Mode Pro :</strong> Accès aux paramètres matériaux, indicateurs de sécurité, analyse Hertz</p>
-          </div>
+      <!-- Lancement rapide : presets + historique -->
+      <div class="quick-launch">
+        <div class="presets-row" id="presetsGrid" role="group" aria-label="Presets"></div>
+        <details class="history-panel" id="historyPanel">
+          <summary>Recherches récentes</summary>
+          <div id="historyList" class="history-list"></div>
         </details>
       </div>
-      <div class="search-action-bar"><div id="configurationSummary" class="configuration-summary" aria-live="polite"></div><div id="validationMessage" class="field-error" role="alert"></div><div class="progress-container compact" aria-hidden="true"><div class="sticky-progress"></div></div></div>
+
+      <!-- Module 1 : Objectif -->
+      <details class="panel" open id="panel-objectif">
+        <summary><span class="panel-step">1</span><span class="panel-title">Objectif</span></summary>
+        <div class="panel-body">
+          <label for="objective_mode">Type de recherche</label>
+          <select id="objective_mode" data-persist>
+            <option value="ratio">Rapport de réduction connu</option>
+            <option value="need">Vitesse de sortie cible</option>
+            <option value="rotationTranslation">Rotation → translation (crémaillère)</option>
+          </select>
+
+          <div class="objective-fields objective-ratio active">
+            <label for="rapport">Rapport cible (tours entrée pour un tour sortie)</label>
+            <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
+          </div>
+
+          <div class="objective-fields objective-need">
+            <label for="rpm_sortie_cible">Vitesse de sortie cible (tr/min)</label>
+            <input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
+            <output id="derivedRatio" class="derived-ratio"></output>
+            <p class="field-help">Rapport dérivé de la vitesse d'entrée définie dans le module Mécanique.</p>
+          </div>
+
+          <div class="objective-fields objective-linear">
+            <label for="linear_travel_per_rev">Course par tour (mm/tr)</label>
+            <input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
+            <div class="field-grid">
+              <div><label for="linear_speed_min">Vitesse min (mm/min)</label><input id="linear_speed_min" data-persist type="number" min="0"></div>
+              <div><label for="linear_speed_max">Vitesse max (mm/min)</label><input id="linear_speed_max" data-persist type="number" min="0"></div>
+            </div>
+            <label for="linear_force_min">Force de sortie minimum (N)</label>
+            <input id="linear_force_min" data-persist type="number" min="0">
+            <p class="field-help">Le solveur linéaire traite directement un pignon + crémaillère (sans étages de réduction).</p>
+          </div>
+
+          <div class="rotary-only">
+            <label for="precision">Tolérance sur le rapport (%)</label>
+            <input type="number" id="precision" value="0.1" step="0.1" min="0">
+          </div>
+        </div>
+      </details>
+
+      <!-- Module 2 : Transmissions -->
+      <details class="panel" open id="panel-transmissions">
+        <summary><span class="panel-step">2</span><span class="panel-title">Transmissions</span><span class="panel-hint" id="typesCount"></span></summary>
+        <div class="panel-body">
+          <div class="transmission-filters segmented" role="group" aria-label="Filtrer les familles">
+            <button type="button" class="active" data-filter="all">Toutes</button>
+            <button type="button" data-filter="gear">Engrenages</button>
+            <button type="button" data-filter="flexible">Flexibles</button>
+          </div>
+          <div class="types-grid" role="group" aria-label="Types de transmission">
+            <label class="type-option" data-group="gear" title="Engrenage cylindrique à denture droite. Axes parallèles.">
+              <input type="checkbox" class="type-checkbox" value="spur" id="type-spur" checked>
+              <span class="type-label">Droit<small>axes parallèles</small></span>
+            </label>
+            <label class="type-option" data-group="gear" title="Denture en hélice. Plus silencieux. Axes parallèles.">
+              <input type="checkbox" class="type-checkbox" value="helical" id="type-helical">
+              <span class="type-label">Hélicoïdal<small>silencieux</small></span>
+            </label>
+            <label class="type-option" data-group="gear" title="Pignon à l'intérieur d'une couronne. Compact.">
+              <input type="checkbox" class="type-checkbox" value="internal" id="type-internal">
+              <span class="type-label">Intérieur<small>compact</small></span>
+            </label>
+            <label class="type-option" data-group="gear" title="Axes à 90°. Changement de direction.">
+              <input type="checkbox" class="type-checkbox" value="bevel" id="type-bevel">
+              <span class="type-label">Conique<small>axes à 90°</small></span>
+            </label>
+            <label class="type-option" data-group="gear" title="Train planétaire. Très haut rapport, compact, coaxial.">
+              <input type="checkbox" class="type-checkbox" value="epicyclic" id="type-epicyclic">
+              <span class="type-label">Épicycloïdal<small>coaxial</small></span>
+            </label>
+            <label class="type-option" data-group="gear" title="Vis sans fin. Très haut rapport, irréversible. Axes à 90°.">
+              <input type="checkbox" class="type-checkbox" value="worm" id="type-worm">
+              <span class="type-label">Vis sans fin<small>haut rapport</small></span>
+            </label>
+            <label class="type-option" data-group="flexible" title="Transmission par courroie crantée entre poulies.">
+              <input type="checkbox" class="type-checkbox" value="belt" id="type-belt">
+              <span class="type-label">Courroie<small>entraxe libre</small></span>
+            </label>
+            <label class="type-option" data-group="flexible" title="Transmission par chaîne. Robuste.">
+              <input type="checkbox" class="type-checkbox" value="chain" id="type-chain">
+              <span class="type-label">Chaîne<small>robuste</small></span>
+            </label>
+            <label class="type-option" data-group="linear" id="rack-type-option" title="Pignon-crémaillère. Mode Rotation → translation uniquement.">
+              <input type="checkbox" class="type-checkbox" value="rack" id="type-rack" disabled>
+              <span class="type-label">Crémaillère<small>translation</small></span>
+            </label>
+          </div>
+          <div id="typeParamsContainer" class="type-params"></div>
+        </div>
+      </details>
+
+      <!-- Module 3 : Recherche -->
+      <details class="panel" open id="panel-recherche">
+        <summary><span class="panel-step">3</span><span class="panel-title">Recherche</span></summary>
+        <div class="panel-body">
+          <label for="search_mode">Optimisation</label>
+          <select id="search_mode" data-persist>
+            <option value="minimumStages">Minimum d'étages (rapide)</option>
+            <option value="precision">Meilleure précision</option>
+            <option value="efficiency">Meilleur rendement</option>
+            <option value="compact">Plus compact</option>
+            <option value="robust">Plus robuste</option>
+            <option value="manufacturing">Fabrication simple</option>
+            <option value="global">Optimisation globale</option>
+          </select>
+
+          <div class="field-grid rotary-only">
+            <div><label for="etages">Étages max</label><input type="number" id="etages" value="4" min="1" max="8"></div>
+            <div><label for="max_solutions">Nb de résultats</label><input type="number" id="max_solutions" value="10" min="1" max="100"></div>
+          </div>
+          <div class="linear-only">
+            <label for="max_solutions_linear_hint" class="visually-hidden">Nombre de résultats</label>
+          </div>
+
+          <div class="rotary-only">
+            <label>Dents menantes (min/max)</label>
+            <div id="dent_menante_slider" class="slider" role="slider" aria-label="Plage de dents menante"></div>
+            <div class="slider-values">
+              <span>Min : <strong id="val_menante_min">10</strong></span>
+              <span>Max : <strong id="val_menante_max">30</strong></span>
+            </div>
+
+            <label>Dents menées (min/max)</label>
+            <div id="dent_menee_slider" class="slider" role="slider" aria-label="Plage de dents menée"></div>
+            <div class="slider-values">
+              <span>Min : <strong id="val_menee_min">20</strong></span>
+              <span>Max : <strong id="val_menee_max">50</strong></span>
+            </div>
+
+            <label class="checkbox-label">
+              <input type="checkbox" id="reduction_only" checked>
+              Réduction uniquement (menée &gt; menante)
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <!-- Module 4 : Mécanique -->
+      <details class="panel" open id="panel-mecanique">
+        <summary><span class="panel-step">4</span><span class="panel-title">Mécanique</span></summary>
+        <div class="panel-body">
+          <label for="module_mode">Sélection du module</label>
+          <select id="module_mode" data-persist>
+            <option value="fixed">Module fixe</option>
+            <option value="automatic">Module automatique normalisé</option>
+          </select>
+          <div class="module-fixed">
+            <label for="module">Module des engrenages (mm)</label>
+            <input type="number" id="module" value="1" step="0.1" min="0.1">
+          </div>
+          <div class="field-grid module-auto hidden">
+            <div><label for="module_min">Module auto min</label><input id="module_min" data-persist type="number" step="0.1"></div>
+            <div><label for="module_max">Module auto max</label><input id="module_max" data-persist type="number" step="0.1"></div>
+          </div>
+
+          <div class="field-grid">
+            <div><label for="vitesse_entree">Vitesse d'entrée (tr/min)</label><input type="number" id="vitesse_entree" value="1500" step="10" min="1"></div>
+            <div><label for="couple_entree">Couple d'entrée (N·m)</label><input type="number" id="couple_entree" value="10" step="0.1" min="0.01"></div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Module 5 : Contraintes -->
+      <details class="panel" id="panel-contraintes">
+        <summary><span class="panel-step">5</span><span class="panel-title">Contraintes</span><span class="panel-hint">optionnelles</span></summary>
+        <div class="panel-body">
+          <label>Encombrement maximal (mm)</label>
+          <div class="field-grid field-grid-3">
+            <div><label class="sub" for="max_diameter">Ø</label><input id="max_diameter" data-persist type="number" placeholder="—"></div>
+            <div><label class="sub" for="max_length">Longueur</label><input id="max_length" data-persist type="number" placeholder="—"></div>
+            <div><label class="sub" for="max_width">Largeur</label><input id="max_width" data-persist type="number" placeholder="—"></div>
+          </div>
+
+          <div class="rotary-only">
+            <label>Sortie (tr/min)</label>
+            <div class="field-grid">
+              <div><label class="sub" for="rpm_sortie_min">RPM min</label><input id="rpm_sortie_min" data-persist type="number" placeholder="—"></div>
+              <div><label class="sub" for="rpm_sortie_max">RPM max</label><input id="rpm_sortie_max" data-persist type="number" placeholder="—"></div>
+            </div>
+            <div class="field-grid">
+              <div><label class="sub" for="minimum_output_torque">Couple min (N·m)</label><input id="minimum_output_torque" data-persist type="number" placeholder="—"></div>
+              <div><label class="sub" for="minimum_efficiency">Rendement min (0–1)</label><input id="minimum_efficiency" data-persist type="number" min="0" max="1" step="0.01" placeholder="—"></div>
+            </div>
+          </div>
+
+          <label>Sécurité minimale (estimations, non normatives)</label>
+          <div class="field-grid">
+            <div><label class="sub" for="minimum_bending_safety">SF flexion</label><input id="minimum_bending_safety" data-persist type="number" min="0.1" step="0.1" placeholder="ex. 1.5"></div>
+            <div><label class="sub" for="minimum_contact_safety">SH contact</label><input id="minimum_contact_safety" data-persist type="number" min="0.1" step="0.1" placeholder="ex. 1.2"></div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Module 6 : Avancé -->
+      <details class="panel" id="panel-avance">
+        <summary><span class="panel-step">6</span><span class="panel-title">Avancé</span></summary>
+        <div class="panel-body">
+          <label for="max_iterations">Limite d'itérations</label>
+          <input type="number" id="max_iterations" value="500000" min="1000" max="5000000" step="1000">
+          <div class="field-grid rotary-only">
+            <div><label class="sub" for="dent_menante_fixe">1er engrenage (fixe)</label><input type="number" id="dent_menante_fixe" placeholder="Vide = plage"></div>
+            <div><label class="sub" for="dent_menee_fixe">Dernier engrenage (fixe)</label><input type="number" id="dent_menee_fixe" placeholder="Vide = plage"></div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Modules experts -->
+      <details class="panel expert-only" id="panel-materiaux">
+        <summary><span class="panel-step">E</span><span class="panel-title">Matériaux &amp; fabrication</span><span class="panel-hint">expert</span></summary>
+        <div class="panel-body">
+          <div class="field-grid">
+            <div>
+              <label for="input_material">Matériau entrée</label>
+              <select id="input_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
+            </div>
+            <div>
+              <label for="output_material">Matériau sortie</label>
+              <select id="output_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
+            </div>
+          </div>
+          <label for="manufacturing_mode">Procédé</label>
+          <select id="manufacturing_mode" data-persist><option value="standard">Standard</option><option value="CNC">CNC</option><option value="laser">Laser</option><option value="printing3d">Impression 3D</option><option value="custom">Personnalisé</option></select>
+          <label>Limites de fabrication</label>
+          <div class="field-grid field-grid-3">
+            <div><label class="sub" for="manufacturing_min_module">Module min</label><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="—"></div>
+            <div><label class="sub" for="manufacturing_min_teeth">Dents min</label><input id="manufacturing_min_teeth" data-persist type="number" placeholder="—"></div>
+            <div><label class="sub" for="manufacturing_min_width">Largeur min</label><input id="manufacturing_min_width" data-persist type="number" placeholder="—"></div>
+          </div>
+          <div class="field-grid">
+            <div><label class="sub" for="printer_diameter">Ø imprimante (mm)</label><input id="printer_diameter" data-persist type="number" value="220"></div>
+            <div><label class="sub" for="additive_derating">Déclassement additif</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel expert-only" id="panel-fatigue">
+        <summary><span class="panel-step">E</span><span class="panel-title">Fatigue &amp; arbre</span><span class="panel-hint">expert</span></summary>
+        <div class="panel-body">
+          <label class="checkbox-label"><input id="fatigue_enabled" data-persist type="checkbox"> Calculer l'estimation de fatigue</label>
+          <div class="field-grid field-grid-3">
+            <div><label class="sub" for="hours_per_day">Heures/jour</label><input id="hours_per_day" data-persist type="number" value="8" min="0" max="24" step="0.5"></div>
+            <div><label class="sub" for="days_per_year">Jours/an</label><input id="days_per_year" data-persist type="number" value="250" min="1" max="366"></div>
+            <div><label class="sub" for="service_years">Années</label><input id="service_years" data-persist type="number" value="10" min="0.1" step="0.5"></div>
+          </div>
+          <label for="load_type">Type de charge</label>
+          <select id="load_type" data-persist><option value="constant">Constante</option><option value="light">Légère</option><option value="heavy">Lourde</option><option value="moderateShock">Chocs modérés</option><option value="severeShock">Chocs sévères</option></select>
+          <div class="field-grid">
+            <div><label class="sub" for="support_distance">Entre appuis (mm)</label><input id="support_distance" data-persist type="number" min="1" placeholder="Vide = désactivé"></div>
+            <div><label class="sub" for="shaft_allowable_shear">τ admissible (MPa)</label><input id="shaft_allowable_shear" data-persist type="number" value="80" min="1"></div>
+          </div>
+          <p class="field-help">Pré-dimensionnements « Engineering estimate », non conformes ISO 6336.</p>
+        </div>
+      </details>
+
+      <details class="panel expert-only" id="panel-ponderation">
+        <summary><span class="panel-step">E</span><span class="panel-title">Pondération multicritère</span><span class="panel-hint">expert</span></summary>
+        <div class="panel-body">
+          <p class="field-help">Utilisée par l'optimisation globale. Les poids sont normalisés automatiquement.</p>
+          <label class="range-label">Précision <input id="weight_ratio" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Compacité <input id="weight_size" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Rendement <input id="weight_efficiency" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Résistance <input id="weight_stress" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Nombre d'étages <input id="weight_stages" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Bruit <input id="weight_noise" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Fabrication <input id="weight_manufacturing" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Coût relatif <input id="weight_cost" data-persist type="range" min="0" max="10" value="5"></label>
+        </div>
+      </details>
+
+      <details class="panel help-section" id="panel-aide">
+        <summary><span class="panel-step">?</span><span class="panel-title">Aide &amp; raccourcis</span></summary>
+        <div class="panel-body help-content">
+          <ul>
+            <li><kbd>Ctrl</kbd>+<kbd>Entrée</kbd> : lancer la recherche</li>
+            <li><kbd>Échap</kbd> : arrêter la recherche</li>
+            <li><kbd>?</kbd> : ouvrir/fermer l'aide</li>
+          </ul>
+          <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, survol = détails.</p>
+          <p><strong>Mode expert :</strong> matériaux, fatigue, pondération multicritère et graphique de sécurité.</p>
+        </div>
+      </details>
+
+      <!-- Barre d'action fixe -->
+      <div class="search-action-bar">
+        <div id="configurationSummary" class="configuration-summary" aria-live="polite"></div>
+        <div id="validationMessage" class="field-error" role="alert"></div>
+        <button id="startStopBtn" class="btn-primary" aria-describedby="rapport-desc">Rechercher</button>
+        <div class="shortcut-hint" id="rapport-desc">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
+        <div class="progress-container compact" aria-hidden="true"><div class="sticky-progress"></div></div>
+      </div>
     </aside>
 
-    <!-- Zone principale -->
-    <div class="content" role="main">
-      <div class="content-header">
-        <h1>Recherche d'Engrenages - Rapport de Réduction</h1>
-      </div>
+    <!-- ===== Espace de travail ===== -->
+    <main class="workspace" role="main">
 
-      <!-- Carte résumé de la solution sélectionnée -->
-      <div id="solutionCard" class="solution-card" style="display:none;" aria-live="polite"></div>
+      <section id="workspaceEmpty" class="workspace-empty">
+        <div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h2>Concevez votre transmission</h2>
+        <p id="workspaceEmptyHint">Configurez votre besoin dans le panneau de gauche puis lancez une recherche. Les architectures les mieux classées apparaîtront ici.</p>
+      </section>
 
-      <section id="workspaceEmpty" class="workspace-empty"><div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div><h2>Concevez votre transmission</h2><p>Configurez votre besoin puis lancez une recherche. Les architectures les mieux classées apparaîtront ici.</p></section>
+      <div class="workspace-grid">
 
-      <!-- Visualisation SVG interactive -->
-      <div class="viz-section">
-        <div class="viz-header">
-          <h2>Schéma interactif</h2>
-          <div class="viz-controls"><button class="btn-small view-mode active" data-view="geometry">Géométrie 2D</button><button class="btn-small view-mode" data-view="kinematic">Schéma cinématique</button>
-            <span class="kinematic-projections"><button class="btn-small active" data-projection="main">Vue principale</button><button class="btn-small" data-projection="orthogonal">Vue orthogonale</button><button class="btn-small" id="kinematicReset">Réinitialiser</button></span>
-            <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
-            <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
-            <button onclick="UI.exporterSVG()" class="btn-small" title="Exporter en SVG" aria-label="Exporter SVG">SVG</button>
-            <button onclick="UI.exporterPNG()" class="btn-small" title="Exporter en PNG" aria-label="Exporter PNG">PNG</button>
-            <button onclick="UI.exporterJSON()" class="btn-small">JSON</button><button onclick="UI.exporterCSV()" class="btn-small">CSV</button>
+        <!-- Volet solutions (maître) -->
+        <section class="results-pane" id="result-container" aria-label="Solutions trouvées">
+          <header class="results-header">
+            <h2>Solutions</h2>
+            <p id="status" aria-live="polite">En attente…</p>
+            <div class="results-header-actions">
+              <div class="segmented" role="tablist" aria-label="Mode d'affichage">
+                <button id="cardsViewBtn" class="active" role="tab" aria-selected="true">Cartes</button>
+                <button id="tableViewBtn" role="tab" aria-selected="false">Tableau</button>
+              </div>
+              <button class="btn-small" id="toggleComparisonBtn" title="Comparer plusieurs rapports cibles" aria-label="Comparer">Comparer</button>
+            </div>
+          </header>
+          <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
+            <div id="progress-bar"></div>
           </div>
-        </div>
-        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
-        <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, survol pour les détails</p>
+          <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
+          <div class="results-body">
+            <div class="table-scroll">
+              <table aria-label="Tableau des résultats de recherche">
+                <thead><tr></tr></thead>
+                <tbody id="resultats"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Volet détail de la solution sélectionnée -->
+        <section class="detail-pane" aria-label="Détail de la solution sélectionnée">
+          <div id="solutionCard" class="solution-card" hidden aria-live="polite"></div>
+
+          <nav class="detail-tabs" role="tablist" aria-label="Détail de la solution">
+            <button role="tab" data-detail="schema" class="active" aria-selected="true">Schéma</button>
+            <button role="tab" data-detail="analyse" aria-selected="false">Analyse</button>
+            <button role="tab" data-detail="graphiques" aria-selected="false">Graphiques</button>
+            <button role="tab" data-detail="journal" aria-selected="false">Journal</button>
+          </nav>
+
+          <div class="detail-panel viz-section active" data-detail-panel="schema">
+            <div class="viz-controls">
+              <div class="segmented view-switch">
+                <button class="view-mode active" data-view="geometry">Géométrie 2D</button>
+                <button class="view-mode" data-view="kinematic">Cinématique</button>
+              </div>
+              <span class="kinematic-projections">
+                <button class="btn-small active" data-projection="main">Vue principale</button>
+                <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
+                <button class="btn-small" id="kinematicReset">Réinitialiser</button>
+              </span>
+              <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
+              <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
+              <details class="export-menu">
+                <summary>Exporter</summary>
+                <div>
+                  <button data-export="exporterSVG">SVG</button>
+                  <button data-export="exporterPNG">PNG</button>
+                  <button data-export="exporterJSON">JSON</button>
+                  <button data-export="exporterCSV">CSV</button>
+                </div>
+              </details>
+            </div>
+            <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+            <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, survol pour les détails</p>
+            <details class="legacy-canvas-section">
+              <summary>Vue linéaire simplifiée</summary>
+              <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
+            </details>
+          </div>
+
+          <div class="detail-panel" data-detail-panel="analyse">
+            <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
+            <p class="detail-placeholder" data-placeholder="analyse">Lancez une recherche puis sélectionnez une solution pour voir son analyse mécanique.</p>
+          </div>
+
+          <div class="detail-panel" data-detail-panel="graphiques">
+            <div class="charts-header">
+              <div class="chart-tabs" id="chartTabs">
+                <button data-chart="ratioChart" class="active">Rapports</button>
+                <button data-chart="radarChart">Multicritère</button>
+                <button data-chart="cascadeChart">Couple / vitesse</button>
+                <button data-chart="powerLossChart">Pertes</button>
+                <button data-chart="safetyChart" class="expert-only">Sécurité</button>
+              </div>
+              <button id="exportChartsBtn" class="btn-small" title="Exporter tous les graphiques">Exporter</button>
+            </div>
+            <div class="charts-grid">
+              <div class="chart-container active" data-chart-panel="ratioChart"><canvas id="ratioChart" aria-label="Graphique de comparaison des rapports"></canvas></div>
+              <div class="chart-container" data-chart-panel="radarChart"><canvas id="radarChart" aria-label="Graphique radar multicritères"></canvas></div>
+              <div class="chart-container" data-chart-panel="cascadeChart"><canvas id="cascadeChart" aria-label="Graphique cascade couple/vitesse"></canvas></div>
+              <div class="chart-container" data-chart-panel="powerLossChart"><canvas id="powerLossChart" aria-label="Graphique des pertes de puissance"></canvas></div>
+              <div class="chart-container" data-chart-panel="safetyChart"><canvas id="safetyChart" aria-label="Graphique des facteurs de sécurité"></canvas></div>
+            </div>
+          </div>
+
+          <div class="detail-panel" data-detail-panel="journal">
+            <div id="searchStats" class="search-stats" aria-live="polite"></div>
+            <div id="logs" class="logs-container" aria-live="off"></div>
+          </div>
+        </section>
       </div>
 
-      <!-- Schéma Canvas legacy -->
-      <details class="legacy-canvas-section">
-        <summary>Schéma linéaire (vue classique)</summary>
-        <canvas id="gearCanvas" width="1000" height="200" style="border:1px solid var(--border-color); width:100%;" aria-label="Schéma linéaire classique"></canvas>
-      </details>
-
-      <!-- Barre de progression -->
-      <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
-        <div id="progress-bar"></div>
-      </div>
-      <div id="searchStats" class="search-stats" aria-live="polite"></div>
-
-      <!-- Résultats -->
-      <div class="result-container" id="result-container">
-        <div class="result-header">
-          <h2>Résultats</h2>
-          <div class="segmented" role="tablist" aria-label="Mode d’affichage"><button id="cardsViewBtn" class="active" role="tab" aria-selected="true">Cartes</button><button id="tableViewBtn" role="tab" aria-selected="false">Tableau</button></div>
-          <button class="btn-small" id="toggleComparisonBtn" onclick="toggleComparison()" title="Comparer plusieurs rapports cibles" aria-label="Comparer">Comparer</button>
-        </div>
-        <p id="status" aria-live="polite">En attente...</p>
-        <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
-        <div class="table-scroll">
-          <table aria-label="Tableau des résultats de recherche">
-            <thead>
-              <tr>
-                <th>Engrenages</th>
-                <th>Types</th>
-                <th>Rapport obtenu</th>
-                <th>Écart (%)</th>
-                <th>Étages</th>
-                <th>Rendement</th>
-                <th>Schéma</th>
-              </tr>
-            </thead>
-            <tbody id="resultats">
-              <tr><td colspan="7">Aucun résultat</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Comparaison multi-sorties -->
+      <!-- Comparaison multi-sorties (pleine largeur) -->
       <div id="comparisonPanel" class="comparison-panel" style="display:none;"></div>
-
-      <!-- Analyse mécanique -->
-      <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
-
-      <!-- Graphiques d'analyse -->
-      <div class="charts-section">
-        <div class="charts-header">
-          <h2>Graphiques d'analyse</h2>
-          <div class="charts-export-controls">
-            <button onclick="exportAllCharts()" class="btn-small" title="Exporter tous les graphiques">Exporter graphiques</button>
-          </div>
-        </div>
-        <div class="charts-grid">
-          <div class="chart-container">
-            <canvas id="ratioChart" aria-label="Graphique de comparaison des rapports"></canvas>
-          </div>
-          <div class="chart-container">
-            <canvas id="radarChart" aria-label="Graphique radar multicritères"></canvas>
-          </div>
-          <div class="chart-container">
-            <canvas id="cascadeChart" aria-label="Graphique cascade couple/vitesse"></canvas>
-          </div>
-          <div class="chart-container">
-            <canvas id="powerLossChart" aria-label="Graphique des pertes de puissance"></canvas>
-          </div>
-          <div class="chart-container pro-only" style="display:none;">
-            <canvas id="safetyChart" aria-label="Graphique des facteurs de sécurité"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <!-- Logs -->
-      <details class="logs-section">
-        <summary>Logs de recherche</summary>
-        <div id="logs" class="logs-container" aria-live="off"></div>
-      </details>
-    </div>
+    </main>
   </div>
 
   <!-- ===== JavaScript - Architecture modulaire ===== -->
@@ -394,7 +515,7 @@
   <script src="js/ui/ExportManager.js" defer></script>
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
-  <script src="js/ui/WorkbenchUI.js" defer></script>
+  <script src="js/ui/Workbench.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->
   <script src="js/app.js" defer></script>
