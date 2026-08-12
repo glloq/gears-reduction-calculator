@@ -65,7 +65,47 @@
     if(travel){var nodes=Array.from(document.querySelector('.objective-linear-fields').children);wrap(nodes,'objective-linear');document.querySelector('.objective-linear-fields').remove();}
     if(mode)mode.addEventListener('change',this.updateContext.bind(this));[el('vitesse_entree'),output].forEach(function(input){if(input)input.addEventListener('input',function(){var inputRpm=parseFloat(el('vitesse_entree').value),outputRpm=parseFloat(el('rpm_sortie_cible').value),derived=el('derivedRatio');if(derived)derived.textContent='Rapport cible dérivé : '+(inputRpm>0&&outputRpm>0?(inputRpm/outputRpm).toFixed(2):'—')+':1';});});
   };
-  WorkbenchUI.prototype.updateContext = function () { var mode=el('objective_mode')?el('objective_mode').value:'ratio',linear=mode==='rotationTranslation',self=this,boxes=Array.from(document.querySelectorAll('.type-checkbox'));if(linear){var selected=boxes.filter(function(cb){return cb.value!=='rack'&&cb.checked;}).map(function(cb){return cb.value;});if(selected.length||this._rotaryTypes===null)this._rotaryTypes=selected;}document.querySelectorAll('.objective-fields').forEach(function(group){group.classList.toggle('active',group.classList.contains('objective-'+(linear?'linear':mode)));});boxes.forEach(function(cb){var rack=cb.value==='rack';cb.disabled=linear?!rack:rack;if(linear)cb.checked=rack;else cb.checked=rack?false:(self._rotaryTypes===null?cb.checked:self._rotaryTypes.indexOf(cb.value)!==-1);cb.closest('.type-option').hidden=linear?!rack:rack;});var output=el('rpm_sortie_cible');if(output)output.dispatchEvent(new Event('input'));document.body.classList.toggle('linear-objective',linear);this.updateSummary(); };
+  WorkbenchUI.prototype.updateContext = function () {
+    var objective=el('objective_mode');
+    var mode=objective?objective.value:'ratio';
+    var linear=mode==='rotationTranslation';
+    var boxes=Array.from(document.querySelectorAll('.type-checkbox'));
+    var self=this;
+
+    // Preserve the user's rotary choices before selecting the mutually exclusive
+    // rack type. They are restored when returning to a rotary objective.
+    if(linear){
+      var selectedRotaryTypes=boxes.filter(function(checkbox){
+        return checkbox.value!=='rack'&&checkbox.checked;
+      }).map(function(checkbox){
+        return checkbox.value;
+      });
+      if(selectedRotaryTypes.length||this._rotaryTypes===null){
+        this._rotaryTypes=selectedRotaryTypes;
+      }
+    }
+
+    document.querySelectorAll('.objective-fields').forEach(function(group){
+      var context=linear?'linear':mode;
+      group.classList.toggle('active',group.classList.contains('objective-'+context));
+    });
+
+    boxes.forEach(function(checkbox){
+      var isRack=checkbox.value==='rack';
+      checkbox.disabled=linear?!isRack:isRack;
+      checkbox.checked=linear
+        ?isRack
+        :!isRack&&(self._rotaryTypes===null||self._rotaryTypes.indexOf(checkbox.value)!==-1);
+      checkbox.closest('.type-option').hidden=linear?!isRack:isRack;
+    });
+
+    var output=el('rpm_sortie_cible');
+    if(output){
+      output.dispatchEvent(new Event('input'));
+    }
+    document.body.classList.toggle('linear-objective',linear);
+    this.updateSummary();
+  };
   WorkbenchUI.prototype._enhanceTypes = function () { var grid=document.querySelector('.types-grid');if(!grid)return;var filters=document.createElement('div');filters.className='transmission-filters segmented';filters.innerHTML='<button type="button" class="active" data-filter="all">Toutes</button><button type="button" data-filter="gear">Engrenages</button><button type="button" data-filter="flexible">Flexibles</button><button type="button" data-filter="linear">Linéaires</button>';grid.parentNode.insertBefore(filters,grid);filters.addEventListener('click',function(event){if(!event.target.dataset.filter)return;filters.querySelectorAll('button').forEach(function(b){b.classList.toggle('active',b===event.target);});grid.querySelectorAll('.type-option').forEach(function(card){card.hidden=event.target.dataset.filter!=='all'&&TYPE_GROUPS[card.querySelector('input').value]!==event.target.dataset.filter;});}); };
   WorkbenchUI.prototype._enhanceModule = function () { var select=el('module_mode'),fixed=el('module'),min=el('module_min'),max=el('module_max');if(!select||!fixed)return;fixed.classList.add('module-fixed');if(min)min.classList.add('module-auto');if(max)max.classList.add('module-auto');var update=function(){var automatic=select.value==='automatic';fixed.disabled=automatic;fixed.classList.toggle('hidden',automatic);[min,max].forEach(function(input){if(input)input.classList.toggle('hidden',!automatic);});};select.addEventListener('change',update);update(); };
   WorkbenchUI.prototype._enhanceWeights = function () { document.querySelectorAll('input[type="range"][id^="weight_"]').forEach(function(range){var value=document.createElement('output');value.className='range-value';value.textContent=range.value;range.parentNode.insertBefore(value,range);range.addEventListener('input',function(){value.textContent=range.value;});}); };

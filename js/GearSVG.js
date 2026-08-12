@@ -1019,11 +1019,10 @@ class GearSVG {
       this._drawIOLabel(lastData.cx, lastData.cy + Math.max(lastR, 30) + 25, "SORTIE", "#e74c3c");
     }
 
-    this._fitViewBox();
-
     this._currentSolution = solution;
     this._currentMod = mod;
     this._currentAngleContact = angleContact;
+    this._fitViewBox(mod);
   }
 
   _drawDimensionLine(x1, y1, x2, y2, label) {
@@ -1087,12 +1086,13 @@ class GearSVG {
     this.mainGroup.appendChild(group);
   }
 
-  _fitViewBox() {
+  _fitViewBox(mod = this._currentMod) {
     if (this.gearData.length === 0) return;
+    if (!Number.isFinite(mod) || mod <= 0) return;
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     this.gearData.forEach(g => {
-      const r = (this._currentMod * g.nbDents) / 2 + this._currentMod * 2;
+      const r = (mod * g.nbDents) / 2 + mod * 2;
       minX = Math.min(minX, g.cx - r);
       minY = Math.min(minY, g.cy - r);
       maxX = Math.max(maxX, g.cx + r);

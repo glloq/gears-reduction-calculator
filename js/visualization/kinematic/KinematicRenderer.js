@@ -12,5 +12,55 @@
   KinematicRenderer.prototype.selectStage=function(index){if(!this.svg)return;this.svg.querySelectorAll('.kinematic-stage').forEach(function(g){g.classList.toggle('selected',Number(g.dataset.stage)===index);});var row=document.getElementById('mechanical-stage-'+index);if(row){row.classList.add('selected');row.scrollIntoView({behavior:'smooth',block:'center'});}this.container.dispatchEvent(new CustomEvent('kinematic:stage-selected',{detail:{index:index}}));};
   KinematicRenderer.prototype._bindPanZoom=function(svg){var self=this,drag=null;svg.addEventListener('wheel',function(e){e.preventDefault();self.scale=Math.max(.5,Math.min(3,self.scale*(e.deltaY<0?1.1:.9)));self._transform();},{passive:false});svg.addEventListener('pointerdown',function(e){drag={x:e.clientX-self.tx,y:e.clientY-self.ty};svg.setPointerCapture(e.pointerId);});svg.addEventListener('pointermove',function(e){if(drag){self.tx=e.clientX-drag.x;self.ty=e.clientY-drag.y;self._transform();}});svg.addEventListener('pointerup',function(){drag=null;});};
   GearApp.visualization.KinematicRenderer=KinematicRenderer;
-  document.addEventListener('DOMContentLoaded',function(){var container=document.getElementById('svgContainer'),legacy=document.querySelector('.legacy-canvas-section'),renderer=new KinematicRenderer(container);GearApp.visualization.kinematicRenderer=renderer;document.addEventListener('click',function(e){var btn=e.target.closest&&e.target.closest('.view-mode'),current=GearApp.currentSolution;if(btn){document.querySelectorAll('.view-mode').forEach(function(b){b.classList.toggle('active',b===btn);});var section=container.closest('.viz-section');if(section)section.classList.toggle('kinematic-active',btn.dataset.view==='kinematic');if(btn.dataset.view==='linear'){legacy.open=true;legacy.scrollIntoView({behavior:'smooth'});}else if(btn.dataset.view==='kinematic'&&current)renderer.render(current);else if(btn.dataset.view==='geometric'&&current){var accurate=current.stages.every(function(s){var c=GearTransmissionRegistry.get(s.type).capabilities;return c.geometricView==='evaluated';});if(!accurate)renderer.render(current);else if(window.GearSVG){var module=GearTransmissionRegistry.getCharacteristicModule(current.stages[0])||1;new GearSVG('svgContainer').drawGearTrain(current.stages.map(GearTransmissionRegistry.toLegacy),module,20);}}var projection=e.target.closest&&e.target.closest('[data-projection]');if(projection&&current){document.querySelectorAll('[data-projection]').forEach(function(b){b.classList.toggle('active',b===projection);});renderer.setProjection(projection.dataset.projection);}if(e.target.id==='kinematicReset')renderer.resetView();});});
+  document.addEventListener('DOMContentLoaded',function(){
+    var container=document.getElementById('svgContainer');
+    var legacy=document.querySelector('.legacy-canvas-section');
+    var renderer=new KinematicRenderer(container);
+    GearApp.visualization.kinematicRenderer=renderer;
+
+    document.addEventListener('click',function(e){
+      var btn=e.target.closest&&e.target.closest('.view-mode');
+      var current=GearApp.currentSolution;
+
+      if(btn){
+        document.querySelectorAll('.view-mode').forEach(function(b){
+          b.classList.toggle('active',b===btn);
+        });
+        var section=container.closest('.viz-section');
+        if(section){
+          section.classList.toggle('kinematic-active',btn.dataset.view==='kinematic');
+        }
+        if(btn.dataset.view==='linear'){
+          legacy.open=true;
+          legacy.scrollIntoView({behavior:'smooth'});
+        }else if(btn.dataset.view==='kinematic'&&current){
+          renderer.render(current);
+        }else if(btn.dataset.view==='geometric'&&current){
+          var accurate=current.stages.every(function(s){
+            var capabilities=GearTransmissionRegistry.get(s.type).capabilities;
+            return capabilities.geometricView==='evaluated';
+          });
+          if(!accurate){
+            renderer.render(current);
+          }else if(window.GearSVG){
+            var module=GearTransmissionRegistry.getCharacteristicModule(current.stages[0])||1;
+            new GearSVG('svgContainer').drawGearTrain(
+              current.stages.map(GearTransmissionRegistry.toLegacy),module,20
+            );
+          }
+        }
+      }
+
+      var projection=e.target.closest&&e.target.closest('[data-projection]');
+      if(projection&&current){
+        document.querySelectorAll('[data-projection]').forEach(function(b){
+          b.classList.toggle('active',b===projection);
+        });
+        renderer.setProjection(projection.dataset.projection);
+      }
+      if(e.target.id==='kinematicReset'){
+        renderer.resetView();
+      }
+    });
+  });
 })(GearApp);
