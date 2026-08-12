@@ -205,7 +205,6 @@
 
     var self = this;
     var registry = GearApp.models.typeRegistry;
-    var letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     this._outputs.forEach(function (output) {
       if (!output.solutions || output.solutions.length === 0) {
@@ -263,15 +262,12 @@
 
           // Engrenages
           var gearsCell = document.createElement('td');
-          var gStr = sol.map(function (s, si) {
-            return letters[2 * si] + ':' + s[0] + ',' + letters[2 * si + 1] + ':' + s[1];
-          }).join(' ; ');
-          gearsCell.textContent = gStr;
+          gearsCell.textContent = sol.stages.map(function(s){return self._stageLabel(s);}).join(' ; ');
 
           // Types
           var typesCell = document.createElement('td');
-          sol.forEach(function (stage) {
-            var typeId = stage[2] || 'spur';
+          sol.stages.forEach(function (stage) {
+            var typeId = stage.type;
             var type = registry.get(typeId);
             var badge = document.createElement('span');
             badge.className = 'type-badge ' + typeId;
@@ -291,7 +287,7 @@
 
           // Rendement
           var effCell = document.createElement('td');
-          effCell.textContent = '-';
+          effCell.textContent = Number.isFinite(sol.efficiency) ? (sol.efficiency*100).toFixed(1)+'%' : '—';
 
           row.appendChild(radioCell);
           row.appendChild(gearsCell);
@@ -358,27 +354,23 @@
 
     // Nombre d'étages
     html += '<tr><td>Étages</td>';
-    selected.forEach(function (s) { html += '<td>' + s.solution.length + '</td>'; });
+    selected.forEach(function (s) { html += '<td>' + s.solution.stages.length + '</td>'; });
     html += '</tr>';
 
     // Types utilisés
     html += '<tr><td>Types</td>';
     selected.forEach(function (s) {
-      var types = s.solution.map(function (stage) {
-        var typeId = stage[2] || 'spur';
+      var types = s.solution.stages.map(function (stage) {
+        var typeId = stage.type;
         return '<span class="type-badge ' + typeId + '">' + registry.get(typeId).nomCourt + '</span>';
       }).join(' ');
       html += '<td>' + types + '</td>';
     });
     html += '</tr>';
 
-    // Total dents
-    html += '<tr><td>Total dents</td>';
-    selected.forEach(function (s) {
-      var total = s.solution.reduce(function (sum, stage) { return sum + stage[0] + stage[1]; }, 0);
-      html += '<td>' + total + '</td>';
-    });
-    html += '</tr>';
+    html += '<tr><td>Rendement</td>';selected.forEach(function(s){html+='<td>'+(s.solution.efficiency*100).toFixed(1)+'%</td>';});html+='</tr>';
+    html += '<tr><td>Dimensions</td>';selected.forEach(function(s){var d=s.solution.dimensions||{};html+='<td>'+[d.length,d.maxDiameter,d.width].map(function(v){return Number.isFinite(v)?v.toFixed(1):'—';}).join(' × ')+' mm</td>';});html+='</tr>';
+    html += '<tr><td>Score</td>';selected.forEach(function(s){html+='<td>'+(s.solution.score&&Number.isFinite(s.solution.score.value)?s.solution.score.value.toFixed(3):'—')+'</td>';});html+='</tr>';
 
     // Étages partagés potentiels
     if (selected.length >= 2) {
@@ -403,10 +395,9 @@
    */
   ComparisonManager.prototype._findSharedStages = function (solA, solB) {
     var count = 0;
-    var minLen = Math.min(solA.length, solB.length);
+    var a=solA.stages||[],b=solB.stages||[],minLen = Math.min(a.length, b.length);
     for (var i = 0; i < minLen; i++) {
-      if (solA[i][0] === solB[i][0] && solA[i][1] === solB[i][1] &&
-          (solA[i][2] || 'spur') === (solB[i][2] || 'spur')) {
+      if (JSON.stringify(a[i]) === JSON.stringify(b[i])) {
         count++;
       }
     }
@@ -414,12 +405,10 @@
   };
 
   ComparisonManager.prototype._calculerRapport = function (solution) {
-    var registry = GearApp.models.typeRegistry;
-    return solution.reduce(function (acc, stage) {
-      var typeId = stage[2] || 'spur';
-      return acc * registry.calculerRapportEtage(typeId, stage[0], stage[1]);
-    }, 1);
+    return solution && Number.isFinite(solution.ratio) ? solution.ratio : null;
   };
+
+  ComparisonManager.prototype._stageLabel = function(stage){if(stage.type==='worm')return stage.wormStarts+' → '+stage.wheelTeeth;if(stage.type==='planetary')return 'S'+stage.sunTeeth+' / R'+stage.ringTeeth;if(stage.input&&stage.output)return stage.input.teeth+' → '+stage.output.teeth;return stage.type;};
 
   ComparisonManager.prototype._escapeHtml = function (str) {
     var div = document.createElement('div');

@@ -16,15 +16,19 @@ Application d'ingénierie statique pour rechercher, comparer et visualiser des t
 
 ## Supported transmissions
 
-| Transmission | Ratio | Geometry | Mechanics | Kinematic | Optimization |
-|---|---:|---:|---:|---:|---:|
-| Spur / helical | ✓ | ✓ | estimate | ✓ | ✓ |
-| Internal / bevel | ✓ | ✓ | estimate | ✓ | ✓ |
-| Planetary (Willis) | ✓ | ✓ | estimate | ✓ | ✓ |
-| Worm | ✓ | ✓ | estimate | ✓ | ✓ |
-| Flat/V/round/timing belt | ✓ | ✓ | limited | ✓ | ✓ |
-| Chain | ✓ | ✓ | limited | ✓ | ✓ |
-| Rack and pinion | linear | ✓ | force | ✓ | dedicated solver |
+| Transmission | Ratio | Geometry | Forces | Bending | Contact | Manufacturing | Geometric view | Kinematic view |
+|---|---|---|---|---|---|---|---|---|
+| Spur | evaluated | evaluated | evaluated | evaluated | evaluated | partial | partial | evaluated |
+| Helical | evaluated | evaluated | evaluated | evaluated | evaluated | partial | partial | evaluated |
+| Internal | evaluated | evaluated | evaluated | evaluated | evaluated | partial | partial | evaluated |
+| Bevel | evaluated | evaluated | evaluated | partial | partial | partial | partial | evaluated |
+| Worm | evaluated | evaluated | evaluated | unsupported | unsupported | partial | partial | evaluated |
+| Planetary (Willis) | evaluated | evaluated | partial | partial | partial | partial | partial | evaluated |
+| Belt | evaluated | evaluated | unsupported | unsupported | unsupported | partial | partial | evaluated |
+| Chain | evaluated | evaluated | unsupported | unsupported | unsupported | partial | unsupported | evaluated |
+| Rack and pinion | evaluated | evaluated | evaluated | unsupported | unsupported | partial | partial | evaluated |
+
+`partial` signifie qu'une méthode simplifiée ou une vue schématique est disponible avec des limites explicites. `unsupported` ne produit ni zéro fictif, ni `Infinity`, ni marge de sécurité implicite. Une contrainte SF/SH explicite rejette donc toute famille dont le contrôle correspondant n'est pas `evaluated`.
 
 La formulation de Willis accepte les membres solaire `S`, couronne `R` et porte-satellites `C` comme entrée, sortie et élément fixe; elle valide aussi `Zr = Zs + 2 Zp` et la condition d'espacement des satellites. Les filets de vis (1–6) sont une variable indépendante des plages de dents.
 
@@ -34,7 +38,7 @@ Les unités internes sont mm, N, N·m, rpm, W, MPa et radians. Le calcul de forc
 
 La recherche trie les candidats par proximité logarithmique avec la cible et applique avant la récursion des bornes de rapport minimal/maximal atteignable avec les étages restants. `maxIterations` compte les branches effectivement évaluées; les branches mathématiquement incapables d'atteindre la tolérance sont rejetées immédiatement et apparaissent dans les statistiques de rapport.
 
-Le mode automatique essaie les modules normalisés par ordre croissant et conserve le premier qui respecte les contraintes simplifiées. Les règles `standard`, `CNC`, `laser`, `printing3d` et `custom` filtrent réellement module, nombre de dents, largeur et diamètre imprimable; elles restent des recommandations de pré-dimensionnement.
+Le mode automatique essaie les modules normalisés par ordre croissant et conserve le premier qui respecte les contraintes simplifiées. Il ne fait pas varier un module d'engrenage pour les courroies ou les chaînes. Les règles `standard`, `CNC`, `laser`, `printing3d` et `custom` sont appliquées selon la famille et publient les règles appliquées, échecs et recommandations; elles restent des recommandations de pré-dimensionnement.
 
 ## Kinematic diagrams
 

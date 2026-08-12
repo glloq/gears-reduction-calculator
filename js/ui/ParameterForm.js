@@ -16,7 +16,7 @@
     this._sliderMenante = document.getElementById('dent_menante_slider');
     this._sliderMenee = document.getElementById('dent_menee_slider');
 
-    if (this._sliderMenante && noUiSlider) {
+    if (this._sliderMenante && typeof noUiSlider !== 'undefined') {
       noUiSlider.create(this._sliderMenante, {
         start: [10, 30], connect: true,
         range: { 'min': 5, 'max': 80 }, step: 1
@@ -27,7 +27,7 @@
       });
     }
 
-    if (this._sliderMenee && noUiSlider) {
+    if (this._sliderMenee && typeof noUiSlider !== 'undefined') {
       noUiSlider.create(this._sliderMenee, {
         start: [20, 50], connect: true,
         range: { 'min': 10, 'max': 120 }, step: 1

@@ -20,17 +20,19 @@
     weights:p.weights||{},fatigue:p.fatigue,shaft:p.shaft
   };}
   function moduleChoices(p){
+    var active=(p.typesActifs||['spur']).filter(function(id){return id!=='rack';});
+    if(active.length&&active.every(function(id){var def=Registry.get(id);return def&&def.capabilities&&!def.capabilities.usesModule;}))return [null];
     if(p.moduleMode!=='automatic')return Number.isFinite(p.module)&&p.module>0?[p.module]:[];
     return STANDARD_MODULES.filter(function(m){return (!p.moduleMin||m>=p.moduleMin)&&(!p.moduleMax||m<=p.moduleMax);});
   }
-  function applyModule(stages,m){stages.forEach(function(s){s.parameters=s.parameters||{};s.parameters.module=m;});}
-  function minSafety(solution){return solution.mechanical.reduce(function(v,m){return Math.min(v,m.bending?m.bending.safetyFactor:Infinity,m.contact?m.contact.safetyFactor:Infinity);},Infinity);}
+  function applyModule(stages,m){stages.forEach(function(s){s.parameters=s.parameters||{};var def=Registry.get(s.type);if(def.capabilities.usesModule&&m!=null)s.parameters.module=m;else if(!def.capabilities.usesModule)delete s.parameters.module;});}
+  function assessment(solution){var known=[],coverage='full';solution.mechanical.forEach(function(m){if(m.mechanicalStatus!=='evaluated'||m.bendingStatus!=='evaluated'||m.contactStatus!=='evaluated')coverage=coverage==='full'?'partial':coverage;if(m.mechanicalStatus==='unsupported')coverage='unsupported';if(m.bending&&Number.isFinite(m.bending.safetyFactor))known.push(m.bending.safetyFactor);if(m.contact&&Number.isFinite(m.contact.safetyFactor))known.push(m.contact.safetyFactor);});return {coverage:coverage,minimum:known.length?Math.min.apply(Math,known):null};}
   function manufacturingMetric(solution){return solution.stages.reduce(function(v,s){return v+({spur:1,helical:2,internal:2,bevel:3,worm:3,planetary:4,belt:1,chain:2}[s.type]||3);},0);}
   function compare(mode){return function(a,b){
     if(mode==='minimumStages')return a.stages.length-b.stages.length||a.errorPercent-b.errorPercent;
     if(mode==='efficiency')return b.efficiency-a.efficiency||a.errorPercent-b.errorPercent;
     if(mode==='compact')return (a.dimensions.x*a.dimensions.y*Math.max(1,a.dimensions.z))-(b.dimensions.x*b.dimensions.y*Math.max(1,b.dimensions.z))||a.errorPercent-b.errorPercent;
-    if(mode==='robust')return minSafety(b)-minSafety(a)||a.errorPercent-b.errorPercent;
+    if(mode==='robust'){var aa=assessment(a),bb=assessment(b),rank={full:0,partial:1,unsupported:2};return rank[aa.coverage]-rank[bb.coverage]||(bb.minimum||0)-(aa.minimum||0)||a.errorPercent-b.errorPercent;}
     if(mode==='manufacturing')return manufacturingMetric(a)-manufacturingMetric(b)||a.errorPercent-b.errorPercent;
     if(mode==='global')return a.score.value-b.score.value;
     return a.errorPercent-b.errorPercent;
@@ -59,7 +61,7 @@
           var solution=Engineering.analyzeSolution(stages,target,engineeringOptions(p));
           var dimensions=Engineering.validateDimensions(solution.dimensions,p.constraints||{});
           if(!dimensions.valid){rejections.dimensions++;continue;}
-          if(p.constraints&&p.constraints.minimumEfficiency&&solution.efficiency<p.constraints.minimumEfficiency){rejections.mechanics++;continue;}var minimumBending=p.constraints&&p.constraints.minimumBendingSafety,minimumContact=p.constraints&&p.constraints.minimumContactSafety;solution.mechanical.forEach(function(m){if(minimumBending&&m.bending&&m.bending.safetyFactor<minimumBending)reasons.push('bendingSafety');if(minimumContact&&m.contact&&m.contact.safetyFactor<minimumContact)reasons.push('contactSafety');});if(reasons.length){rejections.mechanics++;moduleSelection.rejected.push({module:modules[mi],reasons:Array.from(new Set(reasons))});continue;}
+          if(p.constraints&&p.constraints.minimumEfficiency&&solution.efficiency<p.constraints.minimumEfficiency){rejections.mechanics++;continue;}var minimumBending=p.constraints&&p.constraints.minimumBendingSafety,minimumContact=p.constraints&&p.constraints.minimumContactSafety;solution.mechanical.forEach(function(m){if(minimumBending&&m.bendingStatus!=='evaluated')reasons.push('UNSUPPORTED_BENDING_CHECK');else if(minimumBending&&m.bending.safetyFactor<minimumBending)reasons.push('BENDING_SAFETY_TOO_LOW','bendingSafety');if(minimumContact&&m.contactStatus!=='evaluated')reasons.push('UNSUPPORTED_CONTACT_CHECK');else if(minimumContact&&m.contact.safetyFactor<minimumContact)reasons.push('CONTACT_SAFETY_TOO_LOW','contactSafety');});if(reasons.length){rejections.mechanics++;moduleSelection.rejected.push({module:modules[mi],reasons:Array.from(new Set(reasons))});continue;}
           if(p.constraints&&p.constraints.minimumOutputTorqueNm&&solution.outputTorqueNm<p.constraints.minimumOutputTorqueNm){rejections.mechanics++;continue;}
           if(p.constraints&&p.constraints.minimumOutputSpeedRpm&&solution.outputSpeedRpm<p.constraints.minimumOutputSpeedRpm){rejections.mechanics++;continue;}
           if(p.constraints&&p.constraints.maximumOutputSpeedRpm&&solution.outputSpeedRpm>p.constraints.maximumOutputSpeedRpm){rejections.mechanics++;continue;}
@@ -93,5 +95,5 @@
     found.forEach(function(s){s.stats.search=stats;});
     return {solutions:found.slice(0,p.maxSolutions||10),stats:stats};
   }
-  return {search:search,compare:compare,STANDARD_MODULES:STANDARD_MODULES};
+  return {search:search,compare:compare,mechanicalAssessment:assessment,STANDARD_MODULES:STANDARD_MODULES};
 });

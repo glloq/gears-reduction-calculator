@@ -75,7 +75,12 @@
       generateCandidates: function (o) { return pairCandidates(id, o, constraints); } };
   }
   var types = {};
-  function register(definition) { if (!definition || !definition.id) throw new Error('Transmission id required'); types[definition.id] = Object.freeze(definition); return definition; }
+  var CAPABILITIES={
+    spur:['evaluated','evaluated','evaluated',true],helical:['evaluated','evaluated','evaluated',true],internal:['evaluated','evaluated','evaluated',true],
+    bevel:['evaluated','partial','partial',true],worm:['evaluated','unsupported','unsupported',true],planetary:['partial','partial','partial',true],
+    belt:['unsupported','unsupported','unsupported',false],chain:['unsupported','unsupported','unsupported',false],rack:['evaluated','unsupported','unsupported',true]
+  };
+  function register(definition) { if (!definition || !definition.id) throw new Error('Transmission id required');var c=CAPABILITIES[definition.id]||['unsupported','unsupported','unsupported',false];definition.capabilities=Object.freeze({ratio:'evaluated',geometry:'evaluated',forces:c[0],bending:c[1],contact:c[2],usesModule:c[3],manufacturing:'partial',geometricView:definition.id==='chain'?'unsupported':'partial',kinematicView:'evaluated'}); types[definition.id] = Object.freeze(definition); return definition; }
   register(pair('spur', 'Engrenage droit', { minInput: 6, maxInput: 200, minOutput: 6, maxOutput: 200, maxRatio: 8 }, 0.97));
   register(pair('helical', 'Engrenage hélicoïdal', { minInput: 8, maxInput: 200, minOutput: 8, maxOutput: 200, maxRatio: 10 }, 0.98));
   register(pair('internal', 'Engrenage intérieur', { minInput: 10, maxInput: 80, minOutput: 20, maxOutput: 300, maxRatio: 12 }, 0.98, function () { return 1; }));

@@ -7,6 +7,7 @@
     this._worker = null;
     this._isRunning = false;
     this._eventBus = eventBus || GearApp.eventBus;
+    this._pending = null;
   }
 
   Object.defineProperty(Engine.prototype, 'isRunning', {
@@ -34,11 +35,14 @@
     var self = this;
     return new Promise(function (resolve, reject) {
       if (self._worker) {
-        self._worker.terminate();
+        self.arreter();
       }
 
       self._worker = new Worker('js/core/worker.js');
       self._isRunning = true;
+      var settled=false;
+      function settle(kind,value){if(settled)return;settled=true;self._pending=null;kind(value);}
+      self._pending={reject:function(error){settle(reject,error);}};
 
       self._worker.onmessage = function (e) {
         var data = e.data;
@@ -80,7 +84,7 @@
             self._eventBus.emit('search:stats', data.stats || {});
             self._worker.terminate();
             self._worker = null;
-            resolve(data.solutionModels || data.solutions);
+            settle(resolve,data.solutionModels || data.solutions);
             break;
         }
       };
@@ -90,7 +94,7 @@
         self._isRunning = false;
         self._worker.terminate();
         self._worker = null;
-        reject(err);
+        settle(reject,err);
       };
 
       self._worker.postMessage(params);
@@ -102,6 +106,7 @@
       this._worker.terminate();
       this._worker = null;
       this._isRunning = false;
+      if(this._pending){var error=new Error('Recherche interrompue');error.name='AbortError';this._pending.reject(error);this._pending=null;}
       this._eventBus.emit('search:log', { message: "Recherche interrompue par l'utilisateur." });
     }
   };
