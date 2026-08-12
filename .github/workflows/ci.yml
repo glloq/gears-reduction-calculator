@@ -1,7 +1,19 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  test:
+  checks:
+    name: JavaScript and Node checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20, cache: npm}
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:pages
+
+  e2e:
+    name: Playwright E2E
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -9,6 +21,16 @@ jobs:
         with: {node-version: 20, cache: npm}
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm test
-      - run: npm run check:pages
       - run: npm run test:e2e
+
+  required-ci:
+    name: Required CI
+    if: always()
+    needs: [checks, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI job, including Playwright
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: test "$CHECKS_RESULT" = success && test "$E2E_RESULT" = success
