@@ -65,8 +65,11 @@
 
       <div class="param-section">
         <h3>Rapport cible</h3>
+        <label for="objective_mode">Mode principal :</label>
+        <select id="objective_mode" data-persist><option value="ratio">Je connais le rapport</option><option value="need">Je connais mon besoin</option></select>
         <label for="rapport">Nombre de tours entrée pour un tour sortie :</label>
         <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
+        <label for="rpm_sortie_cible">RPM sortie cible (mode besoin) :</label><input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
         <div class="btn-group">
           <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary" aria-label="Lancer la recherche">Rechercher</button>
           <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres" aria-label="Sauvegarder">Sauver</button>
@@ -105,6 +108,8 @@
             <input type="checkbox" class="type-checkbox" value="worm" id="type-worm">
             <span class="type-label">Vis sans fin</span>
           </label>
+          <label class="type-option"><input type="checkbox" class="type-checkbox" value="chain" id="type-chain"><span class="type-label">Chaîne</span></label>
+          <label class="type-option"><input type="checkbox" class="type-checkbox" value="rack" id="type-rack"><span class="type-label">Crémaillère</span></label>
         </div>
         <div class="shortcut-hint">Cochez les types à inclure dans la recherche</div>
 
@@ -142,6 +147,7 @@
 
       <div class="param-section">
         <h3>Options avancées</h3>
+        <label for="search_mode">Optimisation :</label><select id="search_mode" data-persist><option value="minimumStages">Minimum d'étages (rapide)</option><option value="precision">Meilleure précision</option><option value="efficiency">Meilleur rendement</option><option value="compact">Plus compact</option><option value="robust">Plus robuste</option><option value="manufacturing">Fabrication simple</option><option value="global">Optimisation globale</option></select>
         <label for="max_solutions">Nombre de résultats :</label>
         <input type="number" id="max_solutions" value="10" min="1" max="100">
 
@@ -157,6 +163,7 @@
 
       <div class="param-section">
         <h3>Paramètres mécaniques</h3>
+        <label for="module_mode">Sélection du module :</label><select id="module_mode" data-persist><option value="fixed">Module fixe</option><option value="automatic">Module automatique normalisé</option></select>
         <label for="module">Module des engrenages (mm) :</label>
         <input type="number" id="module" placeholder="Ex: 2.5" step="0.1" min="0.1">
 
@@ -165,6 +172,16 @@
 
         <label for="couple_entree">Couple d'entrée (N.m) :</label>
         <input type="number" id="couple_entree" value="10" step="0.1" min="0.01">
+        <label>Encombrement maximal (mm) :</label><div class="inline-fields"><input id="max_diameter" data-persist type="number" placeholder="Ø"><input id="max_length" data-persist type="number" placeholder="Longueur"><input id="max_width" data-persist type="number" placeholder="Largeur"></div>
+      </div>
+
+      <div class="param-section pro-only" style="display:none"><h3>Paramètres par transmission</h3>
+        <label>Vis : filets min/max</label><div class="inline-fields"><input id="worm_starts_min" data-persist type="number" value="1" min="1" max="6"><input id="worm_starts_max" data-persist type="number" value="6" min="1" max="6"></div>
+        <label>Angle d'avance vis (°)</label><input id="worm_lead_angle" data-persist type="number" value="20">
+        <label>Angle d'hélice (°)</label><input id="helix_angle" data-persist type="number" value="20"><label>Angle axes coniques (°)</label><input id="bevel_shaft_angle" data-persist type="number" value="90">
+        <label>Planétaire : satellites / entrée / sortie / fixe</label><input id="planet_count" data-persist type="number" value="3" min="2" max="6"><div class="inline-fields"><select id="planet_input" data-persist><option>S</option><option>R</option><option>C</option></select><select id="planet_output" data-persist><option>C</option><option>S</option><option>R</option></select><select id="planet_fixed" data-persist><option>R</option><option>S</option><option>C</option></select></div>
+        <label>Courroie : type / pas / entraxe</label><select id="belt_type" data-persist><option value="timing">Dentée (GT/HTD/T)</option><option value="flat">Plate</option><option value="v">V</option><option value="round">Ronde</option></select><div class="inline-fields"><input id="belt_pitch" data-persist value="2" type="number"><input id="belt_center" data-persist value="100" type="number"></div><label><input id="belt_crossed" data-persist type="checkbox"> Croisée</label>
+        <label>Chaîne : pas / entraxe (mm)</label><div class="inline-fields"><input id="chain_pitch" data-persist value="12.7" type="number"><input id="chain_center" data-persist value="200" type="number"></div>
       </div>
 
       <div class="param-section pro-only" id="proMaterialSection" style="display:none;">
@@ -216,11 +233,12 @@
       <div class="viz-section">
         <div class="viz-header">
           <h2>Schéma interactif</h2>
-          <div class="viz-controls">
+          <div class="viz-controls"><button class="btn-small view-mode active" data-view="geometric">Géométrique</button><button class="btn-small view-mode" data-view="kinematic">Cinématique</button><button class="btn-small view-mode" data-view="linear">Linéaire</button>
             <button onclick="UI.toggleAnimation()" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
             <button onclick="UI.resetSVGView()" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
             <button onclick="UI.exporterSVG()" class="btn-small" title="Exporter en SVG" aria-label="Exporter SVG">SVG</button>
             <button onclick="UI.exporterPNG()" class="btn-small" title="Exporter en PNG" aria-label="Exporter PNG">PNG</button>
+            <button onclick="UI.exporterJSON()" class="btn-small">JSON</button><button onclick="UI.exporterCSV()" class="btn-small">CSV</button>
           </div>
         </div>
         <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
@@ -310,6 +328,7 @@
 
   <!-- Namespace (doit être chargé en premier) -->
   <script src="js/namespace.js" defer></script>
+  <script src="js/transmissions/TransmissionRegistry.js" defer></script>
 
   <!-- Modèles -->
   <script src="js/models/TransmissionTypeRegistry.js" defer></script>
@@ -317,6 +336,8 @@
 
   <!-- Core -->
   <script src="js/core/EventBus.js" defer></script>
+  <script src="js/core/SearchEngine.js" defer></script>
+  <script src="js/core/Engineering.js" defer></script>
   <script src="js/core/GearMechanics.js" defer></script>
   <script src="js/core/Engine.js" defer></script>
 
@@ -328,6 +349,7 @@
   <script src="js/visualization/GearSVG.js" defer></script>
   <script src="js/visualization/GearCharts.js" defer></script>
   <script src="js/visualization/LegacySchema.js" defer></script>
+  <script src="js/visualization/kinematic/KinematicRenderer.js" defer></script>
 
   <!-- UI -->
   <script src="js/ui/Logger.js" defer></script>
