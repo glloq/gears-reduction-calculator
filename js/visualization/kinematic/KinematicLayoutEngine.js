@@ -1,12 +1,10 @@
 (function (root, factory) {
-  var api = factory();
+  var api = factory(typeof module === 'object' && module.exports ? require('../../transmissions/TransmissionRegistry.js') : root.GearTransmissionRegistry);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.KinematicLayoutEngine = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (Registry) {
   'use strict';
 
-  var PERPENDICULAR = { bevel: true, worm: true };
-  var COAXIAL = { planetary: true, epicyclic: true, internal: true };
   var AXES = [
     { x: 1, y: 0, z: 0, name: 'X' },
     { x: 0, y: 1, z: 0, name: 'Y' },
@@ -15,11 +13,7 @@
 
   function typeOf(stage) { return stage.type || stage[2] || 'spur'; }
   function relation(stage) {
-    var type = typeOf(stage);
-    if (type === 'rack') return 'linear';
-    if (PERPENDICULAR[type]) return 'perpendicular';
-    if (COAXIAL[type]) return 'coaxial';
-    return 'parallel';
+    return Registry.getAxisRelation({type:typeOf(stage)});
   }
   function copy(point) { return { id: point.id, x: point.x, y: point.y, z: point.z, axis: point.axis, role: point.role }; }
   function nextPerpendicular(axis, index) {
@@ -63,7 +57,7 @@
         output.axis = input.axis;
         output.x += self.stageSpacing;
         if (input.axis.name === 'Z') output.z += (index % 2 ? 1 : -1) * self.shaftSpacing;
-        else output.y += (index % 2 ? 1 : -1) * self.shaftSpacing;
+        else output.y += (index % 2 ? 1 : -1) * (mode==='internal-parallel'?self.shaftSpacing*.55:self.shaftSpacing);
       }
       shafts.push(output); current = output;
       worldNodes.push({ index: index, stage: stage, relation: mode, input: input, output: output });

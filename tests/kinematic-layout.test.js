@@ -26,13 +26,14 @@ test('spur bevel spur preserves the changed axis for the last stage', () => {
   assert.notEqual(nodes[0].input.axis.name, nodes[2].output.axis.name);
 });
 
-test('planetary and internal transmissions remain coaxial', () => {
-  for (const type of ['planetary', 'internal']) {
-    const node = new Layout().layout([{ type }]).worldNodes[0];
-    assert.equal(node.relation, 'coaxial');
-    assert.equal(node.input.id, node.output.id);
-    assert.equal(node.input.axis.name, node.output.axis.name);
-  }
+test('planetary remains coaxial while internal mesh uses offset parallel axes', () => {
+  const planetary = new Layout().layout([{ type: 'planetary' }]).worldNodes[0];
+  assert.equal(planetary.relation, 'coaxial');
+  assert.equal(planetary.input.id, planetary.output.id);
+  const internal = new Layout().layout([{ type: 'internal' }]).worldNodes[0];
+  assert.equal(internal.relation, 'internal-parallel');
+  assert.notEqual(internal.input.id, internal.output.id);
+  assert.equal(internal.input.axis.name, internal.output.axis.name);
 });
 
 test('main and orthogonal projections expose different spatial coordinates', () => {

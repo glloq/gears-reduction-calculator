@@ -35,11 +35,12 @@
 
   ExportManager.prototype.exportJSON = function (payload) {
     var solution=payload&&payload.solution?payload.solution:payload;
-    var model=solution&&solution.stages?{input:{inputSpeedRpm:solution.inputSpeedRpm,inputTorqueNm:solution.inputTorqueNm},constraints:(payload&&payload.constraints)||{},solution:solution,stages:solution.stages,geometry:solution.stages.map(function(s){return s.geometry;}),mechanical:solution.mechanical,materials:solution.materials||(payload&&payload.materials)||{},fatigue:solution.fatigue||null,shaft:solution.shaft||null,manufacturing:solution.manufacturing||null,score:solution.score,warnings:solution.warnings,searchStats:solution.stats}:payload;
+    var model=solution&&solution.stages?{schemaVersion:1,generatedBy:'gears-reduction-calculator',input:{inputSpeedRpm:solution.inputSpeedRpm,inputTorqueNm:solution.inputTorqueNm},constraints:(payload&&payload.constraints)||{},solution:solution,stages:solution.stages,geometry:solution.stages.map(function(s){return s.geometry;}),mechanical:solution.mechanical,materials:solution.materials||(payload&&payload.materials)||{},fatigue:solution.fatigue||null,shaft:solution.shaft||null,manufacturing:solution.manufacturing||null,score:solution.score,warnings:solution.warnings,searchStats:solution.stats}:payload;
     this._download(new Blob([JSON.stringify(model, null, 2)], {type:'application/json'}), 'gear-solution.json');
   };
 
   ExportManager.prototype.exportCSV = function (solution) {
+    if(solution&&solution.mode==='rotationTranslation'){var linear=['travel_mm_per_rev,linear_speed_mm_min,output_force_n,efficiency',[solution.travelPerRevolutionMm,solution.outputLinearSpeedMmMin,solution.outputForceN,solution.efficiency].join(',')];this._download(new Blob([linear.join('\n')],{type:'text/csv;charset=utf-8'}),'gear-linear-solution.csv');return;}
     var rows=['stage,type,input,output,ratio,module,pitch_diameter_input,pitch_diameter_output,center_distance,efficiency,Ft,Fr,Fa,SF,SH'];
     if(solution&&solution.stages)solution.stages.forEach(function(s,i){var m=solution.mechanical[i],g=s.geometry||{},input=s.input?s.input.teeth:s.wormStarts||s.sunTeeth,output=s.output?s.output.teeth:s.wheelTeeth||s.ringTeeth;rows.push([i+1,s.type,input,output,m.ratio,s.parameters.module,g.pitchDiameterInput||g.sunDiameter,g.pitchDiameterOutput||g.ringDiameter,g.centerDistance,m.efficiency,m.forces.tangentialN,m.forces.radialN,m.forces.axialN,m.bending&&m.bending.safetyFactor,m.contact&&m.contact.safetyFactor].join(','));});
     this._download(new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8'}), 'gear-solution.csv');

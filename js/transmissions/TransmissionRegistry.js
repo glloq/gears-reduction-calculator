@@ -8,13 +8,31 @@
   var radians = function (degrees) { return degrees * Math.PI / 180; };
   var pairRatio = function (stage) { return stage.output.teeth / stage.input.teeth; };
   var pairDirection = function () { return -1; };
+  var AXIS_RELATIONS={spur:'parallel',helical:'parallel',internal:'internal-parallel',bevel:'perpendicular',worm:'perpendicular',planetary:'coaxial',epicyclic:'coaxial',belt:'parallel',chain:'parallel',rack:'linear'};
+  function axisRelation(stage){return AXIS_RELATIONS[stage.type]||'parallel';}
+  function geometryContract(stage,geometry){
+    var linear=stage.type==='rack', keys=['maxDiameter','width','pitchDiameterInput','pitchDiameterOutput','centerDistance'];
+    keys.forEach(function(k){if(geometry[k]===undefined)geometry[k]=null;});
+    geometry.axisRelation=geometry.axisRelation||axisRelation(stage);
+    geometry.geometryStatus=linear?'linear':'evaluated';
+    return geometry;
+  }
+  function validateGeometryResult(stage,geometry){
+    if(!geometry||!geometry.axisRelation)return {valid:false,failures:['axisRelation']};
+    var failures=[];['maxDiameter','width'].forEach(function(k){if(geometry[k]!=null&&(!Number.isFinite(geometry[k])||geometry[k]<=0))failures.push(k);});
+    if(stage.type!=='rack')['pitchDiameterInput','pitchDiameterOutput'].forEach(function(k){if(geometry[k]!=null&&(!Number.isFinite(geometry[k])||geometry[k]<=0))failures.push(k);});
+    if(geometry.centerDistance!=null&&(!Number.isFinite(geometry.centerDistance)||geometry.centerDistance<0))failures.push('centerDistance');
+    return {valid:!failures.length,failures:failures};
+  }
   function pairGeometry(stage) {
     var p = stage.parameters || {}, m = p.module || 1, a = radians(p.pressureAngle == null ? 20 : p.pressureAngle);
     var z1 = stage.input.teeth, z2 = stage.output.teeth, x1 = p.profileShiftInput || 0, x2 = p.profileShiftOutput || 0;
     var internal = stage.type === 'internal', beta = radians(stage.type === 'helical' ? (p.helixAngle || 20) : 0);
     var mt = m / Math.cos(beta), d1 = mt * z1, d2 = mt * z2;
     var center = (internal ? d2 - d1 : d1 + d2) / 2 + m * (x1 + x2);
-    var base1 = d1 * Math.cos(a), base2 = d2 * Math.cos(a);
+    var alphaT=Math.atan(Math.tan(a)/Math.cos(beta));
+    var nominalCenter=(internal ? d2-d1:d1+d2)/2, working=Math.acos(Math.max(-1,Math.min(1,nominalCenter*Math.cos(alphaT)/center)));
+    var base1 = d1 * Math.cos(alphaT), base2 = d2 * Math.cos(alphaT);
     var outside1 = d1 + 2 * m * (1 + x1), outside2 = d2 + (internal ? -2 : 2) * m * (1 + x2);
     var root1 = d1 - 2 * m * (1.25 - x1), root2 = d2 + (internal ? 2 : -2) * m * (1.25 - x2);
     var path = Math.sqrt(Math.max(0, outside1 * outside1 - base1 * base1)) / 2 +
@@ -26,15 +44,15 @@
       rootDiameterInput: root1, rootDiameterOutput: root2, circularPitch: Math.PI * m,
       theoreticalToothThickness: Math.PI * m / 2 + 2 * x1 * m * Math.tan(a), addendum: m,
       dedendum: 1.25 * m, clearance: 0.25 * m, backlash: p.backlash || 0,
-      centerDistance: center, pressureAngleDeg: a * 180 / Math.PI, workingPressureAngleDeg: a * 180 / Math.PI,
+      centerDistance: center, pressureAngleDeg: a * 180 / Math.PI, transversePressureAngleDeg:alphaT*180/Math.PI,workingPressureAngleDeg: working * 180 / Math.PI,
       transverseContactRatio: transverse, overlapContactRatio: overlap, totalContactRatio: transverse + overlap,
-      maxDiameter: Math.max(outside1, outside2), width: p.faceWidth || 10 * m };
+      maxDiameter: Math.max(outside1, outside2), width: p.faceWidth || 10 * m,axisRelation:axisRelation(stage) };
   }
   function gearForces(stage, torqueNm) {
     var g = pairGeometry(stage), p = stage.parameters || {}, alpha = radians(p.pressureAngle || 20);
-    var beta = radians(stage.type === 'helical' ? (p.helixAngle || 20) : 0);
+    var beta = radians(stage.type === 'helical' ? (p.helixAngle || 20) : 0),alphaT=Math.atan(Math.tan(alpha)/Math.cos(beta));
     var ft = 2000 * torqueNm / g.pitchDiameterInput; // N: diameter is mm
-    return { tangentialN: ft, radialN: ft * Math.tan(alpha) / Math.cos(beta), axialN: ft * Math.tan(beta) };
+    return { tangentialN: ft, radialN: ft * Math.tan(alphaT), axialN: ft * Math.tan(beta) };
   }
   function candidatePair(type, a, b, parameters) { return { type: type, input: { teeth: a }, output: { teeth: b }, parameters: parameters || {} }; }
   function pairCandidates(type, options, constraints) {
@@ -43,6 +61,7 @@
     for (var a = a0; a <= a1; a++) for (var b = b0; b <= b1; b++) {
       if (options.reductionOnly && b <= a) continue;
       if (type === 'internal' && b - a < 10) continue;
+      if(Math.abs(b/a)>constraints.maxRatio)continue;
       out.push(candidatePair(type, a, b, options.typeParameters && options.typeParameters[type]));
     }
     return out;
@@ -50,7 +69,7 @@
   function pair(id, name, constraints, efficiency, direction) {
     return { id: id, name: name, constraints: constraints, parameterDefinitions: {},
       validateConfiguration: function (s) { return !!(s.input && s.output && s.input.teeth > 0 && s.output.teeth > 0); },
-      calculateRatio: pairRatio, calculateGeometry: pairGeometry,
+      calculateRatio: pairRatio, calculateGeometry: function(s){return geometryContract(s,pairGeometry(s));},
       calculateEfficiency: function () { return efficiency; }, calculateForces: gearForces,
       rotationDirection: direction || pairDirection,
       generateCandidates: function (o) { return pairCandidates(id, o, constraints); } };
@@ -60,11 +79,13 @@
   register(pair('spur', 'Engrenage droit', { minInput: 6, maxInput: 200, minOutput: 6, maxOutput: 200, maxRatio: 8 }, 0.97));
   register(pair('helical', 'Engrenage hélicoïdal', { minInput: 8, maxInput: 200, minOutput: 8, maxOutput: 200, maxRatio: 10 }, 0.98));
   register(pair('internal', 'Engrenage intérieur', { minInput: 10, maxInput: 80, minOutput: 20, maxOutput: 300, maxRatio: 12 }, 0.98, function () { return 1; }));
-  register(pair('bevel', 'Engrenage conique', { minInput: 10, maxInput: 80, minOutput: 10, maxOutput: 120, maxRatio: 6 }, 0.96));
+  var bevel=pair('bevel', 'Engrenage conique', { minInput: 10, maxInput: 80, minOutput: 10, maxOutput: 120, maxRatio: 6 }, 0.96);
+  bevel.calculateGeometry=function(s){var p=s.parameters||{},m=p.module||1,z1=s.input.teeth,z2=s.output.teeth,sigma=radians(p.shaftAngle==null?90:p.shaftAngle),d1=m*z1,d2=m*z2,delta1=Math.atan2(Math.sin(sigma),z2/z1+Math.cos(sigma)),delta2=sigma-delta1,R=d1/(2*Math.sin(delta1)),b=Math.min(p.faceWidth||10*m,R/3);return geometryContract(s,{pitchConeAngleInput:delta1*180/Math.PI,pitchConeAngleOutput:delta2*180/Math.PI,shaftAngleDeg:sigma*180/Math.PI,coneDistance:R,pitchDiameterInput:d1,pitchDiameterOutput:d2,outerDiameterInput:d1+2*m*Math.cos(delta1),outerDiameterOutput:d2+2*m*Math.cos(delta2),maxDiameter:Math.max(d1+2*m*Math.cos(delta1),d2+2*m*Math.cos(delta2)),width:b,centerDistance:null,axisRelation:Math.abs(sigma-Math.PI/2)<1e-9?'perpendicular':'crossed'});};
+  register(bevel);
   register({ id: 'worm', name: 'Vis sans fin', constraints: { minInput: 1, maxInput: 6, minOutput: 15, maxOutput: 120, maxRatio: 120 }, parameterDefinitions: { wormStarts: [1, 6] },
     validateConfiguration: function (s) { return s.wormStarts >= 1 && s.wormStarts <= 6 && s.wheelTeeth >= 15; },
     calculateRatio: function (s) { return s.wheelTeeth / s.wormStarts; },
-    calculateGeometry: function (s) { var m = s.parameters.module || 1, dw = m * s.wheelTeeth, ds = m * (s.parameters.diameterQuotient || 10); return { pitchDiameterInput: ds, pitchDiameterOutput: dw, centerDistance: (ds + dw) / 2, maxDiameter: dw + 2 * m, width: 12 * m }; },
+    calculateGeometry: function (s) { var m = s.parameters.module || 1, dw = m * s.wheelTeeth, ds = m * (s.parameters.diameterQuotient || 10); return geometryContract(s,{ pitchDiameterInput: ds, pitchDiameterOutput: dw, centerDistance: (ds + dw) / 2, maxDiameter: dw + 2 * m, width: 12 * m,axisRelation:'perpendicular' }); },
     calculateEfficiency: function (s) { var gamma = radians(s.parameters.leadAngle || 20), mu = s.parameters.frictionCoefficient || 0.06; return Math.max(0.2, Math.min(0.9, Math.tan(gamma) / Math.tan(gamma + Math.atan(mu)))); },
     calculateForces: function (s, t) { var g = this.calculateGeometry(s), ft = 2000 * t / g.pitchDiameterInput; return { tangentialN: ft, radialN: ft * Math.tan(radians(s.parameters.pressureAngle || 20)), axialN: ft / Math.tan(radians(s.parameters.leadAngle || 20)) }; }, rotationDirection: pairDirection,
     generateCandidates: function (o) { var out = [], p = o.typeParameters.worm || {}, lo = p.wormStartsMin || 1, hi = p.wormStartsMax || 6; for (var a = lo; a <= hi; a++) for (var b = Math.max(15, o.outputMin); b <= Math.min(120, o.outputMax); b++) out.push({ type: 'worm', wormStarts: a, wheelTeeth: b, parameters: p }); return out; } });
@@ -82,13 +103,15 @@
   register({ id: 'planetary', aliases: ['epicyclic'], name: 'Train épicycloïdal', constraints: { minInput: 12, maxInput: 60, minOutput: 30, maxOutput: 200, maxRatio: 12 }, parameterDefinitions: {},
     validateConfiguration: function (s) { var zp = (s.ringTeeth - s.sunTeeth) / 2, n = s.planetCount || 3; return zp > 0 && Number.isInteger(zp) && Number.isInteger((s.sunTeeth + s.ringTeeth) / n); },
     calculateRatio: function (s) { return planetarySpeeds(s, 1).ratio; }, calculateSpeeds: planetarySpeeds,
-    calculateGeometry: function (s) { var m = s.parameters.module || 1; return { sunDiameter: m * s.sunTeeth, ringDiameter: m * s.ringTeeth, planetDiameter: m * (s.ringTeeth - s.sunTeeth) / 2, maxDiameter: m * (s.ringTeeth + 2), width: s.parameters.faceWidth || 10 * m, centerDistance: 0 }; },
+    calculateGeometry: function (s) { var m = s.parameters.module || 1,ds=m*s.sunTeeth,dr=m*s.ringTeeth;return geometryContract(s,{ sunDiameter:ds, ringDiameter:dr, planetDiameter: m * (s.ringTeeth - s.sunTeeth) / 2,pitchDiameterInput:s.inputMember==='R'?dr:ds,pitchDiameterOutput:s.outputMember==='R'?dr:(s.outputMember==='S'?ds:dr), maxDiameter: m * (s.ringTeeth + 2), width: s.parameters.faceWidth || 10 * m, centerDistance: 0,axisRelation:'coaxial' }); },
     calculateEfficiency: function () { return 0.97; }, calculateForces: function (s, t) { var d = s.parameters.module * s.sunTeeth, n = s.planetCount || 3, ft = 2000 * t / d / n; return { tangentialN: ft, radialN: ft * Math.tan(radians(s.parameters.pressureAngle || 20)), axialN: 0 }; }, rotationDirection: function (s) { return Math.sign(this.calculateRatio(s)); },
     generateCandidates: function (o) { var out = [], p = o.typeParameters.planetary || o.typeParameters.epicyclic || {}; for (var zs = Math.max(12, o.inputMin); zs <= Math.min(60, o.inputMax); zs++) for (var zr = Math.max(30, o.outputMin); zr <= Math.min(200, o.outputMax); zr++) { var s = { type: 'planetary', sunTeeth: zs, ringTeeth: zr, planetTeeth: (zr-zs)/2, planetCount: p.planetCount || 3, inputMember: p.inputMember || 'S', outputMember: p.outputMember || 'C', fixed: p.fixed || 'R', parameters: p }; if (this.validateConfiguration(s)) out.push(s); } return out; } });
-  function beltGeometry(s) { var d1 = s.input.teeth * s.parameters.pitch / Math.PI, d2 = s.output.teeth * s.parameters.pitch / Math.PI, c = s.parameters.centerDistance, l = 2*c + Math.PI*(d1+d2)/2 + Math.pow(d2-d1,2)/(4*c); return { pitchDiameterInput:d1,pitchDiameterOutput:d2,centerDistance:c,length:l,beltTeeth:Math.round(l/s.parameters.pitch),wrapAngleDeg:180-2*Math.asin(Math.abs(d2-d1)/(2*c))*180/Math.PI,maxDiameter:Math.max(d1,d2),width:s.parameters.width||10 }; }
+  function beltLength(d1,d2,c,crossed){return 2*c+Math.PI*(d1+d2)/2+Math.pow(crossed?d1+d2:d2-d1,2)/(4*c);}
+  function solveBeltCenter(d1,d2,length,crossed,guess){var c=guess;for(var i=0;i<12;i++){var f=beltLength(d1,d2,c,crossed)-length,h=.001,df=(beltLength(d1,d2,c+h,crossed)-beltLength(d1,d2,c-h,crossed))/(2*h);c-=f/df;}return c;}
+  function beltGeometry(s) { var d1 = s.input.teeth * s.parameters.pitch / Math.PI, d2 = s.output.teeth * s.parameters.pitch / Math.PI, c = s.parameters.centerDistance,crossed=!!s.parameters.crossed, theoretical=beltLength(d1,d2,c,crossed),teeth=Math.max(1,Math.round(theoretical/s.parameters.pitch)),actual=teeth*s.parameters.pitch,corrected=solveBeltCenter(d1,d2,actual,crossed,c),arg=(crossed?d1+d2:Math.abs(d2-d1))/(2*corrected),wrap=crossed?180+2*Math.asin(Math.min(1,arg))*180/Math.PI:180-2*Math.asin(Math.min(1,arg))*180/Math.PI; return geometryContract(s,{ pitchDiameterInput:d1,pitchDiameterOutput:d2,centerDistance:corrected,theoreticalCenterDistance:c,theoreticalLength:theoretical,selectedBeltTeeth:teeth,actualLength:actual,correctedCenterDistance:corrected,length:actual,beltTeeth:teeth,wrapAngleDeg:wrap,maxDiameter:Math.max(d1,d2),width:s.parameters.width||10 }); }
   register({ id:'belt', name:'Courroie', constraints:{minInput:10,maxInput:200,minOutput:10,maxOutput:500,maxRatio:10}, parameterDefinitions:{}, validateConfiguration:function(s){return s.parameters.centerDistance>Math.abs(s.output.teeth-s.input.teeth)*s.parameters.pitch/(2*Math.PI);}, calculateRatio:pairRatio, calculateGeometry:beltGeometry, calculateEfficiency:function(s){return s.parameters.beltType==='timing'?0.98:0.95;}, calculateForces:function(){return {tangentialN:null,radialN:null,axialN:0};}, rotationDirection:function(s){return s.parameters.crossed?-1:1;}, generateCandidates:function(o){return pairCandidates('belt',o,this.constraints);} });
-  register({ id:'chain', name:'Chaîne', constraints:{minInput:8,maxInput:120,minOutput:8,maxOutput:240,maxRatio:12}, parameterDefinitions:{}, validateConfiguration:function(){return true;}, calculateRatio:pairRatio, calculateGeometry:function(s){var p=s.parameters.pitch,c=s.parameters.centerDistance,z1=s.input.teeth,z2=s.output.teeth,x=2*c/p+(z1+z2)/2+Math.pow(z2-z1,2)*p/(4*Math.PI*Math.PI*c);return {pitchDiameterInput:p/Math.sin(Math.PI/z1),pitchDiameterOutput:p/Math.sin(Math.PI/z2),centerDistance:c,links:Math.round(x/2)*2,length:Math.round(x/2)*2*p,maxDiameter:p/Math.sin(Math.PI/z2),width:s.parameters.width||10};},calculateEfficiency:function(){return .97;},calculateForces:function(){return {tangentialN:null,radialN:null,axialN:0};},rotationDirection:function(){return 1;},generateCandidates:function(o){return pairCandidates('chain',o,this.constraints);} });
-  register({ id:'rack', name:'Pignon-crémaillère', constraints:{minInput:6,maxInput:200,minOutput:1,maxOutput:1,maxRatio:Infinity},parameterDefinitions:{},validateConfiguration:function(s){return s.pinionTeeth>0;},calculateRatio:function(){return null;},calculateGeometry:function(s){var d=s.parameters.module*s.pinionTeeth;return {pitchDiameterInput:d,travelPerRevolution:Math.PI*d,linearSpeedMmMin:Math.PI*d*(s.parameters.rpm||0),maxDiameter:d+2*s.parameters.module,width:s.parameters.faceWidth||10*s.parameters.module};},calculateEfficiency:function(){return .97;},calculateForces:function(s,t){return {tangentialN:2000*t/(s.parameters.module*s.pinionTeeth),radialN:0,axialN:0};},rotationDirection:function(){return 0;},generateCandidates:function(){return [];} });
+  register({ id:'chain', name:'Chaîne', constraints:{minInput:8,maxInput:120,minOutput:8,maxOutput:240,maxRatio:12}, parameterDefinitions:{}, validateConfiguration:function(){return true;}, calculateRatio:pairRatio, calculateGeometry:function(s){var p=s.parameters.pitch,c=s.parameters.centerDistance,z1=s.input.teeth,z2=s.output.teeth,A=(z1+z2)/2,B=Math.pow(z2-z1,2)/(4*Math.PI*Math.PI),x=2*c/p+A+B/(c/p),links=Math.round(x/2)*2,q=(links-A+Math.sqrt(Math.max(0,Math.pow(links-A,2)-8*B)))/4,corrected=q*p;return geometryContract(s,{pitchDiameterInput:p/Math.sin(Math.PI/z1),pitchDiameterOutput:p/Math.sin(Math.PI/z2),centerDistance:corrected,theoreticalLinks:x,selectedLinks:links,links:links,actualLength:links*p,length:links*p,correctedCenterDistance:corrected,maxDiameter:Math.max(p/Math.sin(Math.PI/z1),p/Math.sin(Math.PI/z2)),width:s.parameters.width||10});},calculateEfficiency:function(){return .97;},calculateForces:function(){return {tangentialN:null,radialN:null,axialN:0};},rotationDirection:function(){return 1;},generateCandidates:function(o){return pairCandidates('chain',o,this.constraints);} });
+  register({ id:'rack', name:'Pignon-crémaillère', constraints:{minInput:6,maxInput:200,minOutput:1,maxOutput:1,maxRatio:Infinity},parameterDefinitions:{},validateConfiguration:function(s){return s.pinionTeeth>0;},calculateRatio:function(){return null;},calculateGeometry:function(s){var d=s.parameters.module*s.pinionTeeth;return geometryContract(s,{pitchDiameterInput:d,pitchDiameterOutput:null,centerDistance:null,travelPerRevolution:Math.PI*d,linearSpeedMmMin:Math.PI*d*(s.parameters.rpm||0),maxDiameter:d+2*s.parameters.module,width:s.parameters.faceWidth||10*s.parameters.module,axisRelation:'linear'});},calculateEfficiency:function(){return .97;},calculateForces:function(s,t){return {tangentialN:2000*t/(s.parameters.module*s.pinionTeeth),radialN:0,axialN:0};},rotationDirection:function(){return 0;},generateCandidates:function(){return [];} });
   types.epicyclic = types.planetary;
   /* Single UI/solver parameter schema. Definitions are attached after registration
      because transmission definitions themselves are frozen by register(). */
@@ -104,5 +127,5 @@
     rack:{faceWidth:{label:'Largeur pignon/crémaillère (mm)',type:'number',default:10,min:1,step:.5}}
   };
   var beltPitches={GT2:2,GT3:3,'HTD-3M':3,'HTD-5M':5,'HTD-8M':8,T5:5,T10:10};
-  return { register: register, get: function(id){return types[id];}, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
+  return { register: register, get: function(id){return types[id];}, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
 });
