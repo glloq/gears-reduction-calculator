@@ -14,19 +14,51 @@
   var TYPE_GROUPS = { spur:'gear', helical:'gear', internal:'gear', bevel:'gear', epicyclic:'gear', worm:'gear', belt:'flexible', chain:'flexible', rack:'linear' };
   function el(id) { return document.getElementById(id); }
   function finite(value, digits) { return Number.isFinite(value) ? value.toFixed(digits) : '—'; }
+  function rawNumber(id) {
+    var field=el(id), value=field&&field.value.trim();
+    if(!value)return null;
+    var parsed=parseFloat(value);
+    return Number.isFinite(parsed)?parsed:null;
+  }
   function minSafety(solution, key) {
     return (solution.mechanical || []).reduce(function (min, stage) {
       var value = stage[key] && stage[key].safetyFactor;
       return Number.isFinite(value) ? Math.min(min, value) : min;
     }, Infinity);
   }
+  function installSearchConstraintPolicy() {
+    var SearchParams=GearApp.models&&GearApp.models.SearchParams;
+    if(!SearchParams||SearchParams._workbenchConstraintPolicyInstalled)return;
+    var original=SearchParams.fromForm;
+    SearchParams.fromForm=function(){
+      var params=original.apply(this,arguments), expert=document.body.classList.contains('pro-mode');
+      params.constraints=params.constraints||{};
+      var bending=rawNumber('minimum_bending_safety'), contact=rawNumber('minimum_contact_safety');
+      if(expert&&bending!=null)params.constraints.minimumBendingSafety=bending;
+      else delete params.constraints.minimumBendingSafety;
+      if(expert&&contact!=null)params.constraints.minimumContactSafety=contact;
+      else delete params.constraints.minimumContactSafety;
+      return params;
+    };
+    SearchParams._workbenchConstraintPolicyInstalled=true;
+  }
   function WorkbenchUI(eventBus) { this.bus = eventBus; this.solutions = []; this.selected = 0; }
   WorkbenchUI.prototype.init = function () {
+    installSearchConstraintPolicy(); this._prepareOptionalSafety();
     this._buildHeader(); this._enhanceSections(); this._enhanceObjective(); this._enhanceTypes();
     this._enhanceModule(); this._enhanceWeights(); this._enhanceVisualization(); this._enhanceCharts();
     this._bindViewSwitch(); this._bindFormSummary(); this._bindGlobalActions(); this.updateContext(); this.updateSummary();
     var self=this; this.bus.on('solution:selected',function(data){self.selected=data.index;self._markSelected();});
     this.bus.on('search:progress',function(data){var bar=document.querySelector('.sticky-progress');if(bar)bar.style.width=data.percent+'%';});
+  };
+  WorkbenchUI.prototype._prepareOptionalSafety = function () {
+    // These are optional expert constraints. The old hard-coded values made every
+    // standard search enforce SF/SH even though those controls were hidden.
+    // URL/localStorage restoration runs after Workbench init and can still restore
+    // an explicitly saved expert value.
+    var bending=el('minimum_bending_safety'), contact=el('minimum_contact_safety');
+    if(bending){bending.value='';bending.placeholder='SF min (ex. 1.5)';}
+    if(contact){contact.value='';contact.placeholder='SH min (ex. 1.2)';}
   };
   WorkbenchUI.prototype._buildHeader = function () {
     var host=el('workbenchHeaderActions'), mode=el('proModeBtn'), theme=el('themeBtn'), presets=document.querySelector('.presets-section');
@@ -34,11 +66,14 @@
     var share=document.createElement('button');share.className='btn-icon share-action';share.textContent='Partager';share.addEventListener('click',function(){var url=GearApp.models.SearchParams.toURL?GearApp.models.SearchParams.toURL():location.href;if(navigator.clipboard)navigator.clipboard.writeText(url);});host.appendChild(share);
   };
   WorkbenchUI.prototype._enhanceSections = function () {
-    var labels=['Objectif','Transmissions','Contraintes','Optimisation','Ingénierie','Fabrication','Durée de vie','Score'];
-    document.querySelectorAll('.sidebar>.param-section').forEach(function(section,index){
+    var labels=['Objectif','Transmissions','Contraintes','Optimisation','Ingénierie','Fabrication','Durée de vie','Score'], workflowIndex=0;
+    document.querySelectorAll('.sidebar>.param-section').forEach(function(section){
       if(section.classList.contains('presets-section')||section.querySelector('.help-section'))return;
-      var title=section.querySelector(':scope>h3');if(!title)return;var details=document.createElement('details');details.className='param-section workflow-details';details.open=index<2||index===3;
-      if(index>=4)details.classList.add('pro-only');var summary=document.createElement('summary');summary.innerHTML='<span class="workflow-step">'+Math.min(index+1,6)+'</span><span>'+(labels[index]||title.textContent)+'</span>'+(index>=4?'<em>Expert</em>':'');
+      var title=section.querySelector(':scope>h3');if(!title)return;
+      var step=workflowIndex++, expertOnly=step>=5, details=document.createElement('details');
+      details.className='param-section workflow-details';details.open=step<2||step===3||step===4;
+      if(expertOnly)details.classList.add('pro-only');
+      var summary=document.createElement('summary');summary.innerHTML='<span class="workflow-step">'+(step+1)+'</span><span>'+(labels[step]||title.textContent)+'</span>'+(expertOnly?'<em>Expert</em>':'');
       var content=document.createElement('div');content.className='workflow-content';while(section.firstChild){if(section.firstChild!==title)content.appendChild(section.firstChild);else section.removeChild(title);}details.append(summary,content);section.replaceWith(details);
     });
     var action=document.querySelector('.search-action-bar'),start=el('startStopBtn');if(action&&start){start.removeAttribute('onclick');action.insertBefore(start,action.querySelector('.progress-container'));}
