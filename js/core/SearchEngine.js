@@ -42,7 +42,7 @@
     var opts={inputMin:p.dentMenanteMin||6,inputMax:p.dentMenanteMax||60,outputMin:p.dentMeneeMin||6,outputMax:p.dentMeneeMax||120,reductionOnly:p.allowReductionOnly!==false,typeParameters:typeParameters};
     var candidates=[];
     active.forEach(function(id){var def=Registry.get(id);if(!def)return;def.generateCandidates(opts).forEach(function(stage){
-      try{var ratio=def.calculateRatio(stage);if(def.validateConfiguration(stage)&&isFinite(ratio)&&ratio>0)candidates.push({stage:stage,ratio:ratio});else rejections.geometry++;}catch(e){rejections.geometry++;}
+      try{var ratio=def.calculateRatio(stage);if(def.validateConfiguration(stage)&&isFinite(ratio)&&ratio!==0&&Math.abs(ratio)<=def.constraints.maxRatio)candidates.push({stage:stage,ratio:Math.abs(ratio)});else rejections.geometry++;}catch(e){rejections.geometry++;}
     });});
     var maxIterations=Math.max(1,p.maxIterations||500000),target=p.rapportCible,tolerance=p.precisionToleree==null?.1:p.precisionToleree;
     var targetMin=target*(1-tolerance/100),targetMax=target*(1+tolerance/100);
@@ -52,19 +52,19 @@
     function canReach(ratio,remaining){if(!remaining)return ratio>=targetMin&&ratio<=targetMax;var low=ratio*Math.pow(minCandidateRatio,remaining),high=ratio*Math.pow(maxCandidateRatio,remaining);return low<=targetMax&&high>=targetMin;}
     function evaluate(chain,ratio){
       var error=Math.abs(ratio-target)/target*100;if(error>tolerance){rejections.ratio++;return;}
-      var modules=moduleChoices(p),accepted=null;
+      var modules=moduleChoices(p),accepted=null,moduleSelection={selected:null,tested:[],rejected:[]};
       for(var mi=0;mi<modules.length;mi++){
-        var stages=clone(chain);applyModule(stages,modules[mi]);
+        var stages=clone(chain),reasons=[];moduleSelection.tested.push(modules[mi]);applyModule(stages,modules[mi]);
         try{
           var solution=Engineering.analyzeSolution(stages,target,engineeringOptions(p));
           var dimensions=Engineering.validateDimensions(solution.dimensions,p.constraints||{});
           if(!dimensions.valid){rejections.dimensions++;continue;}
-          if(p.constraints&&p.constraints.minimumEfficiency&&solution.efficiency<p.constraints.minimumEfficiency){rejections.mechanics++;continue;}
+          if(p.constraints&&p.constraints.minimumEfficiency&&solution.efficiency<p.constraints.minimumEfficiency){rejections.mechanics++;continue;}var minimumBending=p.constraints&&p.constraints.minimumBendingSafety,minimumContact=p.constraints&&p.constraints.minimumContactSafety;solution.mechanical.forEach(function(m){if(minimumBending&&m.bending&&m.bending.safetyFactor<minimumBending)reasons.push('bendingSafety');if(minimumContact&&m.contact&&m.contact.safetyFactor<minimumContact)reasons.push('contactSafety');});if(reasons.length){rejections.mechanics++;moduleSelection.rejected.push({module:modules[mi],reasons:Array.from(new Set(reasons))});continue;}
           if(p.constraints&&p.constraints.minimumOutputTorqueNm&&solution.outputTorqueNm<p.constraints.minimumOutputTorqueNm){rejections.mechanics++;continue;}
           if(p.constraints&&p.constraints.minimumOutputSpeedRpm&&solution.outputSpeedRpm<p.constraints.minimumOutputSpeedRpm){rejections.mechanics++;continue;}
           if(p.constraints&&p.constraints.maximumOutputSpeedRpm&&solution.outputSpeedRpm>p.constraints.maximumOutputSpeedRpm){rejections.mechanics++;continue;}
           var manufacturing=ManufacturingRules.validate(solution,p.manufacturing||{});if(!manufacturing.valid){rejections.manufacturing++;continue;}solution.manufacturing=manufacturing;
-          solution.stats={moduleMode:p.moduleMode||'fixed',selectedModule:modules[mi]};accepted=solution;break;
+          moduleSelection.selected=modules[mi];solution.moduleSelection=moduleSelection;solution.stats={moduleMode:p.moduleMode||'fixed',selectedModule:modules[mi]};accepted=solution;break;
         }catch(e){rejections.geometry++;}
       }
       if(accepted){var key=canonical(accepted.stages);if(!seen[key]){seen[key]=true;found.push(accepted);}}
