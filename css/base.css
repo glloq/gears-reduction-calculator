@@ -172,3 +172,4 @@ kbd {
     border: 1px solid #ccc !important;
   }
 }
+[hidden] { display: none !important; }

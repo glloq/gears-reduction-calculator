@@ -38,6 +38,11 @@
       ui.paramForm.restore();
     }
 
+    // Restoration mutates controls after WorkbenchUI's first render.
+    workbench._rotaryTypes = null;
+    workbench.updateContext();
+    workbench.updateSummary();
+
     ui.paramForm.restoreTheme();
     ui.paramForm.restoreProMode();
 
@@ -104,6 +109,7 @@
 
     var btn = document.getElementById("startStopBtn");
     btn.innerText = "Arrêter";
+    btn.setAttribute('aria-label', 'Arrêter');
     btn.classList.add("running");
     isSearching = true;
 
@@ -143,6 +149,7 @@
       );
       _resetButton();
     }).catch(function (err) {
+      if (err && err.name === 'AbortError') return;
       ui.logger.setStatus("Erreur lors du calcul");
       console.error(err);
       _resetButton();
@@ -158,6 +165,7 @@
   function _resetButton() {
     var btn = document.getElementById("startStopBtn");
     btn.innerText = "Rechercher";
+    btn.setAttribute('aria-label', 'Rechercher');
     btn.classList.remove("running");
     isSearching = false;
     var sticky = document.querySelector('.sticky-progress');
@@ -216,6 +224,10 @@
   window.toggleMobileSidebar = toggleMobileSidebar;
   window.exportAllCharts = exportAllCharts;
   window.toggleComparison = function () {
+    if (document.getElementById('objective_mode').value === 'rotationTranslation') {
+      ui.logger.setStatus('La comparaison multi-sorties est réservée aux transmissions rotatives en V1.');
+      return;
+    }
     comparisonManager.toggle();
     var btn = document.getElementById('toggleComparisonBtn');
     if (btn) btn.classList.toggle('active', comparisonManager.isOpen());

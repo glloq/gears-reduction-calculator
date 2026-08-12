@@ -23,6 +23,7 @@ class GearCharts {
     }
     var ctx = document.getElementById(canvasId);
     if (!ctx) return null;
+    if (typeof Chart === 'undefined') return null;
     var chart = new Chart(ctx, config);
     this.charts[canvasId] = chart;
     return chart;
@@ -377,7 +378,7 @@ class GearCharts {
 
   drawStructuredScore(canvasId, solution) {
     var metrics = solution.score.metrics, keys = Object.keys(metrics);
-    this._updateOrCreate(canvasId, { type: 'radar', data: { labels: keys, datasets: [{ label: 'Pénalités normalisées', data: keys.map(function (key) { return metrics[key]; }), backgroundColor: 'rgba(37,99,235,.2)', borderColor: '#2563eb' }] }, options: { responsive: true, scales: { r: { min: 0, max: 1 } }, plugins: { title: { display: true, text: 'Détail du score multicritère' } } } });
+    this._updateOrCreate(canvasId, { type: 'radar', data: { labels: keys, datasets: [{ label: 'Pénalités normalisées', data: keys.map(function (key) { return metrics[key].value; }), backgroundColor: 'rgba(37,99,235,.2)', borderColor: '#2563eb' }] }, options: { responsive: true, scales: { r: { min: 0, max: 1 } }, plugins: { title: { display: true, text: 'Détail du score multicritère' } } } });
   }
 
   /**
