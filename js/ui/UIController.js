@@ -14,6 +14,7 @@
     this._gearSvg = null;
     this._legacySchema = null;
     this._charts = null;
+    this._viewer = null;
 
     this._bindEvents();
     var controller=this,visualContainer=document.getElementById('svgContainer');if(visualContainer)visualContainer.addEventListener('visualization:renderer',function(event){controller.exportManager.setRenderer(event.detail.renderer);});
@@ -155,22 +156,14 @@
   };
 
   UIController.prototype._drawSVGSchematic = function (solution) {
-    var modValue = this.paramForm.getModuleValue() || 2;
-    var section=document.getElementById('svgContainer').closest('.viz-section');
-    if(section)section.classList.toggle('kinematic-active',solution.mode==='rotationTranslation');
-    if(solution.mode==='rotationTranslation'&&GearApp.visualization.kinematicRenderer){GearApp.visualization.kinematicRenderer.render(solution);this.exportManager.setRenderer(GearApp.visualization.kinematicRenderer);return;}
-
-    if (!this._gearSvg) {
-      var container = document.getElementById("svgContainer");
-      if (container) {
-        this._gearSvg = new GearSVG("svgContainer");
-        this.exportManager.setRenderer(this._gearSvg);
-      }
+    var section = document.getElementById('svgContainer').closest('.viz-section');
+    if (section) section.classList.remove('kinematic-active');
+    if (!this._viewer) {
+      this._viewer = new GearApp.visualization.ViewerToolbar(document.getElementById('svgContainer'));
+      this._viewer.bind();
+      GearApp.visualization.viewerToolbar = this._viewer;
     }
-
-    if (this._gearSvg) {
-      this._gearSvg.drawGearTrain(solution.stages.map(GearTransmissionRegistry.toLegacy), modValue, 20);
-    }
+    this._viewer.render(solution);
   };
 
   UIController.prototype._updateComparisonCharts = function (solutions, searchParams) {
