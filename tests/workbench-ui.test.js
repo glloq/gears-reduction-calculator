@@ -29,3 +29,17 @@ test('pure view changes do not invoke the search engine', () => {
   const viewMethods = ui.slice(ui.indexOf('._bindViewSwitch'), ui.indexOf('._bindFormSummary'));
   assert.doesNotMatch(viewMethods, /rechercher|lancerRecherche/);
 });
+
+test('hidden expert safety defaults do not constrain standard searches', () => {
+  assert.match(ui, /document\.body\.classList\.contains\('pro-mode'\)/);
+  assert.match(ui, /delete params\.constraints\.minimumBendingSafety/);
+  assert.match(ui, /delete params\.constraints\.minimumContactSafety/);
+  assert.match(ui, /bending\.value=''/);
+  assert.match(ui, /contact\.value=''/);
+});
+
+test('workflow indexing keeps engineering available in Standard mode', () => {
+  assert.match(ui, /workflowIndex=0/);
+  assert.match(ui, /expertOnly=step>=5/);
+  assert.match(ui, /labels=\['Objectif','Transmissions','Contraintes','Optimisation','Ingénierie','Fabrication','Durée de vie','Score'\]/);
+});
