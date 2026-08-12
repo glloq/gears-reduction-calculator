@@ -1,0 +1,7 @@
+(function(root,factory){var api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.ManufacturingRules=api;})(typeof self!=='undefined'?self:this,function(){
+  'use strict';
+  var DEFAULTS={standard:{minimumModule:.3,minimumTeeth:10,minimumFaceWidth:2,complexity:1},CNC:{minimumModule:.3,minimumTeeth:8,minimumFaceWidth:1,complexity:.8},laser:{minimumModule:1,minimumTeeth:12,minimumFaceWidth:1,complexity:.6},printing3d:{minimumModule:.8,minimumTeeth:12,minimumFaceWidth:4,backlash:.2,printerDiameter:220,derating:.55,complexity:.5},custom:{minimumModule:.3,minimumTeeth:6,minimumFaceWidth:1,complexity:1}};
+  function resolve(options){options=options||{};var result=Object.assign({},DEFAULTS[options.mode||'standard']);Object.keys(options).forEach(function(k){if(options[k]!=null)result[k]=options[k];});return result;}
+  function validate(solution,options){var r=resolve(options),failures=[];solution.stages.forEach(function(s){var m=s.parameters.module||1,g=s.geometry||{},a=s.input&&s.input.teeth,b=s.output&&s.output.teeth;if(m<r.minimumModule)failures.push('MODULE_TOO_SMALL');if((a&&a<r.minimumTeeth)||(b&&b<r.minimumTeeth))failures.push('TOO_FEW_TEETH');if((g.width||0)<r.minimumFaceWidth)failures.push('FACE_WIDTH_TOO_SMALL');});if(r.printerDiameter&&solution.dimensions.maxDiameter>r.printerDiameter)failures.push('PRINTER_DIAMETER');return {valid:failures.length===0,failures:Array.from(new Set(failures)),rules:r,score:r.complexity};}
+  return {defaults:DEFAULTS,resolve:resolve,validate:validate};
+});

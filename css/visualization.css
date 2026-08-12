@@ -93,3 +93,23 @@
   padding: 2px 4px;
   border-bottom: 1px solid var(--border-light);
 }
+.kinematic-svg { width: 100%; min-height: 300px; cursor: grab; touch-action: none; }
+.kinematic-svg:active { cursor: grabbing; }
+.kinematic-stage { color: var(--text-primary); cursor: pointer; transition: opacity .15s, filter .15s; }
+.kinematic-stage:hover, .kinematic-stage.selected { color: var(--accent-color); filter: drop-shadow(0 0 5px currentColor); }
+.kinematic-stage .gear-symbol, .kinematic-stage .internal-ring, .kinematic-stage .pulley,
+.kinematic-stage .worm-wheel, .kinematic-stage .sun, .kinematic-stage .ring, .kinematic-stage .planet { fill: var(--bg-secondary); stroke: currentColor; stroke-width: 3; }
+.kinematic-stage .inner { stroke-dasharray: 4 3; }
+.kinematic-stage .symbol-line, .kinematic-stage .helix-mark, .kinematic-stage .worm-thread,
+.kinematic-stage .rack-line, .kinematic-stage .rack-tooth { stroke: currentColor; stroke-width: 3; fill: none; }
+.kinematic-stage .belt-span { stroke: #64748b; stroke-width: 4; }
+.kinematic-stage .chain-span { stroke: #a16207; stroke-width: 4; stroke-dasharray: 5 5; }
+.kinematic-stage .bevel-symbol, .kinematic-stage .carrier { fill: none; stroke: currentColor; stroke-width: 3; }
+.kinematic-stage .stage-label, .kinematic-svg .role-label { fill: currentColor; font: 600 13px sans-serif; }
+.kinematic-svg .role-label { text-anchor: middle; }
+.kinematic-svg .input-role { fill: #16a34a; }
+.kinematic-svg .output-role { fill: #dc2626; }
+.kinematic-svg .fixed-role { fill: #ca8a04; }
+.kinematic-projections { display: none; gap: 4px; margin-left: 8px; }
+.viz-section.kinematic-active .kinematic-projections { display: inline-flex; }
+tr.selected { outline: 2px solid var(--accent-color); }

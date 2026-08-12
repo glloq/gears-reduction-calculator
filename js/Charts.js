@@ -348,6 +348,38 @@ class GearCharts {
     this._updateOrCreate(canvasId, config);
   }
 
+  /** Render-only charts for the structured Engineering Solution model. */
+  drawStructuredCascade(canvasId, solution) {
+    var speed = solution.inputSpeedRpm, torque = solution.inputTorqueNm;
+    var labels = ['Entrée'], speeds = [speed], torques = [torque];
+    solution.mechanical.forEach(function (stage, index) {
+      speed /= Math.abs(stage.ratio) || 1;
+      torque *= Math.abs(stage.ratio) * stage.efficiency;
+      labels.push('Étage ' + (index + 1)); speeds.push(speed); torques.push(torque);
+    });
+    this._updateOrCreate(canvasId, { type: 'line', data: { labels: labels, datasets: [
+      { label: 'Vitesse (tr/min)', data: speeds, borderColor: '#2563eb', yAxisID: 'y' },
+      { label: 'Couple (N·m)', data: torques, borderColor: '#dc2626', yAxisID: 'y1' }
+    ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Cascade calculée par Engineering' } }, scales: { y: { beginAtZero: true }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } } });
+  }
+
+  drawStructuredLosses(canvasId, solution) {
+    var power = solution.inputPowerW, losses = solution.mechanical.map(function (stage) { var loss = power * (1 - stage.efficiency); power *= stage.efficiency; return loss; });
+    this._updateOrCreate(canvasId, { type: 'bar', data: { labels: losses.map(function (_, i) { return 'Étage ' + (i + 1); }), datasets: [{ label: 'Pertes (W)', data: losses, backgroundColor: '#f59e0b' }] }, options: { responsive: true, plugins: { title: { display: true, text: 'Pertes par étage — total ' + solution.lossPowerW.toFixed(1) + ' W' } }, scales: { y: { beginAtZero: true } } } });
+  }
+
+  drawStructuredSafety(canvasId, solution) {
+    this._updateOrCreate(canvasId, { type: 'bar', data: { labels: solution.mechanical.map(function (_, i) { return 'Étage ' + (i + 1); }), datasets: [
+      { label: 'SF Lewis simplifié', data: solution.mechanical.map(function (m) { return m.bending ? m.bending.safetyFactor : null; }), backgroundColor: '#2563eb' },
+      { label: 'SH Hertz simplifié', data: solution.mechanical.map(function (m) { return m.contact ? m.contact.safetyFactor : null; }), backgroundColor: '#f97316' }
+    ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Facteurs de sécurité — Engineering estimate' } }, scales: { y: { beginAtZero: true } } } });
+  }
+
+  drawStructuredScore(canvasId, solution) {
+    var metrics = solution.score.metrics, keys = Object.keys(metrics);
+    this._updateOrCreate(canvasId, { type: 'radar', data: { labels: keys, datasets: [{ label: 'Pénalités normalisées', data: keys.map(function (key) { return metrics[key]; }), backgroundColor: 'rgba(37,99,235,.2)', borderColor: '#2563eb' }] }, options: { responsive: true, scales: { r: { min: 0, max: 1 } }, plugins: { title: { display: true, text: 'Détail du score multicritère' } } } });
+  }
+
   /**
    * Détruit tous les graphiques.
    */

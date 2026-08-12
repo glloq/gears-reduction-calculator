@@ -99,6 +99,14 @@
   overflow-x: auto;
 }
 
+.search-stats { margin: -8px 0 14px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+
+.column-picker { position: relative; }
+.column-picker summary { cursor: pointer; list-style: none; padding: 5px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
+.column-picker-panel { position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; min-width: 190px; padding: 10px; display: grid; gap: 6px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
+.column-picker-panel label { white-space: nowrap; font-size: 12px; text-transform: none; }
+.pagination-status { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+
 table {
   width: 100%;
   border-collapse: collapse;

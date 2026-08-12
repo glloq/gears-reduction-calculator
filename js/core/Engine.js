@@ -52,6 +52,10 @@
             });
             var percent = Math.min(95, (data.iterations / data.maxIterations) * 100);
             self._eventBus.emit('search:progress', { percent: percent });
+            self._eventBus.emit('search:stats', {
+              tested: data.iterations, depth: data.profondeur, currentRatio: data.rapportActuel,
+              valid: data.solutionsCount, rejections: data.rejections || {}, elapsedMs: data.elapsedMs || 0
+            });
             break;
           case 'solution_found':
             self._eventBus.emit('search:log', {
@@ -73,9 +77,10 @@
               message: 'Terminé. ' + data.totalIterations + ' itérations, ' + data.totalSolutions + ' solutions trouvées.'
             });
             self._isRunning = false;
+            self._eventBus.emit('search:stats', data.stats || {});
             self._worker.terminate();
             self._worker = null;
-            resolve(data.solutions);
+            resolve(data.solutionModels || data.solutions);
             break;
         }
       };
@@ -103,7 +108,7 @@
 
   Engine.prototype._rechercherFallback = function (params) {
     var result = GearSearchEngine.search(params);
-    return Promise.resolve(result.solutions.map(function(s){ return s.stages.map(GearTransmissionRegistry.toLegacy); }));
+    return Promise.resolve(result.solutions);
   };
 
   GearApp.core.Engine = Engine;

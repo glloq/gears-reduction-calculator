@@ -66,10 +66,13 @@
       <div class="param-section">
         <h3>Rapport cible</h3>
         <label for="objective_mode">Mode principal :</label>
-        <select id="objective_mode" data-persist><option value="ratio">Je connais le rapport</option><option value="need">Je connais mon besoin</option></select>
+        <select id="objective_mode" data-persist><option value="ratio">Je connais le rapport</option><option value="need">Je connais mon besoin</option><option value="rotationTranslation">Rotation → translation (crémaillère)</option></select>
         <label for="rapport">Nombre de tours entrée pour un tour sortie :</label>
         <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
         <label for="rpm_sortie_cible">RPM sortie cible (mode besoin) :</label><input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
+        <div class="inline-fields"><input id="rpm_sortie_min" data-persist type="number" placeholder="RPM sortie min"><input id="rpm_sortie_max" data-persist type="number" placeholder="RPM sortie max"></div>
+        <div class="inline-fields"><input id="minimum_output_torque" data-persist type="number" placeholder="Couple sortie min N·m"><input id="minimum_efficiency" data-persist type="number" min="0" max="1" step="0.01" placeholder="Rendement min 0–1"></div>
+        <label for="linear_travel_per_rev">Course cible par tour (mm, mode crémaillère) :</label><input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
         <div class="btn-group">
           <button id="startStopBtn" onclick="lancerRecherche()" class="btn-primary" aria-label="Lancer la recherche">Rechercher</button>
           <button onclick="sauvegarderParametres()" class="btn-secondary" title="Sauvegarder les paramètres" aria-label="Sauvegarder">Sauver</button>
@@ -166,6 +169,7 @@
         <label for="module_mode">Sélection du module :</label><select id="module_mode" data-persist><option value="fixed">Module fixe</option><option value="automatic">Module automatique normalisé</option></select>
         <label for="module">Module des engrenages (mm) :</label>
         <input type="number" id="module" placeholder="Ex: 2.5" step="0.1" min="0.1">
+        <div class="inline-fields"><input id="module_min" data-persist type="number" step="0.1" placeholder="Module auto min"><input id="module_max" data-persist type="number" step="0.1" placeholder="Module auto max"></div>
 
         <label for="vitesse_entree">Vitesse d'entrée (tr/min) :</label>
         <input type="number" id="vitesse_entree" value="1500" step="10" min="1">
@@ -175,31 +179,37 @@
         <label>Encombrement maximal (mm) :</label><div class="inline-fields"><input id="max_diameter" data-persist type="number" placeholder="Ø"><input id="max_length" data-persist type="number" placeholder="Longueur"><input id="max_width" data-persist type="number" placeholder="Largeur"></div>
       </div>
 
-      <div class="param-section pro-only" style="display:none"><h3>Paramètres par transmission</h3>
-        <label>Vis : filets min/max</label><div class="inline-fields"><input id="worm_starts_min" data-persist type="number" value="1" min="1" max="6"><input id="worm_starts_max" data-persist type="number" value="6" min="1" max="6"></div>
-        <label>Angle d'avance vis (°)</label><input id="worm_lead_angle" data-persist type="number" value="20">
-        <label>Angle d'hélice (°)</label><input id="helix_angle" data-persist type="number" value="20"><label>Angle axes coniques (°)</label><input id="bevel_shaft_angle" data-persist type="number" value="90">
-        <label>Planétaire : satellites / entrée / sortie / fixe</label><input id="planet_count" data-persist type="number" value="3" min="2" max="6"><div class="inline-fields"><select id="planet_input" data-persist><option>S</option><option>R</option><option>C</option></select><select id="planet_output" data-persist><option>C</option><option>S</option><option>R</option></select><select id="planet_fixed" data-persist><option>R</option><option>S</option><option>C</option></select></div>
-        <label>Courroie : type / pas / entraxe</label><select id="belt_type" data-persist><option value="timing">Dentée (GT/HTD/T)</option><option value="flat">Plate</option><option value="v">V</option><option value="round">Ronde</option></select><div class="inline-fields"><input id="belt_pitch" data-persist value="2" type="number"><input id="belt_center" data-persist value="100" type="number"></div><label><input id="belt_crossed" data-persist type="checkbox"> Croisée</label>
-        <label>Chaîne : pas / entraxe (mm)</label><div class="inline-fields"><input id="chain_pitch" data-persist value="12.7" type="number"><input id="chain_center" data-persist value="200" type="number"></div>
+      <div class="param-section pro-only" id="proMaterialSection" style="display:none;">
+        <h3>Matériaux et fabrication</h3>
+        <label for="input_material">Matériau entrée :</label><select id="input_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
+        <label for="output_material">Matériau sortie :</label><select id="output_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
+        <label for="manufacturing_mode">Procédé :</label><select id="manufacturing_mode" data-persist><option value="standard">Standard</option><option value="CNC">CNC</option><option value="laser">Laser</option><option value="printing3d">Impression 3D</option><option value="custom">Personnalisé</option></select>
+        <label>Limites de fabrication :</label><div class="inline-fields"><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="Module min"><input id="manufacturing_min_teeth" data-persist type="number" placeholder="Dents min"><input id="manufacturing_min_width" data-persist type="number" placeholder="Largeur min"></div>
+        <label for="printer_diameter">Diamètre imprimante (mm) :</label><input id="printer_diameter" data-persist type="number" value="220">
+        <label for="additive_derating">Déclassement fabrication additive :</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05">
       </div>
 
-      <div class="param-section pro-only" id="proMaterialSection" style="display:none;">
-        <h3>Paramètres matériaux</h3>
-        <label for="angle_pression">Angle de pression (°) :</label>
-        <input type="number" id="angle_pression" value="20" step="0.5" min="14.5" max="25" title="Angle de contact normalisé (14.5° ou 20°)">
+      <div class="param-section pro-only" style="display:none;">
+        <h3>Fatigue et arbre — estimations</h3>
+        <label class="checkbox-label"><input id="fatigue_enabled" data-persist type="checkbox"> Calculer l'estimation de fatigue</label>
+        <div class="inline-fields"><input id="hours_per_day" data-persist type="number" value="8" min="0" max="24" step="0.5" placeholder="Heures/jour"><input id="days_per_year" data-persist type="number" value="250" min="1" max="366" placeholder="Jours/an"><input id="service_years" data-persist type="number" value="10" min="0.1" step="0.5" placeholder="Années"></div>
+        <label for="load_type">Type de charge :</label><select id="load_type" data-persist><option value="constant">Constante</option><option value="light">Légère</option><option value="heavy">Lourde</option><option value="moderateShock">Chocs modérés</option><option value="severeShock">Chocs sévères</option></select>
+        <label for="support_distance">Distance entre appuis (mm) :</label><input id="support_distance" data-persist type="number" min="1" placeholder="Vide = calcul arbre désactivé">
+        <label for="shaft_allowable_shear">Contrainte admissible arbre (MPa) :</label><input id="shaft_allowable_shear" data-persist type="number" value="80" min="1">
+        <p class="shortcut-hint">Pré-dimensionnements Engineering estimate, non conformes ISO 6336.</p>
+      </div>
 
-        <label for="coeff_frottement">Coefficient de frottement :</label>
-        <input type="number" id="coeff_frottement" placeholder="Auto (0.04-0.08)" step="0.005" min="0.01" max="0.20">
-
-        <label for="largeur_dent">Largeur de dent (mm) :</label>
-        <input type="number" id="largeur_dent" placeholder="Auto (10×module)" step="0.5" min="1">
-
-        <label for="limite_elastique">Limite élastique (MPa) :</label>
-        <input type="number" id="limite_elastique" value="250" step="10" min="50" max="2000" title="Acier doux ~250, Acier traité ~600, Acier cémenté ~1200">
-
-        <label for="qualite_iso">Qualité ISO (jeu denture) :</label>
-        <input type="number" id="qualite_iso" value="7" min="0" max="12" title="0=très précis, 12=grossier">
+      <div class="param-section pro-only" style="display:none;">
+        <h3>Pondération multicritère</h3>
+        <p class="shortcut-hint">Les poids sont normalisés automatiquement.</p>
+        <label>Précision <input id="weight_ratio" data-persist type="range" min="0" max="10" value="5"></label>
+        <label>Compacité <input id="weight_size" data-persist type="range" min="0" max="10" value="5"></label>
+        <label>Rendement <input id="weight_efficiency" data-persist type="range" min="0" max="10" value="5"></label>
+        <label>Résistance <input id="weight_stress" data-persist type="range" min="0" max="10" value="5"></label>
+        <label>Nombre d'étages <input id="weight_stages" data-persist type="range" min="0" max="10" value="5"></label>
+        <label>Bruit <input id="weight_noise" data-persist type="range" min="0" max="10" value="5"></label>
+        <label>Fabrication <input id="weight_manufacturing" data-persist type="range" min="0" max="10" value="5"></label>
+        <label>Coût relatif <input id="weight_cost" data-persist type="range" min="0" max="10" value="5"></label>
       </div>
 
       <!-- Aide (?) -->
@@ -234,6 +244,7 @@
         <div class="viz-header">
           <h2>Schéma interactif</h2>
           <div class="viz-controls"><button class="btn-small view-mode active" data-view="geometric">Géométrique</button><button class="btn-small view-mode" data-view="kinematic">Cinématique</button><button class="btn-small view-mode" data-view="linear">Linéaire</button>
+            <span class="kinematic-projections"><button class="btn-small active" data-projection="main">Vue principale</button><button class="btn-small" data-projection="orthogonal">Vue orthogonale</button><button class="btn-small" id="kinematicReset">Réinitialiser</button></span>
             <button onclick="UI.toggleAnimation()" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
             <button onclick="UI.resetSVGView()" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
             <button onclick="UI.exporterSVG()" class="btn-small" title="Exporter en SVG" aria-label="Exporter SVG">SVG</button>
@@ -255,6 +266,7 @@
       <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
         <div id="progress-bar"></div>
       </div>
+      <div id="searchStats" class="search-stats" aria-live="polite"></div>
 
       <!-- Résultats -->
       <div class="result-container" id="result-container">
@@ -336,9 +348,10 @@
 
   <!-- Core -->
   <script src="js/core/EventBus.js" defer></script>
-  <script src="js/core/SearchEngine.js" defer></script>
   <script src="js/core/Engineering.js" defer></script>
-  <script src="js/core/GearMechanics.js" defer></script>
+  <script src="js/core/ManufacturingRules.js" defer></script>
+  <script src="js/core/LinearDriveSolver.js" defer></script>
+  <script src="js/core/SearchEngine.js" defer></script>
   <script src="js/core/Engine.js" defer></script>
 
   <!-- Visualisation (fichiers originaux conservés pour le code actif) -->
@@ -349,10 +362,13 @@
   <script src="js/visualization/GearSVG.js" defer></script>
   <script src="js/visualization/GearCharts.js" defer></script>
   <script src="js/visualization/LegacySchema.js" defer></script>
+  <script src="js/visualization/kinematic/KinematicLayoutEngine.js" defer></script>
+  <script src="js/visualization/kinematic/primitives/KinematicPrimitives.js" defer></script>
   <script src="js/visualization/kinematic/KinematicRenderer.js" defer></script>
 
   <!-- UI -->
   <script src="js/ui/Logger.js" defer></script>
+  <script src="js/ui/ColumnPreferences.js" defer></script>
   <script src="js/ui/ResultsTable.js" defer></script>
   <script src="js/ui/MechanicalPanel.js" defer></script>
   <script src="js/ui/ParameterForm.js" defer></script>

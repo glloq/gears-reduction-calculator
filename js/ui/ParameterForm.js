@@ -2,29 +2,8 @@
 
 (function (GearApp) {
 
-  // Définition des paramètres par type (affichés dynamiquement en mode pro)
-  var TYPE_PARAMS = {
-    helical: [
-      { id: 'param_helical_angle', label: 'Angle d\'hélice (°)', defaut: 20, min: 5, max: 45, step: 1, key: 'angleHelice' }
-    ],
-    bevel: [
-      { id: 'param_bevel_angle', label: 'Angle entre axes (°)', defaut: 90, min: 10, max: 170, step: 5, key: 'angleCone' }
-    ],
-    belt: [
-      { id: 'param_belt_type', label: 'Type de courroie', defaut: 'V', options: ['Plate', 'V', 'Crantée', 'Ronde'], key: 'typeCourroie' },
-      { id: 'param_belt_crossed', label: 'Courroie croisée', defaut: false, type: 'bool', key: 'courroieCroisee' }
-    ],
-    epicyclic: [
-      { id: 'param_epi_satellites', label: 'Nombre de satellites', defaut: 3, min: 2, max: 6, step: 1, key: 'nbSatellites' },
-      { id: 'param_epi_config', label: 'Configuration', defaut: 'couronne_fixe',
-        options: ['couronne_fixe', 'solaire_fixe', 'porte_satellites_fixe'],
-        optionLabels: ['Couronne fixe', 'Solaire fixe', 'Porte-sat. fixe'],
-        key: 'configEpicyclic' }
-    ],
-    worm: [
-      { id: 'param_worm_filets', label: 'Nombre de filets', defaut: 1, min: 1, max: 6, step: 1, key: 'nbFilets' }
-    ]
-  };
+  // TransmissionRegistry is the only parameter-definition source.
+  var TYPE_PARAMS = GearTransmissionRegistry.parameterDefinitions;
 
   function ParameterForm() {
     this._sliderMenante = null;
@@ -124,8 +103,9 @@
 
     var self = this;
     checkedTypes.forEach(function (typeId) {
-      var paramDefs = TYPE_PARAMS[typeId];
-      if (!paramDefs || paramDefs.length === 0) return;
+      var registryId=typeId==='epicyclic'?'planetary':typeId;
+      var paramDefs = TYPE_PARAMS[registryId];
+      if (!paramDefs || Object.keys(paramDefs).length === 0) return;
 
       hasParams = true;
       var type = registry.get(typeId);
@@ -138,33 +118,36 @@
       header.innerHTML = '<span class="type-badge ' + typeId + '">' + type.nomCourt + '</span>';
       group.appendChild(header);
 
-      paramDefs.forEach(function (def) {
+      Object.keys(paramDefs).forEach(function (key) { var def=paramDefs[key];
         var wrapper = document.createElement('div');
         wrapper.className = 'type-param-field';
 
         var label = document.createElement('label');
         label.textContent = def.label;
-        label.setAttribute('for', def.id);
+        var fieldId='tp_'+registryId+'_'+key;
+        label.setAttribute('for', fieldId);
         wrapper.appendChild(label);
 
         var input;
         if (def.options) {
           input = document.createElement('select');
-          input.id = def.id;
+          input.id = fieldId;
           def.options.forEach(function (opt, i) {
             var option = document.createElement('option');
             option.value = opt;
             option.textContent = def.optionLabels ? def.optionLabels[i] : opt;
-            if (opt === def.defaut) option.selected = true;
+            if (opt === def.default) option.selected = true;
             input.appendChild(option);
           });
-        } else if (def.type === 'bool') {
+        } else if (def.type === 'checkbox') {
           var boolWrapper = document.createElement('label');
           boolWrapper.className = 'checkbox-label';
           input = document.createElement('input');
           input.type = 'checkbox';
-          input.id = def.id;
-          input.checked = def.defaut;
+          input.id = fieldId;
+          input.checked = def.default;
+          input.dataset.persist='';
+          var pendingCheckbox=GearApp.models.SearchParams._pendingExpert;if(pendingCheckbox&&pendingCheckbox[fieldId]!==undefined)input.checked=!!pendingCheckbox[fieldId];
           boolWrapper.appendChild(input);
           var boolLabel = document.createElement('span');
           boolLabel.textContent = def.label;
@@ -176,14 +159,14 @@
         } else {
           input = document.createElement('input');
           input.type = 'number';
-          input.id = def.id;
-          input.value = def.defaut;
+          input.id = fieldId;
+          input.value = def.default;
           if (def.min !== undefined) input.min = def.min;
           if (def.max !== undefined) input.max = def.max;
           if (def.step !== undefined) input.step = def.step;
         }
 
-        wrapper.appendChild(input);
+        input.dataset.persist='';var pending=GearApp.models.SearchParams._pendingExpert;if(pending&&pending[fieldId]!==undefined){if(input.type==='checkbox')input.checked=!!pending[fieldId];else input.value=pending[fieldId];}wrapper.appendChild(input);
         group.appendChild(wrapper);
       });
 
@@ -198,18 +181,20 @@
   ParameterForm.prototype.getTypeSpecificParams = function () {
     var result = {};
     for (var typeId in TYPE_PARAMS) {
-      TYPE_PARAMS[typeId].forEach(function (def) {
-        var el = document.getElementById(def.id);
+      result[typeId]={};
+      Object.keys(TYPE_PARAMS[typeId]).forEach(function (key) { var def=TYPE_PARAMS[typeId][key];
+        var el = document.getElementById('tp_'+typeId+'_'+key);
         if (!el) return;
-        if (def.type === 'bool') {
-          result[def.key] = el.checked;
+        if (def.type === 'checkbox') {
+          result[typeId][key] = el.checked;
         } else if (def.options) {
-          result[def.key] = el.value;
+          result[typeId][key] = el.value;
         } else {
           var val = parseFloat(el.value);
-          if (!isNaN(val)) result[def.key] = val;
+          if (!isNaN(val)) result[typeId][key] = val;
         }
       });
+      if(!Object.keys(result[typeId]).length)delete result[typeId];
     }
     return result;
   };
