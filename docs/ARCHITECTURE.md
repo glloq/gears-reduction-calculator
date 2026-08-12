@@ -8,16 +8,13 @@ Application web monopage (SPA) en JavaScript vanilla pour le calcul et la visual
 
 ```
 gears-reduction-calculator/
-├── index.html                 # Page unique, point d'entrée HTML
-├── css/                       # Styles modulaires
-│   ├── variables.css          # Custom properties CSS + thème sombre
-│   ├── base.css               # Reset, typographie, animations
-│   ├── layout.css             # Layout flex principal, sidebar, content
-│   ├── components.css         # Boutons, inputs, sliders, badges types
-│   ├── results.css            # Tableau résultats, progress bar, indicateurs
-│   ├── mechanical.css         # Panneau analyse mécanique, cartes, géométrie
-│   ├── visualization.css      # SVG, Canvas legacy, graphiques, logs
-│   └── responsive.css         # Media queries (@media 1024/768/480px)
+├── index.html                 # Page unique : sidebar modulaire + espace maître/détail
+├── css/                       # Système de design (jetons + couches)
+│   ├── theme.css              # Jetons de design (couleurs, espacements) + thème sombre
+│   ├── base.css               # Reset, typographie, contrôles de formulaire, boutons
+│   ├── layout.css             # En-tête, sidebar, grille maître/détail, responsive
+│   ├── components.css         # Modules de la sidebar : panneaux, chips, sliders, résumé
+│   └── workspace.css          # Solutions, onglets de détail, schéma, analyse, graphiques
 ├── js/
 │   ├── namespace.js           # Namespace GearApp (chargé en premier)
 │   ├── models/
@@ -32,7 +29,9 @@ gears-reduction-calculator/
 │   │   ├── Logger.js          # Gestion des logs et statut
 │   │   ├── ResultsTable.js    # Tableau de résultats et sélection
 │   │   ├── MechanicalPanel.js # Panneau d'analyse mécanique détaillée
-│   │   ├── ParameterForm.js   # Formulaire, sliders, thème, sauvegarde
+│   │   ├── ParameterForm.js   # Sliders de dents, thème, mode expert, accesseurs
+│   │   ├── Workbench.js       # Comportement de l'interface : contexte d'objectif,
+│   │   │                      #   paramètres par type, onglets de détail, tuiles
 │   │   ├── ExportManager.js   # Export SVG/PNG, contrôle animation
 │   │   └── UIController.js    # Orchestrateur UI principal
 │   ├── visualization/

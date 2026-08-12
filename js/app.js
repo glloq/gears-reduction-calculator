@@ -7,64 +7,40 @@
   var isSearching = false;
 
   function init() {
-    // Instanciation du moteur de recherche
     engine = new GearApp.core.Engine(GearApp.eventBus);
-
-    // Instanciation du contrôleur UI
     ui = new GearApp.ui.UIController(GearApp.eventBus);
-
-    // Schéma legacy Canvas
     legacySchema = new GearApp.visualization.LegacySchema('gearCanvas');
 
-    // Comparaison multi-sorties
     comparisonManager = new GearApp.ui.ComparisonManager('comparisonPanel', GearApp.eventBus);
     comparisonManager.setEngine(engine);
     GearApp._engine = engine;
 
-    // Connecter les composants de visualisation
     ui.setVisualizationComponents(null, legacySchema, window.GearCharts || null);
 
-    // Initialiser le formulaire
-    ui.paramForm.initSliders();
-
-    // La couche Workbench réorganise uniquement la présentation et conserve
-    // les identifiants historiques lus par SearchParams.
-    workbench = new GearApp.ui.WorkbenchUI(GearApp.eventBus);
+    // La couche Workbench anime le DOM statique de index.html : les
+    // identifiants historiques lus par SearchParams sont tous conservés.
+    workbench = new GearApp.ui.Workbench(GearApp.eventBus);
     workbench.init();
 
-    // Restaurer depuis l'URL d'abord, sinon depuis localStorage
+    ui.paramForm.initSliders();
+
+    // Restaurer depuis l'URL d'abord, sinon depuis localStorage.
     var hasURLParams = GearApp.models.SearchParams.fromURL();
     if (!hasURLParams) {
       ui.paramForm.restore();
     }
-
-    // Restoration mutates controls after WorkbenchUI's first render.
-    workbench._rotaryTypes = null;
-    workbench.updateContext();
-    workbench.updateSummary();
+    // La restauration modifie les contrôles après le premier rendu.
+    workbench.refreshAfterRestore();
 
     ui.paramForm.restoreTheme();
     ui.paramForm.restoreProMode();
 
-    // Initialiser les presets
     _initPresets();
+    _renderHistory();
+    _bindHeaderActions();
+    _bindWorkspaceActions();
+    _bindShortcuts();
 
-    // Raccourcis clavier
-    document.addEventListener('keydown', function (e) {
-      if (e.ctrlKey && e.key === 'Enter') {
-        e.preventDefault();
-        lancerRecherche();
-      }
-      if (e.key === 'Escape' && isSearching) {
-        arreterRecherche();
-      }
-      if (e.key === '?' && !e.ctrlKey && !e.altKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-        var helpSection = document.querySelector('.help-section');
-        if (helpSection) helpSection.open = !helpSection.open;
-      }
-    });
-
-    // Masquer l'indicateur de chargement
     var loader = document.getElementById('loadingOverlay');
     if (loader) {
       loader.classList.add('loaded');
@@ -72,32 +48,30 @@
     }
   }
 
+  // ===== Presets =====
+
   function _initPresets() {
     var grid = document.getElementById('presetsGrid');
     if (!grid) return;
     grid.innerHTML = '';
 
     var presets = GearApp.models.SearchParams.getPresets();
-    for (var key in presets) {
-      if (presets.hasOwnProperty(key)) {
-        (function (presetId, preset) {
-          var btn = document.createElement('button');
-          btn.className = 'preset-btn';
-          btn.title = preset.description;
-          btn.textContent = preset.nom;
-          btn.onclick = function () {
-            GearApp.models.SearchParams.applyPreset(presetId);
-            ui.logger.log('Preset "' + preset.nom + '" appliqué');
-            // Update type params if in pro mode
-            if (ui.paramForm.isProMode()) {
-              ui.paramForm._updateTypeParams();
-            }
-          };
-          grid.appendChild(btn);
-        })(key, presets[key]);
-      }
-    }
+    Object.keys(presets).forEach(function (presetId) {
+      var preset = presets[presetId];
+      var btn = document.createElement('button');
+      btn.className = 'preset-btn';
+      btn.title = preset.description;
+      btn.textContent = preset.nom;
+      btn.addEventListener('click', function () {
+        GearApp.models.SearchParams.applyPreset(presetId);
+        workbench.refreshAfterRestore();
+        ui.logger.log('Preset "' + preset.nom + '" appliqué');
+      });
+      grid.appendChild(btn);
+    });
   }
+
+  // ===== Cycle de recherche =====
 
   function lancerRecherche() {
     if (isSearching) {
@@ -115,8 +89,7 @@
 
     var progressBar = document.getElementById("progress-bar");
     progressBar.style.width = "0%";
-    progressBar.style.display = "block";
-    ui.logger.setStatus("Calcul en cours...");
+    ui.logger.setStatus("Calcul en cours…");
 
     var searchParams = ui.paramForm.getSearchParams();
     var validationMessage = document.getElementById('validationMessage');
@@ -131,21 +104,24 @@
     if (document.getElementById('module_max')) document.getElementById('module_max').removeAttribute('aria-invalid');
     var validation = searchParams.validate();
     if (!validation.valid) {
+      if (validationMessage) validationMessage.textContent = validation.message;
       ui.logger.setStatus(validation.message);
       _resetButton();
       return;
     }
 
-    // Sauvegarder dans l'historique
+    // Persistance automatique : chaque lancement mémorise la configuration.
+    searchParams.save();
     _saveToHistory(searchParams);
+    _renderHistory();
 
     engine.rechercher(searchParams).then(function (resultats) {
       ui.afficherResultats(resultats, searchParams);
       workbench.renderSolutions(resultats);
       progressBar.style.width = "100%";
       ui.logger.setStatus(resultats.length > 0
-        ? 'Calcul terminé - ' + resultats.length + ' solution(s) trouvée(s)'
-        : "Aucun engrenage trouvé"
+        ? resultats.length + ' solution(s) trouvée(s)'
+        : "Aucune solution trouvée"
       );
       _resetButton();
     }).catch(function (err) {
@@ -173,6 +149,7 @@
   }
 
   // ===== Historique des recherches =====
+
   var MAX_HISTORY = 20;
 
   function _saveToHistory(searchParams) {
@@ -180,6 +157,7 @@
       var history = JSON.parse(localStorage.getItem('gearCalcHistory') || '[]');
       var entry = {
         date: new Date().toISOString(),
+        mode: searchParams.objectiveMode || 'ratio',
         rapport: searchParams.rapportCible,
         types: searchParams.typesActifs,
         precision: searchParams.precision,
@@ -191,7 +169,107 @@
     } catch (e) { /* ignore */ }
   }
 
-  // ===== Mobile sidebar =====
+  function _renderHistory() {
+    var list = document.getElementById('historyList');
+    if (!list) return;
+    var history = [];
+    try { history = JSON.parse(localStorage.getItem('gearCalcHistory') || '[]'); } catch (e) { /* ignore */ }
+    list.innerHTML = '';
+    if (!history.length) {
+      list.innerHTML = '<p class="field-help">Aucune recherche récente.</p>';
+      return;
+    }
+    history.slice(0, 8).forEach(function (entry) {
+      var btn = document.createElement('button');
+      btn.className = 'history-entry';
+      var when = new Date(entry.date);
+      var label = entry.mode === 'rotationTranslation'
+        ? 'Linéaire'
+        : (Number.isFinite(entry.rapport) ? Number(entry.rapport).toFixed(2) + ':1 ± ' + entry.precision + ' %' : 'Recherche');
+      btn.innerHTML = '<strong>' + label + '</strong><span>' + (entry.types || []).join(', ') +
+        ' · ≤ ' + entry.etages + ' étages</span><small>' + when.toLocaleDateString('fr-FR') + ' ' +
+        when.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + '</small>';
+      btn.addEventListener('click', function () { _applyHistoryEntry(entry); });
+      list.appendChild(btn);
+    });
+  }
+
+  function _applyHistoryEntry(entry) {
+    if (entry.mode === 'rotationTranslation') {
+      var objective = document.getElementById('objective_mode');
+      if (objective) objective.value = 'rotationTranslation';
+    } else {
+      var objectiveEl = document.getElementById('objective_mode');
+      if (objectiveEl && objectiveEl.value === 'rotationTranslation') objectiveEl.value = 'ratio';
+      if (Number.isFinite(entry.rapport)) document.getElementById('rapport').value = entry.rapport;
+      if (entry.precision !== undefined) document.getElementById('precision').value = entry.precision;
+      if (entry.etages !== undefined) document.getElementById('etages').value = entry.etages;
+      if (Array.isArray(entry.types)) {
+        document.querySelectorAll('.type-checkbox').forEach(function (cb) {
+          if (cb.value !== 'rack') cb.checked = entry.types.indexOf(cb.value) !== -1;
+        });
+      }
+    }
+    workbench.refreshAfterRestore();
+    ui.logger.log('Recherche précédente rechargée.');
+  }
+
+  // ===== Actions d'en-tête et d'espace de travail =====
+
+  function _bindHeaderActions() {
+    var mode = document.getElementById('proModeBtn');
+    if (mode) mode.addEventListener('click', function () { ui.paramForm.toggleProMode(); });
+
+    var theme = document.getElementById('themeBtn');
+    if (theme) theme.addEventListener('click', function () { ui.paramForm.toggleTheme(); });
+
+    var share = document.getElementById('shareBtn');
+    if (share) {
+      share.addEventListener('click', function () {
+        var url = GearApp.models.SearchParams.toURL ? GearApp.models.SearchParams.toURL() : location.href;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(function () {
+            ui.logger.setStatus('Lien copié dans le presse-papiers.');
+          });
+        }
+      });
+    }
+
+    var mobile = document.getElementById('mobileMenuBtn');
+    if (mobile) mobile.addEventListener('click', toggleMobileSidebar);
+    var overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.addEventListener('click', toggleMobileSidebar);
+  }
+
+  function _bindWorkspaceActions() {
+    var start = document.getElementById('startStopBtn');
+    if (start) start.addEventListener('click', lancerRecherche);
+
+    var comparison = document.getElementById('toggleComparisonBtn');
+    if (comparison) comparison.addEventListener('click', toggleComparison);
+
+    var exportCharts = document.getElementById('exportChartsBtn');
+    if (exportCharts) exportCharts.addEventListener('click', exportAllCharts);
+  }
+
+  function _bindShortcuts() {
+    document.addEventListener('keydown', function (e) {
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        lancerRecherche();
+      }
+      if (e.key === 'Escape' && isSearching) {
+        arreterRecherche();
+      }
+      if (e.key === '?' && !e.ctrlKey && !e.altKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        var helpSection = document.querySelector('.help-section');
+        if (helpSection) helpSection.open = !helpSection.open;
+      }
+    });
+  }
+
+  // ===== Mobile =====
+
   function toggleMobileSidebar() {
     var sidebar = document.getElementById('sidebar');
     var overlay = document.getElementById('sidebarOverlay');
@@ -203,37 +281,39 @@
     document.body.classList.toggle('sidebar-mobile-open', isOpen);
   }
 
-  // ===== Export de tous les graphiques =====
+  // ===== Comparaison multi-sorties =====
+
+  function toggleComparison() {
+    if (document.getElementById('objective_mode').value === 'rotationTranslation') {
+      ui.logger.setStatus('La comparaison multi-sorties est réservée aux transmissions rotatives.');
+      return;
+    }
+    comparisonManager.toggle();
+    var btn = document.getElementById('toggleComparisonBtn');
+    if (btn) btn.classList.toggle('active', comparisonManager.isOpen());
+  }
+
+  // ===== Export des graphiques =====
+
   function exportAllCharts() {
     var charts = window.GearCharts;
     if (!charts) return;
-    var ids = ['ratioChart', 'radarChart', 'cascadeChart', 'powerLossChart', 'safetyChart'];
-    ids.forEach(function (id) {
+    ['ratioChart', 'radarChart', 'cascadeChart', 'powerLossChart', 'safetyChart'].forEach(function (id) {
       if (charts.charts[id]) {
         charts.exportChart(id, id + '.png');
       }
     });
   }
 
-  // Ponts globaux pour les attributs onclick du HTML
+  // Ponts globaux (menu d'export, comparaison, tests)
   window.lancerRecherche = lancerRecherche;
   window.arreterRecherche = arreterRecherche;
-  window.sauvegarderParametres = function () { ui.paramForm.save(); ui.logger.log("Paramètres sauvegardés."); };
   window.toggleTheme = function () { ui.paramForm.toggleTheme(); };
   window.toggleProMode = function () { ui.paramForm.toggleProMode(); };
   window.toggleMobileSidebar = toggleMobileSidebar;
   window.exportAllCharts = exportAllCharts;
-  window.toggleComparison = function () {
-    if (document.getElementById('objective_mode').value === 'rotationTranslation') {
-      ui.logger.setStatus('La comparaison multi-sorties est réservée aux transmissions rotatives en V1.');
-      return;
-    }
-    comparisonManager.toggle();
-    var btn = document.getElementById('toggleComparisonBtn');
-    if (btn) btn.classList.toggle('active', comparisonManager.isOpen());
-  };
+  window.toggleComparison = toggleComparison;
 
-  // Pont pour les boutons de visualisation (UI.xxx dans le HTML)
   window.UI = {
     afficherResultats: function (solutions) { ui.afficherResultats(solutions); },
     afficherMessageStatus: function (msg) { ui.logger.setStatus(msg); },
@@ -244,8 +324,8 @@
     resetSVGView: function () { ui.exportManager.resetView(); },
     exporterSVG: function () { ui.exportManager.exportSVG(); },
     exporterPNG: function () { ui.exportManager.exportPNG(); },
-    exporterJSON: function () { ui.exportManager.exportJSON({input:ui._lastSearchParams||{},constraints:(ui._lastSearchParams&&ui._lastSearchParams.constraints)||{},solution:GearApp.currentSolution||null,materials:{input:ui._lastSearchParams&&ui._lastSearchParams.inputMaterial,output:ui._lastSearchParams&&ui._lastSearchParams.outputMaterial}}); },
-    exporterCSV: function () { ui.exportManager.exportCSV(GearApp.currentSolution||[]); }
+    exporterJSON: function () { ui.exportManager.exportJSON({ input: ui._lastSearchParams || {}, constraints: (ui._lastSearchParams && ui._lastSearchParams.constraints) || {}, solution: GearApp.currentSolution || null, materials: { input: ui._lastSearchParams && ui._lastSearchParams.inputMaterial, output: ui._lastSearchParams && ui._lastSearchParams.outputMaterial } }); },
+    exporterCSV: function () { ui.exportManager.exportCSV(GearApp.currentSolution || []); }
   };
 
   document.addEventListener('DOMContentLoaded', init);

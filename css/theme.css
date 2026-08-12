@@ -1,0 +1,65 @@
+/* ===== Jetons de design =====
+   Source unique des couleurs, espacements et rayons.
+   Le thème sombre ne redéfinit que les jetons. */
+
+:root {
+  /* Surfaces */
+  --surface-0: #f2f5f9;   /* fond de page */
+  --surface-1: #ffffff;   /* cartes, panneaux */
+  --surface-2: #f6f8fb;   /* champs, encarts */
+  --surface-3: #e9eef5;   /* segments, hover */
+
+  /* Encre */
+  --ink: #182335;
+  --muted: #5d6b81;
+  --line: #dbe2ec;
+
+  /* Accent et états */
+  --accent: #2563eb;
+  --accent-soft: #e8effe;
+  --success: #0c7f5c;
+  --warning: #955f00;
+  --danger: #b3261e;
+
+  /* Géométrie */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 3px rgba(24, 35, 53, .08);
+  --shadow: 0 8px 24px rgba(24, 35, 53, .10);
+
+  /* Espacements */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+
+  /* Typographie */
+  --font-xs: 11px;
+  --font-sm: 12.5px;
+  --font-md: 14px;
+  --font-lg: 17px;
+  --font-xl: 21px;
+
+  /* Dimensions structurantes */
+  --header-height: 56px;
+  --sidebar-width: 360px;
+}
+
+body.dark-theme {
+  --surface-0: #0d1420;
+  --surface-1: #131c2b;
+  --surface-2: #1a2536;
+  --surface-3: #223047;
+  --ink: #e9f0fa;
+  --muted: #96a6bd;
+  --line: #2b3a51;
+  --accent: #74a7ff;
+  --accent-soft: #1a2c4d;
+  --success: #4fd39c;
+  --warning: #ffc266;
+  --danger: #ff8a80;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, .35);
+  --shadow: 0 10px 28px rgba(0, 0, 0, .40);
+}

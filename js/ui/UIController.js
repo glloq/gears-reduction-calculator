@@ -147,12 +147,12 @@
       '<div class="card-item"><span class="card-label">SH min</span><span class="card-value">' + (Number.isFinite(sh)?sh.toFixed(2):'—') + '</span></div>' +
       '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){var code=w&&w.code||'WARNING',message=w&&w.message||String(w);return '<span class="status-badge warning" title="'+(w&&w.recommendation||'')+'">⚠ '+code+' — '+message+'</span>';}).join('') + '</div>';
 
-    card.style.display = 'flex';
+    card.hidden = false;
   };
 
   UIController.prototype._hideSolutionCard = function () {
     var card = document.getElementById('solutionCard');
-    if (card) card.style.display = 'none';
+    if (card) card.hidden = true;
   };
 
   UIController.prototype._drawSVGSchematic = function (solution) {

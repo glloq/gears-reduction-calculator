@@ -4,20 +4,61 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const ui = fs.readFileSync('js/ui/WorkbenchUI.js', 'utf8');
+const ui = fs.readFileSync('js/ui/Workbench.js', 'utf8');
 const controller = fs.readFileSync('js/ui/UIController.js', 'utf8');
 
-test('workbench shell and accessible result views are shipped on Pages', () => {
-  assert.match(html, /Transmission Design Workbench/);
+// Identifiants historiques consommés par SearchParams.fromForm : le nouveau
+// DOM doit tous les fournir, sinon la lecture du formulaire échoue.
+const REQUIRED_IDS = [
+  'objective_mode', 'rapport', 'precision', 'rpm_sortie_cible',
+  'linear_travel_per_rev', 'linear_speed_min', 'linear_speed_max', 'linear_force_min',
+  'etages', 'max_solutions', 'max_iterations', 'dent_menante_fixe', 'dent_menee_fixe',
+  'val_menante_min', 'val_menante_max', 'val_menee_min', 'val_menee_max',
+  'reduction_only', 'search_mode', 'module_mode', 'module', 'module_min', 'module_max',
+  'vitesse_entree', 'couple_entree', 'max_diameter', 'max_length', 'max_width',
+  'rpm_sortie_min', 'rpm_sortie_max', 'minimum_output_torque', 'minimum_efficiency',
+  'minimum_bending_safety', 'minimum_contact_safety',
+  'input_material', 'output_material', 'manufacturing_mode', 'manufacturing_min_module',
+  'manufacturing_min_teeth', 'manufacturing_min_width', 'printer_diameter', 'additive_derating',
+  'fatigue_enabled', 'hours_per_day', 'days_per_year', 'service_years', 'load_type',
+  'support_distance', 'shaft_allowable_shear',
+  'weight_ratio', 'weight_size', 'weight_efficiency', 'weight_stress',
+  'weight_stages', 'weight_noise', 'weight_manufacturing', 'weight_cost',
+  'type-spur', 'type-helical', 'type-internal', 'type-bevel', 'type-epicyclic',
+  'type-worm', 'type-belt', 'type-chain', 'type-rack', 'typeParamsContainer',
+  'dent_menante_slider', 'dent_menee_slider'
+];
+
+test('modular shell ships every field id consumed by SearchParams', () => {
+  for (const id of REQUIRED_IDS) {
+    assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
+  }
+});
+
+test('workspace is a master-detail layout with detail tabs', () => {
   assert.match(html, /id="solutionCards"/);
-  assert.match(html, /role="tab" aria-selected="true">Cartes/);
-  assert.match(html, /css\/workbench\.css/);
+  assert.match(html, /id="resultats"/);
+  assert.match(html, /class="detail-tabs"/);
+  for (const tab of ['schema', 'analyse', 'graphiques', 'journal']) {
+    assert.match(html, new RegExp(`data-detail="${tab}"`), `missing detail tab ${tab}`);
+    assert.match(html, new RegExp(`data-detail-panel="${tab}"`), `missing detail panel ${tab}`);
+  }
+  for (const canvas of ['ratioChart', 'radarChart', 'cascadeChart', 'powerLossChart', 'safetyChart']) {
+    assert.match(html, new RegExp(`id="${canvas}"`), `missing chart ${canvas}`);
+  }
+  // Le conteneur SVG reste dans une section .viz-section (contrat ViewerToolbar).
+  assert.match(html, /class="detail-panel viz-section active" data-detail-panel="schema"/);
+});
+
+test('behavior is bound in JS, not in inline attributes', () => {
+  assert.doesNotMatch(html, /onclick=/);
 });
 
 test('objective modes use contextual groups and expose a live derived ratio', () => {
-  assert.match(ui, /objective-ratio/);
-  assert.match(ui, /objective-need/);
-  assert.match(ui, /objective-linear/);
+  assert.match(html, /objective-fields objective-ratio/);
+  assert.match(html, /objective-fields objective-need/);
+  assert.match(html, /objective-fields objective-linear/);
+  assert.match(ui, /objective-' \+ context/);
   assert.match(ui, /Rapport cible dérivé/);
   assert.match(html, /solveur linéaire traite directement un pignon \+ crémaillère/);
 });
@@ -27,21 +68,26 @@ test('successful searches automatically select solution zero', () => {
 });
 
 test('pure view changes do not invoke the search engine', () => {
-  const viewMethods = ui.slice(ui.indexOf('._bindViewSwitch'), ui.indexOf('._bindFormSummary'));
+  const viewMethods = ui.slice(ui.indexOf('_bindResultsView = function'), ui.indexOf('_bindExportMenu = function'));
+  assert.ok(viewMethods.length > 0);
   assert.doesNotMatch(viewMethods, /rechercher|lancerRecherche/);
 });
 
-test('optional safety presentation does not monkey-patch SearchParams', () => {
-  assert.doesNotMatch(ui, /SearchParams\.fromForm\s*=/);
-  assert.doesNotMatch(ui, /installSearchConstraintPolicy/);
-  assert.match(ui, /bending\.value=''/);
-  assert.match(ui, /contact\.value=''/);
+test('optional safety constraints ship blank with placeholders', () => {
+  for (const id of ['minimum_bending_safety', 'minimum_contact_safety']) {
+    const match = html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`));
+    assert.ok(match, `missing #${id}`);
+    assert.match(match[0], /placeholder=/);
+    assert.doesNotMatch(match[0], /value=/);
+  }
 });
 
-test('workflow indexing keeps engineering available in Standard mode', () => {
-  assert.match(ui, /workflowIndex=0/);
-  assert.match(ui, /expertOnly=step>=5/);
-  assert.match(ui, /labels=\['Objectif','Transmissions','Contraintes','Optimisation','Ingénierie','Fabrication','Durée de vie','Score'\]/);
+test('type parameter editors are available outside expert mode', () => {
+  // Le rendu des champs tp_* ne doit dépendre d'aucun drapeau pro/expert.
+  const renderer = ui.slice(ui.indexOf('renderTypeParams = function'), ui.indexOf('_bindModuleMode = function'));
+  assert.ok(renderer.length > 0);
+  assert.match(renderer, /tp_/);
+  assert.doesNotMatch(renderer, /proMode|pro-mode/);
 });
 
 test('updateContext exclusively selects rack in linear mode and restores rotary choices', () => {
@@ -53,27 +99,34 @@ test('updateContext exclusively selects rack in linear mode and restores rotary 
     };
   }
   function checkbox(value, checked) {
-    const card = {hidden: false};
-    return {value, checked, disabled: false, closest: () => card, card};
+    const card = { hidden: false };
+    return { value, checked, disabled: false, closest: () => card, card, classList: classList() };
   }
 
-  const objective = {value: 'ratio'};
-  const output = {dispatchEvent() {}};
+  const objective = { value: 'ratio' };
+  const output = { dispatchEvent() {} };
   const fields = [
-    {classList: classList(['objective-ratio'])},
-    {classList: classList(['objective-linear'])}
+    { classList: classList(['objective-ratio']) },
+    { classList: classList(['objective-linear']) }
   ];
   const boxes = [checkbox('spur', true), checkbox('belt', false), checkbox('rack', false)];
-  const elements = {objective_mode: objective, rpm_sortie_cible: output};
+  const elements = { objective_mode: objective, rpm_sortie_cible: output };
   const document = {
-    body: {classList: classList()},
+    body: { classList: classList() },
     getElementById: id => elements[id] || null,
     querySelectorAll: selector => selector === '.type-checkbox' ? boxes : fields
   };
-  const sandbox = {GearApp: {ui: {}}, document, Event: function Event(type) { this.type = type; }};
+  const sandbox = { GearApp: { ui: {} }, document, Event: function Event(type) { this.type = type; }, window: {}, requestAnimationFrame: () => {} };
   vm.runInNewContext(ui, sandbox);
-  const workbench = new sandbox.GearApp.ui.WorkbenchUI({});
+  const workbench = new sandbox.GearApp.ui.Workbench({});
   workbench.updateSummary = function () {};
+  workbench.renderTypeParams = function () {};
+
+  // Mode rotatif initial sans instantané : l'état du DOM est respecté.
+  workbench.updateContext();
+  assert.deepEqual(boxes.map(box => [box.value, box.checked]), [
+    ['spur', true], ['belt', false], ['rack', false]
+  ]);
 
   objective.value = 'rotationTranslation';
   workbench.updateContext();
@@ -92,4 +145,10 @@ test('updateContext exclusively selects rack in linear mode and restores rotary 
     ['rack', false, true, true]
   ]);
   assert.equal(fields[0].classList.contains('active'), true);
+
+  // L'instantané est consommé : un choix manuel ultérieur survit au prochain
+  // passage dans updateContext.
+  boxes[1].checked = true;
+  workbench.updateContext();
+  assert.equal(boxes[1].checked, true);
 });
