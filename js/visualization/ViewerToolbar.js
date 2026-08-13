@@ -6,7 +6,9 @@
 
   function ViewerToolbar(container) {
     this.container = container;
-    this.currentView = 'geometry';
+    // La denture réaliste est la vue par défaut (le rendu linéaire retombe
+    // sur la géométrie 2D via la garde de render()).
+    this.currentView = 'teeth';
     this.geometry = new GearApp.visualization.GeometryRenderer(container);
     this.kinematic = GearApp.visualization.kinematicRenderer;
     // Vue denture réaliste : instance longue durée (elle reconstruit son svg à

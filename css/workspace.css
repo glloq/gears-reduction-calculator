@@ -23,12 +23,15 @@
 
 /* ----- Volet solutions (maître) ----- */
 
-.results-pane, .detail-pane > .detail-panel, .solution-card, .comparison-panel {
+.results-pane, .detail-pane > .detail-panel, .solution-card, .comparison-panel, .hero-viewer {
   background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: var(--sp-4);
 }
+
+.hero-viewer .svg-container { min-height: clamp(340px, 46vh, 600px); }
+.hero-viewer .train-svg, .hero-viewer .geometry-svg, .hero-viewer .kinematic-svg { min-height: clamp(340px, 46vh, 600px); }
 
 .results-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .results-header h2 { margin: 0; }

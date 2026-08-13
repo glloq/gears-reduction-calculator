@@ -72,6 +72,10 @@
   padding: var(--sp-4);
 }
 
+/* Visualisation héro : pleine largeur, au-dessus de la grille */
+.hero-viewer { display: none; margin-bottom: var(--sp-4); }
+body.has-results .hero-viewer { display: block; }
+
 /* Grille maître/détail : liste des solutions + détail sélectionné */
 .workspace-grid {
   display: none;
