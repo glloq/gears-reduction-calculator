@@ -164,6 +164,37 @@ body.linear-objective .transmission-filters { display: none; }
   font-weight: 700;
 }
 
+/* ----- Gabarit d'architecture ----- */
+
+.type-template { margin-top: var(--sp-3); }
+.type-template > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  padding: var(--sp-1) 0;
+  list-style: none;
+}
+.type-template[open] > summary { color: var(--accent); }
+
+.template-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) 0;
+}
+.template-stage-label { flex: none; width: 60px; font-size: var(--font-xs); color: var(--muted); font-weight: 600; }
+.template-chip {
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: var(--font-xs);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.template-chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 700; }
+
 /* ----- Contrôle segmenté ----- */
 
 .segmented {

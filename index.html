@@ -153,6 +153,13 @@
             </label>
           </div>
           <div id="typeParamsContainer" class="type-params"></div>
+
+          <details class="type-template rotary-only" id="typeTemplateSection">
+            <summary>Architecture imposée<span class="panel-hint">optionnel</span></summary>
+            <p class="field-help">Impose les types autorisés étage par étage (ex. étage 1 = vis sans fin, ensuite libre). Les crans au-delà de la longueur d'une solution sont ignorés.</p>
+            <div id="typeTemplateContainer"></div>
+          </details>
+          <input type="hidden" id="type_template" data-persist>
         </div>
       </details>
 
@@ -173,7 +180,7 @@
 
           <div class="field-grid rotary-only">
             <div><label for="etages">Étages max</label><input type="number" id="etages" value="4" min="1" max="8"></div>
-            <div><label for="max_solutions">Nb de résultats</label><input type="number" id="max_solutions" value="10" min="1" max="100"></div>
+            <div><label for="max_solutions" title="Nombre de solutions collectées pour la barre d'affinage">Taille du vivier</label><input type="number" id="max_solutions" value="100" min="1" max="200"></div>
           </div>
           <div class="linear-only">
             <label for="max_solutions_linear_hint" class="visually-hidden">Nombre de résultats</label>
@@ -227,15 +234,43 @@
         </div>
       </details>
 
-      <!-- Module 5 : Contraintes -->
+      <!-- Module 5 : Fabrication -->
+      <details class="panel" id="panel-fabrication">
+        <summary><span class="panel-step">5</span><span class="panel-title">Fabrication</span><span class="panel-hint" id="manufacturingHint"></span></summary>
+        <div class="panel-body">
+          <label for="manufacturing_mode">Procédé</label>
+          <select id="manufacturing_mode" data-persist><option value="standard">Standard</option><option value="CNC">CNC</option><option value="laser">Laser</option><option value="printing3d">Impression 3D</option><option value="custom">Personnalisé</option></select>
+          <p class="field-help">Chaque procédé impose ses limites (module, dents, largeur minimums) ; les champs ci-dessous les surchargent.</p>
+          <label>Limites de fabrication</label>
+          <div class="field-grid field-grid-3">
+            <div><label class="sub" for="manufacturing_min_module">Module min</label><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="—"></div>
+            <div><label class="sub" for="manufacturing_min_teeth">Dents min</label><input id="manufacturing_min_teeth" data-persist type="number" placeholder="—"></div>
+            <div><label class="sub" for="manufacturing_min_width">Largeur min</label><input id="manufacturing_min_width" data-persist type="number" placeholder="—"></div>
+          </div>
+          <div class="field-grid printing3d-only">
+            <div><label class="sub" for="printer_diameter">Ø imprimante (mm)</label><input id="printer_diameter" data-persist type="number" value="220"></div>
+            <div><label class="sub" for="additive_derating">Déclassement additif</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05"></div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Module 6 : Contraintes -->
       <details class="panel" id="panel-contraintes">
-        <summary><span class="panel-step">5</span><span class="panel-title">Contraintes</span><span class="panel-hint">optionnelles</span></summary>
+        <summary><span class="panel-step">6</span><span class="panel-title">Contraintes</span><span class="panel-hint">optionnelles</span></summary>
         <div class="panel-body">
           <label>Encombrement maximal (mm)</label>
           <div class="field-grid field-grid-3">
             <div><label class="sub" for="max_diameter">Ø</label><input id="max_diameter" data-persist type="number" placeholder="—"></div>
             <div><label class="sub" for="max_length">Longueur</label><input id="max_length" data-persist type="number" placeholder="—"></div>
             <div><label class="sub" for="max_width">Largeur</label><input id="max_width" data-persist type="number" placeholder="—"></div>
+          </div>
+
+          <div class="rotary-only">
+            <label title="S'applique aux étages à entraxe défini ; les architectures coaxiales (épicycloïdal) ont un entraxe nul">Entraxe par étage (mm)</label>
+            <div class="field-grid">
+              <div><label class="sub" for="min_center_distance">Entraxe min</label><input id="min_center_distance" data-persist type="number" min="0" placeholder="—"></div>
+              <div><label class="sub" for="max_center_distance">Entraxe max</label><input id="max_center_distance" data-persist type="number" min="0" placeholder="—"></div>
+            </div>
           </div>
 
           <div class="rotary-only">
@@ -258,9 +293,9 @@
         </div>
       </details>
 
-      <!-- Module 6 : Avancé -->
+      <!-- Module 7 : Avancé -->
       <details class="panel" id="panel-avance">
-        <summary><span class="panel-step">6</span><span class="panel-title">Avancé</span></summary>
+        <summary><span class="panel-step">7</span><span class="panel-title">Avancé</span></summary>
         <div class="panel-body">
           <label for="max_iterations">Limite d'itérations</label>
           <input type="number" id="max_iterations" value="500000" min="1000" max="5000000" step="1000">
@@ -273,7 +308,7 @@
 
       <!-- Modules experts -->
       <details class="panel expert-only" id="panel-materiaux">
-        <summary><span class="panel-step">E</span><span class="panel-title">Matériaux &amp; fabrication</span><span class="panel-hint">expert</span></summary>
+        <summary><span class="panel-step">E</span><span class="panel-title">Matériaux</span><span class="panel-hint">expert</span></summary>
         <div class="panel-body">
           <div class="field-grid">
             <div>
@@ -285,18 +320,7 @@
               <select id="output_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
             </div>
           </div>
-          <label for="manufacturing_mode">Procédé</label>
-          <select id="manufacturing_mode" data-persist><option value="standard">Standard</option><option value="CNC">CNC</option><option value="laser">Laser</option><option value="printing3d">Impression 3D</option><option value="custom">Personnalisé</option></select>
-          <label>Limites de fabrication</label>
-          <div class="field-grid field-grid-3">
-            <div><label class="sub" for="manufacturing_min_module">Module min</label><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="—"></div>
-            <div><label class="sub" for="manufacturing_min_teeth">Dents min</label><input id="manufacturing_min_teeth" data-persist type="number" placeholder="—"></div>
-            <div><label class="sub" for="manufacturing_min_width">Largeur min</label><input id="manufacturing_min_width" data-persist type="number" placeholder="—"></div>
-          </div>
-          <div class="field-grid">
-            <div><label class="sub" for="printer_diameter">Ø imprimante (mm)</label><input id="printer_diameter" data-persist type="number" value="220"></div>
-            <div><label class="sub" for="additive_derating">Déclassement additif</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05"></div>
-          </div>
+          <p class="field-help">Les matériaux alimentent les estimations Lewis/Hertz (SF/SH) et le déclassement additif.</p>
         </div>
       </details>
 
@@ -378,11 +402,35 @@
                 <button id="cardsViewBtn" class="active" role="tab" aria-selected="true">Cartes</button>
                 <button id="tableViewBtn" role="tab" aria-selected="false">Tableau</button>
               </div>
-              <button class="btn-small" id="toggleComparisonBtn" title="Comparer plusieurs rapports cibles" aria-label="Comparer">Comparer</button>
+              <button class="btn-small" id="toggleComparisonBtn" title="Rechercher plusieurs rapports cibles et comparer leurs solutions" aria-label="Comparaison multi-cibles">Multi-cibles</button>
             </div>
           </header>
           <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
             <div id="progress-bar"></div>
+          </div>
+
+          <!-- Barre d'affinage : filtre le vivier côté client, sans relancer -->
+          <div id="refineBar" class="refine-bar" hidden>
+            <div class="refine-fields">
+              <label class="sub">Écart ≤ %<input id="refine_error_max" type="number" min="0" step="0.01" placeholder="—"></label>
+              <label class="sub refine-rotary">Rendement ≥ %<input id="refine_efficiency_min" type="number" min="0" max="100" step="1" placeholder="—"></label>
+              <label class="sub refine-rotary" title="Les solutions sans facteur évalué (courroie, chaîne…) sont exclues quand ce critère est actif">SF ≥<input id="refine_sf_min" type="number" min="0" step="0.1" placeholder="—"></label>
+              <label class="sub refine-rotary" title="Les solutions sans facteur évalué sont exclues quand ce critère est actif">SH ≥<input id="refine_sh_min" type="number" min="0" step="0.1" placeholder="—"></label>
+              <label class="sub">Ø ≤ mm<input id="refine_diameter_max" type="number" min="0" placeholder="—"></label>
+              <label class="sub">Long. ≤ mm<input id="refine_length_max" type="number" min="0" placeholder="—"></label>
+              <label class="sub refine-rotary">Étages ≤<input id="refine_stages_max" type="number" min="1" max="8" placeholder="—"></label>
+              <label class="sub">Tri<select id="refine_sort">
+                <option value="score">Score (coût, plus bas = mieux)</option>
+                <option value="error">Écart minimal</option>
+                <option value="efficiency">Meilleur rendement</option>
+                <option value="compactness">Plus compact</option>
+                <option value="sf">Meilleure sécurité SF</option>
+                <option value="stages">Moins d'étages</option>
+              </select></label>
+              <button id="refineResetBtn" class="btn-small" type="button" title="Réinitialiser les filtres">Réinitialiser</button>
+            </div>
+            <div id="refineTypeChips" class="refine-chips refine-rotary" role="group" aria-label="Types présents dans les solutions"></div>
+            <p id="refineCount" class="refine-count" aria-live="polite"></p>
           </div>
           <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
           <div class="results-body">
@@ -402,6 +450,8 @@
           <nav class="detail-tabs" role="tablist" aria-label="Détail de la solution">
             <button role="tab" data-detail="schema" class="active" aria-selected="true">Schéma</button>
             <button role="tab" data-detail="analyse" aria-selected="false">Analyse</button>
+            <button role="tab" data-detail="editeur" aria-selected="false">Éditeur</button>
+            <button role="tab" data-detail="comparer" aria-selected="false">Comparer</button>
             <button role="tab" data-detail="graphiques" aria-selected="false">Graphiques</button>
             <button role="tab" data-detail="journal" aria-selected="false">Journal</button>
           </nav>
@@ -411,6 +461,7 @@
               <div class="segmented view-switch">
                 <button class="view-mode active" data-view="geometry">Géométrie 2D</button>
                 <button class="view-mode" data-view="kinematic">Cinématique</button>
+                <button class="view-mode rotary-only" data-view="teeth" title="Profils de denture en développante, animables">Denture</button>
               </div>
               <span class="kinematic-projections">
                 <button class="btn-small active" data-projection="main">Vue principale</button>
@@ -440,6 +491,18 @@
           <div class="detail-panel" data-detail-panel="analyse">
             <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
             <p class="detail-placeholder" data-placeholder="analyse">Lancez une recherche puis sélectionnez une solution pour voir son analyse mécanique.</p>
+          </div>
+
+          <div class="detail-panel" data-detail-panel="editeur">
+            <div id="stageEditor" class="stage-editor">
+              <p class="detail-placeholder">Lancez une recherche puis sélectionnez une solution pour l'ouvrir dans l'éditeur.</p>
+            </div>
+          </div>
+
+          <div class="detail-panel" data-detail-panel="comparer">
+            <div id="compareSolutionsPanel" class="compare-panel">
+              <p class="detail-placeholder">Épinglez des solutions (☆) pour les comparer côte à côte.</p>
+            </div>
           </div>
 
           <div class="detail-panel" data-detail-panel="graphiques">
@@ -509,12 +572,16 @@
   <!-- UI -->
   <script src="js/ui/Logger.js" defer></script>
   <script src="js/ui/ColumnPreferences.js" defer></script>
+  <script src="js/ui/SolutionFilter.js" defer></script>
   <script src="js/ui/ResultsTable.js" defer></script>
   <script src="js/ui/MechanicalPanel.js" defer></script>
   <script src="js/ui/ParameterForm.js" defer></script>
   <script src="js/ui/ExportManager.js" defer></script>
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
+  <script src="js/ui/SolutionExplorer.js" defer></script>
+  <script src="js/ui/StageEditor.js" defer></script>
+  <script src="js/ui/ComparePanel.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->

@@ -141,6 +141,20 @@
       p.constraints.maximumOutputSpeedRpm=optionalNumber('rpm_sortie_max');
       p.linearTravelPerRevolutionMm=null;
       p.typesActifs=p.typesActifs.filter(function(type){return type!=='rack';});
+      // Entraxe par étage : capacité moteur (Engineering.validateDimensions)
+      // exposée uniquement pour les objectifs rotatifs.
+      p.constraints.minCenterDistance=optionalNumber('min_center_distance');
+      p.constraints.maxCenterDistance=optionalNumber('max_center_distance');
+      // Gabarit d'architecture (JSON sérialisé par Workbench) : tableau de
+      // crans null (libre) ou listes de types ; ignoré silencieusement si malformé.
+      p.typeTemplate=null;
+      var templateRaw=value('type_template','');
+      if(templateRaw){
+        try{
+          var parsedTemplate=JSON.parse(templateRaw);
+          if(Array.isArray(parsedTemplate))p.typeTemplate=parsedTemplate.slice(0,p.maxEtages).map(function(slot){return Array.isArray(slot)&&slot.length?slot:null;});
+        }catch(ignore){p.typeTemplate=null;}
+      }
     } else {
       p.constraints.minimumLinearSpeedMmMin=optionalNumber('linear_speed_min');
       p.constraints.maximumLinearSpeedMmMin=optionalNumber('linear_speed_max');
@@ -179,6 +193,16 @@
     if(this.moduleMode==='fixed'&&(!Number.isFinite(this.module)||this.module<=0))return {valid:false,message:'Le module fixe est obligatoire',field:'module'};
     if(this.moduleMin!=null&&this.moduleMax!=null&&this.moduleMin>this.moduleMax)return {valid:false,message:'La plage de modules est inversée',field:'module_min'};
     if((mode==='ratio'||mode==='need')&&c.minimumOutputSpeedRpm!=null&&c.maximumOutputSpeedRpm!=null&&c.minimumOutputSpeedRpm>c.maximumOutputSpeedRpm)return {valid:false,message:'La plage RPM sortie est inversée',field:'rpm_sortie_min'};
+    if((mode==='ratio'||mode==='need')&&c.minCenterDistance!=null&&c.maxCenterDistance!=null&&c.minCenterDistance>c.maxCenterDistance)return {valid:false,message:'La plage d’entraxe est inversée',field:'min_center_distance'};
+    if((mode==='ratio'||mode==='need')&&Array.isArray(this.typeTemplate)){
+      var aliasType=function(id){return id==='epicyclic'?'planetary':id;};
+      var activeAliased=(this.typesActifs||[]).map(aliasType);
+      for(var slotIndex=0;slotIndex<this.typeTemplate.length;slotIndex++){
+        var slot=this.typeTemplate[slotIndex];
+        if(slot&&slot.length&&!slot.some(function(id){return activeAliased.indexOf(aliasType(id))!==-1;}))
+          return {valid:false,message:'Architecture imposée : le type choisi à l’étage '+(slotIndex+1)+' n’est pas activé',field:'type_template'};
+      }
+    }
     if(mode==='rotationTranslation'&&c.minimumLinearSpeedMmMin!=null&&c.maximumLinearSpeedMmMin!=null&&c.minimumLinearSpeedMmMin>c.maximumLinearSpeedMmMin)return {valid:false,message:'La plage de vitesse linéaire est inversée',field:'linear_speed_min'};
     return { valid: true };
   };
@@ -195,7 +219,9 @@
       rapportCible: this.rapportCible,
       maxEtages: this.maxEtages,
       precisionToleree: this.precision,
-      maxSolutions: this.maxSolutions,
+      // Plancher de vivier : la barre d'affinage filtre côté client, elle a
+      // besoin de matière même si l'utilisateur a demandé peu de résultats.
+      maxSolutions: Math.max(100, this.maxSolutions || 10),
       maxIterations: this.maxIterations,
       dentMenanteFixe: this.dentMenanteFixe,
       dentMeneeFixe: this.dentMeneeFixe,
@@ -216,6 +242,7 @@
       ,weights: this.weights
       ,manufacturing: this.manufacturing
       ,objectiveMode: this.objectiveMode
+      ,typeTemplate: this.typeTemplate||null
       ,linearTravelPerRevolutionMm: this.linearTravelPerRevolutionMm
       ,fatigue: this.fatigue
       ,shaft: this.shaft

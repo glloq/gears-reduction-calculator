@@ -17,7 +17,9 @@
     this._viewer = null;
 
     this._bindEvents();
-    var controller=this,visualContainer=document.getElementById('svgContainer');if(visualContainer)visualContainer.addEventListener('visualization:renderer',function(event){controller.exportManager.setRenderer(event.detail.renderer);});
+    var controller=this,visualContainer=document.getElementById('svgContainer');if(visualContainer){visualContainer.addEventListener('visualization:renderer',function(event){controller.exportManager.setRenderer(event.detail.renderer);});
+    // Clic sur un étage du schéma cinématique → focalise la ligne correspondante de l'éditeur.
+    visualContainer.addEventListener('kinematic:stage-selected',function(event){controller._eventBus.emit('editor:focus-stage',{stage:event.detail.index});});}
   }
 
   UIController.prototype.setVisualizationComponents = function (gearSvg, legacySchema, charts) {
@@ -44,6 +46,7 @@
     });
 
     this._eventBus.on('search:stats', function (stats) {
+      self._lastStats = stats;
       var element = document.getElementById('searchStats'); if (!element) return;
       var rejected = stats.rejections || {}, ratio = Number.isFinite(stats.currentRatio) ? stats.currentRatio.toFixed(3) : '—';
       element.innerHTML = '<strong>Branches :</strong> ' + (stats.tested || 0) +
@@ -75,8 +78,7 @@
     this.resultsTable.display(solutions, searchParams);
 
     if (solutions.length === 0) {
-      this.mechanicalPanel.hide();
-      this._hideSolutionCard();
+      this.clearDetail();
       return;
     }
 
@@ -84,6 +86,21 @@
     // Le premier résultat est immédiatement exploitable : résumé,
     // visualisation, analyse mécanique et graphiques restent synchronisés.
     this._eventBus.emit('solution:selected', { index: 0, solution: solutions[0] });
+  };
+
+  // Statistiques de la dernière recherche (payload search:stats le plus récent).
+  UIController.prototype.lastStats = function () { return this._lastStats || null; };
+
+  // Graphiques calculés sur le vivier complet (appelé par SolutionExplorer à
+  // chaque nouvelle recherche, jamais pendant l'affinage).
+  UIController.prototype.updatePoolCharts = function (solutions, searchParams) {
+    this._lastSearchParams = searchParams;
+    this._updateComparisonCharts(solutions, searchParams);
+  };
+
+  UIController.prototype.clearDetail = function () {
+    this.mechanicalPanel.hide();
+    this._hideSolutionCard();
   };
 
   UIController.prototype._onSolutionSelected = function (index, solution) {
@@ -130,6 +147,24 @@
 
     var sf = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.bending&&stage.bending.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
     var sh = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.contact&&stage.contact.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
+
+    // Constructibilité : procédé appliqué et échecs éventuels (variantes d'éditeur).
+    var MANUFACTURING_LABELS = { standard:'Standard', CNC:'CNC', laser:'Laser', printing3d:'Impression 3D', custom:'Personnalisé' };
+    var FAILURE_LABELS = { MODULE_TOO_SMALL:'Module sous la limite du procédé', TOO_FEW_TEETH:'Dents sous la limite du procédé', FACE_WIDTH_TOO_SMALL:'Largeur de denture insuffisante', PRINTER_DIAMETER:'Ø supérieur au plateau d’impression' };
+    var manufacturingBadges = '';
+    if (solution.manufacturing) {
+      var processLabel = MANUFACTURING_LABELS[solution.manufacturing.rules && solution.manufacturing.rules.mode] || 'Standard';
+      manufacturingBadges = (solution.manufacturing.failures && solution.manufacturing.failures.length)
+        ? solution.manufacturing.failures.map(function (code) { return '<span class="status-badge warning">⚠ ' + (FAILURE_LABELS[code] || code) + '</span>'; }).join('')
+        : '<span class="status-badge">✓ Fabrication ' + processLabel + '</span>';
+    }
+
+    // Module retenu (fixe, automatique ou édité manuellement).
+    var stats = solution.stats || {};
+    var moduleValue = Number.isFinite(stats.selectedModule) ? stats.selectedModule + ' mm' : '—';
+    var moduleSuffix = stats.moduleMode === 'automatic' ? ' (auto)' : stats.moduleMode === 'manual' ? ' (édité)' : '';
+    var moduleTitle = solution.moduleSelection && solution.moduleSelection.tested && solution.moduleSelection.tested.length > 1
+      ? 'Modules testés : ' + solution.moduleSelection.tested.join(', ') + ' mm' : '';
     var mode = document.getElementById('search_mode');
     var modeLabel = mode ? mode.options[mode.selectedIndex].textContent : 'classement';
     var warnings = solution.warnings || [];
@@ -137,15 +172,17 @@
     var outputs=linear
       ? '<div class="card-item"><span class="card-label">Course / tour</span><span class="card-value">'+solution.travelPerRevolutionMm.toFixed(2)+' mm/tr</span></div><div class="card-item"><span class="card-label">Vitesse linéaire</span><span class="card-value">'+solution.outputLinearSpeedMmMin.toFixed(0)+' mm/min</span></div><div class="card-item"><span class="card-label">Force sortie</span><span class="card-value">'+solution.outputForceN.toFixed(1)+' N</span></div>'
       : '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">'+solution.ratio.toFixed(4)+'</span></div><div class="card-item"><span class="card-label">RPM sortie</span><span class="card-value">'+solution.outputSpeedRpm.toFixed(1)+' rpm</span></div><div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">'+solution.outputTorqueNm.toFixed(1)+' N·m</span></div>';
+    var title = index >= 0 ? 'Solution du vivier n° ' + (index + 1) : 'Solution épinglée / variante';
     card.innerHTML =
-      '<div class="solution-card-title"><div><span class="card-label">Résultat recommandé</span><h2>Solution classée #' + (index + 1) + '</h2></div><span class="type-badge">Meilleure selon : ' + modeLabel + '</span></div>' +
+      '<div class="solution-card-title"><div><span class="card-label">Résultat sélectionné</span><h2>' + title + '</h2></div><span class="type-badge">Classement : ' + modeLabel + '</span></div>' +
       outputs +
       '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (solution.efficiency * 100).toFixed(1) + '%</span></div>' +
       '<div class="card-item"><span class="card-label">Architecture</span><span class="card-value">' + types + '</span></div>' +
       '<div class="card-item"><span class="card-label">Dimensions</span><span class="card-value">' + solution.dimensions.length.toFixed(0)+' × '+solution.dimensions.maxDiameter.toFixed(0)+' × '+solution.dimensions.width.toFixed(0)+' mm</span></div>' +
       '<div class="card-item"><span class="card-label">SF min</span><span class="card-value">' + (Number.isFinite(sf)?sf.toFixed(2):'—') + '</span></div>' +
       '<div class="card-item"><span class="card-label">SH min</span><span class="card-value">' + (Number.isFinite(sh)?sh.toFixed(2):'—') + '</span></div>' +
-      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){var code=w&&w.code||'WARNING',message=w&&w.message||String(w);return '<span class="status-badge warning" title="'+(w&&w.recommendation||'')+'">⚠ '+code+' — '+message+'</span>';}).join('') + '</div>';
+      '<div class="card-item" title="' + moduleTitle + '"><span class="card-label">Module</span><span class="card-value">' + moduleValue + moduleSuffix + '</span></div>' +
+      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + manufacturingBadges + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){var code=w&&w.code||'WARNING',message=w&&w.message||String(w);return '<span class="status-badge warning" title="'+(w&&w.recommendation||'')+'">⚠ '+code+' — '+message+'</span>';}).join('') + '</div>';
 
     card.hidden = false;
   };

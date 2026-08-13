@@ -26,7 +26,15 @@ const REQUIRED_IDS = [
   'weight_stages', 'weight_noise', 'weight_manufacturing', 'weight_cost',
   'type-spur', 'type-helical', 'type-internal', 'type-bevel', 'type-epicyclic',
   'type-worm', 'type-belt', 'type-chain', 'type-rack', 'typeParamsContainer',
-  'dent_menante_slider', 'dent_menee_slider'
+  'dent_menante_slider', 'dent_menee_slider',
+  'type_template', 'typeTemplateContainer', 'min_center_distance', 'max_center_distance'
+];
+
+// Barre d'affinage du vivier (SolutionExplorer)
+const REFINE_IDS = [
+  'refineBar', 'refine_error_max', 'refine_efficiency_min', 'refine_sf_min',
+  'refine_sh_min', 'refine_diameter_max', 'refine_length_max', 'refine_stages_max',
+  'refineTypeChips', 'refine_sort', 'refineCount', 'refineResetBtn'
 ];
 
 test('modular shell ships every field id consumed by SearchParams', () => {
@@ -35,11 +43,32 @@ test('modular shell ships every field id consumed by SearchParams', () => {
   }
 });
 
+test('refine bar ships every control consumed by SolutionExplorer', () => {
+  for (const id of REFINE_IDS) {
+    assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
+  }
+});
+
+test('solution tiles carry pool indices and selection matches by data-index', () => {
+  assert.match(ui, /tile\.dataset\.index = index/);
+  assert.match(ui, /tile\.dataset\.index === String\(self\.selected\)/);
+  // Le tableau gère sa propre sélection : plus de boucle positionnelle sur #resultats.
+  assert.doesNotMatch(ui, /#resultats tr/);
+});
+
+test('manufacturing is a standard module, not expert-gated', () => {
+  const panel = html.match(/<details class="([^"]*)" id="panel-fabrication">/);
+  assert.ok(panel, 'missing #panel-fabrication');
+  assert.doesNotMatch(panel[1], /expert-only/);
+  assert.match(html, /id="manufacturing_mode"/);
+  assert.match(html, /class="field-grid printing3d-only"/);
+});
+
 test('workspace is a master-detail layout with detail tabs', () => {
   assert.match(html, /id="solutionCards"/);
   assert.match(html, /id="resultats"/);
   assert.match(html, /class="detail-tabs"/);
-  for (const tab of ['schema', 'analyse', 'graphiques', 'journal']) {
+  for (const tab of ['schema', 'analyse', 'editeur', 'comparer', 'graphiques', 'journal']) {
     assert.match(html, new RegExp(`data-detail="${tab}"`), `missing detail tab ${tab}`);
     assert.match(html, new RegExp(`data-detail-panel="${tab}"`), `missing detail panel ${tab}`);
   }

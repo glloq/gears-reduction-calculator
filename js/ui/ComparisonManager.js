@@ -163,35 +163,28 @@
     if (validOutputs.length === 0) return;
 
     var resultsContainer = document.getElementById('compResults');
-    if (resultsContainer) {
-      resultsContainer.innerHTML = '<p class="comp-searching">Recherche en cours...</p>';
+    function setStatus(message) {
+      if (resultsContainer) resultsContainer.innerHTML = '<p class="comp-searching">' + message + '</p>';
     }
 
-    // Obtenir les paramètres de base depuis le formulaire
-    var baseParams = GearApp.models.SearchParams.fromForm();
-    var completed = 0;
-
-    validOutputs.forEach(function (output) {
-      // Cloner les params avec le rapport cible modifié
-      var params = GearApp.models.SearchParams.fromForm();
-      params.rapportCible = output.ratio;
-
-      self._engine.rechercher(params).then(function (solutions) {
-        output.solutions = solutions;
-        output.selectedIdx = 0;
-        completed++;
-        if (completed === validOutputs.length) {
-          self._renderResults();
-          self._renderSummary();
-        }
-      }).catch(function () {
-        output.solutions = [];
-        completed++;
-        if (completed === validOutputs.length) {
-          self._renderResults();
-          self._renderSummary();
-        }
+    // Les recherches s'enchaînent SÉQUENTIELLEMENT : Engine.rechercher termine
+    // le worker précédent au lancement d'une nouvelle recherche, un fan-out
+    // parallèle s'auto-annulerait (seule la dernière cible répondrait).
+    validOutputs.reduce(function (chain, output, position) {
+      return chain.then(function () {
+        setStatus('Recherche ' + (position + 1) + ' / ' + validOutputs.length + '…');
+        var params = GearApp.models.SearchParams.fromForm();
+        params.rapportCible = output.ratio;
+        return self._engine.rechercher(params).then(function (solutions) {
+          output.solutions = solutions;
+          output.selectedIdx = 0;
+        }, function () {
+          output.solutions = [];
+        });
       });
+    }, Promise.resolve()).then(function () {
+      self._renderResults();
+      self._renderSummary();
     });
   };
 

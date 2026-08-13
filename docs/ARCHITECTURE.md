@@ -31,7 +31,12 @@ gears-reduction-calculator/
 │   │   ├── MechanicalPanel.js # Panneau d'analyse mécanique détaillée
 │   │   ├── ParameterForm.js   # Sliders de dents, thème, mode expert, accesseurs
 │   │   ├── Workbench.js       # Comportement de l'interface : contexte d'objectif,
-│   │   │                      #   paramètres par type, onglets de détail, tuiles
+│   │   │                      #   paramètres par type, gabarit d'architecture,
+│   │   │                      #   onglets de détail, tuiles de solutions
+│   │   ├── SolutionFilter.js  # Filtrage/tri pur du vivier (UMD, testé sous Node)
+│   │   ├── SolutionExplorer.js# Vivier de solutions + barre d'affinage instantané
+│   │   ├── StageEditor.js     # Éditeur d'étages : ré-analyse locale, variantes
+│   │   ├── ComparePanel.js    # Épingles (max 4) et comparaison côte à côte
 │   │   ├── ExportManager.js   # Export SVG/PNG, contrôle animation
 │   │   └── UIController.js    # Orchestrateur UI principal
 │   ├── visualization/
