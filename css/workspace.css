@@ -281,6 +281,67 @@
 .kinematic-svg .output-role { fill: #dc2626; }
 .kinematic-svg .fixed-role { fill: #ca8a04; }
 
+/* ----- Éditeur d'étages ----- */
+
+.editor-pending {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-left: 3px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  font-size: var(--font-sm);
+}
+
+.editor-stages { display: grid; gap: var(--sp-3); }
+
+.editor-stage {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-3);
+  background: var(--surface-2);
+}
+.editor-stage.has-errors { border-color: var(--danger); }
+.editor-stage.focused { outline: 2px solid var(--accent); outline-offset: 2px; }
+.editor-stage header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2); }
+.editor-stage-tools { display: flex; gap: var(--sp-1); }
+.editor-stage-tools .btn-small { padding: 2px 8px; min-height: 26px; }
+
+.editor-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--sp-2);
+  align-items: end;
+}
+.editor-fields label { margin: 0; font-size: var(--font-xs); }
+.editor-fields input, .editor-fields select { margin-top: 2px; min-height: 30px; padding: 3px 7px; background: var(--surface-1); }
+
+.editor-stage-errors { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); color: var(--danger); font-size: var(--font-sm); }
+.editor-stage-errors:empty { display: none; }
+
+.editor-add { display: flex; gap: var(--sp-2); margin: var(--sp-3) 0; align-items: center; }
+.editor-add select { width: auto; }
+
+.editor-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.editor-kpi { padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--surface-2); }
+.editor-kpi span { display: block; font-size: var(--font-xs); color: var(--muted); }
+.editor-kpi strong { display: block; font-size: var(--font-md); }
+.editor-kpi small { display: block; font-size: 10px; color: var(--muted); }
+.editor-kpi.delta-better { box-shadow: inset 0 0 0 1px var(--success); }
+.editor-kpi.delta-better strong { color: var(--success); }
+.editor-kpi.delta-worse { box-shadow: inset 0 0 0 1px var(--danger); }
+.editor-kpi.delta-worse strong { color: var(--danger); }
+
+.editor-failures { color: var(--warning); font-size: var(--font-sm); font-weight: 600; }
+.editor-ok { color: var(--success); font-size: var(--font-sm); }
+.editor-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+
 /* ----- Analyse mécanique ----- */
 
 .mechanical-panel h3 { color: var(--accent); }

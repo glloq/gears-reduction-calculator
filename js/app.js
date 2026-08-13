@@ -31,6 +31,10 @@
     explorer.bind();
     GearApp._explorer = explorer;
 
+    // Éditeur d'étages : ré-analyse locale d'une solution sélectionnée.
+    var stageEditor = new GearApp.ui.StageEditor(GearApp.eventBus, 'stageEditor', explorer);
+    stageEditor.bind();
+
     ui.paramForm.initSliders();
 
     // Restaurer depuis l'URL d'abord, sinon depuis localStorage.

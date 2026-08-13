@@ -426,6 +426,7 @@
           <nav class="detail-tabs" role="tablist" aria-label="Détail de la solution">
             <button role="tab" data-detail="schema" class="active" aria-selected="true">Schéma</button>
             <button role="tab" data-detail="analyse" aria-selected="false">Analyse</button>
+            <button role="tab" data-detail="editeur" aria-selected="false">Éditeur</button>
             <button role="tab" data-detail="graphiques" aria-selected="false">Graphiques</button>
             <button role="tab" data-detail="journal" aria-selected="false">Journal</button>
           </nav>
@@ -464,6 +465,12 @@
           <div class="detail-panel" data-detail-panel="analyse">
             <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
             <p class="detail-placeholder" data-placeholder="analyse">Lancez une recherche puis sélectionnez une solution pour voir son analyse mécanique.</p>
+          </div>
+
+          <div class="detail-panel" data-detail-panel="editeur">
+            <div id="stageEditor" class="stage-editor">
+              <p class="detail-placeholder">Lancez une recherche puis sélectionnez une solution pour l'ouvrir dans l'éditeur.</p>
+            </div>
           </div>
 
           <div class="detail-panel" data-detail-panel="graphiques">
@@ -541,6 +548,7 @@
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
   <script src="js/ui/SolutionExplorer.js" defer></script>
+  <script src="js/ui/StageEditor.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->

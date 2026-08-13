@@ -471,7 +471,9 @@
     host.innerHTML = '';
     var self = this;
 
-    this.solutions.slice(0, 12).forEach(function (s, position) {
+    // Toutes les tuiles de la vue sont rendues : le compteur de la barre
+    // d'affinage correspond exactement à ce qui est affiché.
+    this.solutions.forEach(function (s, position) {
       var index = self._indices[position];
       var tile = document.createElement('article');
       tile.className = 'solution-tile' + (index === self.selected ? ' selected' : '');

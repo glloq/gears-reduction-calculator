@@ -17,7 +17,9 @@
     this._viewer = null;
 
     this._bindEvents();
-    var controller=this,visualContainer=document.getElementById('svgContainer');if(visualContainer)visualContainer.addEventListener('visualization:renderer',function(event){controller.exportManager.setRenderer(event.detail.renderer);});
+    var controller=this,visualContainer=document.getElementById('svgContainer');if(visualContainer){visualContainer.addEventListener('visualization:renderer',function(event){controller.exportManager.setRenderer(event.detail.renderer);});
+    // Clic sur un étage du schéma cinématique → focalise la ligne correspondante de l'éditeur.
+    visualContainer.addEventListener('kinematic:stage-selected',function(event){controller._eventBus.emit('editor:focus-stage',{stage:event.detail.index});});}
   }
 
   UIController.prototype.setVisualizationComponents = function (gearSvg, legacySchema, charts) {
