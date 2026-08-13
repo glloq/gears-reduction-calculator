@@ -40,10 +40,15 @@ gears-reduction-calculator/
 │   │   ├── ExportManager.js   # Export SVG/PNG, contrôle animation
 │   │   └── UIController.js    # Orchestrateur UI principal
 │   ├── visualization/
-│   │   ├── GearSVG.js         # Proxy namespace pour GearSVG
+│   │   ├── TrainLayout.js     # Placement pur de la vue denture (UMD, testé Node)
+│   │   ├── TrainRenderer.js   # Vue héro : denture en développante aux cotes
+│   │   │                      #   réelles, zoom ancré, animation par rotor,
+│   │   │                      #   sélection d'étage + carte d'inspection
+│   │   ├── GeometryRenderer.js# Vue géométrie 2D calculée (cercles primitifs)
+│   │   ├── kinematic/         # Vue schéma cinématique (layout + primitives)
+│   │   ├── ViewerToolbar.js   # Bascule entre les trois vues du héro
 │   │   ├── GearCharts.js      # Proxy namespace pour GearCharts
 │   │   └── LegacySchema.js    # Schéma Canvas 2D encapsulé en classe
-│   ├── GearSVG.js             # Visualisation SVG interactive (code actif)
 │   ├── Charts.js              # Graphiques Chart.js (code actif)
 │   ├── app.js                 # Point d'entrée : bootstrap et câblage
 │   └── [fichiers legacy]      # Conservés pour compatibilité
@@ -82,7 +87,14 @@ Composants d'interface. Dépend de core et models.
 ### 4. Visualization (`js/visualization/`)
 Rendu graphique. Dépend de core pour les données.
 
-- **GearSVG** : SVG interactif avec zoom/pan/tooltips. Dessins spécifiques par type.
+- **TrainRenderer + TrainLayout** : vue héro « Denture réaliste » — profils en
+  développante aux cotes réellement calculées (`stage.geometry`), thémable
+  (100 % jetons CSS), zoom ancré au pointeur, animation par rotor, sélection
+  d'étage au clic (évènements `viewer:stage-selected` / `viewer:stage-edit`,
+  base de la future édition graphique directe).
+- **GeometryRenderer** : géométrie 2D calculée (cercles primitifs, mm réels) —
+  vue de repli du mode linéaire (crémaillère).
+- **KinematicRenderer** : schéma cinématique symbolique, deux projections.
 - **GearCharts** : 4 graphiques Chart.js (ratio, radar, cascade, pertes).
 - **LegacySchema** : Schéma Canvas 2D classique (conservé dans `<details>`).
 
