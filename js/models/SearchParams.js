@@ -141,6 +141,10 @@
       p.constraints.maximumOutputSpeedRpm=optionalNumber('rpm_sortie_max');
       p.linearTravelPerRevolutionMm=null;
       p.typesActifs=p.typesActifs.filter(function(type){return type!=='rack';});
+      // Entraxe par étage : capacité moteur (Engineering.validateDimensions)
+      // exposée uniquement pour les objectifs rotatifs.
+      p.constraints.minCenterDistance=optionalNumber('min_center_distance');
+      p.constraints.maxCenterDistance=optionalNumber('max_center_distance');
       // Gabarit d'architecture (JSON sérialisé par Workbench) : tableau de
       // crans null (libre) ou listes de types ; ignoré silencieusement si malformé.
       p.typeTemplate=null;
@@ -189,6 +193,7 @@
     if(this.moduleMode==='fixed'&&(!Number.isFinite(this.module)||this.module<=0))return {valid:false,message:'Le module fixe est obligatoire',field:'module'};
     if(this.moduleMin!=null&&this.moduleMax!=null&&this.moduleMin>this.moduleMax)return {valid:false,message:'La plage de modules est inversée',field:'module_min'};
     if((mode==='ratio'||mode==='need')&&c.minimumOutputSpeedRpm!=null&&c.maximumOutputSpeedRpm!=null&&c.minimumOutputSpeedRpm>c.maximumOutputSpeedRpm)return {valid:false,message:'La plage RPM sortie est inversée',field:'rpm_sortie_min'};
+    if((mode==='ratio'||mode==='need')&&c.minCenterDistance!=null&&c.maxCenterDistance!=null&&c.minCenterDistance>c.maxCenterDistance)return {valid:false,message:'La plage d’entraxe est inversée',field:'min_center_distance'};
     if((mode==='ratio'||mode==='need')&&Array.isArray(this.typeTemplate)){
       var aliasType=function(id){return id==='epicyclic'?'planetary':id;};
       var activeAliased=(this.typesActifs||[]).map(aliasType);

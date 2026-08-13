@@ -49,6 +49,7 @@
     this._bindTypes();
     this._bindTypeTemplate();
     this._bindModuleMode();
+    this._bindManufacturingMode();
     this._bindWeights();
     this._bindOptimizationCopy();
     this._bindSummary();
@@ -87,6 +88,7 @@
     this.updateContext();
     this.renderTypeTemplate();
     this._refreshModuleMode();
+    this._refreshManufacturingMode();
     this._refreshWeights();
     this._refreshOptimizationCopy();
     this.updateSummary();
@@ -396,6 +398,26 @@
     if (auto) auto.classList.toggle('hidden', !automatic);
     var moduleInput = el('module');
     if (moduleInput) moduleInput.disabled = automatic;
+  };
+
+  // ===== Procédé de fabrication =====
+
+  Workbench.prototype._bindManufacturingMode = function () {
+    var self = this;
+    var select = el('manufacturing_mode');
+    if (select) select.addEventListener('change', function () { self._refreshManufacturingMode(); });
+    this._refreshManufacturingMode();
+  };
+
+  Workbench.prototype._refreshManufacturingMode = function () {
+    var select = el('manufacturing_mode');
+    if (!select) return;
+    var printing = select.value === 'printing3d';
+    document.querySelectorAll('.printing3d-only').forEach(function (group) {
+      group.classList.toggle('hidden', !printing);
+    });
+    var hint = el('manufacturingHint');
+    if (hint) hint.textContent = select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : '';
   };
 
   // ===== Pondération : affichage des valeurs =====

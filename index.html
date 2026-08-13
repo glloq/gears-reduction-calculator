@@ -234,15 +234,43 @@
         </div>
       </details>
 
-      <!-- Module 5 : Contraintes -->
+      <!-- Module 5 : Fabrication -->
+      <details class="panel" id="panel-fabrication">
+        <summary><span class="panel-step">5</span><span class="panel-title">Fabrication</span><span class="panel-hint" id="manufacturingHint"></span></summary>
+        <div class="panel-body">
+          <label for="manufacturing_mode">Procédé</label>
+          <select id="manufacturing_mode" data-persist><option value="standard">Standard</option><option value="CNC">CNC</option><option value="laser">Laser</option><option value="printing3d">Impression 3D</option><option value="custom">Personnalisé</option></select>
+          <p class="field-help">Chaque procédé impose ses limites (module, dents, largeur minimums) ; les champs ci-dessous les surchargent.</p>
+          <label>Limites de fabrication</label>
+          <div class="field-grid field-grid-3">
+            <div><label class="sub" for="manufacturing_min_module">Module min</label><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="—"></div>
+            <div><label class="sub" for="manufacturing_min_teeth">Dents min</label><input id="manufacturing_min_teeth" data-persist type="number" placeholder="—"></div>
+            <div><label class="sub" for="manufacturing_min_width">Largeur min</label><input id="manufacturing_min_width" data-persist type="number" placeholder="—"></div>
+          </div>
+          <div class="field-grid printing3d-only">
+            <div><label class="sub" for="printer_diameter">Ø imprimante (mm)</label><input id="printer_diameter" data-persist type="number" value="220"></div>
+            <div><label class="sub" for="additive_derating">Déclassement additif</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05"></div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Module 6 : Contraintes -->
       <details class="panel" id="panel-contraintes">
-        <summary><span class="panel-step">5</span><span class="panel-title">Contraintes</span><span class="panel-hint">optionnelles</span></summary>
+        <summary><span class="panel-step">6</span><span class="panel-title">Contraintes</span><span class="panel-hint">optionnelles</span></summary>
         <div class="panel-body">
           <label>Encombrement maximal (mm)</label>
           <div class="field-grid field-grid-3">
             <div><label class="sub" for="max_diameter">Ø</label><input id="max_diameter" data-persist type="number" placeholder="—"></div>
             <div><label class="sub" for="max_length">Longueur</label><input id="max_length" data-persist type="number" placeholder="—"></div>
             <div><label class="sub" for="max_width">Largeur</label><input id="max_width" data-persist type="number" placeholder="—"></div>
+          </div>
+
+          <div class="rotary-only">
+            <label title="S'applique aux étages à entraxe défini ; les architectures coaxiales (épicycloïdal) ont un entraxe nul">Entraxe par étage (mm)</label>
+            <div class="field-grid">
+              <div><label class="sub" for="min_center_distance">Entraxe min</label><input id="min_center_distance" data-persist type="number" min="0" placeholder="—"></div>
+              <div><label class="sub" for="max_center_distance">Entraxe max</label><input id="max_center_distance" data-persist type="number" min="0" placeholder="—"></div>
+            </div>
           </div>
 
           <div class="rotary-only">
@@ -265,9 +293,9 @@
         </div>
       </details>
 
-      <!-- Module 6 : Avancé -->
+      <!-- Module 7 : Avancé -->
       <details class="panel" id="panel-avance">
-        <summary><span class="panel-step">6</span><span class="panel-title">Avancé</span></summary>
+        <summary><span class="panel-step">7</span><span class="panel-title">Avancé</span></summary>
         <div class="panel-body">
           <label for="max_iterations">Limite d'itérations</label>
           <input type="number" id="max_iterations" value="500000" min="1000" max="5000000" step="1000">
@@ -280,7 +308,7 @@
 
       <!-- Modules experts -->
       <details class="panel expert-only" id="panel-materiaux">
-        <summary><span class="panel-step">E</span><span class="panel-title">Matériaux &amp; fabrication</span><span class="panel-hint">expert</span></summary>
+        <summary><span class="panel-step">E</span><span class="panel-title">Matériaux</span><span class="panel-hint">expert</span></summary>
         <div class="panel-body">
           <div class="field-grid">
             <div>
@@ -292,18 +320,7 @@
               <select id="output_material" data-persist><option value="mildSteel">Acier doux</option><option value="C45" selected>C45</option><option value="steel42CrMo4">42CrMo4</option><option value="aluminium">Aluminium</option><option value="bronze">Bronze</option><option value="POM">POM</option><option value="PA6">PA6</option><option value="PLA">PLA imprimé</option><option value="PETG">PETG imprimé</option><option value="PEEK">PEEK</option></select>
             </div>
           </div>
-          <label for="manufacturing_mode">Procédé</label>
-          <select id="manufacturing_mode" data-persist><option value="standard">Standard</option><option value="CNC">CNC</option><option value="laser">Laser</option><option value="printing3d">Impression 3D</option><option value="custom">Personnalisé</option></select>
-          <label>Limites de fabrication</label>
-          <div class="field-grid field-grid-3">
-            <div><label class="sub" for="manufacturing_min_module">Module min</label><input id="manufacturing_min_module" data-persist type="number" step="0.1" placeholder="—"></div>
-            <div><label class="sub" for="manufacturing_min_teeth">Dents min</label><input id="manufacturing_min_teeth" data-persist type="number" placeholder="—"></div>
-            <div><label class="sub" for="manufacturing_min_width">Largeur min</label><input id="manufacturing_min_width" data-persist type="number" placeholder="—"></div>
-          </div>
-          <div class="field-grid">
-            <div><label class="sub" for="printer_diameter">Ø imprimante (mm)</label><input id="printer_diameter" data-persist type="number" value="220"></div>
-            <div><label class="sub" for="additive_derating">Déclassement additif</label><input id="additive_derating" data-persist type="number" value="0.55" min="0.1" max="1" step="0.05"></div>
-          </div>
+          <p class="field-help">Les matériaux alimentent les estimations Lewis/Hertz (SF/SH) et le déclassement additif.</p>
         </div>
       </details>
 

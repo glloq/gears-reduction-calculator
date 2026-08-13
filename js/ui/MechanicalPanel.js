@@ -10,6 +10,24 @@
     if(proMode)html+='<details open><summary>Détail du score</summary><pre>'+JSON.stringify(solution.score,null,2)+'</pre></details>';
     if(proMode&&solution.fatigue)html+='<details><summary>Fatigue — Engineering estimate</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Cycles</th><th>Heures</th><th>Facteur usage</th></tr></thead><tbody>'+solution.fatigue.map(function(f,i){return '<tr><td>'+(i+1)+'</td><td>'+n(f.cycles,0)+'</td><td>'+n(f.operatingHours,0)+'</td><td>'+n(f.usageFactor,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation de fatigue, non conforme ISO 6336-6.</p></details>';
     if(proMode&&solution.shaft)html+='<details><summary>Arbres — Engineering estimate</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Moment (N·mm)</th><th>Couple (N·mm)</th><th>Ø minimum (mm)</th></tr></thead><tbody>'+solution.shaft.map(function(s,i){return '<tr><td>'+(i+1)+'</td><td>'+n(s&&s.bendingMomentNmm,0)+'</td><td>'+n(s&&s.torqueNmm,0)+'</td><td>'+n(s&&s.minimumDiameterMm,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation combinée flexion/torsion.</p></details>';
+    // Constructibilité : règles appliquées et sélection du module (mode standard, pas expert)
+    if(solution.manufacturing){
+      var mf=solution.manufacturing,rules=mf.rules||{},REASONS={BENDING_SAFETY_TOO_LOW:'SF flexion insuffisant',CONTACT_SAFETY_TOO_LOW:'SH contact insuffisant',UNSUPPORTED_BENDING_CHECK:'contrôle flexion non supporté',UNSUPPORTED_CONTACT_CHECK:'contrôle contact non supporté'};
+      var fab='<p>'+(mf.valid?'✓ Règles du procédé « '+(rules.mode||'standard')+' » respectées.':'⚠ Échecs : '+(mf.failures||[]).join(', '))+'</p>';
+      fab+='<table class="stages-table"><tbody>';
+      if(rules.minimumModule!=null)fab+='<tr><td>Module minimum</td><td>'+rules.minimumModule+' mm</td></tr>';
+      if(rules.minimumTeeth!=null)fab+='<tr><td>Dents minimum</td><td>'+rules.minimumTeeth+'</td></tr>';
+      if(rules.minimumFaceWidth!=null)fab+='<tr><td>Largeur minimum</td><td>'+rules.minimumFaceWidth+' mm</td></tr>';
+      if(rules.printerDiameter!=null)fab+='<tr><td>Ø plateau</td><td>'+rules.printerDiameter+' mm</td></tr>';
+      fab+='</tbody></table>';
+      (mf.recommendations||[]).forEach(function(rec){if(rec.code==='RECOMMENDED_BACKLASH')fab+='<p>Jeu de denture recommandé : '+rec.valueMm+' mm.</p>';});
+      var ms=solution.moduleSelection;
+      if(ms&&ms.tested&&ms.tested.length){
+        fab+='<p>Modules testés : '+ms.tested.join(', ')+' mm — retenu : '+(ms.selected!=null?ms.selected+' mm':'aucun')+'.</p>';
+        (ms.rejected||[]).forEach(function(item){var reasons=(item.reasons||[]).map(function(code){return REASONS[code];}).filter(Boolean);if(reasons.length)fab+='<p class="hint">Module '+item.module+' mm rejeté : '+reasons.join(', ')+'.</p>';});
+      }
+      html+='<details><summary>Fabrication — module &amp; règles</summary>'+fab+'</details>';
+    }
     if(solution.warnings.length)html+='<section class="warnings"><h4>Avertissements</h4>'+solution.warnings.map(function(w){return '<p class="warning"><strong>'+w.code+'</strong> — '+w.message+' <small>'+w.recommendation+'</small></p>';}).join('')+'</section>';
     this._container.innerHTML=html;
     var title=this._container.querySelector('h3'),summary=this._container.querySelector('.mechanical-summary'),stages=this._container.querySelector('.stages-table');

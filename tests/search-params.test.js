@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 
 function makeForm(overrides={}) {
-  const defaults={rapport:'12',val_menante_min:'10',val_menante_max:'30',val_menee_min:'20',val_menee_max:'50',precision:'0.1',etages:'4',max_solutions:'10',max_iterations:'500000',dent_menante_fixe:'',dent_menee_fixe:'',module:'1',vitesse_entree:'1500',couple_entree:'10',objective_mode:'ratio',rpm_sortie_cible:'125',linear_travel_per_rev:'100',search_mode:'minimumStages',module_mode:'fixed',module_min:'',module_max:'',minimum_bending_safety:'',minimum_contact_safety:'',linear_speed_min:'',linear_speed_max:'',linear_force_min:'',rpm_sortie_min:'',rpm_sortie_max:'',minimum_output_torque:'',minimum_efficiency:'',max_diameter:'',max_length:'',max_width:'',input_material:'C45',output_material:'C45',additive_derating:'1',manufacturing_mode:'standard',manufacturing_min_module:'',manufacturing_min_teeth:'',manufacturing_min_width:'',printer_diameter:'',hours_per_day:'8',days_per_year:'250',service_years:'10',load_type:'constant',support_distance:'',shaft_allowable_shear:'80',type_template:''};
+  const defaults={rapport:'12',val_menante_min:'10',val_menante_max:'30',val_menee_min:'20',val_menee_max:'50',precision:'0.1',etages:'4',max_solutions:'10',max_iterations:'500000',dent_menante_fixe:'',dent_menee_fixe:'',module:'1',vitesse_entree:'1500',couple_entree:'10',objective_mode:'ratio',rpm_sortie_cible:'125',linear_travel_per_rev:'100',search_mode:'minimumStages',module_mode:'fixed',module_min:'',module_max:'',minimum_bending_safety:'',minimum_contact_safety:'',linear_speed_min:'',linear_speed_max:'',linear_force_min:'',rpm_sortie_min:'',rpm_sortie_max:'',minimum_output_torque:'',minimum_efficiency:'',max_diameter:'',max_length:'',max_width:'',input_material:'C45',output_material:'C45',additive_derating:'1',manufacturing_mode:'standard',manufacturing_min_module:'',manufacturing_min_teeth:'',manufacturing_min_width:'',printer_diameter:'',hours_per_day:'8',days_per_year:'250',service_years:'10',load_type:'constant',support_distance:'',shaft_allowable_shear:'80',type_template:'',min_center_distance:'',max_center_distance:''};
   Object.assign(defaults,overrides);
   const els={}; for(const [id,value] of Object.entries(defaults))els[id]={id,value:String(value),innerText:String(value),checked:false,type:'number',trim(){return this.value.trim();}};
   els.reduction_only={checked:true};els['type-spur']={value:'spur',checked:true};els['type-rack']={value:'rack',checked:false};
@@ -42,4 +42,16 @@ test('architecture template is parsed, validated against active types and forwar
   // Le mode linéaire n'emporte jamais de gabarit
   ({SearchParams}=makeForm({objective_mode:'rotationTranslation',type_template:'[["spur"]]'}));p=SearchParams.fromForm();
   assert.equal(p.typeTemplate,undefined);
+});
+
+test('center distance constraints are collected for rotary objectives only and ranges validate',()=>{
+  let {SearchParams}=makeForm({min_center_distance:'20',max_center_distance:'80'});let p=SearchParams.fromForm();
+  assert.equal(p.constraints.minCenterDistance,20);
+  assert.equal(p.constraints.maxCenterDistance,80);
+  assert.equal(p.validate().valid,true);
+  ({SearchParams}=makeForm({min_center_distance:'90',max_center_distance:'40'}));p=SearchParams.fromForm();
+  assert.equal(p.validate().valid,false);
+  assert.equal(p.validate().field,'min_center_distance');
+  ({SearchParams}=makeForm({objective_mode:'rotationTranslation',min_center_distance:'20'}));p=SearchParams.fromForm();
+  assert.equal(p.constraints.minCenterDistance,undefined);
 });

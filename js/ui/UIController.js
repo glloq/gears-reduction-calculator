@@ -147,6 +147,24 @@
 
     var sf = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.bending&&stage.bending.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
     var sh = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.contact&&stage.contact.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
+
+    // Constructibilité : procédé appliqué et échecs éventuels (variantes d'éditeur).
+    var MANUFACTURING_LABELS = { standard:'Standard', CNC:'CNC', laser:'Laser', printing3d:'Impression 3D', custom:'Personnalisé' };
+    var FAILURE_LABELS = { MODULE_TOO_SMALL:'Module sous la limite du procédé', TOO_FEW_TEETH:'Dents sous la limite du procédé', FACE_WIDTH_TOO_SMALL:'Largeur de denture insuffisante', PRINTER_DIAMETER:'Ø supérieur au plateau d’impression' };
+    var manufacturingBadges = '';
+    if (solution.manufacturing) {
+      var processLabel = MANUFACTURING_LABELS[solution.manufacturing.rules && solution.manufacturing.rules.mode] || 'Standard';
+      manufacturingBadges = (solution.manufacturing.failures && solution.manufacturing.failures.length)
+        ? solution.manufacturing.failures.map(function (code) { return '<span class="status-badge warning">⚠ ' + (FAILURE_LABELS[code] || code) + '</span>'; }).join('')
+        : '<span class="status-badge">✓ Fabrication ' + processLabel + '</span>';
+    }
+
+    // Module retenu (fixe, automatique ou édité manuellement).
+    var stats = solution.stats || {};
+    var moduleValue = Number.isFinite(stats.selectedModule) ? stats.selectedModule + ' mm' : '—';
+    var moduleSuffix = stats.moduleMode === 'automatic' ? ' (auto)' : stats.moduleMode === 'manual' ? ' (édité)' : '';
+    var moduleTitle = solution.moduleSelection && solution.moduleSelection.tested && solution.moduleSelection.tested.length > 1
+      ? 'Modules testés : ' + solution.moduleSelection.tested.join(', ') + ' mm' : '';
     var mode = document.getElementById('search_mode');
     var modeLabel = mode ? mode.options[mode.selectedIndex].textContent : 'classement';
     var warnings = solution.warnings || [];
@@ -163,7 +181,8 @@
       '<div class="card-item"><span class="card-label">Dimensions</span><span class="card-value">' + solution.dimensions.length.toFixed(0)+' × '+solution.dimensions.maxDiameter.toFixed(0)+' × '+solution.dimensions.width.toFixed(0)+' mm</span></div>' +
       '<div class="card-item"><span class="card-label">SF min</span><span class="card-value">' + (Number.isFinite(sf)?sf.toFixed(2):'—') + '</span></div>' +
       '<div class="card-item"><span class="card-label">SH min</span><span class="card-value">' + (Number.isFinite(sh)?sh.toFixed(2):'—') + '</span></div>' +
-      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){var code=w&&w.code||'WARNING',message=w&&w.message||String(w);return '<span class="status-badge warning" title="'+(w&&w.recommendation||'')+'">⚠ '+code+' — '+message+'</span>';}).join('') + '</div>';
+      '<div class="card-item" title="' + moduleTitle + '"><span class="card-label">Module</span><span class="card-value">' + moduleValue + moduleSuffix + '</span></div>' +
+      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + manufacturingBadges + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){var code=w&&w.code||'WARNING',message=w&&w.message||String(w);return '<span class="status-badge warning" title="'+(w&&w.recommendation||'')+'">⚠ '+code+' — '+message+'</span>';}).join('') + '</div>';
 
     card.hidden = false;
   };
