@@ -260,6 +260,63 @@
 }
 @keyframes geometry-spin { to { transform: rotate(360deg); } }
 
+/* Vue denture réaliste (TrainRenderer) — 100 % jetons, thème sombre gratuit */
+.train-svg { width: 100%; height: 100%; min-height: 420px; cursor: grab; touch-action: none; display: block; }
+.train-svg:active { cursor: grabbing; }
+.tooth-profile { fill: color-mix(in srgb, var(--accent) 14%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; stroke-linejoin: round; }
+.train-wheel.output-member .tooth-profile { fill: color-mix(in srgb, var(--success) 14%, var(--surface-1)); }
+.train-wheel.sun .tooth-profile { fill: color-mix(in srgb, var(--accent) 22%, var(--surface-1)); }
+.train-wheel.planet .tooth-profile { fill: color-mix(in srgb, var(--warning) 12%, var(--surface-1)); }
+.train-wheel.ring .tooth-profile { fill: color-mix(in srgb, var(--muted) 14%, var(--surface-1)); }
+.pitch-circle { fill: none; stroke: var(--muted); stroke-width: .5; stroke-dasharray: 4 3; }
+.gear-hub { fill: var(--surface-1); stroke: var(--ink); stroke-width: .5; }
+.hub-cross, .shaft-link, .stage-axis, .dim-leader, .label-leader { stroke: var(--muted); stroke-width: .5; fill: none; }
+.dim-leader, .label-leader { stroke-dasharray: 2 2; opacity: .7; }
+.worm-thread { stroke: var(--ink); stroke-width: .5; fill: none; }
+.belt-line { stroke: var(--ink); stroke-width: 1.4; fill: none; }
+.chain-line { stroke: var(--ink); stroke-width: 1.4; fill: none; stroke-dasharray: 3 2.2; }
+.tooth-count { fill: var(--ink); font-weight: 600; pointer-events: none; }
+.train-label { fill: var(--muted); }
+.train-dim line { stroke: var(--muted); stroke-width: .5; }
+.train-dim text { fill: var(--muted); }
+.io-chip text { font-weight: 700; }
+.io-chip.in text { fill: var(--success); }
+.io-chip.out text { fill: var(--danger); }
+.io-arrow { stroke: var(--muted); stroke-width: 1; fill: none; }
+
+.train-stage { cursor: pointer; }
+/* Chromium dessine un anneau de focus natif sur les <g tabindex> : le halo
+   de sélection (pitch-circle accentué) le remplace. */
+.train-stage:focus, .train-stage:focus-visible { outline: none; }
+.train-stage:hover .tooth-profile { stroke-width: 1; }
+.train-stage.selected .tooth-profile { stroke: var(--accent); stroke-width: 1.4; }
+.train-stage.selected .pitch-circle { stroke: var(--accent); stroke-dasharray: none; stroke-width: 1; }
+
+/* Carte d'inspection d'étage (coin du conteneur) */
+.svg-container { position: relative; }
+.stage-inspector {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: 5;
+  max-width: 250px;
+  padding: var(--sp-3);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: var(--font-sm);
+}
+.stage-inspector header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.stage-inspector header .btn-small { padding: 0 6px; min-height: 22px; }
+.inspector-grid { display: grid; gap: 3px; margin-bottom: var(--sp-2); }
+.inspector-grid div { display: flex; justify-content: space-between; gap: var(--sp-2); }
+.inspector-grid span { color: var(--muted); font-size: var(--font-xs); }
+.stage-inspector .btn-primary { width: 100%; }
+
+/* Ligne sélectionnée du tableau d'analyse (synchronisée avec le schéma) */
+.stages-table tr.selected td { background: var(--accent-soft); }
+
 /* Schéma cinématique */
 .kinematic-svg { width: 100%; min-height: 420px; cursor: grab; touch-action: none; }
 .kinematic-svg:active { cursor: grabbing; }

@@ -9,32 +9,10 @@
     this.currentView = 'geometry';
     this.geometry = new GearApp.visualization.GeometryRenderer(container);
     this.kinematic = GearApp.visualization.kinematicRenderer;
-    this.teeth = this._buildTeethRenderer();
+    // Vue denture réaliste : instance longue durée (elle reconstruit son svg à
+    // chaque rendu, les autres vues vidant le conteneur).
+    this.teeth = new GearApp.visualization.TrainRenderer(container);
   }
-
-  // Adaptateur paresseux autour du moteur GearSVG : l'instance est recréée à
-  // chaque rendu car les autres vues vident le conteneur (innerHTML = '').
-  ViewerToolbar.prototype._buildTeethRenderer = function () {
-    var container = this.container;
-    return {
-      _svg: null,
-      render: function (solution) {
-        container.innerHTML = '';
-        var instance = new window.GearSVG(container.id);
-        this._svg = instance;
-        var module = (solution.stats && solution.stats.selectedModule) ||
-          (solution.stages[0] && solution.stages[0].parameters && solution.stages[0].parameters.module) || 2;
-        var legacyStages = solution.stages.map(GearTransmissionRegistry.toLegacy);
-        instance.drawGearTrain(legacyStages, module, 20);
-        container.dispatchEvent(new CustomEvent('visualization:renderer', { detail: { renderer: instance } }));
-        return instance;
-      },
-      toggleAnimation: function () { if (this._svg) this._svg.toggleAnimation(); },
-      resetView: function () { if (this._svg) this._svg.resetView(); },
-      exportSVG: function () { return this._svg ? this._svg.exportSVG() : ''; },
-      exportPNG: function (callback) { if (this._svg) this._svg.exportPNG(callback); else callback(null); }
-    };
-  };
 
   ViewerToolbar.prototype.renderer = function () {
     if (this.currentView === 'kinematic') return this.kinematic;
