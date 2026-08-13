@@ -173,7 +173,7 @@
 
           <div class="field-grid rotary-only">
             <div><label for="etages">Étages max</label><input type="number" id="etages" value="4" min="1" max="8"></div>
-            <div><label for="max_solutions">Nb de résultats</label><input type="number" id="max_solutions" value="10" min="1" max="100"></div>
+            <div><label for="max_solutions" title="Nombre de solutions collectées pour la barre d'affinage">Taille du vivier</label><input type="number" id="max_solutions" value="100" min="1" max="200"></div>
           </div>
           <div class="linear-only">
             <label for="max_solutions_linear_hint" class="visually-hidden">Nombre de résultats</label>
@@ -384,6 +384,30 @@
           <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
             <div id="progress-bar"></div>
           </div>
+
+          <!-- Barre d'affinage : filtre le vivier côté client, sans relancer -->
+          <div id="refineBar" class="refine-bar" hidden>
+            <div class="refine-fields">
+              <label class="sub">Écart ≤ %<input id="refine_error_max" type="number" min="0" step="0.01" placeholder="—"></label>
+              <label class="sub refine-rotary">Rendement ≥ %<input id="refine_efficiency_min" type="number" min="0" max="100" step="1" placeholder="—"></label>
+              <label class="sub refine-rotary" title="Les solutions sans facteur évalué (courroie, chaîne…) sont exclues quand ce critère est actif">SF ≥<input id="refine_sf_min" type="number" min="0" step="0.1" placeholder="—"></label>
+              <label class="sub refine-rotary" title="Les solutions sans facteur évalué sont exclues quand ce critère est actif">SH ≥<input id="refine_sh_min" type="number" min="0" step="0.1" placeholder="—"></label>
+              <label class="sub">Ø ≤ mm<input id="refine_diameter_max" type="number" min="0" placeholder="—"></label>
+              <label class="sub">Long. ≤ mm<input id="refine_length_max" type="number" min="0" placeholder="—"></label>
+              <label class="sub refine-rotary">Étages ≤<input id="refine_stages_max" type="number" min="1" max="8" placeholder="—"></label>
+              <label class="sub">Tri<select id="refine_sort">
+                <option value="score">Score (coût, plus bas = mieux)</option>
+                <option value="error">Écart minimal</option>
+                <option value="efficiency">Meilleur rendement</option>
+                <option value="compactness">Plus compact</option>
+                <option value="sf">Meilleure sécurité SF</option>
+                <option value="stages">Moins d'étages</option>
+              </select></label>
+              <button id="refineResetBtn" class="btn-small" type="button" title="Réinitialiser les filtres">Réinitialiser</button>
+            </div>
+            <div id="refineTypeChips" class="refine-chips refine-rotary" role="group" aria-label="Types présents dans les solutions"></div>
+            <p id="refineCount" class="refine-count" aria-live="polite"></p>
+          </div>
           <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
           <div class="results-body">
             <div class="table-scroll">
@@ -509,12 +533,14 @@
   <!-- UI -->
   <script src="js/ui/Logger.js" defer></script>
   <script src="js/ui/ColumnPreferences.js" defer></script>
+  <script src="js/ui/SolutionFilter.js" defer></script>
   <script src="js/ui/ResultsTable.js" defer></script>
   <script src="js/ui/MechanicalPanel.js" defer></script>
   <script src="js/ui/ParameterForm.js" defer></script>
   <script src="js/ui/ExportManager.js" defer></script>
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
+  <script src="js/ui/SolutionExplorer.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->

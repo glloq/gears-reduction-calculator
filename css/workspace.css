@@ -35,6 +35,50 @@
 .results-header #status { margin: 0; font-size: var(--font-xs); color: var(--muted); flex-basis: 100%; order: 3; }
 .results-header-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 
+/* ----- Barre d'affinage du vivier ----- */
+
+.refine-bar {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.refine-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--sp-2);
+  align-items: end;
+}
+.refine-fields label { margin: 0; font-size: var(--font-xs); }
+.refine-fields input, .refine-fields select { margin-top: 2px; min-height: 30px; padding: 3px 7px; background: var(--surface-1); }
+.refine-fields .btn-small { min-height: 30px; }
+
+.refine-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-2); }
+.refine-chip {
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: var(--font-xs);
+  background: var(--surface-1);
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.refine-chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); text-decoration: none; }
+
+.refine-count { margin: var(--sp-2) 0 0; font-size: var(--font-xs); color: var(--muted); }
+
+/* Mode linéaire : seuls écart, encombrement et tri ont un sens */
+.refine-bar.refine-linear .refine-rotary { display: none; }
+
+.tile-origin {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--warning);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
 .solution-cards { display: grid; gap: var(--sp-2); margin-top: var(--sp-3); }
 
 .solution-tile {

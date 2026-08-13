@@ -29,10 +29,30 @@ const REQUIRED_IDS = [
   'dent_menante_slider', 'dent_menee_slider'
 ];
 
+// Barre d'affinage du vivier (SolutionExplorer)
+const REFINE_IDS = [
+  'refineBar', 'refine_error_max', 'refine_efficiency_min', 'refine_sf_min',
+  'refine_sh_min', 'refine_diameter_max', 'refine_length_max', 'refine_stages_max',
+  'refineTypeChips', 'refine_sort', 'refineCount', 'refineResetBtn'
+];
+
 test('modular shell ships every field id consumed by SearchParams', () => {
   for (const id of REQUIRED_IDS) {
     assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
   }
+});
+
+test('refine bar ships every control consumed by SolutionExplorer', () => {
+  for (const id of REFINE_IDS) {
+    assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
+  }
+});
+
+test('solution tiles carry pool indices and selection matches by data-index', () => {
+  assert.match(ui, /tile\.dataset\.index = index/);
+  assert.match(ui, /tile\.dataset\.index === String\(self\.selected\)/);
+  // Le tableau gère sa propre sélection : plus de boucle positionnelle sur #resultats.
+  assert.doesNotMatch(ui, /#resultats tr/);
 });
 
 test('workspace is a master-detail layout with detail tabs', () => {

@@ -3,7 +3,7 @@
 
 (function (GearApp) {
 
-  var engine, ui, legacySchema, comparisonManager, workbench;
+  var engine, ui, legacySchema, comparisonManager, workbench, explorer;
   var isSearching = false;
 
   function init() {
@@ -21,6 +21,15 @@
     // identifiants historiques lus par SearchParams sont tous conservés.
     workbench = new GearApp.ui.Workbench(GearApp.eventBus);
     workbench.init();
+
+    // Explorateur de solutions : vivier + barre d'affinage instantané.
+    explorer = new GearApp.ui.SolutionExplorer(GearApp.eventBus, {
+      workbench: workbench,
+      resultsTable: ui.resultsTable,
+      uiController: ui
+    });
+    explorer.bind();
+    GearApp._explorer = explorer;
 
     ui.paramForm.initSliders();
 
@@ -116,11 +125,10 @@
     _renderHistory();
 
     engine.rechercher(searchParams).then(function (resultats) {
-      ui.afficherResultats(resultats, searchParams);
-      workbench.renderSolutions(resultats);
+      explorer.setPool(resultats, searchParams, ui.lastStats());
       progressBar.style.width = "100%";
       ui.logger.setStatus(resultats.length > 0
-        ? resultats.length + ' solution(s) trouvée(s)'
+        ? resultats.length + ' solution(s) dans le vivier'
         : "Aucune solution trouvée"
       );
       _resetButton();

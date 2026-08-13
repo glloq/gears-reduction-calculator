@@ -195,7 +195,9 @@
       rapportCible: this.rapportCible,
       maxEtages: this.maxEtages,
       precisionToleree: this.precision,
-      maxSolutions: this.maxSolutions,
+      // Plancher de vivier : la barre d'affinage filtre côté client, elle a
+      // besoin de matière même si l'utilisateur a demandé peu de résultats.
+      maxSolutions: Math.max(100, this.maxSolutions || 10),
       maxIterations: this.maxIterations,
       dentMenanteFixe: this.dentMenanteFixe,
       dentMeneeFixe: this.dentMeneeFixe,

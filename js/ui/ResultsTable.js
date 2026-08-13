@@ -2,7 +2,7 @@
 (function (GearApp) {
   'use strict';
   var COLUMNS = [
-    { id: 'score', label: 'Score' }, { id: 'architecture', label: 'Architecture' },
+    { id: 'score', label: 'Score (coût)' }, { id: 'architecture', label: 'Architecture' },
     { id: 'ratio', label: 'Rapport' }, { id: 'error', label: 'Erreur %' },
     { id: 'stages', label: 'Étages' }, { id: 'efficiency', label: 'Rendement' },
     { id: 'dimensions', label: 'Dimensions' }, { id: 'rpm', label: 'RPM sortie' },
@@ -51,7 +51,10 @@
       sh: number(minFactor(solution, 'contact'), 2), warnings: solution.warnings.length };
     return values[id];
   };
-  ResultsTable.prototype.display = function (solutions, params) { this._solutions = solutions || []; this._params = params; this._currentPage = 0; this._buildToolbar(); this._render(); };
+  // baseIndices[i] = position de solutions[i] dans le vivier d'origine (contrat
+  // de sélection de SolutionExplorer) ; omis, l'index local fait foi.
+  ResultsTable.prototype.display = function (solutions, params, baseIndices) { this._solutions = solutions || []; this._params = params; this._baseIndices = baseIndices || null; this._currentPage = 0; this._buildToolbar(); this._render(); };
+  ResultsTable.prototype.setSelectedIndex = function (index) { this._selectedIndex = index; this._render(); };
   ResultsTable.prototype._buildColumnMenu = function () {
     var self = this, details = document.createElement('details'); details.className = 'column-picker';
     var summary = document.createElement('summary'); summary.textContent = 'Colonnes'; details.appendChild(summary);
@@ -73,7 +76,7 @@
     this._previousButton = previous; this._nextButton = next; bar.append(input, csv, this._buildColumnMenu(), previous, this._pageStatus, next); host.insertBefore(bar, host.querySelector('.table-scroll'));
   };
   ResultsTable.prototype._render = function () {
-    var self = this; this._filtered = this._solutions.map(function (solution, index) { return { solution: solution, index: index }; }).filter(function (item) { return !self._searchText || types(item.solution).join(' ').toLowerCase().indexOf(self._searchText) >= 0; });
+    var self = this; this._filtered = this._solutions.map(function (solution, i) { return { solution: solution, index: self._baseIndices ? self._baseIndices[i] : i }; }).filter(function (item) { return !self._searchText || types(item.solution).join(' ').toLowerCase().indexOf(self._searchText) >= 0; });
     this._filtered.sort(function (a, b) { var av = self._rawValue(a.solution, self._sortColumn), bv = self._rawValue(b.solution, self._sortColumn), result = typeof av === 'string' ? av.localeCompare(bv) : av - bv; return self._sortDirection === 'asc' ? result : -result; });
     var pages = Math.max(1, Math.ceil(this._filtered.length / PAGE_SIZE)); this._currentPage = Math.min(this._currentPage, pages - 1); if (this._pageStatus) this._pageStatus.textContent = 'Page ' + (this._currentPage + 1) + ' / ' + pages + ' · ' + this._filtered.length + ' résultats'; if (this._previousButton) this._previousButton.disabled = this._currentPage === 0; if (this._nextButton) this._nextButton.disabled = this._currentPage >= pages - 1; if (!this._tbody) return; this._tbody.innerHTML = '';
     this._filtered.slice(this._currentPage * PAGE_SIZE, (this._currentPage + 1) * PAGE_SIZE).forEach(function (item) { var row = document.createElement('tr'); row.classList.toggle('selected',item.index===self._selectedIndex); row.tabIndex=0; var select=function(){self._selectedIndex=item.index;self._eventBus.emit('solution:selected',{index:item.index,solution:item.solution});self._render();};row.addEventListener('click',select);row.addEventListener('keydown',function(event){if(event.key==='Enter'){select();}}); COLUMNS.filter(function (column) { return self._isVisible(column.id); }).forEach(function (column) { var cell = document.createElement('td'); if (column.id === 'action') { var button = document.createElement('button'); button.className = 'btn-small'; button.textContent = 'Voir'; button.addEventListener('click',function(event){event.stopPropagation();select();}); cell.appendChild(button); } else cell.textContent = self._displayValue(item.solution, column.id); row.appendChild(cell); }); self._tbody.appendChild(row); });

@@ -44,6 +44,7 @@
     });
 
     this._eventBus.on('search:stats', function (stats) {
+      self._lastStats = stats;
       var element = document.getElementById('searchStats'); if (!element) return;
       var rejected = stats.rejections || {}, ratio = Number.isFinite(stats.currentRatio) ? stats.currentRatio.toFixed(3) : '—';
       element.innerHTML = '<strong>Branches :</strong> ' + (stats.tested || 0) +
@@ -75,8 +76,7 @@
     this.resultsTable.display(solutions, searchParams);
 
     if (solutions.length === 0) {
-      this.mechanicalPanel.hide();
-      this._hideSolutionCard();
+      this.clearDetail();
       return;
     }
 
@@ -84,6 +84,21 @@
     // Le premier résultat est immédiatement exploitable : résumé,
     // visualisation, analyse mécanique et graphiques restent synchronisés.
     this._eventBus.emit('solution:selected', { index: 0, solution: solutions[0] });
+  };
+
+  // Statistiques de la dernière recherche (payload search:stats le plus récent).
+  UIController.prototype.lastStats = function () { return this._lastStats || null; };
+
+  // Graphiques calculés sur le vivier complet (appelé par SolutionExplorer à
+  // chaque nouvelle recherche, jamais pendant l'affinage).
+  UIController.prototype.updatePoolCharts = function (solutions, searchParams) {
+    this._lastSearchParams = searchParams;
+    this._updateComparisonCharts(solutions, searchParams);
+  };
+
+  UIController.prototype.clearDetail = function () {
+    this.mechanicalPanel.hide();
+    this._hideSolutionCard();
   };
 
   UIController.prototype._onSolutionSelected = function (index, solution) {
@@ -137,8 +152,9 @@
     var outputs=linear
       ? '<div class="card-item"><span class="card-label">Course / tour</span><span class="card-value">'+solution.travelPerRevolutionMm.toFixed(2)+' mm/tr</span></div><div class="card-item"><span class="card-label">Vitesse linéaire</span><span class="card-value">'+solution.outputLinearSpeedMmMin.toFixed(0)+' mm/min</span></div><div class="card-item"><span class="card-label">Force sortie</span><span class="card-value">'+solution.outputForceN.toFixed(1)+' N</span></div>'
       : '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">'+solution.ratio.toFixed(4)+'</span></div><div class="card-item"><span class="card-label">RPM sortie</span><span class="card-value">'+solution.outputSpeedRpm.toFixed(1)+' rpm</span></div><div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">'+solution.outputTorqueNm.toFixed(1)+' N·m</span></div>';
+    var title = index >= 0 ? 'Solution du vivier n° ' + (index + 1) : 'Solution épinglée / variante';
     card.innerHTML =
-      '<div class="solution-card-title"><div><span class="card-label">Résultat recommandé</span><h2>Solution classée #' + (index + 1) + '</h2></div><span class="type-badge">Meilleure selon : ' + modeLabel + '</span></div>' +
+      '<div class="solution-card-title"><div><span class="card-label">Résultat sélectionné</span><h2>' + title + '</h2></div><span class="type-badge">Classement : ' + modeLabel + '</span></div>' +
       outputs +
       '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (solution.efficiency * 100).toFixed(1) + '%</span></div>' +
       '<div class="card-item"><span class="card-label">Architecture</span><span class="card-value">' + types + '</span></div>' +

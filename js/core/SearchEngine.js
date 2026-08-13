@@ -52,9 +52,10 @@
     var maxCandidateRatio=candidates.reduce(function(value,item){return Math.max(value,item.ratio);},0);
     candidates.sort(function(a,b){return Math.abs(Math.log(a.ratio/target))-Math.abs(Math.log(b.ratio/target));});
     function canReach(ratio,remaining){if(!remaining)return ratio>=targetMin&&ratio<=targetMax;var low=ratio*Math.pow(minCandidateRatio,remaining),high=ratio*Math.pow(maxCandidateRatio,remaining);return low<=targetMax&&high>=targetMin;}
+    var modules=moduleChoices(p);
     function evaluate(chain,ratio){
       var error=Math.abs(ratio-target)/target*100;if(error>tolerance){rejections.ratio++;return;}
-      var modules=moduleChoices(p),accepted=null,moduleSelection={selected:null,tested:[],rejected:[]};
+      var accepted=null,moduleSelection={selected:null,tested:[],rejected:[]};
       for(var mi=0;mi<modules.length;mi++){
         var stages=clone(chain),reasons=[];moduleSelection.tested.push(modules[mi]);applyModule(stages,modules[mi]);
         try{
@@ -91,7 +92,7 @@
       if(found.length&&(p.searchMode||'minimumStages')==='minimumStages')break;
     }
     found.sort(compare(p.searchMode||'minimumStages'));
-    var stats={tested:tested,rejected:Object.keys(rejections).reduce(function(n,k){return n+rejections[k];},0),rejections:rejections,valid:found.length,elapsedMs:Date.now()-start};if(candidates.length===0)stats.reason='NO_CANDIDATES';
+    var stats={tested:tested,rejected:Object.keys(rejections).reduce(function(n,k){return n+rejections[k];},0),rejections:rejections,valid:found.length,elapsedMs:Date.now()-start};if(candidates.length===0)stats.reason='NO_CANDIDATES';else if(modules.length===0)stats.reason='NO_MODULES';
     found.forEach(function(s){s.stats.search=stats;});
     return {solutions:found.slice(0,p.maxSolutions||10),stats:stats};
   }

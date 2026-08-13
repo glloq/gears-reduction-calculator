@@ -443,18 +443,27 @@
 
   // ===== Rendu des solutions =====
 
-  Workbench.prototype.renderSolutions = function (solutions) {
+  // Rendu des tuiles à partir d'une vue filtrée du vivier. `indices[i]` est la
+  // position de solutions[i] dans le vivier d'origine (contrat de sélection) ;
+  // omis, la vue est le vivier lui-même.
+  Workbench.prototype.renderSolutions = function (solutions, indices, info) {
     this.solutions = solutions || [];
-    this.selected = 0;
-    document.body.classList.toggle('has-results', this.solutions.length > 0);
+    this._indices = indices || this.solutions.map(function (s, i) { return i; });
+    // La sélection n'est jamais déplacée ici : seul l'évènement
+    // `solution:selected` (émis par l'explorateur ou un clic) la fait évoluer.
+    if (this.solutions.length) {
+      document.body.classList.add('has-results');
+    } else if (!(info && info.keepResults)) {
+      document.body.classList.remove('has-results');
+    }
 
-    // renderSolutions n'est appelé qu'à l'issue d'une recherche : un résultat
-    // vide correspond donc toujours à une recherche infructueuse.
     var hint = el('workspaceEmptyHint');
     if (hint) {
-      hint.textContent = this.solutions.length === 0
-        ? 'Aucune solution trouvée. Élargissez la tolérance, les plages de dents ou les types de transmission.'
-        : this._emptyHintDefault;
+      var reason = info && info.stats && info.stats.reason;
+      hint.textContent = this.solutions.length > 0 ? this._emptyHintDefault
+        : reason === 'NO_CANDIDATES' ? 'Aucun candidat d’étage généré : élargissez les plages de dents ou activez d’autres types de transmission.'
+        : reason === 'NO_MODULES' ? 'Aucun module à tester : renseignez un module fixe valide ou une plage de modules automatique.'
+        : 'Aucune solution trouvée. Élargissez la tolérance, les plages de dents ou les types de transmission.';
     }
 
     var host = el('solutionCards');
@@ -462,11 +471,13 @@
     host.innerHTML = '';
     var self = this;
 
-    this.solutions.slice(0, 10).forEach(function (s, index) {
+    this.solutions.slice(0, 12).forEach(function (s, position) {
+      var index = self._indices[position];
       var tile = document.createElement('article');
       tile.className = 'solution-tile' + (index === self.selected ? ' selected' : '');
       tile.tabIndex = 0;
-      tile.setAttribute('aria-label', 'Sélectionner la solution ' + (index + 1));
+      tile.dataset.index = index;
+      tile.setAttribute('aria-label', 'Sélectionner la solution ' + (position + 1));
       var sf = minSafety(s, 'bending'), sh = minSafety(s, 'contact');
       var linear = s.mode === 'rotationTranslation';
       var kpis = linear
@@ -480,7 +491,9 @@
           '<span>Rendement<strong>' + finite(s.efficiency * 100, 1) + ' %</strong></span>' +
           '<span>Dimensions<strong>' + finite(s.dimensions && s.dimensions.maxDiameter, 0) + ' mm</strong></span>' +
           '<span>SF / SH<strong>' + finite(sf, 2) + ' / ' + finite(sh, 2) + '</strong></span>';
-      tile.innerHTML = '<header><b>#' + (index + 1) + '</b><span>score ' + finite(s.score && s.score.value, 3) + '</span></header>' +
+      var origin = s.origin === 'variante' ? '<em class="tile-origin">Variante</em>' : '';
+      tile.innerHTML = '<header><b>#' + (position + 1) + '</b>' + origin +
+        '<span title="Score pondéré : plus bas = mieux">coût ' + finite(s.score && s.score.value, 3) + '</span></header>' +
         '<h3>' + s.stages.map(function (x) { return x.type; }).join(' → ') + '</h3>' +
         '<div class="tile-kpis">' + kpis + '</div>';
       function select() {
@@ -498,13 +511,12 @@
     this._markSelected();
   };
 
+  // Le surlignage se fait par index de vivier (data-index), jamais par
+  // position DOM : le tableau trié/paginé gère sa propre sélection.
   Workbench.prototype._markSelected = function () {
     var self = this;
-    document.querySelectorAll('.solution-tile').forEach(function (tile, index) {
-      tile.classList.toggle('selected', index === self.selected);
-    });
-    document.querySelectorAll('#resultats tr').forEach(function (row, index) {
-      row.classList.toggle('selected', index === self.selected);
+    document.querySelectorAll('.solution-tile').forEach(function (tile) {
+      tile.classList.toggle('selected', tile.dataset.index === String(self.selected));
     });
   };
 
