@@ -153,6 +153,13 @@
             </label>
           </div>
           <div id="typeParamsContainer" class="type-params"></div>
+
+          <details class="type-template rotary-only" id="typeTemplateSection">
+            <summary>Architecture imposée<span class="panel-hint">optionnel</span></summary>
+            <p class="field-help">Impose les types autorisés étage par étage (ex. étage 1 = vis sans fin, ensuite libre). Les crans au-delà de la longueur d'une solution sont ignorés.</p>
+            <div id="typeTemplateContainer"></div>
+          </details>
+          <input type="hidden" id="type_template" data-persist>
         </div>
       </details>
 

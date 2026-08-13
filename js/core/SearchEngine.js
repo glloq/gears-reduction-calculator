@@ -41,6 +41,9 @@
     if(p&&p.objectiveMode==='rotationTranslation')return LinearDriveSolver.solve(p,Engineering,ManufacturingRules,progress);
     p=p||{};var tested=0,start=Date.now(),found=[],seen={},rejections={ratio:0,geometry:0,dimensions:0,mechanics:0,manufacturing:0};
     var active=(p.typesActifs||['spur']).filter(function(id){return id!=='rack';}), typeParameters=p.typeParameters||{};
+    // Gabarit d'architecture : typeTemplate[d] = types autorisés à la profondeur d
+    // (null = libre). Les crans au-delà de la longueur explorée sont ignorés.
+    var typeTemplate=(p.typeTemplate||[]).map(function(slot){return slot&&slot.length?slot.map(function(id){return id==='epicyclic'?'planetary':id;}):null;});
     var opts={inputMin:p.dentMenanteMin||6,inputMax:p.dentMenanteMax||60,outputMin:p.dentMeneeMin||6,outputMax:p.dentMeneeMax||120,reductionOnly:p.allowReductionOnly!==false,typeParameters:typeParameters};
     var candidates=[];
     active.forEach(function(id){var def=Registry.get(id);if(!def)return;def.generateCandidates(opts).forEach(function(stage){
@@ -79,6 +82,7 @@
         var item=candidates[i],stage=item.stage;
         if(depth===0&&p.dentMenanteFixe!=null&&teeth(stage,'input')!==p.dentMenanteFixe)continue;
         if(depth===limit-1&&p.dentMeneeFixe!=null&&teeth(stage,'output')!==p.dentMeneeFixe)continue;
+        if(typeTemplate[depth]&&typeTemplate[depth].indexOf(stage.type)===-1)continue;
         var def=Registry.get(stage.type),r=item.ratio;tested++;
         try{if(!def.validateConfiguration(stage)){rejections.geometry++;continue;}}catch(e){rejections.geometry++;continue;}
         var next=ratio*r;

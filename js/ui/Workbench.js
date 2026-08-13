@@ -47,6 +47,7 @@
 
     this._bindObjective();
     this._bindTypes();
+    this._bindTypeTemplate();
     this._bindModuleMode();
     this._bindWeights();
     this._bindOptimizationCopy();
@@ -73,6 +74,7 @@
     this._rotaryTypes = null;
     this.renderTypeParams();
     this.updateContext();
+    this.renderTypeTemplate();
     this._refreshModuleMode();
     this._refreshWeights();
     this._refreshOptimizationCopy();
@@ -147,6 +149,7 @@
 
     document.body.classList.toggle('linear-objective', linear);
     this.renderTypeParams();
+    this.renderTypeTemplate();
     this.updateSummary();
   };
 
@@ -265,6 +268,102 @@
     container.hidden = !container.children.length;
     var count = el('typesCount');
     if (count) count.textContent = checked.length + ' active' + (checked.length > 1 ? 's' : '');
+  };
+
+  // ===== Gabarit d'architecture (types imposés par étage) =====
+
+  Workbench.prototype._bindTypeTemplate = function () {
+    var self = this;
+    var etages = el('etages');
+    if (etages) {
+      etages.addEventListener('input', function () { self.renderTypeTemplate(); });
+      etages.addEventListener('change', function () { self.renderTypeTemplate(); });
+    }
+    var grid = document.querySelector('.types-grid');
+    if (grid) {
+      grid.addEventListener('change', function (event) {
+        if (event.target.classList.contains('type-checkbox')) self.renderTypeTemplate();
+      });
+    }
+    this.renderTypeTemplate();
+  };
+
+  Workbench.prototype._readTemplate = function () {
+    var hidden = el('type_template');
+    if (!hidden || !hidden.value) return [];
+    try {
+      var parsed = JSON.parse(hidden.value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  };
+
+  Workbench.prototype._writeTemplate = function (template) {
+    var hidden = el('type_template');
+    if (!hidden) return;
+    var meaningful = template.some(function (slot) { return slot && slot.length; });
+    hidden.value = meaningful ? JSON.stringify(template) : '';
+  };
+
+  Workbench.prototype.renderTypeTemplate = function () {
+    var container = el('typeTemplateContainer');
+    if (!container) return;
+    var self = this;
+    var stageCount = Math.max(1, Math.min(8, parseInt(el('etages') && el('etages').value, 10) || 4));
+    var activeTypes = Array.from(document.querySelectorAll('.type-checkbox:checked'))
+      .map(function (checkbox) { return checkbox.value; })
+      .filter(function (type) { return type !== 'rack'; });
+
+    // Conserver l'état existant, tronqué à la longueur courante, nettoyé des
+    // types désormais inactifs.
+    var template = this._readTemplate().slice(0, stageCount);
+    while (template.length < stageCount) template.push(null);
+    template = template.map(function (slot) {
+      if (!Array.isArray(slot)) return null;
+      var kept = slot.filter(function (type) { return activeTypes.indexOf(type) !== -1; });
+      return kept.length ? kept : null;
+    });
+    this._writeTemplate(template);
+
+    container.innerHTML = '';
+    template.forEach(function (slot, stageIndex) {
+      var row = document.createElement('div');
+      row.className = 'template-row';
+      var label = document.createElement('span');
+      label.className = 'template-stage-label';
+      label.textContent = 'Étage ' + (stageIndex + 1);
+      row.appendChild(label);
+
+      function chip(labelText, active, onClick) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'template-chip' + (active ? ' active' : '');
+        button.setAttribute('aria-pressed', String(active));
+        button.textContent = labelText;
+        button.addEventListener('click', onClick);
+        row.appendChild(button);
+      }
+
+      chip('Libre', slot === null, function () {
+        template[stageIndex] = null;
+        self._writeTemplate(template);
+        self.renderTypeTemplate();
+        self.updateSummary();
+      });
+      activeTypes.forEach(function (type) {
+        var selected = Array.isArray(slot) && slot.indexOf(type) !== -1;
+        chip(TYPE_NAMES[type] || type, selected, function () {
+          var current = Array.isArray(template[stageIndex]) ? template[stageIndex].slice() : [];
+          var position = current.indexOf(type);
+          if (position === -1) current.push(type); else current.splice(position, 1);
+          template[stageIndex] = current.length ? current : null;
+          self._writeTemplate(template);
+          self.renderTypeTemplate();
+          self.updateSummary();
+        });
+      });
+
+      container.appendChild(row);
+    });
   };
 
   // ===== Module fixe / automatique =====

@@ -572,11 +572,27 @@
       : first.input && first.input.teeth;
     var fixedInput = el('dent_menante_fixe');
     if (fixedInput && Number.isFinite(lead)) fixedInput.value = lead;
-    var checkboxId = 'type-' + (registry === 'planetary' ? 'epicyclic' : registry);
-    var checkbox = el(checkboxId);
-    if (checkbox) checkbox.checked = true;
+
+    // Gabarit d'architecture calqué sur la chaîne éditée : chaque étage impose
+    // son type ('planetary' redevient 'epicyclic', l'espace de noms de l'UI).
+    var uiTypes = this._stages.map(function (stage) {
+      var id = H.registryId(stage.type);
+      return id === 'planetary' ? 'epicyclic' : id;
+    });
+    uiTypes.forEach(function (type) {
+      var checkbox = el('type-' + type);
+      if (checkbox && !checkbox.checked) {
+        checkbox.checked = true;
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    var hidden = el('type_template');
+    if (hidden) hidden.value = JSON.stringify(uiTypes.map(function (type) { return [type]; }));
     var etages = el('etages');
-    if (etages) etages.value = this._stages.length;
+    if (etages) {
+      etages.value = this._stages.length;
+      etages.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     this._dirty = false;
     if (typeof window.lancerRecherche === 'function') window.lancerRecherche();
   };
