@@ -67,6 +67,17 @@
       var bar = document.querySelector('.sticky-progress');
       if (bar) bar.style.width = data.percent + '%';
     });
+    this.bus.on('compare:changed', function (data) { self._pinnedUids = data.uids || []; self._refreshPinMarks(); });
+  };
+
+  Workbench.prototype._refreshPinMarks = function () {
+    var pinned = this._pinnedUids || [];
+    document.querySelectorAll('.tile-pin').forEach(function (button) {
+      var active = button.dataset.uid !== undefined && pinned.indexOf(Number(button.dataset.uid)) !== -1;
+      button.textContent = active ? '★' : '☆';
+      button.classList.toggle('pinned', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
   };
 
   // À appeler après restauration URL/localStorage : les contrôles ont pu changer.
@@ -594,7 +605,8 @@
           '<span>SF / SH<strong>' + finite(sf, 2) + ' / ' + finite(sh, 2) + '</strong></span>';
       var origin = s.origin === 'variante' ? '<em class="tile-origin">Variante</em>' : '';
       tile.innerHTML = '<header><b>#' + (position + 1) + '</b>' + origin +
-        '<span title="Score pondéré : plus bas = mieux">coût ' + finite(s.score && s.score.value, 3) + '</span></header>' +
+        '<span title="Score pondéré : plus bas = mieux">coût ' + finite(s.score && s.score.value, 3) + '</span>' +
+        '<button class="tile-pin" title="Épingler pour comparer" aria-pressed="false">☆</button></header>' +
         '<h3>' + s.stages.map(function (x) { return x.type; }).join(' → ') + '</h3>' +
         '<div class="tile-kpis">' + kpis + '</div>';
       function select() {
@@ -606,8 +618,17 @@
       tile.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); }
       });
+      var pin = tile.querySelector('.tile-pin');
+      if (pin) {
+        if (s.uid !== undefined) pin.dataset.uid = s.uid;
+        pin.addEventListener('click', function (event) {
+          event.stopPropagation();
+          self.bus.emit('solution:pin-toggled', { solution: s });
+        });
+      }
       host.appendChild(tile);
     });
+    this._refreshPinMarks();
 
     this._markSelected();
   };

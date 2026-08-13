@@ -35,6 +35,10 @@
     var stageEditor = new GearApp.ui.StageEditor(GearApp.eventBus, 'stageEditor', explorer);
     stageEditor.bind();
 
+    // Comparaison de solutions épinglées (onglet Comparer).
+    var comparePanel = new GearApp.ui.ComparePanel(GearApp.eventBus, 'compareSolutionsPanel', explorer);
+    comparePanel.bind();
+
     ui.paramForm.initSliders();
 
     // Restaurer depuis l'URL d'abord, sinon depuis localStorage.

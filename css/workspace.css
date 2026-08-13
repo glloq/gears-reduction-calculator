@@ -281,6 +281,35 @@
 .kinematic-svg .output-role { fill: #dc2626; }
 .kinematic-svg .fixed-role { fill: #ca8a04; }
 
+/* ----- Comparaison de solutions épinglées ----- */
+
+.tile-pin {
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  font-size: 14px;
+  color: var(--muted);
+  min-height: 0;
+}
+.tile-pin:hover, .tile-pin.pinned { color: var(--warning); }
+
+.compare-table { font-size: var(--font-sm); }
+.compare-table thead th { font-size: var(--font-sm); text-transform: none; }
+.compare-table thead th span { display: block; }
+.compare-tools { display: inline-flex; gap: var(--sp-1); margin-top: var(--sp-1); }
+.compare-table tbody th {
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.compare-table td.best {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  font-weight: 700;
+}
+
 /* ----- Éditeur d'étages ----- */
 
 .editor-pending {

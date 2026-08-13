@@ -1,0 +1,65 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const H = require('../js/ui/ComparePanel.js');
+
+function solution(uid, overrides = {}) {
+  const s = Object.assign({
+    score: { value: 0.4 }, ratio: 12, errorPercent: 0.05, efficiency: 0.94,
+    stages: [{ type: 'spur', input: { teeth: 15 }, output: { teeth: 45 } }],
+    dimensions: { length: 60, maxDiameter: 45, width: 10 },
+    mechanical: [{ bending: { safetyFactor: 1.5 }, contact: { safetyFactor: 1.2 } }],
+    warnings: [], manufacturing: { failures: [] }
+  }, overrides);
+  Object.defineProperty(s, 'uid', { value: uid, enumerable: false });
+  return s;
+}
+
+test('togglePin adds, removes and enforces the cap', () => {
+  let pins = [];
+  for (let i = 1; i <= H.PIN_CAP; i++) {
+    const result = H.togglePin(pins, solution(i));
+    assert.equal(result.action, 'added');
+    pins = result.pins;
+  }
+  assert.equal(H.togglePin(pins, solution(99)).action, 'rejected');
+  const removed = H.togglePin(pins, pins[0].solution);
+  assert.equal(removed.action, 'removed');
+  assert.equal(removed.pins.length, H.PIN_CAP - 1);
+  assert.equal(H.isPinned(removed.pins, 1), false);
+});
+
+test('bestIndices honors direction, marks ties and ignores non-finite values', () => {
+  assert.deepEqual(H.bestIndices([3, 1, 1, NaN], 'min'), [1, 2]);
+  assert.deepEqual(H.bestIndices([3, 9, NaN], 'max'), [1]);
+  assert.deepEqual(H.bestIndices([NaN, NaN], 'min'), []);
+});
+
+test('buildRows produces rotary rows with per-stage architecture labels', () => {
+  const pins = [{ uid: 1, solution: solution(1) }, { uid: 2, solution: solution(2, { stages: [{ type: 'worm', wormStarts: 2, wheelTeeth: 40 }, { type: 'spur', input: { teeth: 12 }, output: { teeth: 36 } }] }) }];
+  const rows = H.buildRows(pins);
+  const labels = rows.map(r => r.label);
+  assert.ok(labels.includes('SF min'));
+  assert.ok(labels.includes('Étage 1'));
+  assert.ok(labels.includes('Étage 2'));
+  const stage2 = rows.find(r => r.label === 'Étage 2');
+  assert.equal(stage2.values[0], null, 'single-stage solution has no second stage');
+  assert.equal(stage2.values[1].label, '12 → 36');
+  const stage1 = rows.find(r => r.label === 'Étage 1');
+  assert.equal(stage1.values[1].label, 'vis 2 → 40');
+});
+
+test('buildRows blanks inapplicable cells when rotary and linear pins are mixed', () => {
+  const linear = solution(3, {
+    mode: 'rotationTranslation', ratio: null, errorPercent: 0,
+    travelPerRevolutionMm: 62.8, outputLinearSpeedMmMin: 94000, outputForceN: 300,
+    stages: [{ type: 'rack', pinionTeeth: 20 }], mechanical: [{}]
+  });
+  const rows = H.buildRows([{ uid: 1, solution: solution(1) }, { uid: 3, solution: linear }]);
+  const ratio = rows.find(r => r.label === 'Rapport');
+  assert.equal(ratio.values[1], null);
+  const course = rows.find(r => r.label === 'Course');
+  assert.equal(course.values[0], undefined);
+  assert.equal(course.values[1], 62.8);
+  const stage1 = rows.find(r => r.label === 'Étage 1');
+  assert.equal(stage1.values[1].label, 'pignon 20');
+});

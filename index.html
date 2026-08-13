@@ -385,7 +385,7 @@
                 <button id="cardsViewBtn" class="active" role="tab" aria-selected="true">Cartes</button>
                 <button id="tableViewBtn" role="tab" aria-selected="false">Tableau</button>
               </div>
-              <button class="btn-small" id="toggleComparisonBtn" title="Comparer plusieurs rapports cibles" aria-label="Comparer">Comparer</button>
+              <button class="btn-small" id="toggleComparisonBtn" title="Rechercher plusieurs rapports cibles et comparer leurs solutions" aria-label="Comparaison multi-cibles">Multi-cibles</button>
             </div>
           </header>
           <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
@@ -434,6 +434,7 @@
             <button role="tab" data-detail="schema" class="active" aria-selected="true">Schéma</button>
             <button role="tab" data-detail="analyse" aria-selected="false">Analyse</button>
             <button role="tab" data-detail="editeur" aria-selected="false">Éditeur</button>
+            <button role="tab" data-detail="comparer" aria-selected="false">Comparer</button>
             <button role="tab" data-detail="graphiques" aria-selected="false">Graphiques</button>
             <button role="tab" data-detail="journal" aria-selected="false">Journal</button>
           </nav>
@@ -477,6 +478,12 @@
           <div class="detail-panel" data-detail-panel="editeur">
             <div id="stageEditor" class="stage-editor">
               <p class="detail-placeholder">Lancez une recherche puis sélectionnez une solution pour l'ouvrir dans l'éditeur.</p>
+            </div>
+          </div>
+
+          <div class="detail-panel" data-detail-panel="comparer">
+            <div id="compareSolutionsPanel" class="compare-panel">
+              <p class="detail-placeholder">Épinglez des solutions (☆) pour les comparer côte à côte.</p>
             </div>
           </div>
 
@@ -556,6 +563,7 @@
   <script src="js/ui/UIController.js" defer></script>
   <script src="js/ui/SolutionExplorer.js" defer></script>
   <script src="js/ui/StageEditor.js" defer></script>
+  <script src="js/ui/ComparePanel.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->
