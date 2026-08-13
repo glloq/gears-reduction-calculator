@@ -18,8 +18,19 @@
 
     this._bindEvents();
     var controller=this,visualContainer=document.getElementById('svgContainer');if(visualContainer){visualContainer.addEventListener('visualization:renderer',function(event){controller.exportManager.setRenderer(event.detail.renderer);});
-    // Clic sur un étage du schéma cinématique → focalise la ligne correspondante de l'éditeur.
-    visualContainer.addEventListener('kinematic:stage-selected',function(event){controller._eventBus.emit('editor:focus-stage',{stage:event.detail.index});});}
+    // Sélection d'un étage dans le schéma (denture ou cinématique) :
+    // surligne la ligne correspondante du panneau mécanique et focalise la
+    // ligne de l'éditeur.
+    function onStageSelected(event){controller._syncMechanicalRow(event.detail.index);controller._eventBus.emit('editor:focus-stage',{stage:event.detail.index});}
+    visualContainer.addEventListener('viewer:stage-selected',onStageSelected);
+    visualContainer.addEventListener('kinematic:stage-selected',onStageSelected);
+    // Double-clic / bouton « Modifier cet étage » : ouvre l'onglet éditeur puis
+    // focalise la ligne (dans un rAF, l'onglet doit être visible pour scroller).
+    visualContainer.addEventListener('viewer:stage-edit',function(event){
+      var tab=document.querySelector('.detail-tabs [data-detail="editeur"]');
+      if(tab)tab.click();
+      requestAnimationFrame(function(){controller._eventBus.emit('editor:focus-stage',{stage:event.detail.index});});
+    });}
   }
 
   UIController.prototype.setVisualizationComponents = function (gearSvg, legacySchema, charts) {
@@ -101,6 +112,19 @@
   UIController.prototype.clearDetail = function () {
     this.mechanicalPanel.hide();
     this._hideSolutionCard();
+  };
+
+  // Source unique du surlignage de ligne du panneau mécanique : dé-sélectionne
+  // toujours la ligne précédente (l'ancien code cinématique ne le faisait pas).
+  UIController.prototype._syncMechanicalRow = function (index) {
+    var panel = document.getElementById('mechanicalPanel');
+    if (!panel) return;
+    panel.querySelectorAll('tr.selected').forEach(function (row) { row.classList.remove('selected'); });
+    var row = document.getElementById('mechanical-stage-' + index);
+    if (row) {
+      row.classList.add('selected');
+      if (panel.offsetParent !== null) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   };
 
   UIController.prototype._onSolutionSelected = function (index, solution) {

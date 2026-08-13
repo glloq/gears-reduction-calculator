@@ -22,7 +22,6 @@ test('stage editor recomputes live and saves a variant into the pool', async ({ 
   await page.locator('#editorSaveVariant').click();
   await expect(page.locator('.tile-origin').first()).toBeVisible();
 
-  // La variante sélectionnée alimente le schéma.
-  await page.locator('[data-detail="schema"]').click();
-  await expect(page.locator('#svgContainer .geometry-svg')).toBeVisible();
+  // La variante sélectionnée alimente le schéma héro (toujours visible).
+  await expect(page.locator('#svgContainer .train-svg')).toBeVisible();
 });

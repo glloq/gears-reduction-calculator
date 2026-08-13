@@ -366,7 +366,7 @@
             <li><kbd>Échap</kbd> : arrêter la recherche</li>
             <li><kbd>?</kbd> : ouvrir/fermer l'aide</li>
           </ul>
-          <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, survol = détails.</p>
+          <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, clic sur un étage = inspection, double-clic = édition.</p>
           <p><strong>Mode expert :</strong> matériaux, fatigue, pondération multicritère et graphique de sécurité.</p>
         </div>
       </details>
@@ -388,6 +388,39 @@
         <div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div>
         <h2>Concevez votre transmission</h2>
         <p id="workspaceEmptyHint">Configurez votre besoin dans le panneau de gauche puis lancez une recherche. Les architectures les mieux classées apparaîtront ici.</p>
+      </section>
+
+      <!-- Visualisation héro : le graphique d'abord, pleine largeur -->
+      <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
+        <div class="viz-controls">
+          <div class="segmented view-switch">
+            <button class="view-mode active rotary-only" data-view="teeth" title="Profils de denture en développante, animables">Denture</button>
+            <button class="view-mode" data-view="geometry">Géométrie 2D</button>
+            <button class="view-mode" data-view="kinematic">Cinématique</button>
+          </div>
+          <span class="kinematic-projections">
+            <button class="btn-small active" data-projection="main">Vue principale</button>
+            <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
+            <button class="btn-small" id="kinematicReset">Réinitialiser</button>
+          </span>
+          <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
+          <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
+          <details class="export-menu">
+            <summary>Exporter</summary>
+            <div>
+              <button data-export="exporterSVG">SVG</button>
+              <button data-export="exporterPNG">PNG</button>
+              <button data-export="exporterJSON">JSON</button>
+              <button data-export="exporterCSV">CSV</button>
+            </div>
+          </details>
+        </div>
+        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+        <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, cliquer un étage pour l'inspecter</p>
+        <details class="legacy-canvas-section">
+          <summary>Vue linéaire simplifiée</summary>
+          <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
+        </details>
       </section>
 
       <div class="workspace-grid">
@@ -448,47 +481,14 @@
           <div id="solutionCard" class="solution-card" hidden aria-live="polite"></div>
 
           <nav class="detail-tabs" role="tablist" aria-label="Détail de la solution">
-            <button role="tab" data-detail="schema" class="active" aria-selected="true">Schéma</button>
-            <button role="tab" data-detail="analyse" aria-selected="false">Analyse</button>
+            <button role="tab" data-detail="analyse" class="active" aria-selected="true">Analyse</button>
             <button role="tab" data-detail="editeur" aria-selected="false">Éditeur</button>
             <button role="tab" data-detail="comparer" aria-selected="false">Comparer</button>
             <button role="tab" data-detail="graphiques" aria-selected="false">Graphiques</button>
             <button role="tab" data-detail="journal" aria-selected="false">Journal</button>
           </nav>
 
-          <div class="detail-panel viz-section active" data-detail-panel="schema">
-            <div class="viz-controls">
-              <div class="segmented view-switch">
-                <button class="view-mode active" data-view="geometry">Géométrie 2D</button>
-                <button class="view-mode" data-view="kinematic">Cinématique</button>
-                <button class="view-mode rotary-only" data-view="teeth" title="Profils de denture en développante, animables">Denture</button>
-              </div>
-              <span class="kinematic-projections">
-                <button class="btn-small active" data-projection="main">Vue principale</button>
-                <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
-                <button class="btn-small" id="kinematicReset">Réinitialiser</button>
-              </span>
-              <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
-              <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
-              <details class="export-menu">
-                <summary>Exporter</summary>
-                <div>
-                  <button data-export="exporterSVG">SVG</button>
-                  <button data-export="exporterPNG">PNG</button>
-                  <button data-export="exporterJSON">JSON</button>
-                  <button data-export="exporterCSV">CSV</button>
-                </div>
-              </details>
-            </div>
-            <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
-            <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, survol pour les détails</p>
-            <details class="legacy-canvas-section">
-              <summary>Vue linéaire simplifiée</summary>
-              <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
-            </details>
-          </div>
-
-          <div class="detail-panel" data-detail-panel="analyse">
+          <div class="detail-panel active" data-detail-panel="analyse">
             <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
             <p class="detail-placeholder" data-placeholder="analyse">Lancez une recherche puis sélectionnez une solution pour voir son analyse mécanique.</p>
           </div>
@@ -555,17 +555,15 @@
   <script src="js/core/SearchEngine.js" defer></script>
   <script src="js/core/Engine.js" defer></script>
 
-  <!-- Visualisation (fichiers originaux conservés pour le code actif) -->
-  <script src="js/GearSVG.js" defer></script>
+  <!-- Visualisation -->
   <script src="js/Charts.js" defer></script>
-
-  <!-- Proxies de visualisation (enregistrement namespace) -->
-  <script src="js/visualization/GearSVG.js" defer></script>
   <script src="js/visualization/GearCharts.js" defer></script>
   <script src="js/visualization/LegacySchema.js" defer></script>
   <script src="js/visualization/kinematic/KinematicLayoutEngine.js" defer></script>
   <script src="js/visualization/kinematic/primitives/KinematicPrimitives.js" defer></script>
   <script src="js/visualization/kinematic/KinematicRenderer.js" defer></script>
+  <script src="js/visualization/TrainLayout.js" defer></script>
+  <script src="js/visualization/TrainRenderer.js" defer></script>
   <script src="js/visualization/GeometryRenderer.js" defer></script>
   <script src="js/visualization/ViewerToolbar.js" defer></script>
 

@@ -68,15 +68,26 @@ test('workspace is a master-detail layout with detail tabs', () => {
   assert.match(html, /id="solutionCards"/);
   assert.match(html, /id="resultats"/);
   assert.match(html, /class="detail-tabs"/);
-  for (const tab of ['schema', 'analyse', 'editeur', 'comparer', 'graphiques', 'journal']) {
+  for (const tab of ['analyse', 'editeur', 'comparer', 'graphiques', 'journal']) {
     assert.match(html, new RegExp(`data-detail="${tab}"`), `missing detail tab ${tab}`);
     assert.match(html, new RegExp(`data-detail-panel="${tab}"`), `missing detail panel ${tab}`);
   }
   for (const canvas of ['ratioChart', 'radarChart', 'cascadeChart', 'powerLossChart', 'safetyChart']) {
     assert.match(html, new RegExp(`id="${canvas}"`), `missing chart ${canvas}`);
   }
-  // Le conteneur SVG reste dans une section .viz-section (contrat ViewerToolbar).
-  assert.match(html, /class="detail-panel viz-section active" data-detail-panel="schema"/);
+  // L'onglet Analyse remplace l'ancien onglet Schéma comme panneau actif.
+  assert.match(html, /class="detail-panel active" data-detail-panel="analyse"/);
+  assert.doesNotMatch(html, /data-detail="schema"/);
+});
+
+test('the viewer is a full-width hero above the results grid', () => {
+  // Le graphique d'abord : section héro pleine largeur, avant la grille
+  // maître/détail, avec le conteneur SVG hors du volet détail.
+  assert.match(html, /<section class="hero-viewer viz-section"/);
+  assert.ok(html.indexOf('class="hero-viewer') < html.indexOf('class="workspace-grid"'), 'hero before the grid');
+  assert.ok(html.indexOf('id="svgContainer"') < html.indexOf('class="workspace-grid"'), 'viewer outside the detail pane');
+  // La denture réaliste est le bouton de vue actif par défaut.
+  assert.match(html, /class="view-mode active rotary-only" data-view="teeth"/);
 });
 
 test('behavior is bound in JS, not in inline attributes', () => {
