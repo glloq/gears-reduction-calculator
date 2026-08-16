@@ -66,3 +66,44 @@ test('auto projection selects the least colliding supported projection', () => {
   });
   assert.equal(automatic.projection, scores.sort((a, b) => a.score - b.score)[0].name);
 });
+
+test('every shaft carries the stage that drives it, coaxial ones included', () => {
+  const result = new Layout().layout([{ type: 'spur' }, { type: 'planetary' }, { type: 'bevel' }]);
+  assert.equal(result.projectedShafts[0].stageIndex, undefined, "l'arbre d'entrée n'est produit par aucun étage");
+  result.projectedShafts.slice(1).forEach(shaft => assert.ok(Number.isFinite(shaft.stageIndex)));
+  // Le planétaire ajoute un arbre concentrique : deux vitesses sur un même axe.
+  assert.equal(result.coaxialShafts.length, 1);
+  assert.equal(result.coaxialShafts[0].stageIndex, 1);
+  assert.equal(result.coaxialShafts[0].coaxial, true);
+});
+
+test('the layout is normalized inside its own viewBox', () => {
+  const result = new Layout().layout([{ type: 'bevel' }, { type: 'worm' }, { type: 'bevel' }, { type: 'spur' }], 'main');
+  const points = result.projectedShafts.concat(result.nodes.map(n => n.output));
+  points.forEach(point => {
+    assert.ok(point.x >= 0 && point.x <= result.width, 'x hors cadre: ' + point.x + '/' + result.width);
+    assert.ok(point.y >= 0 && point.y <= result.height, 'y hors cadre: ' + point.y + '/' + result.height);
+  });
+});
+
+test('shaft labels stay inside the frame and never overlap each other', () => {
+  const result = new Layout().layout([{ type: 'spur' }, { type: 'bevel' }, { type: 'spur' }]);
+  const labels = result.projectedShafts.map(shaft => ({ x: shaft.x, y: shaft.labelY }));
+  labels.forEach(label => {
+    assert.ok(Number.isFinite(label.y), 'étiquette sans position');
+    assert.ok(label.y > 0 && label.y < result.height, 'étiquette hors cadre: ' + label.y);
+  });
+  for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) {
+    const close = Math.abs(labels[i].x - labels[j].x) < 80 && Math.abs(labels[i].y - labels[j].y) < 18;
+    assert.ok(!close, 'étiquettes superposées ' + i + '/' + j);
+  }
+});
+
+test('normalize reframes negative coordinates without distorting the drawing', () => {
+  const points = [{ x: -40, y: -10 }, { x: 100, y: 200 }];
+  const before = points[1].x - points[0].x;
+  const box = Layout.normalize([points], 300);
+  assert.equal(points[1].x - points[0].x, before, 'écarts conservés');
+  assert.ok(points.every(p => p.x >= 0 && p.y >= 0));
+  assert.ok(box.width >= points[1].x && box.height >= points[1].y);
+});

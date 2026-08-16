@@ -86,8 +86,10 @@ test('the viewer is a full-width hero above the results grid', () => {
   assert.match(html, /<section class="hero-viewer viz-section"/);
   assert.ok(html.indexOf('class="hero-viewer') < html.indexOf('class="workspace-grid"'), 'hero before the grid');
   assert.ok(html.indexOf('id="svgContainer"') < html.indexOf('class="workspace-grid"'), 'viewer outside the detail pane');
-  // La denture réaliste est le bouton de vue actif par défaut.
-  assert.match(html, /class="view-mode active rotary-only" data-view="teeth"/);
+  // La denture réaliste est le bouton de vue actif par défaut, et elle n'est
+  // plus réservée aux objectifs rotatifs : la crémaillère y est dessinée.
+  assert.match(html, /class="view-mode active" data-view="teeth"/);
+  assert.doesNotMatch(html, /view-mode[^"]*rotary-only/);
 });
 
 test('the viewer exposes adaptive display and animation controls', () => {

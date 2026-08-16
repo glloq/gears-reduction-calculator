@@ -17,6 +17,14 @@
     this._download(blob, "engrenages.svg");
   };
 
+  // Export technique : cotations et tracés de construction forcés visibles,
+  // même s'ils sont masqués à l'écran par le menu « Affichage ».
+  ExportManager.prototype.exportTechnicalSVG = function () {
+    if (!this._gearSvg) return;
+    var svgData = this._gearSvg.exportSVG({ technical: true });
+    this._download(new Blob([svgData], { type: 'image/svg+xml' }), 'engrenages-technique.svg');
+  };
+
   ExportManager.prototype.exportPNG = function () {
     if (!this._gearSvg) return;
     var self = this;

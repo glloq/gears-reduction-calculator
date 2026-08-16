@@ -40,13 +40,29 @@ gears-reduction-calculator/
 │   │   ├── ExportManager.js   # Export SVG/PNG, contrôle animation
 │   │   └── UIController.js    # Orchestrateur UI principal
 │   ├── visualization/
+│   │   ├── core/              # Socle commun aux TROIS vues (UMD, testé Node)
+│   │   │   ├── SceneBuilder.js       # Modèle graphique canonique d'une solution
+│   │   │   ├── KinematicsEngine.js   # Source unique des vitesses et des sens
+│   │   │   ├── AnimationController.js# Horloge d'animation partagée
+│   │   │   ├── ViewportController.js # Zoom/pan/pincement identiques partout
+│   │   │   ├── GeometryUtils.js      # Tangentes et enroulements exacts
+│   │   │   └── SvgExport.js          # Export SVG/PNG unique (dont SVG technique)
+│   │   ├── teeth/             # Vue « Denture »
+│   │   │   ├── ToothProfile.js       # Développante, couronne dentée
+│   │   │   ├── ToothProfileCache.js  # Cache de profils (roues identiques)
+│   │   │   ├── TeethPrimitives.js    # Corps de roue par famille + LOD 0→3
+│   │   │   └── TeethOverlay.js       # Cercles de construction, ligne d'action
+│   │   ├── geometry/          # Vue « Géométrie 2D »
+│   │   │   ├── GeometryLayout.js     # Placement aux cotes réelles
+│   │   │   ├── GeometryPrimitives.js # Conventions de trait
+│   │   │   └── DimensionRenderer.js  # Cotation par étage et enveloppe globale
+│   │   ├── kinematic/         # Vue « Cinématique » (layout + primitives)
+│   │   ├── overlays/          # Efforts et alertes mécaniques, partagés
 │   │   ├── TrainLayout.js     # Placement pur de la vue denture (UMD, testé Node)
-│   │   ├── TrainRenderer.js   # Vue héro : denture en développante aux cotes
-│   │   │                      #   réelles, zoom ancré, animation par rotor,
-│   │   │                      #   sélection d'étage + carte d'inspection
-│   │   ├── GeometryRenderer.js# Vue géométrie 2D calculée (cercles primitifs)
-│   │   ├── kinematic/         # Vue schéma cinématique (layout + primitives)
-│   │   ├── ViewerToolbar.js   # Bascule entre les trois vues du héro
+│   │   ├── TrainRenderer.js   # Orchestrateur de la vue Denture
+│   │   ├── GeometryRenderer.js# Orchestrateur de la vue Géométrie 2D
+│   │   ├── StageInspector.js  # Carte d'inspection partagée par les trois vues
+│   │   ├── ViewerToolbar.js   # État partagé : vue, sélection, animation, overlays
 │   │   ├── GearCharts.js      # Proxy namespace pour GearCharts
 │   │   └── LegacySchema.js    # Schéma Canvas 2D encapsulé en classe
 │   ├── Charts.js              # Graphiques Chart.js (code actif)
@@ -87,14 +103,58 @@ Composants d'interface. Dépend de core et models.
 ### 4. Visualization (`js/visualization/`)
 Rendu graphique. Dépend de core pour les données.
 
-- **TrainRenderer + TrainLayout** : vue héro « Denture réaliste » — profils en
-  développante aux cotes réellement calculées (`stage.geometry`), thémable
-  (100 % jetons CSS), zoom ancré au pointeur, animation par rotor, sélection
-  d'étage au clic (évènements `viewer:stage-selected` / `viewer:stage-edit`,
-  base de la future édition graphique directe).
-- **GeometryRenderer** : géométrie 2D calculée (cercles primitifs, mm réels) —
-  vue de repli du mode linéaire (crémaillère).
-- **KinematicRenderer** : schéma cinématique symbolique, deux projections.
+**Règle d'architecture n° 1 : aucun renderer ne recalcule le fonctionnement
+mécanique.** Les trois vues ne sont pas trois implémentations du même réducteur,
+ce sont trois lectures du même modèle. Toute vitesse, tout sens de rotation,
+toute cote vient du moteur ; un renderer ne fait que placer et dessiner.
+
+```
+Solution
+   │
+   ▼
+SceneBuilder ──────────► KinematicsEngine ──► AnimationController
+   │ géométrie réelle          │ ω, sens, Willis, translations
+   │ membres, arbres           │
+   ▼                           ▼
+TrainLayout / GeometryLayout / KinematicLayoutEngine
+   │
+   ▼
+TrainRenderer   GeometryRenderer   KinematicRenderer
+        └──── ViewportController · SvgExport · StageInspector ────┘
+                    overlays/ForceOverlay · overlays/WarningOverlay
+```
+
+- **SceneBuilder** : modèle graphique canonique dérivé d'une solution. Ne
+  fabrique aucune dimension : il consomme `stage.geometry`, `solution.mechanical`
+  et le registre de transmissions.
+- **KinematicsEngine** : source unique de la cinématique. `build(solution)` donne
+  la vitesse signée de chaque membre (y compris satellites : rotation propre +
+  orbite du porte-satellites, via la relation de Willis du registre) ;
+  `pose(state, angle)` donne l'état instantané pour un angle d'entrée en degrés,
+  y compris translations de crémaillère et défilement de courroie en mm réels.
+- **AnimationController / ViewportController** : horloge et zoom/pan communs. Le
+  zoom est ancré au pointeur, borné relativement à la vue ajustée, et supporte le
+  pincement tactile — même comportement dans les trois vues.
+- **TrainRenderer + TrainLayout + teeth/** : vue « Denture ». Profils en
+  développante aux cotes calculées, avec un **niveau de détail piloté par la
+  taille réelle à l'écran** (silhouette → dents simplifiées → développante →
+  tracés de construction). Représentations propres à chaque famille : stries et
+  sens d'hélice, couronne intérieure, filet de vis sans fin, cônes primitifs sur
+  axes concourants, crémaillère au pas réel.
+- **GeometryRenderer + geometry/** : vue de DIMENSIONNEMENT. Couches activables
+  (`envelope · shaft · geometry · pitch · dimension · force · label`), cotation
+  des diamètres, entraxes, largeurs et modules réellement calculés, enveloppe
+  globale. Une cote absente n'est pas tracée, jamais inventée.
+- **KinematicRenderer + kinematic/** : schéma symbolique où **l'arbre est
+  l'élément principal** — chaque arbre porte son identifiant, sa vitesse et son
+  sens ; les symboles de liaison viennent ensuite. Projections principale,
+  orthogonale et automatique, flux de puissance animé.
+- **ViewerToolbar** : détient l'état partagé (vue, étage sélectionné, lecture et
+  vitesse d'animation, overlays) et le réapplique à chaque changement de vue.
+  Contrat d'évènements unique : `viewer:stage-selected`, `viewer:stage-edit`,
+  `viewer:view-changed`, `viewer:overlay-changed`, `viewer:animation-changed`.
+- **StageInspector / ForceOverlay / WarningOverlay** : inspection, efforts
+  (Ft/Fr/Fa normalisés) et alertes mécaniques structurées, partagés par les vues.
 - **GearCharts** : 4 graphiques Chart.js (ratio, radar, cascade, pertes).
 - **LegacySchema** : Schéma Canvas 2D classique (conservé dans `<details>`).
 
@@ -108,7 +168,7 @@ Rendu graphique. Dépend de core pour les données.
                                        ↓
                               EventBus:solution:selected
                               ↓           ↓           ↓
-                          GearSVG    MechanPanel   LegacySchema
+                       ViewerToolbar MechanPanel   LegacySchema
                                          ↓
                                      GearCharts
 ```
@@ -119,7 +179,7 @@ Rendu graphique. Dépend de core pour les données.
 |---|---|---|
 | `search:log` | Engine | Logger |
 | `search:progress` | Engine | ProgressBar |
-| `solution:selected` | ResultsTable | UIController → SVG, Panel, Charts, Legacy |
+| `solution:selected` | ResultsTable | UIController → ViewerToolbar, Panel, Charts, Legacy |
 
 ## Compatibilité
 

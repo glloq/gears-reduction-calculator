@@ -25,7 +25,10 @@
   Inspector.prototype._element = function () {
     if (this.element && this.element.isConnected) return this.element;
     if (this.element) { this.container.appendChild(this.element); return this.element; }
-    var card = document.createElement('aside'); card.className = 'stage-inspector'; card.hidden = true; card.setAttribute('aria-live', 'polite');
+    // L'identifiant est un contrat public : les e2e et les scripts d'intégration
+    // ciblent #stageInspector / #stageInspectorEdit, quelle que soit la vue.
+    var card = document.createElement('aside'); card.id = 'stageInspector'; card.className = 'stage-inspector';
+    card.hidden = true; card.setAttribute('aria-live', 'polite');
     this.container.appendChild(card); this.element = card; return card;
   };
   Inspector.prototype.hide = function () { if (this.element) this.element.hidden = true; };
@@ -40,7 +43,7 @@
       ['Couple', finite(data.inputTorque) && finite(data.outputTorque) ? format(data.inputTorque, 1, ' → ') + format(data.outputTorque, 1, ' Nm') : null], ['SF / SH', (format(data.bendingSafety, 2) || '—') + ' / ' + (format(data.contactSafety, 2) || '—')]].forEach(function (item) {
         if (item[1] == null || item[1] === '') return; var row = document.createElement('div'), label = document.createElement('span'), value = document.createElement('strong'); label.textContent = item[0]; value.textContent = item[1]; row.appendChild(label); row.appendChild(value); grid.appendChild(row);
       });
-    card.appendChild(grid); var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'btn-small btn-primary'; edit.textContent = 'Modifier cet étage'; card.appendChild(edit); card.hidden = false;
+    card.appendChild(grid); var edit = document.createElement('button'); edit.type = 'button'; edit.id = 'stageInspectorEdit'; edit.className = 'btn-small btn-primary'; edit.textContent = 'Modifier cet étage'; card.appendChild(edit); card.hidden = false;
     close.addEventListener('click', function () { self.hide(); if (self.options.onClose) self.options.onClose(index); });
     edit.addEventListener('click', function () { if (self.options.onEdit) self.options.onEdit(index); });
   };
