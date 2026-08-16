@@ -1,9 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const { watchConsoleErrors } = require('./console-errors.js');
 let errors = [];
 test.beforeEach(async ({ page }) => {
-  errors = [];
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  page.on('pageerror', e => errors.push(e.message));
+  errors = watchConsoleErrors(page);
   await page.goto('/');
 });
 test.afterEach(() => expect(errors, 'browser errors').toEqual([]));
@@ -20,7 +19,8 @@ test('stage editor recomputes live and saves a variant into the pool', async ({ 
   await expect(page.locator('#editorSaveVariant')).toBeEnabled();
 
   await page.locator('#editorSaveVariant').click();
-  await expect(page.locator('.tile-origin').first()).toBeVisible();
+  // La variante rejoint le vivier, signalée par son propre badge de carte.
+  await expect(page.locator('.solution-card .recommendation-badge.variant').first()).toBeVisible();
 
   // La variante sélectionnée alimente le schéma héro (toujours visible).
   await expect(page.locator('#svgContainer .train-svg')).toBeVisible();

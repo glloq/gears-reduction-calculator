@@ -1,9 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const { watchConsoleErrors } = require('./console-errors.js');
 let errors = [];
 test.beforeEach(async ({ page }) => {
-  errors = [];
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  page.on('pageerror', e => errors.push(e.message));
+  errors = watchConsoleErrors(page);
   await page.goto('/');
 });
 test.afterEach(() => expect(errors, 'browser errors').toEqual([]));

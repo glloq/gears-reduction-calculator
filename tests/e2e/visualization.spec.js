@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { watchConsoleErrors } = require('./console-errors.js');
 
 // Étages de référence : un par famille de transmission, avec les paramètres
 // que le moteur sait dimensionner. Ils sont analysés dans la page pour ne pas
@@ -50,16 +51,7 @@ async function showView(page, view) {
   await page.waitForTimeout(60);
 }
 
-function watchErrors(page) {
-  const errors = [];
-  page.on('console', message => {
-    // Le CDN des dépendances tierces n'est pas joignable hors ligne : seules
-    // les erreurs de l'application nous intéressent ici.
-    if (message.type() === 'error' && !/Failed to load resource/.test(message.text())) errors.push(message.text());
-  });
-  page.on('pageerror', error => errors.push(error.message));
-  return errors;
-}
+const watchErrors = watchConsoleErrors;
 
 test('selection survives all three visualization views', async ({ page }) => {
   const errors = watchErrors(page);
