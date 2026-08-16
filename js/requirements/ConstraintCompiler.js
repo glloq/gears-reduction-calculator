@@ -61,7 +61,7 @@
       problemReason: problem.reason,
       linear: linear,
       inputSpeedRpm: requirement.input.speed.nominal(),
-      inputTorqueNm: requirement.input.torque.nominal(),
+      inputTorqueNm: requirement.inputTorqueRequirement().nominal(),
       ratio: null,
       ratioTolerancePercent: FALLBACK_TOLERANCE_PERCENT,
       travelPerRevolutionMm: null,
@@ -118,6 +118,10 @@
           case 'linearSpeed':
             setMin(request.constraints, 'minimumLinearSpeedMmMin', bounds.min);
             setMax(request.constraints, 'maximumLinearSpeedMmMin', bounds.max);
+            break;
+          case 'centerDistance':
+            setMin(request.constraints, 'minCenterDistance', bounds.min);
+            setMax(request.constraints, 'maxCenterDistance', bounds.max);
             break;
           case 'stages': if (bounds.max != null) request.maxStages = Math.max(1, Math.round(bounds.max)); break;
           case 'ratioError': if (bounds.max != null) request.ratioTolerancePercent = Math.min(request.ratioTolerancePercent, bounds.max); break;

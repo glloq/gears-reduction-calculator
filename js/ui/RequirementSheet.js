@@ -92,9 +92,13 @@
     var derived = el('derivedRatio');
     if (!derived) return;
     var model = this.session.requirement;
-    var ratio = model.ratioRequirement(), problem = model.inferProblem();
-    derived.textContent = ratio.isKnown() && problem.mode !== 'ratio'
-      ? 'Rapport déduit : ' + ratio.describe() : '';
+    var ratio = model.ratioRequirement(), problem = model.inferProblem(), parts = [];
+    if (ratio.isKnown() && problem.mode !== 'ratio') parts.push('Rapport déduit : ' + ratio.describe());
+    // §20 : une plaque signalétique donne une puissance, pas un couple.
+    if (!model.input.torque.isKnown() && model.inputTorqueRequirement().isKnown()) {
+      parts.push('Couple d’entrée déduit : ' + model.inputTorqueRequirement().describe());
+    }
+    derived.textContent = parts.join(' · ');
   };
 
   RequirementSheet.prototype._row = function (field) {

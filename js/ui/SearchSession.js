@@ -50,7 +50,7 @@
   function write(id, value) {
     var node = el(id);
     if (!node) return;
-    var next = value == null ? '' : String(round(value));
+    var next = value == null ? '' : String(typeof value === 'number' ? round(value) : value);
     if (node.value !== next) node.value = next;
   }
 
@@ -146,13 +146,15 @@
       missing: problem.mode ? null : 'besoin incomplet' });
     levels.push({ id: 'kinematics', label: 'Cinématique', available: !!problem.mode && requirement.input.speed.isKnown(),
       missing: requirement.input.speed.isKnown() ? null : 'vitesse d’entrée manquante' });
-    levels.push({ id: 'forces', label: 'Efforts mécaniques', available: requirement.input.torque.isKnown(),
-      missing: requirement.input.torque.isKnown() ? null : 'couple d’entrée manquant' });
-    levels.push({ id: 'strength', label: 'Résistance', available: requirement.input.torque.isKnown() && technical.isCustomised('materials'),
-      missing: !requirement.input.torque.isKnown() ? 'couple d’entrée manquant'
+    // Le couple peut venir de la puissance : c'est lui qui compte, pas le champ.
+    var torque = requirement.inputTorqueRequirement().isKnown();
+    levels.push({ id: 'forces', label: 'Efforts mécaniques', available: torque,
+      missing: torque ? null : 'couple ou puissance d’entrée manquant' });
+    levels.push({ id: 'strength', label: 'Résistance', available: torque && technical.isCustomised('materials'),
+      missing: !torque ? 'couple ou puissance d’entrée manquant'
         : technical.isCustomised('materials') ? null : 'matériaux laissés par défaut' });
-    levels.push({ id: 'fatigue', label: 'Fatigue', available: technical.fatigue.enabled && requirement.input.torque.isKnown(),
-      missing: technical.fatigue.enabled ? (requirement.input.torque.isKnown() ? null : 'couple d’entrée manquant') : 'cycle de service non renseigné' });
+    levels.push({ id: 'fatigue', label: 'Fatigue', available: technical.fatigue.enabled && torque,
+      missing: technical.fatigue.enabled ? (torque ? null : 'couple ou puissance d’entrée manquant') : 'cycle de service non renseigné' });
     return levels;
   };
 
@@ -255,6 +257,15 @@
     Object.keys(weights).forEach(function (key) { write('weight_' + key, weights[key]); });
     var template = el('type_template');
     if (template) template.value = JSON.stringify(this.technologySelection.toTemplate() || []);
+    var parameters = this.technical.typeParameters;
+    Object.keys(parameters).forEach(function (typeId) {
+      Object.keys(parameters[typeId]).forEach(function (key) {
+        var node = el('tp_' + typeId + '_' + key);
+        if (!node) return;
+        if (node.type === 'checkbox') node.checked = !!parameters[typeId][key];
+        else write('tp_' + typeId + '_' + key, parameters[typeId][key]);
+      });
+    });
     this.syncTypeCheckboxes();
   };
 

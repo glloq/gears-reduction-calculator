@@ -139,7 +139,7 @@ test('the modal says what will be computable instead of demanding everything', a
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
   await expect(page.locator('.analysis-level[data-level="geometry"]')).toHaveClass(/analysis-ok/);
-  await expect(page.locator('.analysis-level[data-level="forces"]')).toContainText('couple d’entrée manquant');
+  await expect(page.locator('.analysis-level[data-level="forces"]')).toContainText('couple ou puissance d’entrée manquant');
 
   await setQuantity(page, 'input.torque', 4);
   await expect(page.locator('.analysis-level[data-level="forces"]')).toHaveClass(/analysis-ok/);
@@ -280,4 +280,81 @@ test('the table view comes back on a wide screen, and remembers the choice', asy
   await expect(page.locator('#result-container')).not.toHaveClass(/results-table-mode/);
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator('#result-container')).toHaveClass(/results-table-mode/);
+});
+
+// ===== §20 : puissance moteur =====
+
+test('a nameplate power gives the torque, and unlocks the mechanical analysis', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'input.speed', 1500);
+  await expect(page.locator('.analysis-level[data-level="forces"]')).toContainText('manquant');
+
+  await setQuantity(page, 'input.power', 750);
+  await expect(page.locator('#derivedRatio')).toContainText('Couple d’entrée déduit');
+  await expect(page.locator('#derivedRatio')).toContainText('4.77');
+  await expect(page.locator('.analysis-level[data-level="forces"]')).toHaveClass(/analysis-ok/);
+});
+
+// ===== §9 : critères recommandés =====
+
+test('the criteria menu suggests what matters here, catalogue one click away', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 40);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('.family-card[data-family="belt"]').click();
+
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('#addConstraintBtn').click();
+  // Une courroie appelle d'abord un entraxe : c'est le premier proposé.
+  await expect(page.locator('#constraintSuggestions button').first()).toContainText('Entraxe');
+  // Le catalogue complet reste replié tant qu'on ne le demande pas.
+  expect(await page.locator('#constraintMenu .constraint-menu-group:not(.constraint-menu-suggested)').count()).toBe(0);
+  await page.locator('#showAllConstraints').click();
+  expect(await page.locator('#constraintMenu .constraint-menu-group:not(.constraint-menu-suggested)').count()).toBeGreaterThan(0);
+
+  // Un critère suggéré s'ajoute comme les autres.
+  await page.locator('#addConstraintBtn').click();
+  await page.locator('#constraintSuggestions [data-field="centerDistance"]').click();
+  await expect(page.locator('.constraint-chip[data-constraint="centerDistance"]')).toBeVisible();
+});
+
+// ===== §15 : paramètres propres aux familles explorées =====
+
+test('only the explored families expose their own parameters', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('.family-card[data-family="worm"]').click();
+
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('#modalAdvanced > summary').click();
+  await expect(page.locator('.type-parameters[data-family="worm"]')).toHaveCount(1);
+  await expect(page.locator('.type-parameters[data-family="helical"]')).toHaveCount(0);
+  await page.locator('.type-parameters[data-family="worm"] summary').click();
+  await expect(page.locator('#tpm_worm_leadAngle')).toBeVisible();
+
+  // Changer de famille change les paramètres offerts, sans réglage à retrouver.
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.family-card[data-family="worm"]').click();
+  await page.locator('.family-card[data-family="helical"]').click();
+  await page.locator('[data-step="criteria"]').click();
+  await expect(page.locator('.type-parameters[data-family="helical"]')).toHaveCount(1);
+  await expect(page.locator('.type-parameters[data-family="worm"]')).toHaveCount(0);
+});
+
+test('a parameter set in the modal drives the search and the historic mirror', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('#modalAdvanced > summary').click();
+  const spur = page.locator('.type-parameters[data-family="spur"]');
+  await spur.locator('summary').click();
+  await spur.locator('#tpm_spur_faceWidth').fill('18');
+  await spur.locator('#tpm_spur_faceWidth').blur();
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+  expect(await page.inputValue('#tp_spur_faceWidth')).toBe('18');
 });

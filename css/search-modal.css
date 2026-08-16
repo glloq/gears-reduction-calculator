@@ -290,3 +290,30 @@ body.modal-open { overflow: hidden; }
 @media (max-width: 1000px) {
   .design-workspace > .results-pane { position: static; max-height: none; }
 }
+
+/* ----- §9 : critères recommandés avant le catalogue ----- */
+
+.constraint-menu-suggested { border-bottom: 1px solid var(--line); padding-bottom: var(--sp-2); margin-bottom: var(--sp-2); }
+.constraint-menu-suggested button { font-weight: 600; }
+.constraint-menu-all {
+  display: block; width: 100%;
+  border: 0; background: transparent;
+  color: var(--accent);
+  font-size: var(--font-xs);
+  text-align: left;
+  padding: 4px 0;
+}
+
+/* ----- §15 : paramètres propres aux familles explorées ----- */
+
+.type-parameters-host { display: grid; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.type-parameters {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: var(--sp-2);
+}
+.type-parameters > summary { font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.type-parameters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.type-parameter { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
+.type-parameter input[type="number"], .type-parameter select { flex: 0 1 6rem; }

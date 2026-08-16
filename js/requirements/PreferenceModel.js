@@ -54,8 +54,53 @@
     { key: 'outputForce', label: 'Force de sortie', unit: 'N', category: 'performance', better: 'higher', defaultKind: 'min', linear: true,
       metric: function (s) { return s.outputForceN; } },
     { key: 'linearSpeed', label: 'Vitesse linéaire', unit: 'mm/min', category: 'performance', better: null, defaultKind: 'range', linear: true,
-      metric: function (s) { return s.linearSpeedMmMin; } }
+      metric: function (s) { return s.linearSpeedMmMin; } },
+    { key: 'centerDistance', label: 'Entraxe', unit: 'mm', category: 'architecture', better: null, defaultKind: 'range',
+      metric: function (s) { return s.dimensions && s.dimensions.maxCenterDistance; } }
   ];
+
+  // §9 : le catalogue ne doit pas être le même dans tous les cas. Une vis sans
+  // fin appelle un rendement minimum ; une courroie appelle un entraxe. Proposer
+  // les trente critères à chaque fois oblige l'utilisateur à savoir lesquels
+  // comptent — c'est précisément ce qu'on lui épargne.
+  var SUGGESTIONS = {
+    planetary: ['maxDiameter', 'stages', 'efficiency', 'outputTorque'],
+    worm:      ['efficiency', 'ratioError', 'outputTorque', 'maxDiameter'],
+    belt:      ['centerDistance', 'maxLength', 'maxDiameter', 'ratioError'],
+    chain:     ['centerDistance', 'maxLength', 'outputTorque', 'ratioError'],
+    bevel:     ['centerDistance', 'maxDiameter', 'maxLength', 'ratioError'],
+    rack:      ['outputForce', 'linearSpeed', 'maxDiameter', 'ratioError'],
+    spur:      ['maxDiameter', 'maxLength', 'efficiency', 'stages'],
+    helical:   ['maxDiameter', 'efficiency', 'bendingSafety', 'stages'],
+    internal:  ['maxDiameter', 'stages', 'efficiency', 'outputTorque']
+  };
+
+  /** Critères de repli quand aucune famille n'est encore décidée. */
+  var GENERIC_SUGGESTIONS = ['maxDiameter', 'maxLength', 'efficiency', 'stages'];
+
+  /**
+   * Les quelques critères qui comptent ici et maintenant, sans jamais fermer
+   * l'accès au catalogue complet.
+   * @param {string[]} families familles réellement explorées
+   * @param {boolean} linear problème linéaire
+   * @param {object} [active] critères déjà posés, à ne pas reproposer
+   */
+  function suggest(families, linear, active) {
+    var taken = active || {};
+    var ordered = [];
+    (families && families.length ? families : []).forEach(function (family) {
+      (SUGGESTIONS[family] || []).forEach(function (key) {
+        if (ordered.indexOf(key) === -1) ordered.push(key);
+      });
+    });
+    GENERIC_SUGGESTIONS.forEach(function (key) { if (ordered.indexOf(key) === -1) ordered.push(key); });
+    return ordered.filter(function (key) {
+      if (taken[key]) return false;
+      var meta = criterion(key);
+      if (!meta) return false;
+      return linear ? (meta.linear || !meta.rotaryOnly) : !meta.linear;
+    }).slice(0, 5);
+  }
 
   function safety(solution, kind) {
     var values = (solution.mechanical || []).map(function (entry) {
@@ -228,6 +273,6 @@
 
   return {
     PreferenceModel: PreferenceModel, CRITERIA: CRITERIA, AXES: AXES, WEIGHT_KEYS: WEIGHT_KEYS,
-    criterion: criterion, axis: axis
+    criterion: criterion, axis: axis, suggest: suggest, SUGGESTIONS: SUGGESTIONS
   };
 });

@@ -31,6 +31,7 @@
   var FIELDS = [
     { path: 'input.speed', label: 'Vitesse d’entrée', unit: 'rpm', side: 'input', essential: true },
     { path: 'input.torque', label: 'Couple d’entrée', unit: 'N·m', side: 'input', essential: true },
+    { path: 'input.power', label: 'Puissance moteur', unit: 'W', side: 'input' },
     { path: 'output.speed', label: 'Vitesse de sortie', unit: 'rpm', side: 'output' },
     { path: 'output.torque', label: 'Couple de sortie', unit: 'N·m', side: 'output' },
     { path: 'output.force', label: 'Force de sortie', unit: 'N', side: 'output', linear: true },
@@ -138,7 +139,7 @@
       return this.output.speed.mapLinear(inputSpeed, true, ':1');
     }
     if (this.ratio.isKnown()) return this.ratio;
-    var inputTorque = this.input.torque.nominal();
+    var inputTorque = this.inputTorqueRequirement().nominal();
     if (this.output.torque.isKnown() && inputTorque) {
       // Rapport idéal : le rendement réel le fera manquer, c'est pourquoi le
       // couple de sortie est AUSSI compilé en contrainte dure. Le moteur, lui,
@@ -146,6 +147,21 @@
       return this.output.torque.mapLinear(1 / inputTorque, false, ':1');
     }
     return Quantity.unknown(':1');
+  };
+
+  /**
+   * Le couple d'entrée, déduit de la puissance quand il n'est pas donné.
+   * C = P / ω, avec ω = 2πN/60. Une plaque signalétique porte presque toujours
+   * une puissance et un régime, rarement un couple : refuser d'en tirer le
+   * couple reviendrait à écarter l'analyse mécanique de la plupart des projets.
+   */
+  RequirementModel.prototype.inputTorqueRequirement = function () {
+    if (this.input.torque.isKnown()) return this.input.torque;
+    var speed = this.input.speed.nominal();
+    if (this.input.power.isKnown() && speed) {
+      return this.input.power.mapLinear(60 / (2 * Math.PI * speed), false, 'N·m');
+    }
+    return Quantity.unknown('N·m');
   };
 
   /** Course par tour, dérivée de la vitesse linéaire quand elle seule est donnée. */
@@ -180,8 +196,11 @@
     if (!this.input.speed.isKnown()) {
       notes.push({ level: 'warn', code: 'no-input-speed', text: 'Sans vitesse d’entrée, les vitesses de sortie affichées seront approximatives.' });
     }
-    if (!this.input.torque.isKnown()) {
-      notes.push({ level: 'warn', code: 'no-input-torque', text: 'Sans couple d’entrée, la tenue mécanique ne peut pas être vérifiée.' });
+    var inputTorque = this.inputTorqueRequirement();
+    if (!inputTorque.isKnown()) {
+      notes.push({ level: 'warn', code: 'no-input-torque', text: 'Sans couple ni puissance d’entrée, la tenue mécanique ne peut pas être vérifiée.' });
+    } else if (!this.input.torque.isKnown()) {
+      notes.push({ level: 'ok', code: 'derived-torque', text: 'Couple d’entrée déduit de la puissance : ' + inputTorque.describe() + '.' });
     }
 
     if (ratio.isKnown()) {

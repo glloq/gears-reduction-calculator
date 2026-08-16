@@ -222,6 +222,11 @@
     advanced.appendChild(node('summary', null, 'Options techniques avancées'));
     var advancedBody = node('div', 'advanced-body');
     advancedBody.id = 'modalAdvancedBody';
+    // §15 : les paramètres propres aux familles explorées viennent EN PREMIER,
+    // avant les panneaux génériques : ce sont ceux qui concernent ce projet.
+    var typeParams = node('div', 'type-parameters-host');
+    typeParams.id = 'typeParametersHost';
+    advancedBody.appendChild(typeParams);
     advanced.appendChild(advancedBody);
     criteria.appendChild(advanced);
   };
@@ -289,12 +294,14 @@
       this.sheet.bind();
       this.chips = new GearApp.ui.ConstraintChips(this.draft, refresh);
       this.chips.bind();
+      this.typeParameters = new GearApp.ui.TypeParametersEditor(el('typeParametersHost'), this.draft, refresh);
       this._bindPriorities(refresh);
       this._bindFabrication(refresh);
     }
     this.typeStep.setDraft(this.draft);
     this.sheet.session = this.draft;
     this.chips.session = this.draft;
+    this.typeParameters.setDraft(this.draft);
   };
 
   SearchModal.prototype._bindPriorities = function (refresh) {
@@ -382,6 +389,7 @@
       if (structural !== false) this.chips.render();
       this._renderPriorities();
       this._renderFabrication();
+      this.typeParameters.render();
     }
     this._renderAnalysisLevels();
     this._renderSummary();

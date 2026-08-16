@@ -201,3 +201,95 @@ test('there is still no standard/expert switch', () => {
   assert.doesNotMatch(app, /toggleProMode/);
   assert.doesNotMatch(workbench, /_rotaryTypes/);
 });
+
+// ===== §20 : la puissance moteur remplace le couple quand on ne l'a pas =====
+
+test('a nameplate power and speed yield the torque nobody had to compute', () => {
+  const { RequirementModel } = require('../js/requirements/RequirementModel.js');
+  const model = new RequirementModel({ input: { speed: 1500, power: 750 }, ratio: 12 });
+  // C = P·60 / (2πN) = 750·60 / (2π·1500) ≈ 4,77 N·m
+  assert.equal(Math.round(model.inputTorqueRequirement().nominal() * 100) / 100, 4.77);
+  // Le couple saisi reste prioritaire sur celui qu'on déduirait.
+  model.set('input.torque', { kind: 'exact', value: 6 });
+  assert.equal(model.inputTorqueRequirement().nominal(), 6);
+});
+
+test('the derived torque reaches the engine and unlocks the mechanical analysis', () => {
+  const { RequirementModel } = require('../js/requirements/RequirementModel.js');
+  const Compiler = require('../js/requirements/ConstraintCompiler.js');
+  const model = new RequirementModel({ input: { speed: 3000, power: 1500 }, ratio: 10 });
+  const request = Compiler.compile(model, new Preferences.PreferenceModel());
+  assert.equal(Math.round(request.inputTorqueNm * 100) / 100, 4.77);
+  // Et le diagnostic le dit plutôt que de réclamer un couple.
+  assert.ok(model.diagnose().some(note => note.code === 'derived-torque'));
+  assert.ok(!model.diagnose().some(note => note.code === 'no-input-torque'));
+});
+
+// ===== §9 : suggestions de critères contextuelles =====
+
+test('the suggested criteria follow the families actually explored', () => {
+  const worm = Preferences.suggest(['worm'], false, {});
+  assert.equal(worm[0], 'efficiency', 'une vis sans fin appelle d’abord un rendement minimum');
+
+  const belt = Preferences.suggest(['belt', 'chain'], false, {});
+  assert.equal(belt[0], 'centerDistance', 'une courroie appelle d’abord un entraxe');
+  assert.ok(!worm.includes('centerDistance'), 'l’entraxe n’est pas le sujet d’une vis');
+
+  const rack = Preferences.suggest(['rack'], true, {});
+  assert.deepEqual(rack.slice(0, 2), ['outputForce', 'linearSpeed']);
+});
+
+test('suggestions never repeat what is already posed, and never run dry', () => {
+  const first = Preferences.suggest(['worm'], false, {});
+  const after = Preferences.suggest(['worm'], false, { efficiency: 1 });
+  assert.ok(!after.includes('efficiency'));
+  assert.ok(after.length >= 4, 'la liste se complète depuis le socle générique');
+  // Sans famille décidée, on propose quand même les critères universels.
+  assert.deepEqual(Preferences.suggest([], false, {}), ['maxDiameter', 'maxLength', 'efficiency', 'stages']);
+  assert.notDeepEqual(first, after);
+});
+
+test('the menu shows suggestions first and keeps the full catalogue one click away', () => {
+  const chips = fs.readFileSync('js/ui/ConstraintChips.js', 'utf8');
+  assert.match(chips, /constraintSuggestions/);
+  assert.match(chips, /Critères recommandés/);
+  assert.match(chips, /Toutes les contraintes/);
+  // Le catalogue n'est rendu qu'après demande explicite.
+  assert.match(chips, /if \(!this\._showAll\) return;/);
+});
+
+test('the centre distance is a real constraint, not a label', () => {
+  const Compiler = require('../js/requirements/ConstraintCompiler.js');
+  const { RequirementModel } = require('../js/requirements/RequirementModel.js');
+  const prefs = new Preferences.PreferenceModel();
+  prefs.require('centerDistance', Quantity.between(60, 120));
+  const request = Compiler.compile(new RequirementModel({ ratio: 8 }), prefs);
+  assert.equal(request.constraints.minCenterDistance, 60);
+  assert.equal(request.constraints.maxCenterDistance, 120);
+});
+
+// ===== §15 : paramètres propres aux familles explorées =====
+
+test('a family exposes exactly the parameters the registry defines for it', () => {
+  const worm = Technical.TechnicalSettingsModel.definitionsFor('worm');
+  assert.deepEqual(Object.keys(worm), ['wormStartsMin', 'wormStartsMax', 'leadAngle']);
+  const planetary = Technical.TechnicalSettingsModel.definitionsFor('planetary');
+  assert.ok(planetary.inputMember && planetary.outputMember && planetary.fixed);
+  // L'hélicoïdal n'expose pas de nombre de filets, et réciproquement.
+  assert.ok(!Technical.TechnicalSettingsModel.definitionsFor('helical').wormStartsMin);
+});
+
+test('the editor only renders the families the search will explore', () => {
+  const editor = fs.readFileSync('js/ui/search/TypeParametersEditor.js', 'utf8');
+  assert.match(editor, /this\.draft\.selectedTechnologies\(\)/);
+  assert.match(editor, /definitionsFor/);
+  // Il n'embarque aucune liste de paramètres : le registre reste la définition.
+  assert.doesNotMatch(editor, /helixAngle|pressureAngle|planetCount/);
+});
+
+test('a type parameter edited in the modal reaches the engine and the mirrors', () => {
+  const settings = new Technical.TechnicalSettingsModel();
+  settings.setTypeParameter('spur', 'faceWidth', 18);
+  assert.equal(settings.toAdapterSettings().typeParameters.spur.faceWidth, 18);
+  assert.match(session, /el\('tp_' \+ typeId \+ '_' \+ key\)/, 'les champs historiques restent le miroir');
+});
