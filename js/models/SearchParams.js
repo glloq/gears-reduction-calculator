@@ -309,10 +309,10 @@
    */
   SearchParams.restore = function () {
     var saved = localStorage.getItem("gearCalcParams");
-    if (!saved) return;
+    if (!saved) return false;
     try {
       var data = JSON.parse(saved);
-      if (!data || typeof data !== 'object') return;
+      if (!data || typeof data !== 'object') return false;
 
       // Validation de base
       if (data.rapport !== undefined) {
@@ -359,9 +359,11 @@
         var reductionEl = document.getElementById("reduction_only");
         if (reductionEl) reductionEl.checked = data.reductionOnly;
       }
+      return true;
     } catch (e) {
       console.error("Erreur restauration paramètres:", e);
     }
+    return false;
   };
 
   // ===== URL partageable =====

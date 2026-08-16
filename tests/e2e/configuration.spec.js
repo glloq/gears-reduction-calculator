@@ -5,17 +5,19 @@ const { watchConsoleErrors } = require('./console-errors.js');
 async function visibleFields(page) {
   return page.evaluate(() => Array.from(document.querySelectorAll('#sidebar input, #sidebar select, #sidebar textarea'))
     .filter(el => el.type !== 'hidden' && el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
-    .map(el => el.id));
+    .map(el => el.id || el.className));
 }
 
 const watchErrors = watchConsoleErrors;
 
-test('a beginner can search without opening a single advanced panel', async ({ page }) => {
+// ===== La fiche remplace le mode de solveur (2C, 3C) =====
+
+test('a beginner can search without ever choosing a solver mode', async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto('/');
-  // Le critère d'acceptation §23 : très peu de champs avant toute interaction.
-  const fields = await visibleFields(page);
-  expect(fields, 'trop de champs visibles au chargement').toEqual(['vitesse_entree', 'couple_entree', 'rapport']);
+  // Rien qui ressemble à « quel type de recherche voulez-vous » : une fiche.
+  await expect(page.locator('#objectiveCards')).toHaveCount(0);
+  await expect(page.locator('.quantity-row')).toHaveCount(3);
   await expect(page.locator('#panel-avance-racine')).not.toHaveAttribute('open', /.*/);
 
   await page.getByRole('button', { name: 'Rechercher', exact: true }).click();
@@ -24,127 +26,145 @@ test('a beginner can search without opening a single advanced panel', async ({ p
   expect(errors).toEqual([]);
 });
 
-test('adding and removing a constraint drives the historic control', async ({ page }) => {
+test('the problem is deduced from what is filled in, and announced in plain words', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#constraintChips')).toBeHidden();
+  // Au départ : un rapport donné directement.
+  await expect(page.locator('#requirementDiagnostic')).toContainText('rapport est donné directement');
+  expect(await page.inputValue('#objective_mode')).toBe('ratio');
 
-  await page.locator('#addConstraintBtn').click();
-  await expect(page.locator('#constraintMenu')).toBeVisible();
-  await page.locator('#refineMenu, #constraintMenu').first().locator('[data-field="max_diameter"]').click();
-
-  const chip = page.locator('.constraint-chip[data-constraint="max_diameter"]');
-  await expect(chip).toBeVisible();
-  // Le chip et le contrôle historique portent la même valeur : c'est lui que
-  // SearchParams lira.
-  expect(await page.inputValue('#max_diameter')).toBe('80');
-  await chip.locator('input').fill('55');
-  expect(await page.inputValue('#max_diameter')).toBe('55');
-
-  await chip.getByRole('button', { name: /Supprimer la contrainte diamètre maximum/ }).click();
-  await expect(chip).toHaveCount(0);
-  expect(await page.inputValue('#max_diameter')).toBe('');
-});
-
-test('typing in advanced settings creates the matching chip', async ({ page }) => {
-  await page.goto('/');
-  // Ouvrir l'avancé ET la sous-section : ce sont deux <details> imbriqués.
-  await page.evaluate(() => {
-    let node = document.getElementById('minimum_efficiency');
-    while (node) { if (node.tagName === 'DETAILS') node.open = true; node = node.parentElement; }
-  });
-  await page.locator('#minimum_efficiency').fill('0.93');
-  await page.locator('#minimum_efficiency').dispatchEvent('change');
-  await expect(page.locator('.constraint-chip[data-constraint="minimum_efficiency"]')).toBeVisible();
-});
-
-test('a shared URL restores its constraints as chips', async ({ page }) => {
-  const expert = encodeURIComponent(JSON.stringify({ max_diameter: '80', minimum_efficiency: '0.92' }));
-  await page.goto('/?r=12&p=0.1&e=3&s=50&t=spur,helical&amin=10&amax=30&bmin=20&bmax=60&mod=1&expert=' + expert);
-  await expect(page.locator('.constraint-chip[data-constraint="max_diameter"]')).toBeVisible();
-  await expect(page.locator('.constraint-chip[data-constraint="minimum_efficiency"]')).toBeVisible();
-  // « ≤ 3 étages » vient du paramètre e=3 : c'est bien une contrainte, pas le défaut.
-  await expect(page.locator('.constraint-chip[data-constraint="etages"]')).toBeVisible();
-  // Et la restriction de technologies est résumée sans ouvrir le panneau.
-  await expect(page.locator('#technologyAutoBtn')).toHaveText(/\+ 1 autre/);
-});
-
-test('a preset restores into the new flow without losing anything', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Robotique' }).click();
-  await page.waitForTimeout(200);
-  expect(await page.inputValue('#rapport')).toBe('50');
-  await expect(page.locator('.constraint-chip[data-constraint="etages"]')).toBeVisible();
-  await expect(page.locator('#technologyAutoBtn')).not.toHaveText('Automatique');
-});
-
-test('priorities configure the engine, and custom is reachable and reversible', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('.priority-chip.active')).toHaveText('Recommandé');
-
-  await page.locator('.priority-chip[data-priority="compact"]').click();
-  await expect(page.locator('.priority-chip.active')).toHaveText('Compact');
-  expect(await page.inputValue('#search_mode')).toBe('compact');
-  expect(await page.inputValue('#weight_size')).toBe('10');
-
-  // Toucher un curseur bascule en Personnalisé…
-  await page.evaluate(() => {
-    const slider = document.getElementById('weight_cost');
-    slider.value = '1';
-    slider.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await expect(page.locator('.priority-chip.active')).toHaveText('Personnalisé');
-  // …et un clic suffit à revenir à un preset.
-  await page.locator('.priority-chip[data-priority="recommended"]').click();
-  await expect(page.locator('.priority-chip.active')).toHaveText('Recommandé');
-});
-
-test('technology is automatic until the user decides otherwise', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('#technologyAutoBtn')).toHaveText('Automatique');
-  await expect(page.locator('#technologyPanel')).toBeHidden();
-  expect(await page.evaluate(() => document.querySelectorAll('.type-checkbox:checked').length)).toBe(8);
-
-  await page.locator('#technologyToggle').click();
-  await expect(page.locator('#technologyPanel')).toBeVisible();
-  await page.locator('#type-worm').uncheck();
-  await expect(page.locator('#technologyAutoBtn')).toHaveText(/\+ \d+ autres/);
-  await page.locator('#technologyAutoBtn').click();
-  await expect(page.locator('#technologyAutoBtn')).toHaveText('Automatique');
-});
-
-test('family parameters stay hidden until their family is involved', async ({ page }) => {
-  await page.goto('/');
-  await page.locator('#technologyToggle').click();
-  // Une seule famille : seuls ses paramètres sont proposés. On décoche par
-  // l'interface réelle, pas en forçant le DOM.
-  for (const type of ['spur', 'internal', 'bevel', 'epicyclic', 'worm', 'belt', 'chain']) {
-    await page.locator('#type-' + type).uncheck();
-  }
-  await expect(page.locator('#tp_helical_helixAngle')).toHaveCount(1);
-  await expect(page.locator('#tp_worm_leadAngle')).toHaveCount(0);
-});
-
-test('the speed+torque objective posts its torque constraint', async ({ page }) => {
-  await page.goto('/');
-  await page.locator('.objective-card[data-objective="needTorque"]').click();
+  // Ajouter une vitesse de sortie change le problème sans que rien ne soit annoncé.
+  await page.locator('#addQuantityBtn').click();
+  await page.locator('#quantityMenu [data-field="output.speed"]').click();
+  await expect(page.locator('#requirementDiagnostic')).toContainText('déterminent le rapport');
   expect(await page.inputValue('#objective_mode')).toBe('need');
-  await expect(page.locator('.constraint-chip[data-constraint="minimum_output_torque"]')).toBeVisible();
-  await expect(page.locator('.objective-card[data-objective="needTorque"]')).toHaveAttribute('aria-checked', 'true');
 
-  // Revenir à « Vitesse de sortie » lève la contrainte impliquée.
-  await page.locator('.objective-card[data-objective="need"]').click();
-  await expect(page.locator('.constraint-chip[data-constraint="minimum_output_torque"]')).toHaveCount(0);
+  // Une course fait basculer vers le linéaire, toujours sans mode à choisir.
+  await page.locator('#addQuantityBtn').click();
+  await page.locator('#quantityMenu [data-field="output.travelPerRev"]').click();
+  expect(await page.inputValue('#objective_mode')).toBe('rotationTranslation');
 });
 
-test('the linear objective swaps the applicable constraints', async ({ page }) => {
+test('a value carries its intent, and a range becomes a range of ratios', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.objective-card[data-objective="rotationTranslation"]').click();
-  await expect(page.locator('#type-rack')).toBeChecked();
-  await page.locator('#addConstraintBtn').click();
-  const fields = await page.locator('#constraintMenu [data-field]').evaluateAll(nodes => nodes.map(n => n.dataset.field));
-  expect(fields).toContain('linear_force_min');
-  expect(fields).not.toContain('rpm_sortie_min');
+  await page.locator('#addQuantityBtn').click();
+  await page.locator('#quantityMenu [data-field="output.speed"]').click();
+
+  const row = page.locator('.quantity-row[data-path="output.speed"]');
+  await row.locator('.quantity-kind').selectOption('range');
+  await row.locator('[data-slot="a"]').fill('20');
+  await row.locator('[data-slot="b"]').fill('40');
+  await row.locator('[data-slot="b"]').blur();
+
+  // 1500 rpm en entrée : la plage de sortie devient une plage de rapports.
+  await expect(page.locator('#derivedRatio')).toContainText('37.5');
+  await expect(page.locator('#derivedRatio')).toContainText('75');
+  // Et les bornes dures partent au moteur, exactement.
+  expect(await page.inputValue('#rpm_sortie_min')).toBe('20');
+  expect(await page.inputValue('#rpm_sortie_max')).toBe('40');
 });
+
+test('a functional shortcut only fills the sheet, it opens no second path', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.requirement-shortcut[data-shortcut="torque"]').click();
+  await expect(page.locator('.quantity-row[data-path="output.torque"]')).toBeVisible();
+  await expect(page.locator('.quantity-row[data-path="output.speed"]')).toBeVisible();
+  expect(await page.inputValue('#objective_mode')).toBe('need');
+  // Le raccourci « changer d'axe » pose un fait d'architecture, pas une famille.
+  await page.locator('.requirement-shortcut[data-shortcut="angle"]').click();
+  await expect(page.locator('#architectureOptions [data-architecture="axisAngle"]')).toBeChecked();
+});
+
+// ===== Contraintes et préférences (4B) =====
+
+test('a chip can be flipped from constraint to preference, keeping its value', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#addConstraintBtn').click();
+  await page.locator('#constraintMenu [data-field="maxDiameter"]').click();
+  const chip = page.locator('.constraint-chip[data-constraint="maxDiameter"]');
+  await expect(chip).toHaveAttribute('data-role', 'constraint');
+  await chip.locator('[data-slot="a"]').fill('70');
+  await chip.locator('[data-slot="a"]').blur();
+
+  await chip.locator('.constraint-chip-role').click();
+  await expect(chip).toHaveAttribute('data-role', 'preference');
+  expect(await chip.locator('[data-slot="a"]').inputValue()).toBe('70');
+  // Une préférence ne filtre pas : elle ne descend donc pas dans le moteur.
+  expect(await page.inputValue('#max_diameter')).toBe('');
+
+  await chip.locator('.constraint-chip-role').click();
+  await expect(chip).toHaveAttribute('data-role', 'constraint');
+  expect(await page.inputValue('#max_diameter')).toBe('70');
+});
+
+test('a shared URL comes back as a modelled requirement, with no migration code', async ({ page }) => {
+  // Les clés courtes sont le format de partage historique : il doit survivre.
+  await page.goto('/?r=25&e=2&t=spur,helical');
+  const ratio = page.locator('.quantity-row[data-path="ratio"] [data-slot="a"]');
+  expect(await ratio.inputValue()).toBe('25');
+  // « ≤ 2 étages » s'écarte du réglage d'usine : cela devient une chip.
+  await expect(page.locator('.constraint-chip[data-constraint="stages"]')).toBeVisible();
+  // Une sélection de familles portée par l'URL est un choix, pas un défaut.
+  await expect(page.locator('[data-technology-mode="manual"]')).toHaveClass(/active/);
+});
+
+// ===== Priorités (9B) =====
+
+test('two priorities replace eight sliders, and drive the engine', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#priority_primary').selectOption('compact');
+  await page.locator('#priority_secondary').selectOption('quiet');
+  expect(await page.inputValue('#search_mode')).toBe('compact');
+
+  const size = Number(await page.inputValue('#weight_size'));
+  const noise = Number(await page.inputValue('#weight_noise'));
+  const cost = Number(await page.inputValue('#weight_cost'));
+  expect(size).toBeGreaterThan(noise);
+  expect(noise).toBeGreaterThan(cost);
+  // Les curseurs sont un affichage : personne n'a plus à les arbitrer.
+  await expect(page.locator('#weight_size')).toBeDisabled();
+});
+
+// ===== Conseiller (5C) =====
+
+test('automatic is a ranking with reasons, not every family ticked', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#technologySummary')).toContainText('Conseillé');
+  const recommended = await page.locator('.advisor-entry.advisor-recommended').count();
+  const total = await page.locator('.advisor-entry').count();
+  expect(recommended).toBeGreaterThan(0);
+  expect(recommended).toBeLessThan(total);
+  await expect(page.locator('.advisor-entry.advisor-recommended').first().locator('.advisor-reason').first()).not.toBeEmpty();
+  // La sélection conseillée est bien celle qui part au moteur.
+  const checked = await page.locator('.type-checkbox:checked').count();
+  expect(checked).toBe(recommended);
+});
+
+test('the advisor reacts to the architecture, and says what it rules out', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#architecturePanel > summary').click();
+  await page.locator('#architectureOptions [data-architecture="selfLocking"]').selectOption('forbidden');
+  const worm = page.locator('.advisor-entry[data-family="worm"]');
+  await expect(worm).toHaveClass(/advisor-excluded/);
+  await expect(worm).toContainText(/rréversible/);
+
+  await page.locator('#architectureOptions [data-architecture="axisAngle"]').check();
+  await expect(page.locator('.advisor-entry[data-family="bevel"]')).toContainText('renvoi d’angle');
+});
+
+test('choosing the families yourself is a decision, not a default', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-technology-mode="manual"]').click();
+  await expect(page.locator('#technologySummary')).toContainText('famille');
+  const box = page.locator('.advisor-entry[data-family="spur"] input[type="checkbox"]');
+  await expect(box).toBeEnabled();
+  await box.uncheck();
+  await expect(page.locator('#type-spur')).not.toBeChecked();
+
+  await page.locator('[data-technology-mode="auto"]').click();
+  await expect(page.locator('#technologySummary')).toContainText('Conseillé');
+});
+
+// ===== Résultats : Pareto interne, catégories lisibles (12C, 13C) =====
 
 test('result filters never re-run the search', async ({ page }) => {
   await page.goto('/');
@@ -152,8 +172,7 @@ test('result filters never re-run the search', async ({ page }) => {
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 20000 });
   const searches = await page.evaluate(() => {
     window.__searches = 0;
-    const bus = window.GearApp.eventBus;
-    bus.on('search:done', () => { window.__searches++; });
+    window.GearApp.eventBus.on('search:done', () => { window.__searches++; });
     return window.__searches;
   });
   expect(searches).toBe(0);
@@ -165,14 +184,22 @@ test('result filters never re-run the search', async ({ page }) => {
   expect(await page.evaluate(() => window.__searches)).toBe(0);
 });
 
-test('recommendations label the pool and explain themselves', async ({ page }) => {
+test('one recommendation, alternatives only when the compromise is real', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Rechercher', exact: true }).click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 20000 });
   await expect(page.locator('.recommendation-badge.recommended')).toHaveCount(1);
   await expect(page.locator('.solution-card').first().locator('.solution-why')).not.toBeEmpty();
-  // Une carte tient en quelques métriques : SF/SH restent dans l'inspection.
-  await expect(page.locator('.solution-card').first()).not.toContainText('SF /');
+  // Chaque alternative porte une catégorie distincte : jamais deux fois la même.
+  const labels = await page.locator('.recommendation-badge').allTextContents();
+  expect(new Set(labels).size).toBe(labels.length);
+});
+
+test('a card says whether the solution honours the constraints', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('.solution-card').first().locator('.solution-why')).toContainText('Respecte toutes les contraintes');
 });
 
 test('selecting a solution drives the viewer and the analysis, with no new search', async ({ page }) => {
@@ -185,52 +212,82 @@ test('selecting a solution drives the viewer and the analysis, with no new searc
   await expect(page.locator('#solutionCard')).toBeVisible();
 });
 
-test('keyboard alone reaches the objective, a constraint and the search', async ({ page }) => {
+// ===== Aucun résultat : relaxation chiffrée (14C) =====
+
+test('no result names the blocker, measures it and unlocks it in one click', async ({ page }) => {
+  test.setTimeout(90000);
   await page.goto('/');
-  await page.locator('.objective-card[data-objective="ratio"]').focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.locator('.objective-card[data-objective="need"]')).toHaveAttribute('aria-checked', 'true');
-  await page.keyboard.press('ArrowLeft');
-  await expect(page.locator('.objective-card[data-objective="ratio"]')).toHaveAttribute('aria-checked', 'true');
+  await page.locator('#addConstraintBtn').click();
+  await page.locator('#constraintMenu [data-field="maxDiameter"]').click();
+  const chip = page.locator('.constraint-chip[data-constraint="maxDiameter"] [data-slot="a"]');
+  await chip.fill('20');
+  await chip.blur();
+
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click();
+  const accept = page.locator('#acceptRelaxationBtn');
+  await accept.waitFor({ timeout: 40000 });
+
+  // Le diagnostic est chiffré, pas une liste de suspects.
+  await expect(page.locator('#workspaceEmptyHint')).toContainText('Blocage principal');
+  await expect(page.locator('#workspaceEmptyHint')).toContainText('La meilleure architecture atteint');
+  await expect(page.locator('#workspaceEmptyHint')).toContainText(/\d+ solutions? deviennent? disponibles?|devient disponible/);
+
+  await accept.click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  // La contrainte a été assouplie, pas supprimée.
+  await expect(page.locator('.constraint-chip[data-constraint="maxDiameter"]')).toBeVisible();
+});
+
+// ===== Accessibilité et mode global supprimé (8B) =====
+
+test('the header no longer carries a standard/expert switch', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#proModeBtn')).toHaveCount(0);
+  // Le contenu technique reste atteignable, replié dans ses propres panneaux.
+  await expect(page.locator('#panel-materiaux')).toHaveCount(1);
+  await expect(page.locator('#panel-materiaux')).not.toHaveAttribute('open', /.*/);
+});
+
+test('keyboard alone reaches a quantity, a constraint and the search', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#addQuantityBtn').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#quantityMenu')).toBeVisible();
 
   await page.locator('#addConstraintBtn').focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#constraintMenu')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.locator('#constraintMenu')).toBeHidden();
+
+  await page.locator('#startStopBtn').focus();
+  await expect(page.locator('#startStopBtn')).toBeFocused();
 });
 
-test('an empty result set names the blockers and offers a way out', async ({ page }) => {
+test('the visible field count stays small even with the whole model behind it', async ({ page }) => {
   await page.goto('/');
-  // Contrainte volontairement impossible.
-  await page.locator('#addConstraintBtn').click();
-  await page.locator('#constraintMenu [data-field="max_diameter"]').click();
-  await page.locator('.constraint-chip[data-constraint="max_diameter"] input').fill('1');
-  await page.getByRole('button', { name: 'Rechercher', exact: true }).click();
-  await expect(page.locator('.solution-card')).toHaveCount(0, { timeout: 20000 });
-  await expect(page.locator('#workspaceEmptyTitle')).toContainText(/Aucune architecture/);
-  await expect(page.locator('#workspaceEmptyBlockers')).toContainText('Ø max 1 mm');
-  const action = page.locator('#workspaceEmptyActions button').first();
-  await expect(action).toContainText('Lever');
-  await action.click();
-  await expect(page.locator('.constraint-chip[data-constraint="max_diameter"]')).toHaveCount(0);
+  const fields = await visibleFields(page);
+  // Une ligne typée coûte deux contrôles (l'intention et la valeur) : trois
+  // lignes, deux listes de priorité et le bloc de lancement. On reste très loin
+  // des vingt-huit champs que l'ancien formulaire affichait d'emblée.
+  expect(fields.length).toBeLessThanOrEqual(16);
+  // Et surtout : aucun champ technique n'est visible sans ouvrir un panneau.
+  for (const id of ['module', 'max_iterations', 'input_material', 'weight_size', 'rapport']) {
+    expect(fields).not.toContain(id);
+  }
 });
+
+// ===== Adaptatif =====
 
 test('the mobile layout keeps the viewer usable and drops the wide table', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 820 });
   await page.goto('/');
-  // Sur mobile la configuration est un tiroir : il faut l'ouvrir pour chercher.
   await page.locator('#mobileMenuBtn').click();
   await expect(page.locator('#sidebar')).toHaveClass(/sidebar-open/);
   await page.getByRole('button', { name: 'Rechercher', exact: true }).click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 20000 });
   await expect(page.locator('#svgContainer .train-svg')).toBeVisible();
-  // Les résultats restent en cartes : aucun débordement horizontal de la page.
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 
-  // Le tableau large n'est pas seulement caché par défaut : il est hors
-  // d'atteinte tant que l'écran est étroit.
   await expect(page.locator('#tableViewBtn')).toBeDisabled();
   await expect(page.locator('#result-container')).not.toHaveClass(/results-table-mode/);
 });
@@ -244,13 +301,11 @@ test('the table view comes back on a wide screen, and remembers the choice', asy
   await page.locator('#tableViewBtn').click();
   await expect(page.locator('#result-container')).toHaveClass(/results-table-mode/);
 
-  // Rétrécir bascule d'office en cartes…
   await page.setViewportSize({ width: 390, height: 820 });
   await expect(page.locator('#result-container')).not.toHaveClass(/results-table-mode/);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 
-  // …et élargir restitue le tableau demandé, sans nouveau clic.
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator('#result-container')).toHaveClass(/results-table-mode/);
 });

@@ -43,14 +43,12 @@
 
     // Restaurer depuis l'URL d'abord, sinon depuis localStorage.
     var hasURLParams = GearApp.models.SearchParams.fromURL();
-    if (!hasURLParams) {
-      ui.paramForm.restore();
-    }
-    // La restauration modifie les contrôles après le premier rendu.
-    workbench.refreshAfterRestore();
+    var restored = hasURLParams || ui.paramForm.restore();
+    // La restauration modifie les miroirs après le premier rendu : la session
+    // les adopte alors. Sans restauration, ses propres valeurs font foi.
+    workbench.refreshAfterRestore(!!restored);
 
     ui.paramForm.restoreTheme();
-    ui.paramForm.restoreProMode();
 
     _initPresets();
     _renderHistory();
@@ -108,7 +106,10 @@
     progressBar.style.width = "0%";
     ui.logger.setStatus("Calcul en cours…");
 
-    var searchParams = ui.paramForm.getSearchParams();
+    // Choix 20C : la recherche part du MODÈLE, plus du formulaire. Le
+    // formulaire n'est plus qu'un reflet, écrit par la session.
+    var session = workbench && workbench.session;
+    var searchParams = session ? session.toSearchParams() : ui.paramForm.getSearchParams();
     var validationMessage = document.getElementById('validationMessage');
     if (validationMessage) validationMessage.textContent = '';
     if (searchParams.moduleMode === 'automatic' && searchParams.moduleMin && searchParams.moduleMax && searchParams.moduleMax <= searchParams.moduleMin) {
@@ -133,8 +134,18 @@
     _renderHistory();
 
     engine.rechercher(searchParams).then(function (resultats) {
-      explorer.setPool(resultats, searchParams, ui.lastStats());
       progressBar.style.width = "100%";
+      if (!resultats.length && session) {
+        // Choix 14C : « aucun résultat » déclenche une SONDE — la même
+        // recherche, contraintes de qualification levées — pour pouvoir dire
+        // de combien on rate et ce qu'un assouplissement débloquerait.
+        return _probeForNearMiss(session, searchParams).then(function (diagnosis) {
+          explorer.setPool(resultats, searchParams, ui.lastStats(), diagnosis);
+          ui.logger.setStatus('Aucune solution trouvée');
+          _resetButton();
+        });
+      }
+      explorer.setPool(resultats, searchParams, ui.lastStats());
       ui.logger.setStatus(resultats.length > 0
         ? resultats.length + ' solution(s) dans le vivier'
         : "Aucune solution trouvée"
@@ -146,6 +157,22 @@
       console.error(err);
       _resetButton();
     });
+  }
+
+  /**
+   * Relance la recherche sans les contraintes dures, uniquement pour mesurer
+   * l'écart. Le vivier sonde n'est jamais affiché : il ne sert qu'au diagnostic.
+   */
+  function _probeForNearMiss(session, searchParams) {
+    var NearMiss = GearApp.requirements.NearMissAnalyzer;
+    var probePreferences = NearMiss.probePreferences(session.preferences);
+    if (!session.preferences.constraints().length) {
+      return Promise.resolve(NearMiss.analyze([], session.preferences));
+    }
+    var probeParams = session.toSearchParams({ preferences: probePreferences });
+    return engine.rechercher(probeParams)
+      .then(function (pool) { return NearMiss.analyze(pool, session.preferences); })
+      .catch(function () { return null; });
   }
 
   function arreterRecherche() {
@@ -233,9 +260,6 @@
   // ===== Actions d'en-tête et d'espace de travail =====
 
   function _bindHeaderActions() {
-    var mode = document.getElementById('proModeBtn');
-    if (mode) mode.addEventListener('click', function () { ui.paramForm.toggleProMode(); });
-
     var theme = document.getElementById('themeBtn');
     if (theme) theme.addEventListener('click', function () { ui.paramForm.toggleTheme(); });
 
@@ -325,7 +349,6 @@
   window.lancerRecherche = lancerRecherche;
   window.arreterRecherche = arreterRecherche;
   window.toggleTheme = function () { ui.paramForm.toggleTheme(); };
-  window.toggleProMode = function () { ui.paramForm.toggleProMode(); };
   window.toggleMobileSidebar = toggleMobileSidebar;
   window.exportAllCharts = exportAllCharts;
   window.toggleComparison = toggleComparison;

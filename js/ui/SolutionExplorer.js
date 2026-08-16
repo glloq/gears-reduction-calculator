@@ -102,7 +102,7 @@
 
   // ===== Vivier =====
 
-  SolutionExplorer.prototype.setPool = function (solutions, searchParams, stats) {
+  SolutionExplorer.prototype.setPool = function (solutions, searchParams, stats, diagnosis) {
     var self = this;
     this._pool = solutions || [];
     this._pool.forEach(function (solution) {
@@ -113,6 +113,8 @@
     this._params = searchParams || null;
     this._workerParams = searchParams && searchParams.toWorkerParams ? searchParams.toWorkerParams() : null;
     this._stats = stats || null;
+    // Diagnostic de relaxation, produit par la sonde quand le vivier est vide.
+    this._diagnosis = diagnosis || null;
     this._resetCriteria();
     this._renderChips();
 
@@ -225,7 +227,7 @@
 
     // keepResults : un affinage qui vide la vue ne doit pas masquer l'espace
     // de travail (la barre de filtres doit rester accessible).
-    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, keepResults: this._pool.length > 0 });
+    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, diagnosis: this._diagnosis, session: this.session, keepResults: this._pool.length > 0 });
     if (this.resultsTable) this.resultsTable.display(solutions, this._params, indices);
 
     var count = el('refineCount');

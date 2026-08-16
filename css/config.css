@@ -30,34 +30,6 @@
 
 /* ===================== Cartes d'objectif ===================== */
 
-.objective-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-4);
-}
-.objective-card {
-  display: grid;
-  gap: 2px;
-  padding: var(--sp-3);
-  text-align: left;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-1);
-  color: var(--ink);
-  cursor: pointer;
-  transition: border-color .15s, background .15s, box-shadow .15s;
-}
-.objective-card strong { font-size: var(--font-sm); font-weight: 600; }
-.objective-card small { color: var(--muted); font-size: var(--font-xs); }
-.objective-card:hover { border-color: var(--accent); }
-.objective-card.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.objective-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
 /* ===================== Contraintes ===================== */
 
 .constraint-chips {
@@ -159,24 +131,6 @@
 
 /* ===================== Priorités ===================== */
 
-.priority-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.priority-chip {
-  padding: 5px 12px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background: var(--surface-1); color: var(--muted);
-  font-size: var(--font-sm); cursor: pointer;
-  transition: border-color .15s, background .15s, color .15s;
-}
-.priority-chip:hover { border-color: var(--accent); color: var(--accent); }
-.priority-chip.active {
-  border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 600;
-}
-.priority-chip.custom { cursor: default; border-style: dashed; }
-.priority-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-/* ===================== Technologie ===================== */
-
-.technology-summary { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-2); }
 .technology-mode {
   padding: 5px 12px;
   border: 1px solid var(--accent); border-radius: 999px;
@@ -285,7 +239,6 @@
 /* ===================== Adaptatif ===================== */
 
 @media (max-width: 900px) {
-  .objective-cards { grid-template-columns: 1fr; }
   .constraint-menu { position: fixed; left: var(--sp-3); right: var(--sp-3); top: auto; }
 }
 
@@ -301,3 +254,138 @@
 .refine-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-2); }
 .refine-title { font-weight: 600; font-size: var(--font-sm); }
 .refine-sort-label { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-xs); color: var(--muted); }
+
+
+/* ===================== Fiche du besoin (2C + 3C) =====================
+   Une ligne = une grandeur = une intention. La colonne du type est étroite et
+   fixe : c'est un symbole (= ≈ ≥ ≤ ⇄), pas une phrase, et l'aligner rend la
+   fiche lisible d'un coup d'œil. */
+
+.requirement-shortcuts { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.requirement-shortcut {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+.requirement-shortcut:hover { border-color: var(--accent); color: var(--accent); }
+
+.requirement-sheet { display: grid; gap: var(--sp-3); }
+
+.quantity-row {
+  display: grid;
+  grid-template-columns: 1fr 3.2rem minmax(0, 4.5rem) minmax(0, 4.5rem) 2.6rem 1.6rem;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.quantity-row:has([data-slot="b"][hidden]) { grid-template-columns: 1fr 3.2rem minmax(0, 4.5rem) 0 2.6rem 1.6rem; }
+.quantity-label { margin: 0; font-size: var(--font-sm); font-weight: 500; }
+.quantity-kind {
+  padding: 3px 2px;
+  text-align: center;
+  font-size: var(--font-sm);
+  background: var(--surface-2);
+}
+.quantity-value { min-width: 0; padding: 4px 6px; }
+.quantity-value::-webkit-outer-spin-button,
+.quantity-value::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.quantity-unit { font-size: var(--font-xs); color: var(--muted); }
+.quantity-remove {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-md);
+  line-height: 1;
+  padding: 0 4px;
+}
+.quantity-remove:hover { color: var(--danger, #d33); }
+
+.derived-ratio { display: block; margin-top: var(--sp-1); font-size: var(--font-xs); color: var(--accent); }
+
+/* Diagnostic vivant : trois niveaux, lisibles sans lire (choix 10C). */
+.requirement-diagnostic { display: grid; gap: 2px; margin: var(--sp-2) 0 0; }
+.diagnostic-note { font-size: var(--font-xs); }
+.diagnostic-ok { color: var(--muted); }
+.diagnostic-warn { color: var(--warning); }
+.diagnostic-error { color: var(--danger, #d33); font-weight: 600; }
+
+.architecture-panel { margin-top: var(--sp-2); }
+.architecture-panel > summary { font-size: var(--font-xs); color: var(--muted); cursor: pointer; }
+.architecture-options { display: grid; gap: var(--sp-1); margin-top: var(--sp-2); font-size: var(--font-xs); }
+.architecture-options label { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
+.architecture-options label:has(select) { justify-content: space-between; }
+.architecture-options label:has(input[type="checkbox"]) { justify-content: flex-start; }
+.architecture-options select { flex: 0 1 12rem; }
+
+/* ===================== Contrainte ou préférence (4B) ===================== */
+
+.constraint-chip-role {
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  font-size: var(--font-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+.constraint-chip-kind {
+  padding: 1px 2px;
+  text-align: center;
+  font-size: var(--font-xs);
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+}
+/* Une préférence se lit d'emblée comme « souhaité », pas « exigé ». */
+.constraint-chip-soft {
+  border-style: dashed;
+  background: var(--surface-2);
+}
+.constraint-chip-soft .constraint-chip-label { font-weight: 500; font-style: italic; }
+
+/* ===================== Priorités (9B) ===================== */
+
+.priority-pair {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+}
+.priority-pair label { margin: 0; font-size: var(--font-xs); color: var(--muted); }
+
+/* ===================== Conseiller de technologies (5C) ===================== */
+
+.advisor-list { display: grid; gap: var(--sp-1); margin-top: var(--sp-2); }
+.advisor-group {
+  margin: var(--sp-2) 0 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.advisor-entry {
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.advisor-recommended { border-color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
+.advisor-excluded { opacity: .65; }
+.advisor-head { display: flex; align-items: center; gap: var(--sp-2); }
+.advisor-name { flex: 1; margin: 0; font-size: var(--font-sm); font-weight: 600; }
+.advisor-score { font-size: var(--font-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.advisor-reasons { margin: var(--sp-1) 0 0; padding: 0; list-style: none; display: grid; gap: 1px; }
+.advisor-reason { font-size: var(--font-xs); color: var(--muted); }
+.advisor-reason.advisor-pro { color: var(--success); }
+.advisor-reason.advisor-blocker { color: var(--danger, #d33); }
+.advisor-gaps { margin-top: var(--sp-2); }
+.advisor-gap { margin: 0; font-size: var(--font-xs); color: var(--warning); }
+
+.technology-summary { display: flex; gap: var(--sp-1); }
+.technology-hint { margin: var(--sp-2) 0 0; font-size: var(--font-xs); color: var(--muted); }
+
+/* Les cases historiques restent atteignables, mais ne se pilotent plus ici. */
+#technologyPanel .types-grid { opacity: .7; pointer-events: none; }

@@ -3,196 +3,114 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const Constraints = require('../js/ui/ConstraintManager.js');
-const Priorities = require('../js/ui/PrioritySelector.js');
-const Technologies = require('../js/ui/TechnologySelector.js');
-const Requirements = require('../js/ui/RequirementForm.js');
-const Recommendations = require('../js/ui/ResultRecommendations.js');
+const Preferences = require('../js/requirements/PreferenceModel.js');
+const { RequirementModel } = require('../js/requirements/RequirementModel.js');
 
 const html = fs.readFileSync('index.html', 'utf8');
+const session = fs.readFileSync('js/ui/SearchSession.js', 'utf8');
+const sheet = fs.readFileSync('js/ui/RequirementSheet.js', 'utf8');
+const chips = fs.readFileSync('js/ui/ConstraintChips.js', 'utf8');
+const app = fs.readFileSync('js/app.js', 'utf8');
 
-// ===== Contraintes =====
+// ===== Le formulaire n'est plus la source (20C) =====
 
-test('a constraint is active only when it departs from its default', () => {
-  const diameter = Constraints.descriptor('max_diameter');
-  assert.equal(Constraints.isActive(diameter, ''), false);
-  assert.equal(Constraints.isActive(diameter, '80'), true);
-
-  // Un champ dont le défaut est une valeur ne devient une contrainte qu'une
-  // fois modifié : « ≤ 4 étages » est le réglage d'usine, pas une contrainte.
-  const stages = Constraints.descriptor('etages');
-  assert.equal(Constraints.isActive(stages, '4'), false);
-  assert.equal(Constraints.isActive(stages, '2'), true);
-
-  // Une case cochée par défaut ne produit pas de chip permanent.
-  const reduction = Constraints.descriptor('reduction_only');
-  assert.equal(Constraints.isActive(reduction, true), false);
-  assert.equal(Constraints.isActive(reduction, false), true);
+test('the search is built from the model, never read back from the form', () => {
+  // C'est l'inversion demandée : `app.js` passe par la session, et la session
+  // passe par le compilateur puis l'adaptateur.
+  assert.match(app, /session\.toSearchParams\(\)/);
+  assert.match(session, /ConstraintCompiler\.compile/);
+  assert.match(session, /LegacySearchAdapter\.toSearchParams/);
+  // La fiche et les chips éditent le modèle, pas des champs cachés.
+  assert.doesNotMatch(sheet, /getElementById\('(rapport|vitesse_entree|rpm_sortie_cible)'\)/);
+  assert.doesNotMatch(chips, /getElementById\('max_diameter'\)/);
 });
 
-test('every catalogued constraint targets a control that really exists', () => {
+test('every mirrored control still exists, so old links keep working', () => {
+  const mirrored = session.match(/id: '([a-z_]+)'|min: '([a-z_]+)'|max: '([a-z_]+)'/g) || [];
+  const ids = mirrored.map(entry => entry.split("'")[1]);
+  assert.ok(ids.length >= 8, 'les miroirs doivent couvrir la fiche');
+  for (const id of ids) {
+    assert.match(html, new RegExp(`id="${id}"`), `#${id} absent du DOM`);
+  }
+});
+
+test('the sheet renders a typed row per quantity, with its unit', () => {
+  assert.match(html, /id="requirementSheet"/);
+  assert.match(sheet, /quantity-kind/);
+  assert.match(sheet, /quantity-value/);
+  assert.match(sheet, /quantity-unit/);
+  // Les cinq intentions du choix 3C sont toutes proposées.
+  const kinds = sheet.slice(sheet.indexOf('var KINDS'), sheet.indexOf('var SHORTCUTS'));
+  for (const kind of ['exact', 'target', 'min', 'max', 'range']) {
+    assert.match(kinds, new RegExp(`'${kind}'`), kind + ' manquant');
+  }
+});
+
+test('a chip can be flipped between constraint and preference', () => {
+  assert.match(chips, /constraint-chip-role/);
+  assert.match(chips, /toggleSoft/);
+  // Et le modèle traite réellement les deux différemment.
+  const prefs = new Preferences.PreferenceModel();
+  prefs.require('maxDiameter', { kind: 'max', value: 50 });
+  const big = { dimensions: { maxDiameter: 60 } };
+  assert.equal(prefs.accepts(big), false);
+  prefs.toggleSoft('maxDiameter');
+  assert.equal(prefs.accepts(big), true);
+});
+
+// ===== Le mode global a disparu (8B) =====
+
+test('there is no standard/expert switch left anywhere', () => {
+  assert.doesNotMatch(html, /id="proModeBtn"/);
+  assert.doesNotMatch(app, /toggleProMode/);
+  const components = fs.readFileSync('css/components.css', 'utf8');
+  assert.doesNotMatch(components, /body\.pro-mode/);
+  const workspace = fs.readFileSync('css/workspace.css', 'utf8');
+  assert.doesNotMatch(workspace, /body\.pro-mode/);
+});
+
+test('the eight weights are shown, not edited', () => {
+  // Choix 9B : ils dérivent des deux priorités, donc ils sont désactivés.
+  for (const key of Preferences.WEIGHT_KEYS) {
+    const match = html.match(new RegExp(`<input id="weight_${key}"[^>]*>`));
+    assert.ok(match, `weight_${key} absent`);
+    assert.match(match[0], /disabled/, `weight_${key} doit être en lecture seule`);
+  }
+  assert.match(html, /id="priority_primary"/);
+  assert.match(html, /id="priority_secondary"/);
+});
+
+// ===== Le conseiller est visible et justifié (5C) =====
+
+test('the technology step shows a ranking with reasons, not a checkbox dump', () => {
+  assert.match(html, /id="advisorList"/);
+  assert.match(html, /data-technology-mode="auto"/);
+  assert.match(html, /data-technology-mode="manual"/);
+  const panel = fs.readFileSync('js/ui/AdvisorPanel.js', 'utf8');
+  assert.match(panel, /advisor-reason/);
+  assert.match(panel, /Recommandé/);
+  assert.match(panel, /Écarté/);
+});
+
+// ===== Contexte linéaire / rotatif =====
+
+test('the sheet only offers what the current problem can use', () => {
+  const rotary = new RequirementModel({ input: { speed: 1500 }, ratio: 12 });
+  assert.equal(rotary.inferProblem().mode, 'ratio');
+  const linear = new RequirementModel({ input: { speed: 1500 }, output: { travelPerRev: 100 } });
+  assert.equal(linear.inferProblem().mode, 'rotationTranslation');
+  // Le passage de l'un à l'autre est déduit d'une grandeur, jamais annoncé.
+  assert.doesNotMatch(html, /objective-card/);
+  assert.doesNotMatch(html, /id="objectiveCards"/);
+});
+
+// ===== La barre d'affinage garde son propre catalogue =====
+
+test('result filters remain field-based, because they filter client-side', () => {
+  // Ils n'ont pas à passer par le modèle : ils n'affectent pas la recherche.
   for (const entry of Constraints.CATALOG) {
-    assert.match(html, new RegExp(`id="${entry.field}"`), `#${entry.field} absent du DOM`);
     assert.ok(entry.name, entry.field + ' sans libellé accessible');
-    assert.ok(Constraints.CATEGORIES.some(c => c.id === entry.category), entry.field + ' : catégorie inconnue');
   }
-});
-
-test('an old saved configuration materialises as chips, with no migration code', () => {
-  // C'est le scénario §20 : maxDiameter=80 dans une URL partagée.
-  const state = { max_diameter: '80', minimum_efficiency: '0.92', etages: '2' };
-  const active = Constraints.activeConstraints(state);
-  assert.deepEqual(active.map(c => c.field).sort(), ['etages', 'max_diameter', 'minimum_efficiency']);
-  assert.equal(active.find(c => c.field === 'max_diameter').text, 'Ø max 80 mm');
-  // Le rendement se lit en pourcentage, pas en fraction.
-  assert.equal(active.find(c => c.field === 'minimum_efficiency').text, 'Rendement ≥ 92 %');
-});
-
-test('the constraint menu never offers what is already active', () => {
-  const before = Constraints.available({});
-  const dimensions = before.find(group => group.id === 'dimensions');
-  assert.ok(dimensions.entries.some(entry => entry.field === 'max_diameter'));
-
-  const after = Constraints.available({ max_diameter: '80' });
-  const afterDimensions = after.find(group => group.id === 'dimensions');
-  assert.ok(!afterDimensions.entries.some(entry => entry.field === 'max_diameter'));
-});
-
-test('constraints follow the objective: linear and rotary never mix', () => {
-  const rotary = Constraints.available({}, { linear: false });
-  const linear = Constraints.available({}, { linear: true });
-  const fields = groups => groups.reduce((list, g) => list.concat(g.entries.map(e => e.field)), []);
-  assert.ok(fields(rotary).includes('rpm_sortie_min'));
-  assert.ok(!fields(rotary).includes('linear_force_min'));
-  assert.ok(fields(linear).includes('linear_force_min'));
-  assert.ok(!fields(linear).includes('rpm_sortie_min'));
-  // Une contrainte hors contexte n'est pas non plus affichée comme active.
-  assert.equal(Constraints.activeConstraints({ linear_force_min: '200' }, { linear: false }).length, 0);
-});
-
-// ===== Priorités =====
-
-test('each priority is a complete, coherent preset', () => {
-  for (const priority of Priorities.PRIORITIES) {
-    assert.ok(priority.label && priority.help, priority.id + ' incomplet');
-    assert.ok(priority.searchMode, priority.id + ' sans mode de recherche');
-    for (const key of Priorities.WEIGHTS) {
-      assert.ok(Number.isFinite(priority.weights[key]), priority.id + '.' + key);
-    }
-  }
-});
-
-test('a priority is detected from the controls, and anything else is Personnalisé', () => {
-  const compact = Priorities.byId('compact');
-  assert.equal(Priorities.match(compact.weights, compact.searchMode), 'compact');
-  // Un seul curseur déplacé suffit à sortir du preset.
-  assert.equal(Priorities.match({ ...compact.weights, cost: 1 }, compact.searchMode), null);
-  // Les poids d'un preset avec le mode d'un autre ne sont pas ce preset.
-  assert.equal(Priorities.match(compact.weights, 'efficiency'), null);
-});
-
-test('the shipped defaults match a named priority, never Personnalisé', () => {
-  // Sinon le premier chargement afficherait « Personnalisé » sans que personne
-  // n'ait rien personnalisé.
-  const weights = {};
-  for (const key of Priorities.WEIGHTS) {
-    const match = html.match(new RegExp(`id="weight_${key}"[^>]*value="(\\d+)"`));
-    assert.ok(match, `weight_${key} sans valeur par défaut`);
-    weights[key] = Number(match[1]);
-  }
-  const searchMode = (html.match(/id="search_mode"[\s\S]*?<option value="([^"]+)"/) || [])[1];
-  assert.equal(Priorities.match(weights, searchMode), 'recommended');
-});
-
-// ===== Technologies =====
-
-test('automatic means every compatible family, and says so', () => {
-  const rotary = Technologies.automaticFor('ratio');
-  assert.ok(rotary.length >= 8);
-  assert.ok(!rotary.includes('rack'), 'la crémaillère relève du solveur linéaire');
-  assert.deepEqual(Technologies.automaticFor('rotationTranslation'), ['rack']);
-
-  assert.equal(Technologies.summarize(rotary, 'ratio').automatic, true);
-  assert.equal(Technologies.summarize(rotary, 'ratio').label, 'Automatique');
-});
-
-test('a manual restriction is summarised without opening the panel', () => {
-  assert.equal(Technologies.summarize(['spur'], 'ratio').label, 'Engrenage droit');
-  assert.equal(Technologies.summarize(['spur', 'helical'], 'ratio').label, 'Engrenage droit + 1 autre');
-  assert.equal(Technologies.summarize(['spur', 'helical', 'worm'], 'ratio').label, 'Engrenage droit + 2 autres');
-  const empty = Technologies.summarize([], 'ratio');
-  assert.equal(empty.automatic, false);
-  assert.equal(empty.count, 0);
-});
-
-// ===== Objectifs =====
-
-test('« vitesse + couple » is the speed objective plus a torque constraint', () => {
-  // Le moteur ne connaît que trois modes : le quatrième objectif de l'interface
-  // est un mode existant assorti d'une contrainte, et c'est explicite.
-  const modes = Requirements.OBJECTIVES.map(o => o.mode);
-  assert.deepEqual([...new Set(modes)].sort(), ['need', 'ratio', 'rotationTranslation']);
-  assert.equal(Requirements.byId('needTorque').mode, 'need');
-  assert.equal(Requirements.byId('needTorque').requires, 'minimum_output_torque');
-
-  assert.equal(Requirements.activeObjective('need', false), 'need');
-  assert.equal(Requirements.activeObjective('need', true), 'needTorque');
-  assert.equal(Requirements.activeObjective('ratio', true), 'ratio');
-  assert.equal(Requirements.activeObjective('rotationTranslation', false), 'rotationTranslation');
-});
-
-// ===== Recommandations =====
-
-function solution(overrides) {
-  return Object.assign({
-    stages: [{ type: 'spur' }], efficiency: 0.95, errorPercent: 0.2,
-    dimensions: { x: 100, y: 50, z: 10, maxDiameter: 50, length: 100 },
-    score: { value: 0.3 }, mechanical: [{ bending: { safetyFactor: 2 } }]
-  }, overrides);
-}
-
-test('badges name the best of each criterion, on the calculated pool', () => {
-  const pool = [
-    solution({ score: { value: 0.5 } }),
-    solution({ score: { value: 0.1 }, dimensions: { x: 300, y: 90, z: 20, maxDiameter: 90 } }),
-    solution({ efficiency: 0.99, score: { value: 0.4 } }),
-    solution({ dimensions: { x: 20, y: 10, z: 5, maxDiameter: 10 }, score: { value: 0.6 } })
-  ];
-  const annotation = Recommendations.annotate(pool);
-  assert.equal(annotation.best.recommended, 1);   // meilleur score
-  assert.equal(annotation.best.efficient, 2);     // meilleur rendement
-  assert.equal(annotation.best.compact, 3);       // plus petit volume
-  assert.ok(annotation.byIndex[1].includes('recommended'));
-});
-
-test('one solution can carry several badges, and is listed once', () => {
-  const pool = [
-    solution({ score: { value: 0.1 }, efficiency: 0.99, dimensions: { x: 10, y: 10, z: 5, maxDiameter: 10 } }),
-    solution({ score: { value: 0.9 } })
-  ];
-  const annotation = Recommendations.annotate(pool);
-  assert.ok(annotation.byIndex[0].length >= 3, 'la même solution cumule les badges');
-  assert.deepEqual(annotation.order, [0], 'aucune carte dupliquée');
-});
-
-test('robustness ignores solutions whose safety factor was never evaluated', () => {
-  const pool = [
-    solution({ mechanical: [{}], score: { value: 0.1 } }),                       // courroie : pas de SF
-    solution({ mechanical: [{ bending: { safetyFactor: 3 } }], score: { value: 0.9 } })
-  ];
-  assert.equal(Recommendations.annotate(pool).best.robust, 1);
-});
-
-test('an empty pool produces no badge and no crash', () => {
-  const annotation = Recommendations.annotate([]);
-  assert.deepEqual(annotation.order, []);
-  assert.deepEqual(annotation.best, {});
-});
-
-test('every proposal is justified in plain language', () => {
-  assert.match(Recommendations.explain(solution(), ['recommended']), /compromis/i);
-  assert.match(Recommendations.explain(solution(), ['compact']), /encombrement/i);
-  // Sans badge, la justification décrit ce qui a été mesuré.
-  const plain = Recommendations.explain(solution({ errorPercent: 2.4, efficiency: 0.9 }), []);
-  assert.match(plain, /2\.4 %/);
-  assert.match(plain, /rendement 90 %/);
+  const explorer = fs.readFileSync('js/ui/SolutionExplorer.js', 'utf8');
+  assert.match(explorer, /GearConstraintManager\.Manager/);
 });
