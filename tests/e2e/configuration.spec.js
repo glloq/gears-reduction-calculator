@@ -12,6 +12,9 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   await expect(page.locator('#searchModal')).toBeVisible();
   await expect(page.locator('#step-besoin')).toHaveCount(0);
   await expect(page.locator('#requirementBannerText')).toHaveText('Aucune recherche définie.');
+  // §17 : plus de barre latérale de configuration, ni de tiroir mobile.
+  await expect(page.locator('#sidebar')).toHaveCount(0);
+  await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
   // Première question : comment choisir, pas laquelle des neuf familles.
   await expect(page.locator('.type-entry')).toHaveCount(3);
   expect(errors).toEqual([]);

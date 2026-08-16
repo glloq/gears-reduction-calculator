@@ -260,3 +260,33 @@ body.modal-open { overflow: hidden; }
 .search-action-bar { display: none; }
 .sidebar { width: min(15rem, 40vw); }
 @media (max-width: 1000px) { .sidebar { width: min(var(--sidebar-width), 92vw); } }
+
+/* ----- §18B : menu Projets dans l'en-tête ----- */
+
+.header-menu { position: relative; }
+.header-menu > summary { list-style: none; cursor: pointer; }
+.header-menu > summary::-webkit-details-marker { display: none; }
+.header-menu-panel {
+  position: absolute;
+  right: 0; top: calc(100% + 6px);
+  z-index: 300;
+  width: min(22rem, 88vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.header-menu-panel .quick-launch { margin: 0 0 var(--sp-2); }
+.header-menu-panel .presets-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+
+/* ----- §17 : colonnes de l'espace de conception ----- */
+
+.design-workspace > .results-pane { position: sticky; top: 0; max-height: calc(100vh - var(--header-height) - 6rem); overflow-y: auto; }
+.design-workspace > .hero-viewer .svg-container { height: clamp(340px, 58vh, 680px); }
+
+@media (max-width: 1000px) {
+  .design-workspace > .results-pane { position: static; max-height: none; }
+}

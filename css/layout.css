@@ -28,16 +28,6 @@
 
 .header-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex: none; }
 
-.mobile-menu-btn {
-  display: none;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  width: 38px; height: 38px;
-  padding: 8px;
-  background: transparent;
-}
-.mobile-menu-btn span { display: block; height: 2px; background: var(--ink); border-radius: 2px; }
 
 /* ----- Corps : barre latérale + espace de travail ----- */
 
@@ -46,24 +36,7 @@
   height: calc(100vh - var(--header-height));
 }
 
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  width: var(--sidebar-width);
-  overflow-y: auto;
-  background: var(--surface-1);
-  border-right: 1px solid var(--line);
-}
 
-.sidebar-overlay {
-  display: none;
-  position: fixed;
-  inset: var(--header-height) 0 0 0;
-  z-index: 800;
-  background: rgba(10, 16, 28, .45);
-}
-.sidebar-overlay.active { display: block; }
 
 .workspace {
   flex: 1;
@@ -72,43 +45,38 @@
   padding: var(--sp-4);
 }
 
-/* Visualisation héro : pleine largeur, au-dessus de la grille */
-.hero-viewer { display: none; margin-bottom: var(--sp-4); }
+/* Le viewer est la colonne centrale, plus un bandeau au-dessus de la grille. */
+.hero-viewer { display: none; }
 body.has-results .hero-viewer { display: block; }
 
-/* Grille maître/détail : liste des solutions + détail sélectionné.
+/* §17 : l'espace de conception — solutions, viewer, inspecteur.
    Le `minmax(0, …)` est indispensable : sans lui une colonne de grille ne peut
    pas descendre sous la largeur min-content de son contenu, et une simple barre
    d'onglets non sécable élargirait toute la page au lieu de défiler chez elle. */
-.workspace-grid {
+.design-workspace {
   display: none;
-  grid-template-columns: minmax(320px, 5fr) minmax(0, 7fr);
-  gap: var(--sp-4);
+  grid-template-columns: minmax(15rem, 1fr) minmax(0, 2.4fr) minmax(17rem, 1.2fr);
+  gap: var(--sp-3);
   align-items: start;
 }
-body.has-results .workspace-grid { display: grid; }
+body.has-results .design-workspace { display: grid; }
 body.has-results .workspace-empty { display: none; }
 
 /* ----- Adaptatif ----- */
 
-@media (max-width: 1280px) {
-  .workspace-grid { grid-template-columns: minmax(0, 1fr); }
+/* Sous 1400 px l'inspecteur passe sous le viewer ; sous 1000 px tout s'empile.
+   On ne cherche pas à faire tenir trois colonnes sur un écran qui n'en porte
+   pas deux : le viewer resterait inutilisable. */
+@media (max-width: 1400px) {
+  .design-workspace { grid-template-columns: minmax(14rem, 1fr) minmax(0, 2.4fr); }
+  .design-workspace > .detail-pane { grid-column: 1 / -1; }
+}
+@media (max-width: 1000px) {
+  .design-workspace { grid-template-columns: minmax(0, 1fr); }
+  .design-workspace > .detail-pane { grid-column: auto; }
 }
 
 @media (max-width: 1000px) {
-  .mobile-menu-btn { display: flex; }
-  .sidebar {
-    position: fixed;
-    top: var(--header-height);
-    bottom: 0;
-    left: 0;
-    z-index: 900;
-    width: min(var(--sidebar-width), 92vw);
-    transform: translateX(-103%);
-    transition: transform .2s;
-    box-shadow: var(--shadow);
-  }
-  .sidebar.sidebar-open { transform: none; }
   .app-body { height: auto; min-height: calc(100vh - var(--header-height)); }
   .workspace { overflow: visible; }
 }

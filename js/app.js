@@ -277,10 +277,6 @@
       });
     }
 
-    var mobile = document.getElementById('mobileMenuBtn');
-    if (mobile) mobile.addEventListener('click', toggleMobileSidebar);
-    var overlay = document.getElementById('sidebarOverlay');
-    if (overlay) overlay.addEventListener('click', toggleMobileSidebar);
   }
 
   function _bindWorkspaceActions() {
@@ -308,19 +304,6 @@
         if (helpSection) helpSection.open = !helpSection.open;
       }
     });
-  }
-
-  // ===== Mobile =====
-
-  function toggleMobileSidebar() {
-    var sidebar = document.getElementById('sidebar');
-    var overlay = document.getElementById('sidebarOverlay');
-    var btn = document.getElementById('mobileMenuBtn');
-    var isOpen = sidebar.classList.toggle('sidebar-open');
-    overlay.classList.toggle('active', isOpen);
-    btn.classList.toggle('active', isOpen);
-    btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-    document.body.classList.toggle('sidebar-mobile-open', isOpen);
   }
 
   // ===== Comparaison multi-sorties =====
@@ -351,7 +334,6 @@
   window.lancerRecherche = lancerRecherche;
   window.arreterRecherche = arreterRecherche;
   window.toggleTheme = function () { ui.paramForm.toggleTheme(); };
-  window.toggleMobileSidebar = toggleMobileSidebar;
   window.exportAllCharts = exportAllCharts;
   window.toggleComparison = toggleComparison;
 

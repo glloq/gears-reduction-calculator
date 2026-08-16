@@ -41,27 +41,17 @@
   </noscript>
 
   <header class="app-header">
-    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Ouvrir la configuration" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
       <div><strong>Calculateur d'engrenages</strong><small>Recherche de trains de réduction</small></div>
     </div>
     <div class="header-actions">
-      <button class="btn-icon" id="themeBtn" title="Mode sombre/clair" aria-label="Changer le thème">Thème</button>
-      <button class="btn-icon" id="shareBtn" title="Copier un lien partageable de la configuration" aria-label="Partager">Partager</button>
-    </div>
-  </header>
-
-  <div class="app-body">
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
-    <!-- ===== Configuration (barre latérale modulaire) ===== -->
-    <aside class="sidebar" id="sidebar" aria-label="Configuration de la recherche">
-
-      <!-- Lancement rapide : presets + historique -->
-      <div class="quick-launch">
+      <!-- §18B : presets, historique et aide quittent le flux de configuration
+           pour un menu d'en-tête ; ils n'ont jamais été une étape du besoin. -->
+      <details class="header-menu" id="projectsMenu">
+        <summary class="btn-icon">Projets</summary>
+        <div class="header-menu-panel">
+          <div class="quick-launch">
         <div class="presets-row" id="presetsGrid" role="group" aria-label="Presets"></div>
         <details class="history-panel" id="historyPanel">
           <summary>Recherches récentes</summary>
@@ -69,10 +59,33 @@
         </details>
       </div>
 
-      <!-- La configuration n'habite plus la page : elle vit dans le modal de
-           recherche (§16). Ne restent ici que les miroirs de compatibilité et
-           les panneaux techniques, que le modal déplace chez lui à l'ouverture. -->
-      <div class="legacy-host" id="legacyHost" hidden aria-hidden="true">
+          <details class="panel help-section" id="panel-aide">
+        <summary><span class="panel-step">?</span><span class="panel-title">Aide &amp; raccourcis</span></summary>
+        <div class="panel-body help-content">
+          <ul>
+            <li><kbd>Ctrl</kbd>+<kbd>Entrée</kbd> : lancer la recherche</li>
+            <li><kbd>Échap</kbd> : arrêter la recherche</li>
+            <li><kbd>?</kbd> : ouvrir/fermer l'aide</li>
+          </ul>
+          <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, clic sur un étage = inspection, double-clic = édition.</p>
+          <p><strong>Mode expert :</strong> matériaux, fatigue, pondération multicritère et graphique de sécurité.</p>
+        </div>
+      </details>
+
+        </div>
+      </details>
+      <button class="btn-icon" id="themeBtn" title="Mode sombre/clair" aria-label="Changer le thème">Thème</button>
+      <button class="btn-icon" id="shareBtn" title="Copier un lien partageable de la configuration" aria-label="Partager">Partager</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- §17 : plus de barre latérale de configuration. Ne subsiste, hors flux,
+         que ce qui doit rester dans le DOM : les miroirs de compatibilité, les
+         panneaux techniques que le modal déplace chez lui à l'ouverture, et le
+         bouton de lancement que le modal déclenche. -->
+    <div class="legacy-host" id="legacyHost" hidden aria-hidden="true">
         <div class="legacy-mirrors" id="legacyMirrors" hidden aria-hidden="true">
           <select id="objective_mode" data-persist tabindex="-1">
             <option value="ratio">Rapport de réduction connu</option>
@@ -135,9 +148,6 @@
         </div>
         <div id="typeParamsContainer" class="type-params"></div>
         </div>
-      </div>
-
-      <!-- ===== 5. RÉGLAGES AVANCÉS : tout l'existant, replié ===== -->
       <details class="panel advanced-settings" id="panel-avance-racine">
         <summary><span class="panel-title">Réglages avancés</span><span class="panel-hint">tous les paramètres</span></summary>
         <div class="panel-body advanced-body">
@@ -364,28 +374,15 @@
         </div>
       </details>
 
-      <details class="panel help-section" id="panel-aide">
-        <summary><span class="panel-step">?</span><span class="panel-title">Aide &amp; raccourcis</span></summary>
-        <div class="panel-body help-content">
-          <ul>
-            <li><kbd>Ctrl</kbd>+<kbd>Entrée</kbd> : lancer la recherche</li>
-            <li><kbd>Échap</kbd> : arrêter la recherche</li>
-            <li><kbd>?</kbd> : ouvrir/fermer l'aide</li>
-          </ul>
-          <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, clic sur un étage = inspection, double-clic = édition.</p>
-          <p><strong>Mode expert :</strong> matériaux, fatigue, pondération multicritère et graphique de sécurité.</p>
-        </div>
-      </details>
+    </div>
 
-      <!-- Barre d'action fixe -->
-      <div class="search-action-bar">
+    <div class="search-action-bar" hidden aria-hidden="true">
         <div id="configurationSummary" class="configuration-summary" aria-live="polite"></div>
         <div id="validationMessage" class="field-error" role="alert"></div>
         <button id="startStopBtn" class="btn-primary" aria-describedby="rapport-desc">Rechercher</button>
         <div class="shortcut-hint" id="rapport-desc">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
         <div class="progress-container compact" aria-hidden="true"><div class="sticky-progress"></div></div>
       </div>
-    </aside>
 
     <!-- ===== Espace de travail ===== -->
     <main class="workspace" role="main">
@@ -406,72 +403,10 @@
         <div id="workspaceEmptyActions" class="empty-state-actions" hidden></div>
       </section>
 
-      <!-- Visualisation héro : le graphique d'abord, pleine largeur -->
-      <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
-        <div class="viz-controls">
-          <div class="segmented view-switch">
-            <button class="view-mode active" data-view="teeth" title="Profils de denture en développante, animables — crémaillère comprise">Denture</button>
-            <button class="view-mode" data-view="geometry">Géométrie 2D</button>
-            <button class="view-mode" data-view="kinematic">Cinématique</button>
-          </div>
-          <span class="kinematic-projections">
-            <button class="btn-small active" data-projection="auto">Vue auto</button>
-            <button class="btn-small" data-projection="main">Vue principale</button>
-            <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
-            <button class="btn-small" id="kinematicReset">Réinitialiser</button>
-          </span>
-          <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer" aria-pressed="false">▶</button>
-          <details class="display-menu animation-menu" id="viewerAnimationMenu">
-            <summary aria-label="Options d’animation">1×</summary>
-            <div class="display-menu-panel">
-              <label class="viewer-speed-label" for="viewerSpeed">Vitesse d’animation</label>
-              <select id="viewerSpeed" class="viewer-speed" aria-label="Vitesse d’animation">
-                <option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
-              </select>
-              <button id="viewerReverse" class="btn-small" aria-pressed="false" title="Inverser le sens de l’animation">Inverser le sens</button>
-              <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
-            </div>
-          </details>
-          <details class="display-menu" id="viewerDisplayMenu">
-            <summary>Affichage</summary>
-            <div class="display-menu-panel">
-              <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
-              <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
-              <label data-views="teeth"><input type="checkbox" data-overlay="lineOfAction"> Ligne de contact</label>
-              <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
-              <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
-              <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
-              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
-              <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
-            </div>
-          </details>
-          <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
-          <details class="export-menu">
-            <summary>Exporter</summary>
-            <div>
-              <button data-export="exporterSVG">SVG</button>
-              <button data-export="exporterSVGTechnique">SVG technique</button>
-              <button data-export="exporterPNG">PNG</button>
-              <button data-export="exporterJSON">JSON</button>
-              <button data-export="exporterCSV">CSV</button>
-            </div>
-          </details>
-        </div>
-        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
-        <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, cliquer un étage pour l'inspecter</p>
-        <details class="legacy-canvas-section">
-          <summary>Vue linéaire simplifiée</summary>
-          <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
-        </details>
-      </section>
-
-      <div class="workspace-grid">
-
-        <!-- Volet solutions (maître) -->
+      <!-- §17 : l'espace de conception. Le viewer est au centre, les solutions
+           à gauche, l'inspecteur à droite. Il n'y a plus de configuration ici :
+           elle est dans le modal, résumée par le bandeau ci-dessus. -->
+      <div class="design-workspace">
         <section class="results-pane" id="result-container" aria-label="Solutions trouvées">
           <header class="results-header">
             <h2>Solutions</h2>
@@ -535,6 +470,68 @@
           </div>
         </section>
 
+      <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
+        <div class="viz-controls">
+          <div class="segmented view-switch">
+            <button class="view-mode active" data-view="teeth" title="Profils de denture en développante, animables — crémaillère comprise">Denture</button>
+            <button class="view-mode" data-view="geometry">Géométrie 2D</button>
+            <button class="view-mode" data-view="kinematic">Cinématique</button>
+          </div>
+          <span class="kinematic-projections">
+            <button class="btn-small active" data-projection="auto">Vue auto</button>
+            <button class="btn-small" data-projection="main">Vue principale</button>
+            <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
+            <button class="btn-small" id="kinematicReset">Réinitialiser</button>
+          </span>
+          <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer" aria-pressed="false">▶</button>
+          <details class="display-menu animation-menu" id="viewerAnimationMenu">
+            <summary aria-label="Options d’animation">1×</summary>
+            <div class="display-menu-panel">
+              <label class="viewer-speed-label" for="viewerSpeed">Vitesse d’animation</label>
+              <select id="viewerSpeed" class="viewer-speed" aria-label="Vitesse d’animation">
+                <option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+              </select>
+              <button id="viewerReverse" class="btn-small" aria-pressed="false" title="Inverser le sens de l’animation">Inverser le sens</button>
+              <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
+            </div>
+          </details>
+          <details class="display-menu" id="viewerDisplayMenu">
+            <summary>Affichage</summary>
+            <div class="display-menu-panel">
+              <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
+              <label data-views="teeth"><input type="checkbox" data-overlay="lineOfAction"> Ligne de contact</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
+              <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
+            </div>
+          </details>
+          <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
+          <details class="export-menu">
+            <summary>Exporter</summary>
+            <div>
+              <button data-export="exporterSVG">SVG</button>
+              <button data-export="exporterSVGTechnique">SVG technique</button>
+              <button data-export="exporterPNG">PNG</button>
+              <button data-export="exporterJSON">JSON</button>
+              <button data-export="exporterCSV">CSV</button>
+            </div>
+          </details>
+        </div>
+        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+        <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, cliquer un étage pour l'inspecter</p>
+        <details class="legacy-canvas-section">
+          <summary>Vue linéaire simplifiée</summary>
+          <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
+        </details>
+      </section>
+
         <!-- Volet détail de la solution sélectionnée -->
         <section class="detail-pane" aria-label="Détail de la solution sélectionnée">
           <div id="solutionCard" class="solution-summary" hidden aria-live="polite"></div>
@@ -591,8 +588,6 @@
         </section>
       </div>
 
-      <!-- Comparaison multi-sorties (pleine largeur) -->
-      <div id="comparisonPanel" class="comparison-panel" style="display:none;"></div>
     </main>
   </div>
 

@@ -80,12 +80,18 @@ test('workspace is a master-detail layout with detail tabs', () => {
   assert.doesNotMatch(html, /data-detail="schema"/);
 });
 
-test('the viewer is a full-width hero above the results grid', () => {
-  // Le graphique d'abord : section héro pleine largeur, avant la grille
-  // maître/détail, avec le conteneur SVG hors du volet détail.
+test('the viewer is the centre column, between solutions and inspector', () => {
+  // §17 : trois colonnes. Le viewer n'est plus un bandeau au-dessus d'une
+  // grille maître/détail, il EST le centre de l'espace de conception.
   assert.match(html, /<section class="hero-viewer viz-section"/);
-  assert.ok(html.indexOf('class="hero-viewer') < html.indexOf('class="workspace-grid"'), 'hero before the grid');
-  assert.ok(html.indexOf('id="svgContainer"') < html.indexOf('class="workspace-grid"'), 'viewer outside the detail pane');
+  assert.doesNotMatch(html, /class="workspace-grid"/);
+  const solutions = html.indexOf('id="result-container"');
+  const viewer = html.indexOf('class="hero-viewer');
+  const inspector = html.indexOf('class="detail-pane"');
+  assert.ok(solutions < viewer && viewer < inspector, 'solutions | viewer | inspecteur');
+  assert.ok(html.indexOf('class="design-workspace"') < solutions, 'les trois volets sont dans la même grille');
+  // Le conteneur SVG reste hors du volet détail.
+  assert.ok(html.indexOf('id="svgContainer"') < inspector, 'viewer outside the detail pane');
   // La denture réaliste est le bouton de vue actif par défaut, et elle n'est
   // plus réservée aux objectifs rotatifs : la crémaillère y est dessinée.
   assert.match(html, /class="view-mode active" data-view="teeth"/);

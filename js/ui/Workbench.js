@@ -480,13 +480,9 @@
 
   // ===== Résumé de configuration =====
 
-  Workbench.prototype._bindSummary = function () {
-    var self = this;
-    var form = el('sidebar');
-    if (!form) return;
-    form.addEventListener('input', function () { self.updateSummary(); });
-    form.addEventListener('change', function () { self.updateSummary(); });
-  };
+  // Le bandeau se met à jour quand la session change, pas quand un champ bouge :
+  // il n'y a plus de formulaire dans la page à écouter.
+  Workbench.prototype._bindSummary = function () { return this; };
 
   /** Le cahier des charges en une ligne, dans le bandeau (§16). */
   Workbench.prototype.updateSummary = function () {
