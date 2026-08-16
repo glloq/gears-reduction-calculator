@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { watchConsoleErrors } = require('./console-errors.js');
+const { search } = require('./flow.js');
 let errors = [];
 test.beforeEach(async ({ page }) => {
   errors = watchConsoleErrors(page);
@@ -8,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(() => expect(errors, 'browser errors').toEqual([]));
 
 test('refine bar filters the pool client-side without re-searching', async ({ page }) => {
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await search(page);
   await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
   await expect(page.locator('#refineBar')).toBeVisible();
   await expect(page.locator('#refineCount')).toContainText('trouvée');

@@ -108,8 +108,10 @@ test('the sheet replaces the objective modes, and derives the ratio itself', () 
   // Le mode de solveur n'est plus une question posée à l'utilisateur : il n'y a
   // donc plus de groupes de champs par objectif, mais une fiche unique.
   assert.doesNotMatch(html, /objective-fields/);
-  assert.match(html, /id="requirementSheet"/);
-  assert.match(html, /id="requirementDiagnostic"/);
+  // La fiche a quitté la page : c'est le modal qui la construit à l'ouverture.
+  const modal = fs.readFileSync('js/ui/search/SearchModal.js', 'utf8');
+  assert.match(modal, /id = 'requirementSheet'/);
+  assert.match(modal, /id = 'requirementDiagnostic'/);
   // Le rapport déduit vient de la fiche, qui connaît l'intention de la valeur.
   const sheet = fs.readFileSync('js/ui/RequirementSheet.js', 'utf8');
   assert.match(sheet, /Rapport déduit/);

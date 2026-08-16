@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/config.css">
+  <link rel="stylesheet" href="css/search-modal.css">
   <link rel="stylesheet" href="css/workspace.css">
   <link rel="stylesheet" href="css/visualization.css">
 
@@ -68,107 +69,26 @@
         </details>
       </div>
 
-      <!-- ===== 1. BESOIN : une fiche, pas un mode de solveur (2C + 3C) ===== -->
-      <section class="config-step" id="step-besoin" aria-labelledby="besoin-title">
-        <h2 class="section-header" id="besoin-title">Votre besoin</h2>
-
-        <!-- Raccourcis fonctionnels : ils ne font que pré-remplir la fiche. -->
-        <div class="requirement-shortcuts" id="requirementShortcuts" role="group" aria-label="Points de départ"></div>
-
-        <!-- Chaque ligne porte son intention : = ≈ ≥ ≤ ou une plage. -->
-        <div class="requirement-sheet" id="requirementSheet"></div>
-
-        <div class="constraint-add">
-          <button type="button" class="btn-add-constraint" id="addQuantityBtn" aria-expanded="false" aria-controls="quantityMenu">
-            + Ajouter une donnée
-          </button>
-          <div class="constraint-menu" id="quantityMenu" role="menu" hidden></div>
-        </div>
-
-        <output id="derivedRatio" class="derived-ratio"></output>
-
-        <details class="architecture-panel" id="architecturePanel">
-          <summary>Architecture imposée</summary>
-          <div id="architectureOptions" class="architecture-options">
-            <label><input type="checkbox" data-architecture="axisAngle" value="90"> Renvoi d’angle à 90°</label>
-            <label>Sortie coaxiale
-              <select data-architecture="coaxial">
-                <option value="any">indifférente</option>
-                <option value="required">exigée</option>
-                <option value="avoid">à éviter</option>
-              </select>
-            </label>
-            <label>Réversibilité
-              <select data-architecture="selfLocking">
-                <option value="any">indifférente</option>
-                <option value="required">irréversible (maintient la charge)</option>
-                <option value="forbidden">réversible (rétro-entraînable)</option>
-              </select>
-            </label>
-          </div>
-        </details>
-
-        <!-- Miroirs des anciens champs. Ils ne sont plus une source : la
-             session les ÉCRIT depuis le modèle, et sait les relire pour
-             ressusciter une URL partagée ou un preset d'avant la refonte.
-             Ils disparaîtront quand le moteur consommera la requête compilée. -->
+      <!-- La configuration n'habite plus la page : elle vit dans le modal de
+           recherche (§16). Ne restent ici que les miroirs de compatibilité et
+           les panneaux techniques, que le modal déplace chez lui à l'ouverture. -->
+      <div class="legacy-host" id="legacyHost" hidden aria-hidden="true">
         <div class="legacy-mirrors" id="legacyMirrors" hidden aria-hidden="true">
           <select id="objective_mode" data-persist tabindex="-1">
             <option value="ratio">Rapport de réduction connu</option>
             <option value="need">Vitesse de sortie cible</option>
             <option value="rotationTranslation">Rotation → translation (crémaillère)</option>
           </select>
-          <input type="number" id="vitesse_entree" value="1500" tabindex="-1">
-          <input type="number" id="couple_entree" value="10" tabindex="-1">
-          <input type="number" id="rapport" value="12" tabindex="-1">
-          <input type="number" id="rpm_sortie_cible" data-persist value="125" tabindex="-1">
-          <input type="number" id="linear_travel_per_rev" data-persist value="100" tabindex="-1">
+          <input type="number" id="vitesse_entree" tabindex="-1">
+          <input type="number" id="couple_entree" tabindex="-1">
+          <input type="number" id="rapport" tabindex="-1">
+          <input type="number" id="rpm_sortie_cible" data-persist tabindex="-1">
+          <input type="number" id="linear_travel_per_rev" data-persist tabindex="-1">
           <input type="number" id="linear_speed_min" data-persist tabindex="-1">
           <input type="number" id="linear_speed_max" data-persist tabindex="-1">
           <input type="number" id="linear_force_min" data-persist tabindex="-1">
         </div>
 
-        <!-- Diagnostic vivant : ce que le modèle déduit, sans lancer le solveur. -->
-        <p class="requirement-diagnostic" id="requirementDiagnostic" aria-live="polite"></p>
-      </section>
-
-      <!-- ===== 2. CONTRAINTES : rien tant que l'utilisateur n'en ajoute pas ===== -->
-      <section class="config-step" id="step-contraintes" aria-labelledby="contraintes-title">
-        <h2 class="section-header" id="contraintes-title">Contraintes</h2>
-        <div class="constraint-chips" id="constraintChips" hidden aria-live="polite"></div>
-        <div class="constraint-add">
-          <button type="button" class="btn-add-constraint" id="addConstraintBtn" aria-expanded="false" aria-controls="constraintMenu">
-            + Ajouter une contrainte<span class="constraint-count" hidden></span>
-          </button>
-          <div class="constraint-menu" id="constraintMenu" role="menu" hidden></div>
-        </div>
-      </section>
-
-      <!-- ===== 3. PRIORITÉ : une principale, une secondaire (9B) ===== -->
-      <section class="config-step" id="step-priorite" aria-labelledby="priorite-title">
-        <h2 class="section-header" id="priorite-title">Priorité</h2>
-        <div class="priority-pair">
-          <label for="priority_primary">D’abord</label>
-          <select id="priority_primary"></select>
-          <label for="priority_secondary">Puis</label>
-          <select id="priority_secondary"></select>
-        </div>
-        <p class="field-help" id="priorityHelp"></p>
-      </section>
-
-      <!-- ===== 4. TECHNOLOGIE ===== -->
-      <section class="config-step" id="step-technologie" aria-labelledby="technologie-title">
-        <h2 class="section-header" id="technologie-title">Technologie</h2>
-        <div class="technology-summary" id="technologyMode" role="group" aria-label="Choix des technologies">
-          <button type="button" class="technology-mode active" data-technology-mode="auto" aria-pressed="true">Conseillées</button>
-          <button type="button" class="technology-mode" data-technology-mode="manual" aria-pressed="false">Choisir moi-même</button>
-        </div>
-        <p class="technology-hint" id="technologySummary" aria-live="polite"></p>
-        <div class="advisor-list" id="advisorList"></div>
-        <div class="advisor-gaps" id="advisorGaps" hidden aria-live="polite"></div>
-        <button type="button" class="advanced-toggle" id="technologyToggle" aria-expanded="false" aria-controls="technologyPanel">
-          Cases historiques (lecture seule)
-        </button>
         <div id="technologyPanel" hidden>
         <div class="transmission-filters segmented" role="group" aria-label="Filtrer les familles">
           <button type="button" class="active" data-filter="all">Toutes</button>
@@ -215,7 +135,7 @@
         </div>
         <div id="typeParamsContainer" class="type-params"></div>
         </div>
-      </section>
+      </div>
 
       <!-- ===== 5. RÉGLAGES AVANCÉS : tout l'existant, replié ===== -->
       <details class="panel advanced-settings" id="panel-avance-racine">
@@ -469,6 +389,14 @@
 
     <!-- ===== Espace de travail ===== -->
     <main class="workspace" role="main">
+
+      <!-- §16 : le cahier des charges tient en une ligne ; « Modifier » rouvre
+           le modal sur un brouillon, sans toucher aux résultats affichés. -->
+      <div class="requirement-banner" id="requirementBanner">
+        <p class="requirement-banner-text" id="requirementBannerText" aria-live="polite"></p>
+        <button type="button" class="btn-small" id="editSearchBtn">Modifier</button>
+        <button type="button" class="btn-small" id="newSearchBtn">Nouvelle recherche</button>
+      </div>
 
       <section id="workspaceEmpty" class="workspace-empty empty-state">
         <div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -725,9 +653,12 @@
   <script src="js/visualization/ViewerToolbar.js" defer></script>
 
   <!-- UI -->
+  <script src="js/requirements/TechnologySelectionModel.js" defer></script>
+  <script src="js/requirements/TechnicalSettingsModel.js" defer></script>
   <script src="js/ui/SearchSession.js" defer></script>
+  <script src="js/ui/search/TypeStep.js" defer></script>
+  <script src="js/ui/search/SearchModal.js" defer></script>
   <script src="js/ui/RequirementSheet.js" defer></script>
-  <script src="js/ui/AdvisorPanel.js" defer></script>
   <script src="js/ui/ConstraintChips.js" defer></script>
   <script src="js/ui/Logger.js" defer></script>
   <script src="js/ui/ColumnPreferences.js" defer></script>

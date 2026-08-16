@@ -104,6 +104,10 @@
       weigh(3, traits.selfLocking ? 1 : 0.25, traits.selfLocking ? 'Irréversible : maintient la charge à l’arrêt.' : null, 'Ne bloque pas la charge à l’arrêt.');
     }
 
+    if (context.process === 'printing3d') {
+      weigh(2, traits.printable, 'Se prête bien à l’impression 3D.', 'Difficile à imprimer avec une qualité suffisante.');
+    }
+
     // Socle : même sans priorité déclarée, les familles ne se valent pas. Sans
     // ce terme le conseiller redeviendrait un « tout cocher » déguisé, puisque
     // presque toutes les familles atteignent un rapport modeste.
@@ -136,9 +140,6 @@
       }
     });
 
-    if (context.process === 'printing3d') {
-      weigh(2, traits.printable, 'Se prête bien à l’impression 3D.', 'Difficile à imprimer avec une qualité suffisante.');
-    }
     if (traits.spansDistance && context.spanRequired) {
       reasons.push({ level: 'pro', text: 'Franchit une distance entre arbres sans train intermédiaire.' });
     }

@@ -47,6 +47,8 @@
     // La restauration modifie les miroirs après le premier rendu : la session
     // les adopte alors. Sans restauration, ses propres valeurs font foi.
     workbench.refreshAfterRestore(!!restored);
+    // §24.1 : sans besoin défini, le modal est le point d'entrée.
+    workbench.openSearchModalIfEmpty();
 
     ui.paramForm.restoreTheme();
 
