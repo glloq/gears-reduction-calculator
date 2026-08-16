@@ -358,3 +358,65 @@ test('a parameter set in the modal drives the search and the historic mirror', a
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
   expect(await page.inputValue('#tp_spur_faceWidth')).toBe('18');
 });
+
+// ===== §20 : sens de rotation, service, distance entre arbres =====
+
+test('a demanded output direction really filters the pool', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await setQuantity(page, 'input.speed', 1500);
+  await setQuantity(page, 'ratio', 9);
+  // Uniquement des couples droits : chacun inverse le sens de sortie.
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('.family-card[data-family="spur"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+
+  // Deux étages droits rendent le sens identique : la contrainte les garde.
+  await page.locator('#editSearchBtn').click();
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('[data-architecture="direction"]').selectOption('same');
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+
+  // Exiger l'inverse ne laisse rien, et le diagnostic nomme le vrai coupable
+  // au lieu d'accuser une contrainte de dimension.
+  await page.locator('#editSearchBtn').click();
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('[data-architecture="direction"]').selectOption('reverse');
+  await page.locator('[data-step="type"]').click();
+  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('#workspaceEmptyHint')).toContainText('sens de sortie', { timeout: 30000 });
+  await expect(page.locator('.solution-card')).toHaveCount(0);
+});
+
+test('the service cycle stays folded until it is asked for', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('[data-step="criteria"]').click();
+  await expect(page.locator('#svc_hoursPerDay')).toHaveCount(0);
+  await expect(page.locator('.analysis-level[data-level="fatigue"]')).toContainText('cycle de service');
+
+  await page.locator('#svc_enabled').check();
+  await expect(page.locator('#svc_hoursPerDay')).toBeVisible();
+  await expect(page.locator('#svc_years')).toBeVisible();
+  await expect(page.locator('#svc_loadType')).toBeVisible();
+});
+
+test('a shaft distance to span brings belts and chains forward', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'input.speed', 1500);
+  await setQuantity(page, 'ratio', 9);
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('#shaftDistance').fill('300');
+  await page.locator('#shaftDistance').blur();
+  await page.locator('[data-step="type"]').click();
+  await expect(page.locator('#typeAdvice .advice-row').first()).toContainText(/Courroie|Chaîne/);
+  await expect(page.locator('#typeAdvice')).toContainText('distance entre arbres');
+});

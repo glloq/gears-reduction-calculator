@@ -317,3 +317,9 @@ body.modal-open { overflow: hidden; }
 .type-parameters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
 .type-parameter { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
 .type-parameter input[type="number"], .type-parameter select { flex: 0 1 6rem; }
+
+/* ----- §20 : service et environnement ----- */
+
+.service-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--sp-2); }
+.service-field { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
+.service-field input[type="number"], .service-field select { flex: 0 1 6rem; }

@@ -56,8 +56,43 @@
     { key: 'linearSpeed', label: 'Vitesse linéaire', unit: 'mm/min', category: 'performance', better: null, defaultKind: 'range', linear: true,
       metric: function (s) { return s.linearSpeedMmMin; } },
     { key: 'centerDistance', label: 'Entraxe', unit: 'mm', category: 'architecture', better: null, defaultKind: 'range',
-      metric: function (s) { return s.dimensions && s.dimensions.maxCenterDistance; } }
+      metric: function (s) { return s.dimensions && s.dimensions.maxCenterDistance; } },
+
+    // §20 : des grandeurs que le moteur calcule déjà, mais que rien n'exposait.
+    // `engineFiltered: false` signale celles que le compilateur ne sait pas
+    // traduire — la session les applique alors elle-même, plutôt que de les
+    // laisser silencieusement sans effet.
+    { key: 'outputDirection', label: 'Sens de sortie', unit: '', category: 'architecture', better: null,
+      defaultKind: 'exact', engineFiltered: false,
+      metric: function (s) { return s.totalDirection; } },
+    { key: 'powerLoss', label: 'Pertes (échauffement)', unit: 'W', category: 'performance', better: 'lower',
+      defaultKind: 'max', engineFiltered: false,
+      metric: function (s) { return s.lossPowerW; } },
+    { key: 'pitchLineVelocity', label: 'Vitesse périphérique', unit: 'm/s', category: 'performance', better: 'lower',
+      defaultKind: 'max', engineFiltered: false,
+      metric: function (s) { return pitchLineVelocity(s); } }
   ];
+
+  /**
+   * Vitesse au primitif la plus élevée de la chaîne, en m/s : v = π·d·n / 60000.
+   * C'est elle qui décide du régime de lubrification et pèse sur le bruit ;
+   * elle se déduit exactement de la géométrie et du régime d'entrée.
+   */
+  function pitchLineVelocity(solution) {
+    var speed = solution.inputSpeedRpm;
+    if (typeof speed !== 'number' || !isFinite(speed)) return null;
+    var best = null;
+    (solution.mechanical || []).forEach(function (stage) {
+      var diameter = stage.geometry && stage.geometry.pitchDiameterInput;
+      if (typeof diameter === 'number' && isFinite(diameter)) {
+        var value = Math.PI * diameter * Math.abs(speed) / 60000;
+        if (best == null || value > best) best = value;
+      }
+      var ratio = Math.abs(stage.ratio) || 1;
+      speed /= ratio;
+    });
+    return best;
+  }
 
   // §9 : le catalogue ne doit pas être le même dans tous les cas. Une vis sans
   // fin appelle un rendement minimum ; une courroie appelle un entraxe. Proposer
@@ -65,13 +100,13 @@
   // comptent — c'est précisément ce qu'on lui épargne.
   var SUGGESTIONS = {
     planetary: ['maxDiameter', 'stages', 'efficiency', 'outputTorque'],
-    worm:      ['efficiency', 'ratioError', 'outputTorque', 'maxDiameter'],
-    belt:      ['centerDistance', 'maxLength', 'maxDiameter', 'ratioError'],
+    worm:      ['efficiency', 'powerLoss', 'ratioError', 'outputTorque'],
+    belt:      ['centerDistance', 'maxLength', 'pitchLineVelocity', 'maxDiameter'],
     chain:     ['centerDistance', 'maxLength', 'outputTorque', 'ratioError'],
     bevel:     ['centerDistance', 'maxDiameter', 'maxLength', 'ratioError'],
     rack:      ['outputForce', 'linearSpeed', 'maxDiameter', 'ratioError'],
     spur:      ['maxDiameter', 'maxLength', 'efficiency', 'stages'],
-    helical:   ['maxDiameter', 'efficiency', 'bendingSafety', 'stages'],
+    helical:   ['maxDiameter', 'pitchLineVelocity', 'efficiency', 'bendingSafety'],
     internal:  ['maxDiameter', 'stages', 'efficiency', 'outputTorque']
   };
 
@@ -195,6 +230,11 @@
   PreferenceModel.prototype.constraints = function () { return this.list(false); };
   PreferenceModel.prototype.preferences = function () { return this.list(true); };
 
+  /** Contraintes que le compilateur ne sait pas traduire pour le moteur. */
+  PreferenceModel.prototype.clientConstraints = function () {
+    return this.constraints().filter(function (entry) { return entry.meta.engineFiltered === false; });
+  };
+
   /**
    * Une solution passe-t-elle les contraintes DURES ? Les préférences n'ont
    * volontairement aucun effet ici : elles ne servent qu'au classement.
@@ -273,6 +313,7 @@
 
   return {
     PreferenceModel: PreferenceModel, CRITERIA: CRITERIA, AXES: AXES, WEIGHT_KEYS: WEIGHT_KEYS,
-    criterion: criterion, axis: axis, suggest: suggest, SUGGESTIONS: SUGGESTIONS
+    criterion: criterion, axis: axis, suggest: suggest, SUGGESTIONS: SUGGESTIONS,
+    pitchLineVelocity: pitchLineVelocity
   };
 });

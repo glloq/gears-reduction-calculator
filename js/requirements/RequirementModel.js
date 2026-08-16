@@ -41,6 +41,7 @@
   ];
 
   var ARCHITECTURE_DEFAULTS = {
+    shaftDistanceMm: null,   // distance à franchir entre arbres, si imposée
     axisAngle: 0,            // 0 = axes parallèles, 90 = renvoi d'angle
     coaxial: 'any',          // any | required | avoid
     selfLocking: 'any',      // any | required (irréversible) | forbidden (réversible)

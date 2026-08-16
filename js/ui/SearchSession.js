@@ -115,12 +115,43 @@
       advice: this.advice(),
       technologies: this.selectedTechnologies()
     }, overrides || {});
-    var request = R.ConstraintCompiler.compile(this.requirement, options.preferences || this.preferences, options);
+    var request = R.ConstraintCompiler.compile(this.requirement, options.preferences || this.effectivePreferences(), options);
     // Une architecture imposée fixe aussi le nombre d'étages : le laisser à
     // « 4 par défaut » ferait chercher des trains que l'utilisateur a exclus.
     var imposed = this.technologySelection.stagesRequired();
     if (imposed) request.maxStages = imposed;
     return request;
+  };
+
+  /**
+   * §20 : le sens de rotation demandé n'est pas un décor. Le moteur ne sait pas
+   * filtrer dessus, alors la session le pose en contrainte côté client — et une
+   * contrainte qu'on ne peut pas traduire est APPLIQUÉE, jamais oubliée.
+   */
+  SearchSession.prototype.effectivePreferences = function () {
+    var wanted = this.requirement.architecture.direction;
+    if (wanted !== 'same' && wanted !== 'reverse') return this.preferences;
+    var preferences = new R.PreferenceModel(this.preferences.toJSON());
+    preferences.require('outputDirection', R.Quantity.exact(wanted === 'same' ? 1 : -1));
+    return preferences;
+  };
+
+  /**
+   * Écarte ce que le moteur ne pouvait pas écarter lui-même. Sans ce filtre,
+   * demander une sortie tournant dans le même sens n'aurait aucun effet visible.
+   */
+  SearchSession.prototype.filterPool = function (solutions) {
+    var preferences = this.effectivePreferences();
+    var client = preferences.clientConstraints();
+    if (!client.length) return solutions || [];
+    return (solutions || []).filter(function (solution) {
+      return client.every(function (entry) {
+        var value = entry.meta.metric(solution);
+        if (value == null) return true;              // non évalué : on n'invente pas
+        if (entry.meta.scale) value *= entry.meta.scale;
+        return entry.quantity.satisfies(value);
+      });
+    });
   };
 
   SearchSession.prototype.toSearchParams = function (overrides) {

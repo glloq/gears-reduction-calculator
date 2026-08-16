@@ -135,8 +135,24 @@
     _saveToHistory(searchParams);
     _renderHistory();
 
-    engine.rechercher(searchParams).then(function (resultats) {
+    engine.rechercher(searchParams).then(function (rawResults) {
+      // Le moteur ne sait pas tout filtrer : la session applique ce qui reste.
+      var resultats = session ? session.filterPool(rawResults) : rawResults;
       progressBar.style.width = "100%";
+      // Le moteur a trouvé, mais une contrainte qu'il ne sait pas exprimer a
+      // tout écarté : le dire, plutôt que sonder et accuser autre chose.
+      if (!resultats.length && rawResults.length && session) {
+        var blocked = session.effectivePreferences().clientConstraints();
+        explorer.setPool([], searchParams, ui.lastStats(), {
+          status: 'client-filtered', blocker: null, candidates: [],
+          text: 'Le moteur a trouvé ' + rawResults.length + ' architecture(s), mais ' +
+            (blocked.length ? blocked.map(function (entry) { return entry.meta.label.toLowerCase(); }).join(', ') : 'une exigence') +
+            ' les écarte toutes. Assouplissez cette exigence, ou élargissez les technologies explorées.'
+        });
+        ui.logger.setStatus('Aucune solution trouvée');
+        _resetButton();
+        return;
+      }
       if (!resultats.length && session) {
         // Choix 14C : « aucun résultat » déclenche une SONDE — la même
         // recherche, contraintes de qualification levées — pour pouvoir dire
@@ -167,13 +183,14 @@
    */
   function _probeForNearMiss(session, searchParams) {
     var NearMiss = GearApp.requirements.NearMissAnalyzer;
-    var probePreferences = NearMiss.probePreferences(session.preferences);
-    if (!session.preferences.constraints().length) {
-      return Promise.resolve(NearMiss.analyze([], session.preferences));
+    var preferences = session.effectivePreferences();
+    var probePreferences = NearMiss.probePreferences(preferences);
+    if (!preferences.constraints().length) {
+      return Promise.resolve(NearMiss.analyze([], preferences));
     }
     var probeParams = session.toSearchParams({ preferences: probePreferences });
     return engine.rechercher(probeParams)
-      .then(function (pool) { return NearMiss.analyze(pool, session.preferences); })
+      .then(function (pool) { return NearMiss.analyze(pool, preferences); })
       .catch(function () { return null; });
   }
 

@@ -100,6 +100,11 @@
       var coaxial = traits.axis === 'coaxial';
       weigh(3, coaxial ? 1 : 0.3, coaxial ? 'Sortie coaxiale à l’entrée.' : null, 'Décale l’axe de sortie.');
     }
+    if (context.spanRequired) {
+      weigh(2.5, traits.spansDistance ? 1 : 0.3,
+        'Franchit une distance entre arbres sans train intermédiaire.',
+        'Ne franchit pas de distance : il faudrait des étages intermédiaires.');
+    }
     if (architecture.selfLocking === 'required') {
       weigh(3, traits.selfLocking ? 1 : 0.25, traits.selfLocking ? 'Irréversible : maintient la charge à l’arrêt.' : null, 'Ne bloque pas la charge à l’arrêt.');
     }
@@ -140,9 +145,6 @@
       }
     });
 
-    if (traits.spansDistance && context.spanRequired) {
-      reasons.push({ level: 'pro', text: 'Franchit une distance entre arbres sans train intermédiaire.' });
-    }
 
     var normalized = total ? score / total : 0.5;
     return {
@@ -185,7 +187,9 @@
       maxStages: (stagesEntry && stagesEntry.quantity.bounds().max) || requirement.architecture.maxStages || 4,
       minimumEfficiency: efficiency ? (efficiency.quantity.bounds().min || null) / 100 : null,
       axes: preferences ? preferences.activeAxes().map(function (a) { return a.id; }) : [],
-      spanRequired: false
+      // Une distance à franchir est ce qui rend une courroie ou une chaîne
+      // pertinente : sans elle, elles ne sont qu'encombrantes.
+      spanRequired: !!requirement.architecture.shaftDistanceMm
     };
   }
 

@@ -29,7 +29,8 @@
   var DEFAULTS = {
     maxDiameter: 80, maxLength: 200, maxWidth: 80, efficiency: 90, outputTorque: 80,
     outputSpeed: 100, ratioError: 1, bendingSafety: 1.5, contactSafety: 1.2, stages: 3,
-    outputForce: 200, linearSpeed: 500, centerDistance: 100
+    outputForce: 200, linearSpeed: 500, centerDistance: 100,
+    outputDirection: 1, powerLoss: 50, pitchLineVelocity: 10
   };
 
   function ConstraintChips(session, onChange) {

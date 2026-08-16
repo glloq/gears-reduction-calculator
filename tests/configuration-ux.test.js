@@ -293,3 +293,85 @@ test('a type parameter edited in the modal reaches the engine and the mirrors', 
   assert.equal(settings.toAdapterSettings().typeParameters.spur.faceWidth, 18);
   assert.match(session, /el\('tp_' \+ typeId \+ '_' \+ key\)/, 'les champs historiques restent le miroir');
 });
+
+// ===== §20 : les données que le moteur calculait déjà sans les exposer =====
+
+const Engine = require('../js/core/SearchEngine.js');
+
+function pool(extra) {
+  return Engine.search(Object.assign({
+    rapportCible: 9, dentMenanteMin: 10, dentMenanteMax: 12, dentMeneeMin: 28, dentMeneeMax: 36,
+    precisionToleree: 1, maxEtages: 2, maxSolutions: 20, maxIterations: 40000,
+    typesActifs: ['spur'], typeParameters: { spur: { module: 1 } }, allowReductionOnly: true,
+    module: 1, moduleMode: 'fixed', vitesseEntree: 1500, coupleEntree: 2
+  }, extra)).solutions;
+}
+
+test('the output direction comes from the families, not from the ratio sign', () => {
+  // Un couple droit inverse la sortie alors que son rapport est positif :
+  // dériver le sens du signe du rapport donnait systématiquement « + ».
+  const solutions = pool();
+  assert.ok(solutions.length);
+  for (const solution of solutions) {
+    const expected = solution.stages.length % 2 === 0 ? 1 : -1;
+    assert.equal(solution.totalDirection, expected, solution.stages.length + ' étage(s)');
+  }
+});
+
+test('a demanded direction really filters, because the engine cannot', () => {
+  const prefs = new Preferences.PreferenceModel();
+  prefs.require('outputDirection', Quantity.exact(1));
+  const solutions = pool();
+  const kept = solutions.filter(s => prefs.accepts(s));
+  assert.ok(kept.length < solutions.length || solutions.every(s => s.totalDirection === 1));
+  assert.ok(kept.every(s => s.totalDirection === 1));
+  // Et elle est signalée comme non traduisible pour le moteur.
+  assert.deepEqual(prefs.clientConstraints().map(e => e.key), ['outputDirection']);
+});
+
+test('pitch line velocity is computed, not guessed', () => {
+  const solution = pool()[0];
+  const speed = solution.inputSpeedRpm;
+  const diameter = solution.mechanical[0].geometry.pitchDiameterInput;
+  const expected = Math.PI * diameter * speed / 60000;
+  assert.ok(Math.abs(Preferences.pitchLineVelocity(solution) - expected) < 1e-9);
+  // Sans régime d'entrée, on ne prétend rien.
+  assert.equal(Preferences.pitchLineVelocity({ inputSpeedRpm: null, mechanical: [] }), null);
+});
+
+test('heat comes from the losses the engine already totals', () => {
+  const solution = pool()[0];
+  const loss = Preferences.criterion('powerLoss').metric(solution);
+  assert.equal(loss, solution.lossPowerW);
+  assert.ok(Math.abs(loss - (solution.inputPowerW - solution.outputPowerW)) < 1e-9);
+});
+
+test('a shaft distance makes belts and chains relevant, and says so', () => {
+  const { RequirementModel } = require('../js/requirements/RequirementModel.js');
+  const Advisor = require('../js/requirements/TransmissionAdvisor.js');
+  const prefs = new Preferences.PreferenceModel();
+  const near = Advisor.advise(new RequirementModel({ ratio: 9 }), prefs);
+  const far = Advisor.advise(new RequirementModel({ ratio: 9, architecture: { shaftDistanceMm: 300 } }), prefs);
+
+  const rank = (advice, id) => advice.recommended.concat(advice.possible).findIndex(e => e.id === id);
+  assert.ok(rank(far, 'belt') < rank(near, 'belt'), 'la courroie doit remonter');
+  const belt = far.recommended.concat(far.possible).find(e => e.id === 'belt');
+  assert.ok(belt.reasons.some(r => /distance entre arbres/.test(r.text)));
+});
+
+test('the service cycle is reachable, and only expands once asked for', () => {
+  assert.match(modal, /id = 'serviceOptions'/);
+  assert.match(modal, /Estimer la fatigue/);
+  assert.match(modal, /Durée de vie visée/);
+  assert.match(modal, /Type de charge/);
+  assert.match(modal, /id = 'shaftDistance'/);
+  // Le détail du cycle ne s'affiche qu'une fois la fatigue demandée.
+  assert.match(modal, /if \(field\.key !== 'enabled' && !fatigue\.enabled\) return;/);
+});
+
+test('a client-side constraint that empties the pool is named, not blamed elsewhere', () => {
+  assert.match(app, /clientConstraints\(\)/);
+  assert.match(app, /les écarte toutes/);
+  // La sonde de relaxation voit les mêmes exigences que la recherche.
+  assert.match(app, /session\.effectivePreferences\(\)/);
+});

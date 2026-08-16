@@ -211,6 +211,11 @@
     secondary.hidden = true;
     criteria.appendChild(secondary);
 
+    criteria.appendChild(node('h3', null, 'Service et environnement'));
+    var service = node('div', 'service-options');
+    service.id = 'serviceOptions';
+    criteria.appendChild(service);
+
     criteria.appendChild(node('h3', null, 'Comment sera-t-il fabriqué ?'));
     var fabrication = node('div', 'fabrication-options');
     fabrication.id = 'fabricationOptions';
@@ -297,6 +302,7 @@
       this.typeParameters = new GearApp.ui.TypeParametersEditor(el('typeParametersHost'), this.draft, refresh);
       this._bindPriorities(refresh);
       this._bindFabrication(refresh);
+      this._bindService(refresh);
     }
     this.typeStep.setDraft(this.draft);
     this.sheet.session = this.draft;
@@ -371,6 +377,87 @@
     };
   };
 
+  // §20 : le cycle de service et la distance entre arbres existaient dans les
+  // modèles et dans le moteur, mais n'étaient atteignables nulle part. Ils ne
+  // sont pas affichés par défaut : c'est le niveau d'analyse « Fatigue » qui
+  // signale qu'ils manquent, et cette section qui permet de les poser.
+  var SERVICE_FIELDS = [
+    { key: 'enabled', label: 'Estimer la fatigue', type: 'checkbox' },
+    { key: 'hoursPerDay', label: 'Heures par jour', type: 'number', min: 0, max: 24, step: 0.5 },
+    { key: 'daysPerYear', label: 'Jours par an', type: 'number', min: 0, max: 365, step: 1 },
+    { key: 'years', label: 'Durée de vie visée (ans)', type: 'number', min: 0, step: 1 },
+    { key: 'loadType', label: 'Type de charge', type: 'select', options: [
+      { value: 'constant', label: 'constante' },
+      { value: 'light', label: 'légers à-coups' },
+      { value: 'moderate', label: 'à-coups modérés' },
+      { value: 'heavy', label: 'à-coups sévères' }
+    ] }
+  ];
+
+  SearchModal.prototype._bindService = function (refresh) {
+    var self = this, host = el('serviceOptions');
+
+    this._renderService = function () {
+      host.textContent = '';
+      var fatigue = self.draft.technical.fatigue;
+
+      var distance = node('label', 'service-field');
+      distance.appendChild(node('span', null, 'Distance entre arbres (mm)'));
+      var input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.id = 'shaftDistance';
+      input.placeholder = 'libre';
+      input.value = self.draft.requirement.architecture.shaftDistanceMm == null
+        ? '' : String(self.draft.requirement.architecture.shaftDistanceMm);
+      input.addEventListener('change', function () {
+        var value = parseFloat(input.value);
+        self.draft.requirement.architecture.shaftDistanceMm = isFinite(value) && value > 0 ? value : null;
+        self.draft.invalidate();
+        refresh(false);
+      });
+      distance.appendChild(input);
+      host.appendChild(distance);
+
+      SERVICE_FIELDS.forEach(function (field) {
+        // Le détail du cycle n'a de sens qu'une fois la fatigue demandée.
+        if (field.key !== 'enabled' && !fatigue.enabled) return;
+        var label = node('label', 'service-field');
+        label.appendChild(node('span', null, field.label));
+        var control;
+        if (field.type === 'checkbox') {
+          control = document.createElement('input');
+          control.type = 'checkbox';
+          control.checked = !!fatigue.enabled;
+        } else if (field.type === 'select') {
+          control = document.createElement('select');
+          field.options.forEach(function (option) {
+            var node2 = document.createElement('option');
+            node2.value = option.value; node2.textContent = option.label;
+            control.appendChild(node2);
+          });
+          control.value = fatigue[field.key];
+        } else {
+          control = document.createElement('input');
+          control.type = 'number';
+          if (field.min != null) control.min = field.min;
+          if (field.max != null) control.max = field.max;
+          control.step = field.step || 'any';
+          control.value = String(fatigue[field.key]);
+        }
+        control.id = 'svc_' + field.key;
+        control.addEventListener('change', function () {
+          var value = field.type === 'checkbox' ? control.checked
+            : field.type === 'number' ? parseFloat(control.value) : control.value;
+          self.draft.technical.set('fatigue', field.key, value);
+          refresh(field.key === 'enabled');
+        });
+        label.appendChild(control);
+        host.appendChild(label);
+      });
+    };
+  };
+
   // ===== Rendu =====
 
   SearchModal.prototype.render = function (structural) {
@@ -389,6 +476,7 @@
       if (structural !== false) this.chips.render();
       this._renderPriorities();
       this._renderFabrication();
+      this._renderService();
       this.typeParameters.render();
     }
     this._renderAnalysisLevels();
