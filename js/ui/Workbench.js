@@ -33,9 +33,6 @@
     this.bus = eventBus || GearApp.eventBus;
     this.solutions = [];
     this.selected = 0;
-    // Instantané des types rotatifs cochés avant un passage en mode linéaire.
-    // null = aucun instantané : le mode rotatif respecte alors l'état du DOM.
-    this._rotaryTypes = null;
     this._emptyHintDefault = '';
   }
 
@@ -83,9 +80,8 @@
   };
 
   // À appeler après restauration URL/localStorage : les contrôles ont pu changer.
-  Workbench.prototype.refreshAfterRestore = function () {
-    this._restored = true;
-    this._rotaryTypes = null;
+  Workbench.prototype.refreshAfterRestore = function (restored) {
+    this._restored = !!restored;
     this.renderTypeParams();
     this.updateContext();
     this.renderTypeTemplate();
@@ -93,55 +89,96 @@
     this._refreshManufacturingMode();
     this._refreshWeights();
     this._refreshOptimizationCopy();
-    this._refreshConfigurationFlow();
+    this.adoptRestoredForm(this._restored);
     this.updateSummary();
   };
 
-  // ===== Parcours de configuration : besoin → contraintes → priorité =====
+  // ===== Parcours de configuration : le MODÈLE, puis son reflet =====
   //
-  // Workbench n'implémente pas ces composants : il les assemble. Chacun pilote
-  // les contrôles historiques, qui restent lus par SearchParams.
+  // Workbench n'implémente plus le besoin : il assemble une `SearchSession`
+  // (modèles) et les vues qui l'éditent. Les contrôles historiques ne sont plus
+  // lus pendant la saisie — la session les écrit. C'est l'inversion demandée
+  // par le choix 20C.
   Workbench.prototype._bindConfigurationFlow = function () {
     var self = this;
+    this.session = new GearApp.ui.SearchSession();
 
-    this.constraints = new GearConstraintManager.Manager({
-      host: el('constraintChips'),
-      menu: el('constraintMenu'),
-      trigger: el('addConstraintBtn'),
-      onChange: function () { self.updateSummary(); }
-    }).bind();
+    var refresh = function (structural) { self._refreshConfigurationFlow(structural); };
 
-    this.priorities = new GearPrioritySelector.Selector({
-      host: el('priorityChips'),
-      help: el('priorityHelp'),
-      onChange: function () { self.updateSummary(); }
-    }).bind();
+    this.sheet = new GearApp.ui.RequirementSheet(this.session, refresh).bind();
+    this.advisor = new GearApp.ui.AdvisorPanel(this.session, refresh).bind();
 
-    this.technologies = new GearTechnologySelector.Selector({
-      panel: el('technologyPanel'),
-      toggle: el('technologyToggle'),
-      autoButton: el('technologyAutoBtn'),
-      hint: el('technologyHint'),
-      onChange: function () { self.renderTypeParams(); self.renderTypeTemplate(); self.updateSummary(); }
-    }).bind();
+    this.constraints = new GearApp.ui.ConstraintChips(this.session, refresh).bind();
 
-    this.requirements = new GearRequirementForm.Form({
-      cards: el('objectiveCards'),
-      constraints: this.constraints,
-      onChange: function () { self.updateContext(); }
-    }).bind();
-
-    // Au premier chargement sans configuration restaurée, l'utilisateur doit
-    // pouvoir chercher sans rien ouvrir : technologies automatiques d'emblée.
-    if (!this._restored && this.technologies.selected().length <= 1) this.technologies.setAutomatic();
+    this._bindPriorities(refresh);
+    this.session.syncToForm();
+    this._refreshConfigurationFlow();
   };
 
-  /** Réaligne le parcours après une restauration URL/localStorage/preset. */
-  Workbench.prototype._refreshConfigurationFlow = function () {
+  /** Choix 9B : deux listes, plus huit curseurs. */
+  Workbench.prototype._bindPriorities = function (refresh) {
+    var self = this, axes = GearApp.requirements.preferences.AXES;
+    var primary = el('priority_primary'), secondary = el('priority_secondary');
+    if (!primary || !secondary) return;
+
+    function fill(select, allowNone) {
+      select.innerHTML = '';
+      if (allowNone) {
+        var none = document.createElement('option');
+        none.value = ''; none.textContent = '— rien en particulier —';
+        select.appendChild(none);
+      }
+      axes.forEach(function (axis) {
+        var option = document.createElement('option');
+        option.value = axis.id; option.textContent = axis.label; option.title = axis.help;
+        select.appendChild(option);
+      });
+    }
+    fill(primary, false);
+    fill(secondary, true);
+
+    function commit() {
+      self.session.preferences.primary = primary.value;
+      self.session.preferences.secondary = secondary.value || null;
+      self.session._advice = null;
+      refresh();
+    }
+    primary.addEventListener('change', commit);
+    secondary.addEventListener('change', commit);
+    this._renderPriorities = function () {
+      primary.value = self.session.preferences.primary;
+      secondary.value = self.session.preferences.secondary || '';
+      var help = el('priorityHelp');
+      if (help) {
+        var axis = GearApp.requirements.preferences.axis(self.session.preferences.primary);
+        help.textContent = axis ? axis.help : '';
+      }
+    };
+  };
+
+  /** Réaligne toutes les vues sur le modèle, puis le modèle sur ses miroirs. */
+  Workbench.prototype._refreshConfigurationFlow = function (structural) {
+    if (!this.session) return;
+    if (this.sheet && structural !== false) this.sheet.render();
+    if (this.advisor) this.advisor.render();
     if (this.constraints) this.constraints.render();
-    if (this.priorities) this.priorities.render();
-    if (this.technologies) this.technologies.render();
-    if (this.requirements) this.requirements.render();
+    if (this._renderPriorities) this._renderPriorities();
+    this.session.syncToForm();
+    this.renderTypeParams();
+    this.renderTypeTemplate();
+    this.updateContext();
+    this.updateSummary();
+  };
+
+  /**
+   * Après une restauration (URL, preset, historique) les miroirs portent la
+   * vérité : la session les adopte et redevient la source. Aucun code de
+   * migration dédié — c'est le même chemin pour une URL d'hier et de demain.
+   */
+  Workbench.prototype.adoptRestoredForm = function (restored) {
+    if (!this.session) return;
+    this.session.adoptForm(restored);
+    this._refreshConfigurationFlow();
   };
 
   // ===== Objectif (rapport / vitesse / linéaire) =====
@@ -151,20 +188,8 @@
     var mode = el('objective_mode');
     if (mode) mode.addEventListener('change', function () { self.updateContext(); });
 
-    function refreshDerived() {
-      var inputRpm = parseFloat(el('vitesse_entree') && el('vitesse_entree').value);
-      var outputRpm = parseFloat(el('rpm_sortie_cible') && el('rpm_sortie_cible').value);
-      var derived = el('derivedRatio');
-      if (derived) {
-        derived.textContent = 'Rapport cible dérivé : ' +
-          (inputRpm > 0 && outputRpm > 0 ? (inputRpm / outputRpm).toFixed(2) : '—') + ':1';
-      }
-    }
-    ['vitesse_entree', 'rpm_sortie_cible'].forEach(function (id) {
-      var input = el(id);
-      if (input) input.addEventListener('input', refreshDerived);
-    });
-    this._refreshDerived = refreshDerived;
+    // Le rapport déduit est écrit par RequirementSheet, qui connaît l'intention
+    // (une plage donne « 37,5 → 75:1 », pas une moyenne).
   };
 
   Workbench.prototype.updateContext = function () {
@@ -174,41 +199,16 @@
     var boxes = Array.from(document.querySelectorAll('.type-checkbox'));
     var self = this;
 
-    // Mémoriser les choix rotatifs avant de verrouiller la crémaillère,
-    // pour les restaurer au retour vers un objectif rotatif.
-    if (linear) {
-      var selectedRotaryTypes = boxes.filter(function (checkbox) {
-        return checkbox.value !== 'rack' && checkbox.checked;
-      }).map(function (checkbox) { return checkbox.value; });
-      if (selectedRotaryTypes.length || this._rotaryTypes === null) {
-        this._rotaryTypes = selectedRotaryTypes;
-      }
-    }
-
-    document.querySelectorAll('.objective-fields').forEach(function (group) {
-      var context = linear ? 'linear' : mode;
-      group.classList.toggle('active', group.classList.contains('objective-' + context));
-    });
-
+    // Les cases cochées appartiennent désormais à la session : ici on ne règle
+    // plus QUE leur pertinence dans le contexte courant. L'ancien instantané
+    // « types rotatifs » n'a plus lieu d'être — le conseiller reconstruit la
+    // sélection à chaque changement de besoin.
     boxes.forEach(function (checkbox) {
       var isRack = checkbox.value === 'rack';
       checkbox.disabled = linear ? !isRack : isRack;
-      if (linear) {
-        checkbox.checked = isRack;
-      } else if (isRack) {
-        checkbox.checked = false;
-      } else if (self._rotaryTypes !== null) {
-        checkbox.checked = self._rotaryTypes.indexOf(checkbox.value) !== -1;
-      }
       var card = checkbox.closest('.type-option');
       if (card) card.hidden = linear ? !isRack : isRack;
     });
-    // L'instantané est consommé au retour en rotatif : les modifications
-    // manuelles ultérieures ne doivent plus être écrasées.
-    if (!linear) this._rotaryTypes = null;
-
-    var output = el('rpm_sortie_cible');
-    if (output) output.dispatchEvent(new Event('input'));
 
     document.body.classList.toggle('linear-objective', linear);
     this.renderTypeParams();
@@ -524,39 +524,47 @@
     form.addEventListener('change', function () { self.updateSummary(); });
   };
 
+  /**
+   * Le récapitulatif collant : ce que la recherche va réellement chercher.
+   * Il se lit sur le MODÈLE, pas sur les miroirs — c'est la seule façon qu'il
+   * dise « 37,5 → 75:1 » au lieu d'une moyenne, et qu'il n'affiche pas une
+   * contrainte vide quand l'utilisateur n'en a posé aucune.
+   */
   Workbench.prototype.updateSummary = function () {
     var summary = el('configurationSummary');
     if (!summary) return;
-    var mode = el('objective_mode') ? el('objective_mode').value : 'ratio';
+    if (!this.session) { summary.innerHTML = ''; return; }
 
-    if (mode === 'rotationTranslation') {
-      var bits = ['<strong>' + finite(parseFloat(el('linear_travel_per_rev').value), 2) + ' mm/tr</strong>',
-        '<span>' + finite(parseFloat(el('vitesse_entree').value), 0) + ' tr/min entrée</span>'];
-      var min = el('linear_speed_min'), max = el('linear_speed_max'), force = el('linear_force_min');
-      if (min && min.value) bits.push('<span>Vitesse ≥ ' + min.value + ' mm/min</span>');
-      if (max && max.value) bits.push('<span>Vitesse ≤ ' + max.value + ' mm/min</span>');
-      if (force && force.value) bits.push('<span>Force ≥ ' + force.value + ' N</span>');
+    var requirement = this.session.requirement, preferences = this.session.preferences;
+    var problem = requirement.inferProblem();
+    var bits = [];
+
+    if (problem.mode === 'rotationTranslation') {
+      var travel = requirement.travelRequirement();
+      bits.push('<strong>' + (travel.isKnown() ? travel.describe() + '/tr' : 'course à définir') + '</strong>');
+      bits.push('<span>' + requirement.input.speed.describe() + ' tr/min entrée</span>');
+      if (requirement.output.force.isKnown()) bits.push('<span>Force ' + requirement.output.force.describe() + ' N</span>');
       bits.push('<span>Pignon-crémaillère</span>');
-      summary.innerHTML = bits.join('');
-      return;
+    } else {
+      var ratio = requirement.ratioRequirement();
+      bits.push('<strong>' + (ratio.isKnown() ? ratio.describe() : '—') + '</strong>');
+      if (requirement.output.torque.isKnown()) bits.push('<span>Couple ' + requirement.output.torque.describe() + ' N·m</span>');
+      var families = this.session.selectedTechnologies().map(function (id) {
+        var known = GearApp.requirements.TransmissionAdvisor.KNOWLEDGE[id];
+        return known ? known.name : id;
+      });
+      bits.push('<span>' + (families.join(' · ') || 'aucune technologie') + '</span>');
     }
 
-    var ratio = parseFloat(el('rapport').value) || 0;
-    if (mode === 'need') {
-      var a = parseFloat(el('vitesse_entree').value), b = parseFloat(el('rpm_sortie_cible').value);
-      if (a > 0 && b > 0) ratio = a / b;
+    var constraints = preferences.constraints();
+    if (constraints.length) {
+      bits.push('<span>' + constraints.map(function (entry) {
+        return entry.meta.label + ' ' + entry.quantity.describe();
+      }).join(' · ') + '</span>');
     }
-    var types = Array.from(document.querySelectorAll('.type-checkbox:checked')).map(function (c) {
-      return TYPE_NAMES[c.value] || c.value;
-    });
-    summary.innerHTML = '<strong>' + finite(ratio, 2) + ':1</strong>' +
-      '<span>± ' + el('precision').value + ' %</span>' +
-      '<span>' + (types.join(' · ') || 'aucun type') + '</span>' +
-      '<span>≤ ' + el('etages').value + ' étages · ' + (OPTIMIZATION_COPY[el('search_mode').value] || '') + '</span>';
+    bits.push('<span>' + preferences.describe() + '</span>');
+    summary.innerHTML = bits.join('');
   };
-
-  // ===== Vue résultats : cartes / tableau =====
-
   Workbench.prototype._bindResultsView = function () {
     var container = el('result-container'), cards = el('cardsViewBtn'), table = el('tableViewBtn');
     if (!container || !cards || !table) return;
@@ -664,9 +672,12 @@
     host.innerHTML = '';
     var self = this;
 
-    // Badges calculés sur le VIVIER COMPLET, pas sur la vue filtrée : « la plus
-    // compacte » doit désigner la même solution quels que soient les filtres.
-    var annotation = GearResultRecommendations.annotate(info && info.pool ? info.pool : this.solutions);
+    // Choix 12C : le front de Pareto est calculé sur le VIVIER COMPLET, puis
+    // traduit en catégories. « La plus compacte » désigne la même solution quels
+    // que soient les filtres, et ne s'affiche que si l'écart est réel.
+    var Evaluator = GearApp.requirements.SolutionEvaluator;
+    var preferences = this.session ? this.session.preferences : null;
+    var annotation = Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences);
     var poolIndexOf = info && info.pool ? function (position) { return self._indices[position]; }
       : function (position) { return position; };
 
@@ -681,7 +692,7 @@
       tile.tabIndex = 0;
       tile.dataset.index = index;
       tile.setAttribute('aria-label', 'Solution ' + (position + 1) +
-        (badges.length ? ' — ' + badges.map(function (id) { return GearResultRecommendations.badge(id).label; }).join(', ') : ''));
+        (badges.length ? ' — ' + badges.map(Evaluator.label).join(', ') : ''));
 
       var linear = s.mode === 'rotationTranslation';
       // Cartes volontairement courtes : de quoi DÉCIDER. SF/SH, efforts et
@@ -700,12 +711,13 @@
            ['Étages', String((s.stages || []).length), false]];
 
       var badgeMarkup = badges.map(function (id) {
-        var entry = GearResultRecommendations.badge(id);
-        return '<span class="recommendation-badge ' + id + '">' + (id === 'recommended' ? '★ ' : '') + entry.label + '</span>';
+        return '<span class="recommendation-badge ' + id + '">' + (id === 'recommended' ? '★ ' : '') + Evaluator.label(id) + '</span>';
       }).join('');
       var origin = s.origin === 'variante' ? '<span class="recommendation-badge variant">Variante</span>' : '';
       var architecture = (s.stages || []).map(function (x) { return TYPE_NAMES[x.type] || x.type; }).join(' → ');
-      var why = GearResultRecommendations.explain(s, badges);
+      // Choix 13C : la carte dit aussi si la solution TIENT les contraintes.
+      var violations = annotation.compliance[poolIndexOf(position)] || (preferences ? [] : null);
+      var why = Evaluator.explain(s, badges, violations);
 
       tile.innerHTML =
         '<header class="solution-card-head">' + badgeMarkup + origin +
@@ -764,8 +776,47 @@
       return;
     }
 
-    var reason = info.stats.reason;
     if (title) title.textContent = 'Aucune architecture ne respecte toutes les contraintes';
+    if (blockers) { blockers.textContent = ''; blockers.hidden = true; }
+    if (actions) { actions.textContent = ''; actions.hidden = true; }
+
+    // Choix 14C : quand la sonde a tourné, on ne LISTE plus des suspects — on
+    // nomme le blocage, on mesure l'écart et on chiffre l'assouplissement.
+    var diagnosis = info.diagnosis;
+    if (diagnosis) {
+      if (hint) hint.textContent = diagnosis.text;
+      if (diagnosis.blocker && diagnosis.blocker.unlocked > 0 && actions) {
+        var accept = document.createElement('button');
+        accept.type = 'button';
+        accept.className = 'btn-primary';
+        accept.id = 'acceptRelaxationBtn';
+        accept.dataset.field = diagnosis.blocker.key;
+        accept.dataset.value = String(diagnosis.blocker.suggested);
+        accept.textContent = 'Accepter ' + diagnosis.blocker.suggested +
+          (diagnosis.blocker.meta.unit ? ' ' + diagnosis.blocker.meta.unit : '');
+        accept.addEventListener('click', function () {
+          self.session.preferences = diagnosis.blocker.preferences;
+          self.session._advice = null;
+          self._refreshConfigurationFlow();
+          var start = el('startStopBtn');
+          if (start) start.click();
+        });
+        actions.appendChild(accept);
+        actions.hidden = false;
+      }
+      if (diagnosis.candidates && diagnosis.candidates.length > 1 && blockers) {
+        diagnosis.candidates.slice(1, 4).forEach(function (candidate) {
+          var item = document.createElement('li');
+          item.textContent = candidate.meta.label + ' : au mieux ' + candidate.achieved +
+            (candidate.meta.unit ? ' ' + candidate.meta.unit : '') + ' contre ' + candidate.limit + ' demandé.';
+          blockers.appendChild(item);
+        });
+        blockers.hidden = false;
+      }
+      return;
+    }
+
+    var reason = info.stats.reason;
     if (hint) {
       hint.textContent = reason === 'NO_CANDIDATES'
         ? 'Aucun candidat d’étage n’a pu être généré : les plages de dents ou les technologies autorisées sont trop étroites.'
@@ -773,50 +824,30 @@
           ? 'Aucun module à tester : renseignez un module fixe valide ou une plage de modules automatique.'
           : 'La recherche a exploré le domaine autorisé sans trouver de solution valide.';
     }
-
-    // Les contraintes explicitement posées sont les suspects les plus probables.
-    var suspects = (info.stats.blockers || (this.constraints ? this.constraints.active() : [])).slice(0, 4);
-    if (blockers) {
-      blockers.textContent = '';
-      suspects.forEach(function (constraint) {
+    var suspects = this.session ? this.session.preferences.constraints() : [];
+    if (blockers && suspects.length) {
+      suspects.slice(0, 4).forEach(function (entry) {
         var item = document.createElement('li');
-        item.textContent = constraint.text || constraint.name;
+        item.textContent = entry.meta.label + ' ' + entry.quantity.describe();
         blockers.appendChild(item);
       });
-      blockers.hidden = !suspects.length;
+      blockers.hidden = false;
     }
-    if (actions) {
-      actions.textContent = '';
-      suspects.forEach(function (constraint) {
+    if (actions && suspects.length) {
+      suspects.slice(0, 4).forEach(function (entry) {
         var button = document.createElement('button');
         button.type = 'button';
         button.className = 'btn-small';
-        button.textContent = 'Lever « ' + (constraint.text || constraint.name) + ' »';
+        button.textContent = 'Lever « ' + entry.meta.label + ' »';
         button.addEventListener('click', function () {
-          if (self.constraints) self.constraints.remove(constraint.field);
+          self.session.preferences.drop(entry.key);
+          self._refreshConfigurationFlow();
         });
         actions.appendChild(button);
       });
-      // Toujours une porte de sortie, même sans contrainte explicite.
-      if (!suspects.length) {
-        var relax = document.createElement('button');
-        relax.type = 'button';
-        relax.className = 'btn-small';
-        relax.textContent = 'Autoriser un étage de plus';
-        relax.addEventListener('click', function () {
-          var stages = el('etages');
-          if (!stages) return;
-          stages.value = String(Math.min(8, (parseInt(stages.value, 10) || 4) + 1));
-          stages.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-        actions.appendChild(relax);
-      }
-      actions.hidden = !actions.children.length;
+      actions.hidden = false;
     }
   };
-
-  // Le surlignage se fait par index de vivier (data-index), jamais par
-  // position DOM : le tableau trié/paginé gère sa propre sélection.
   Workbench.prototype._markSelected = function () {
     var self = this;
     document.querySelectorAll('.solution-card').forEach(function (tile) {

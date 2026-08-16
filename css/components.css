@@ -82,8 +82,6 @@
 
 /* ----- Contexte d'objectif ----- */
 
-.objective-fields { display: none; }
-.objective-fields.active { display: block; }
 
 .derived-ratio {
   display: block;
@@ -252,10 +250,10 @@ body.linear-objective .transmission-filters { display: none; }
 
 .module-fixed.hidden, .module-auto.hidden { display: none; }
 
-/* ----- Mode expert ----- */
-
-.expert-only { display: none; }
-body.pro-mode .expert-only { display: revert; }
+/* ----- Contenu technique -----
+   Choix 8B : il n'y a plus de mode global « standard / expert ». Le contenu
+   technique reste toujours atteignable ; ce sont les <details> qui le tiennent
+   replié, au bon endroit, plutôt qu'un interrupteur d'en-tête à découvrir. */
 
 /* ----- Aide ----- */
 

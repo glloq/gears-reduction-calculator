@@ -8,7 +8,6 @@
   function ParameterForm() {
     this._sliderMenante = null;
     this._sliderMenee = null;
-    this._proMode = false;
   }
 
   // ===== Sliders noUiSlider =====
@@ -40,30 +39,16 @@
     }
   };
 
-  // ===== Mode expert (anciennement « Pro ») =====
+  // ===== Données techniques (choix 8B : plus de mode global) =====
+  //
+  // Il n'y a plus deux logiciels « standard » et « expert ». Les données de
+  // diagnostic restent disponibles en permanence, repliées dans leurs propres
+  // <details> : c'est la divulgation progressive qui les cache, pas un
+  // interrupteur que l'utilisateur devait découvrir.
 
-  ParameterForm.prototype.isProMode = function () {
-    return this._proMode;
-  };
-
-  ParameterForm.prototype.toggleProMode = function () {
-    this._proMode = !this._proMode;
-    document.body.classList.toggle('pro-mode', this._proMode);
-
-    var btn = document.getElementById('proModeBtn');
-    if (btn) {
-      btn.textContent = this._proMode ? 'Expert' : 'Standard';
-      btn.setAttribute('aria-pressed', this._proMode ? 'true' : 'false');
-    }
-
-    localStorage.setItem('gearCalcProMode', this._proMode ? '1' : '0');
-  };
-
-  ParameterForm.prototype.restoreProMode = function () {
-    if (localStorage.getItem('gearCalcProMode') === '1') {
-      this.toggleProMode();
-    }
-  };
+  ParameterForm.prototype.isProMode = function () { return true; };
+  ParameterForm.prototype.toggleProMode = function () { return this; };
+  ParameterForm.prototype.restoreProMode = function () { return this; };
 
   // ===== Thème =====
 
@@ -156,8 +141,9 @@
     this.getSearchParams().save();
   };
 
+  /** @returns {boolean} vrai si une configuration mémorisée a été appliquée. */
   ParameterForm.prototype.restore = function () {
-    GearApp.models.SearchParams.restore();
+    return GearApp.models.SearchParams.restore() === true;
   };
 
   GearApp.ui.ParameterForm = ParameterForm;

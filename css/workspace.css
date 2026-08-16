@@ -336,7 +336,7 @@
 .chart-tabs { display: flex; gap: var(--sp-1); overflow-x: auto; }
 .chart-tabs button { border: 0; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: var(--radius-sm); font-size: var(--font-sm); }
 .chart-tabs button.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
-body.pro-mode .chart-tabs .expert-only { display: inline-block; }
+.chart-tabs .expert-only { display: inline-block; }
 
 .charts-grid .chart-container { display: none; position: relative; min-height: 340px; }
 .charts-grid .chart-container.active { display: block; }

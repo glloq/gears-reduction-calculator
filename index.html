@@ -48,7 +48,6 @@
       <div><strong>Calculateur d'engrenages</strong><small>Recherche de trains de réduction</small></div>
     </div>
     <div class="header-actions">
-      <button class="btn-mode" id="proModeBtn" title="Basculer les paramètres experts (matériaux, fatigue, pondération)" aria-pressed="false">Standard</button>
       <button class="btn-icon" id="themeBtn" title="Mode sombre/clair" aria-label="Changer le thème">Thème</button>
       <button class="btn-icon" id="shareBtn" title="Copier un lien partageable de la configuration" aria-label="Partager">Partager</button>
     </div>
@@ -69,69 +68,68 @@
         </details>
       </div>
 
-      <!-- ===== 1. BESOIN : la seule chose que l'utilisateur doit savoir ===== -->
+      <!-- ===== 1. BESOIN : une fiche, pas un mode de solveur (2C + 3C) ===== -->
       <section class="config-step" id="step-besoin" aria-labelledby="besoin-title">
-        <h2 class="section-header" id="besoin-title">Que voulez-vous obtenir&nbsp;?</h2>
+        <h2 class="section-header" id="besoin-title">Votre besoin</h2>
 
-        <!-- Les cartes pilotent ce select, qui reste l'état lu par SearchParams
-             (et donc par les URLs partagées et les presets existants). -->
-        <select id="objective_mode" data-persist hidden aria-hidden="true" tabindex="-1">
-          <option value="ratio">Rapport de réduction connu</option>
-          <option value="need">Vitesse de sortie cible</option>
-          <option value="rotationTranslation">Rotation → translation (crémaillère)</option>
-        </select>
+        <!-- Raccourcis fonctionnels : ils ne font que pré-remplir la fiche. -->
+        <div class="requirement-shortcuts" id="requirementShortcuts" role="group" aria-label="Points de départ"></div>
 
-        <div class="objective-cards" id="objectiveCards" role="radiogroup" aria-label="Type de recherche">
-          <button type="button" class="objective-card" data-objective="ratio" role="radio" aria-checked="true">
-            <strong>Rapport</strong><small>i = 12:1</small>
+        <!-- Chaque ligne porte son intention : = ≈ ≥ ≤ ou une plage. -->
+        <div class="requirement-sheet" id="requirementSheet"></div>
+
+        <div class="constraint-add">
+          <button type="button" class="btn-add-constraint" id="addQuantityBtn" aria-expanded="false" aria-controls="quantityMenu">
+            + Ajouter une donnée
           </button>
-          <button type="button" class="objective-card" data-objective="need" role="radio" aria-checked="false">
-            <strong>Vitesse de sortie</strong><small>1500 → 125 rpm</small>
-          </button>
-          <button type="button" class="objective-card" data-objective="needTorque" role="radio" aria-checked="false">
-            <strong>Vitesse + couple</strong><small>125 rpm · ≥ 80 N·m</small>
-          </button>
-          <button type="button" class="objective-card" data-objective="rotationTranslation" role="radio" aria-checked="false">
-            <strong>Rotation → translation</strong><small>mm par tour</small>
-          </button>
+          <div class="constraint-menu" id="quantityMenu" role="menu" hidden></div>
         </div>
 
-        <div class="requirement-io">
-          <div class="requirement-block">
-            <h3 class="requirement-title">Entrée</h3>
-            <div class="field-grid">
-              <div><label for="vitesse_entree">Vitesse (tr/min)</label><input type="number" id="vitesse_entree" value="1500" step="10" min="1"></div>
-              <div><label for="couple_entree">Couple (N·m)</label><input type="number" id="couple_entree" value="10" step="0.1" min="0.01"></div>
-            </div>
+        <output id="derivedRatio" class="derived-ratio"></output>
+
+        <details class="architecture-panel" id="architecturePanel">
+          <summary>Architecture imposée</summary>
+          <div id="architectureOptions" class="architecture-options">
+            <label><input type="checkbox" data-architecture="axisAngle" value="90"> Renvoi d’angle à 90°</label>
+            <label>Sortie coaxiale
+              <select data-architecture="coaxial">
+                <option value="any">indifférente</option>
+                <option value="required">exigée</option>
+                <option value="avoid">à éviter</option>
+              </select>
+            </label>
+            <label>Réversibilité
+              <select data-architecture="selfLocking">
+                <option value="any">indifférente</option>
+                <option value="required">irréversible (maintient la charge)</option>
+                <option value="forbidden">réversible (rétro-entraînable)</option>
+              </select>
+            </label>
           </div>
+        </details>
 
-          <div class="requirement-block">
-            <h3 class="requirement-title">Sortie souhaitée</h3>
-
-            <div class="objective-fields objective-ratio active">
-              <label for="rapport">Rapport cible (tours entrée pour un tour sortie)</label>
-              <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
-            </div>
-
-            <div class="objective-fields objective-need">
-              <label for="rpm_sortie_cible">Vitesse de sortie cible (tr/min)</label>
-              <input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
-              <output id="derivedRatio" class="derived-ratio"></output>
-            </div>
-
-            <div class="objective-fields objective-linear">
-              <label for="linear_travel_per_rev">Course par tour (mm/tr)</label>
-              <input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
-              <div class="field-grid">
-                <div><label for="linear_speed_min">Vitesse min (mm/min)</label><input id="linear_speed_min" data-persist type="number" min="0"></div>
-                <div><label for="linear_speed_max">Vitesse max (mm/min)</label><input id="linear_speed_max" data-persist type="number" min="0"></div>
-              </div>
-              <label for="linear_force_min">Force de sortie minimum (N)</label>
-              <input id="linear_force_min" data-persist type="number" min="0">
-              <p class="field-help">Le solveur linéaire traite un pignon + crémaillère, sans étage de réduction.</p>
-            </div>
-          </div>
+        <!-- Miroirs des anciens champs. Ils ne sont plus une source : la
+             session les ÉCRIT depuis le modèle, et sait les relire pour
+             ressusciter une URL partagée ou un preset d'avant la refonte.
+             Ils disparaîtront quand le moteur consommera la requête compilée. -->
+        <div class="legacy-mirrors" id="legacyMirrors" hidden aria-hidden="true">
+          <select id="objective_mode" data-persist tabindex="-1">
+            <option value="ratio">Rapport de réduction connu</option>
+            <option value="need">Vitesse de sortie cible</option>
+            <option value="rotationTranslation">Rotation → translation (crémaillère)</option>
+          </select>
+          <input type="number" id="vitesse_entree" value="1500" tabindex="-1">
+          <input type="number" id="couple_entree" value="10" tabindex="-1">
+          <input type="number" id="rapport" value="12" tabindex="-1">
+          <input type="number" id="rpm_sortie_cible" data-persist value="125" tabindex="-1">
+          <input type="number" id="linear_travel_per_rev" data-persist value="100" tabindex="-1">
+          <input type="number" id="linear_speed_min" data-persist tabindex="-1">
+          <input type="number" id="linear_speed_max" data-persist tabindex="-1">
+          <input type="number" id="linear_force_min" data-persist tabindex="-1">
         </div>
+
+        <!-- Diagnostic vivant : ce que le modèle déduit, sans lancer le solveur. -->
+        <p class="requirement-diagnostic" id="requirementDiagnostic" aria-live="polite"></p>
       </section>
 
       <!-- ===== 2. CONTRAINTES : rien tant que l'utilisateur n'en ajoute pas ===== -->
@@ -146,22 +144,30 @@
         </div>
       </section>
 
-      <!-- ===== 3. PRIORITÉ ===== -->
+      <!-- ===== 3. PRIORITÉ : une principale, une secondaire (9B) ===== -->
       <section class="config-step" id="step-priorite" aria-labelledby="priorite-title">
         <h2 class="section-header" id="priorite-title">Priorité</h2>
-        <div class="priority-chips" id="priorityChips" role="radiogroup" aria-label="Priorité de recherche"></div>
+        <div class="priority-pair">
+          <label for="priority_primary">D’abord</label>
+          <select id="priority_primary"></select>
+          <label for="priority_secondary">Puis</label>
+          <select id="priority_secondary"></select>
+        </div>
         <p class="field-help" id="priorityHelp"></p>
       </section>
 
       <!-- ===== 4. TECHNOLOGIE ===== -->
       <section class="config-step" id="step-technologie" aria-labelledby="technologie-title">
         <h2 class="section-header" id="technologie-title">Technologie</h2>
-        <div class="technology-summary">
-          <button type="button" class="technology-mode" id="technologyAutoBtn" aria-pressed="true">Automatique</button>
-          <span class="technology-hint" id="technologyHint">Le calculateur comparera les technologies compatibles.</span>
+        <div class="technology-summary" id="technologyMode" role="group" aria-label="Choix des technologies">
+          <button type="button" class="technology-mode active" data-technology-mode="auto" aria-pressed="true">Conseillées</button>
+          <button type="button" class="technology-mode" data-technology-mode="manual" aria-pressed="false">Choisir moi-même</button>
         </div>
+        <p class="technology-hint" id="technologySummary" aria-live="polite"></p>
+        <div class="advisor-list" id="advisorList"></div>
+        <div class="advisor-gaps" id="advisorGaps" hidden aria-live="polite"></div>
         <button type="button" class="advanced-toggle" id="technologyToggle" aria-expanded="false" aria-controls="technologyPanel">
-          Modifier les technologies autorisées
+          Cases historiques (lecture seule)
         </button>
         <div id="technologyPanel" hidden>
         <div class="transmission-filters segmented" role="group" aria-label="Filtrer les familles">
@@ -417,18 +423,22 @@
         </div>
       </details>
 
-      <details class="panel expert-only" id="panel-ponderation">
-        <summary><span class="panel-step">E</span><span class="panel-title">Pondération multicritère</span><span class="panel-hint">expert</span></summary>
+      <!-- Choix 9B : les huit poids ne se règlent plus à la main, ils DÉRIVENT
+           des deux priorités. On les garde en miroir pour que les URLs et les
+           presets existants restent lisibles, et on affiche leur valeur, mais
+           on ne demande plus à personne d'arbitrer huit curseurs. -->
+      <details class="panel" id="panel-ponderation">
+        <summary><span class="panel-step">E</span><span class="panel-title">Pondération déduite</span><span class="panel-hint">lecture</span></summary>
         <div class="panel-body">
-          <p class="field-help">Utilisée par l'optimisation globale. Les poids sont normalisés automatiquement.</p>
-          <label class="range-label">Précision <input id="weight_ratio" data-persist type="range" min="0" max="10" value="6"></label>
-          <label class="range-label">Compacité <input id="weight_size" data-persist type="range" min="0" max="10" value="5"></label>
-          <label class="range-label">Rendement <input id="weight_efficiency" data-persist type="range" min="0" max="10" value="5"></label>
-          <label class="range-label">Résistance <input id="weight_stress" data-persist type="range" min="0" max="10" value="5"></label>
-          <label class="range-label">Nombre d'étages <input id="weight_stages" data-persist type="range" min="0" max="10" value="6"></label>
-          <label class="range-label">Bruit <input id="weight_noise" data-persist type="range" min="0" max="10" value="4"></label>
-          <label class="range-label">Fabrication <input id="weight_manufacturing" data-persist type="range" min="0" max="10" value="5"></label>
-          <label class="range-label">Coût relatif <input id="weight_cost" data-persist type="range" min="0" max="10" value="5"></label>
+          <p class="field-help">Calculée à partir de votre priorité principale et secondaire.</p>
+          <label class="range-label">Précision <input id="weight_ratio" data-persist type="range" min="0" max="10" disabled value="6"></label>
+          <label class="range-label">Compacité <input id="weight_size" data-persist type="range" min="0" max="10" disabled value="5"></label>
+          <label class="range-label">Rendement <input id="weight_efficiency" data-persist type="range" min="0" max="10" disabled value="5"></label>
+          <label class="range-label">Résistance <input id="weight_stress" data-persist type="range" min="0" max="10" disabled value="5"></label>
+          <label class="range-label">Nombre d'étages <input id="weight_stages" data-persist type="range" min="0" max="10" disabled value="6"></label>
+          <label class="range-label">Bruit <input id="weight_noise" data-persist type="range" min="0" max="10" disabled value="4"></label>
+          <label class="range-label">Fabrication <input id="weight_manufacturing" data-persist type="range" min="0" max="10" disabled value="5"></label>
+          <label class="range-label">Coût relatif <input id="weight_cost" data-persist type="range" min="0" max="10" disabled value="5"></label>
         </div>
       </details>
         </div>
@@ -665,6 +675,16 @@
   <script src="js/transmissions/TransmissionRegistry.js" defer></script>
 
   <!-- Modèles -->
+  <!-- Modèle du besoin : la couche qui précède le moteur (choix 20C) -->
+  <script src="js/requirements/Quantity.js" defer></script>
+  <script src="js/requirements/RequirementModel.js" defer></script>
+  <script src="js/requirements/PreferenceModel.js" defer></script>
+  <script src="js/requirements/TransmissionAdvisor.js" defer></script>
+  <script src="js/requirements/ConstraintCompiler.js" defer></script>
+  <script src="js/requirements/LegacySearchAdapter.js" defer></script>
+  <script src="js/requirements/SolutionEvaluator.js" defer></script>
+  <script src="js/requirements/NearMissAnalyzer.js" defer></script>
+
   <script src="js/models/TransmissionTypeRegistry.js" defer></script>
   <script src="js/models/SearchParams.js" defer></script>
 
@@ -705,6 +725,10 @@
   <script src="js/visualization/ViewerToolbar.js" defer></script>
 
   <!-- UI -->
+  <script src="js/ui/SearchSession.js" defer></script>
+  <script src="js/ui/RequirementSheet.js" defer></script>
+  <script src="js/ui/AdvisorPanel.js" defer></script>
+  <script src="js/ui/ConstraintChips.js" defer></script>
   <script src="js/ui/Logger.js" defer></script>
   <script src="js/ui/ColumnPreferences.js" defer></script>
   <script src="js/ui/SolutionFilter.js" defer></script>
@@ -718,10 +742,6 @@
   <script src="js/ui/StageEditor.js" defer></script>
   <script src="js/ui/ComparePanel.js" defer></script>
   <script src="js/ui/ConstraintManager.js" defer></script>
-  <script src="js/ui/PrioritySelector.js" defer></script>
-  <script src="js/ui/TechnologySelector.js" defer></script>
-  <script src="js/ui/RequirementForm.js" defer></script>
-  <script src="js/ui/ResultRecommendations.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->

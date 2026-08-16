@@ -104,13 +104,17 @@ test('behavior is bound in JS, not in inline attributes', () => {
   assert.doesNotMatch(html, /onclick=/);
 });
 
-test('objective modes use contextual groups and expose a live derived ratio', () => {
-  assert.match(html, /objective-fields objective-ratio/);
-  assert.match(html, /objective-fields objective-need/);
-  assert.match(html, /objective-fields objective-linear/);
-  assert.match(ui, /objective-' \+ context/);
-  assert.match(ui, /Rapport cible dérivé/);
-  assert.match(html, /solveur linéaire traite un pignon \+ crémaillère/);
+test('the sheet replaces the objective modes, and derives the ratio itself', () => {
+  // Le mode de solveur n'est plus une question posée à l'utilisateur : il n'y a
+  // donc plus de groupes de champs par objectif, mais une fiche unique.
+  assert.doesNotMatch(html, /objective-fields/);
+  assert.match(html, /id="requirementSheet"/);
+  assert.match(html, /id="requirementDiagnostic"/);
+  // Le rapport déduit vient de la fiche, qui connaît l'intention de la valeur.
+  const sheet = fs.readFileSync('js/ui/RequirementSheet.js', 'utf8');
+  assert.match(sheet, /Rapport déduit/);
+  assert.match(sheet, /ratioRequirement\(\)/);
+  assert.doesNotMatch(ui, /Rapport cible dérivé/);
 });
 
 test('successful searches automatically select solution zero', () => {
@@ -140,7 +144,7 @@ test('type parameter editors are available outside expert mode', () => {
   assert.doesNotMatch(renderer, /proMode|pro-mode/);
 });
 
-test('updateContext exclusively selects rack in linear mode and restores rotary choices', () => {
+test('updateContext only rules on relevance, the session owns the choices', () => {
   function classList(names = []) {
     const values = new Set(names);
     return {
@@ -154,17 +158,12 @@ test('updateContext exclusively selects rack in linear mode and restores rotary 
   }
 
   const objective = { value: 'ratio' };
-  const output = { dispatchEvent() {} };
-  const fields = [
-    { classList: classList(['objective-ratio']) },
-    { classList: classList(['objective-linear']) }
-  ];
   const boxes = [checkbox('spur', true), checkbox('belt', false), checkbox('rack', false)];
-  const elements = { objective_mode: objective, rpm_sortie_cible: output };
+  const elements = { objective_mode: objective };
   const document = {
     body: { classList: classList() },
     getElementById: id => elements[id] || null,
-    querySelectorAll: selector => selector === '.type-checkbox' ? boxes : fields
+    querySelectorAll: () => boxes
   };
   const sandbox = { GearApp: { ui: {} }, document, Event: function Event(type) { this.type = type; }, window: {}, requestAnimationFrame: () => {} };
   vm.runInNewContext(ui, sandbox);
@@ -172,33 +171,19 @@ test('updateContext exclusively selects rack in linear mode and restores rotary 
   workbench.updateSummary = function () {};
   workbench.renderTypeParams = function () {};
 
-  // Mode rotatif initial sans instantané : l'état du DOM est respecté.
+  // En rotatif, la crémaillère est hors sujet : désactivée et masquée.
   workbench.updateContext();
-  assert.deepEqual(boxes.map(box => [box.value, box.checked]), [
-    ['spur', true], ['belt', false], ['rack', false]
+  assert.deepEqual(boxes.map(box => [box.value, box.disabled, box.card.hidden]), [
+    ['spur', false, false], ['belt', false, false], ['rack', true, true]
   ]);
 
+  // En linéaire, c'est l'inverse — mais l'état COCHÉ n'est jamais réécrit ici :
+  // il appartient à la session, qui l'aligne sur le conseiller.
+  const before = boxes.map(box => box.checked);
   objective.value = 'rotationTranslation';
   workbench.updateContext();
-  assert.deepEqual(boxes.map(box => [box.value, box.checked, box.disabled, box.card.hidden]), [
-    ['spur', false, true, true],
-    ['belt', false, true, true],
-    ['rack', true, false, false]
+  assert.deepEqual(boxes.map(box => [box.value, box.disabled, box.card.hidden]), [
+    ['spur', true, true], ['belt', true, true], ['rack', false, false]
   ]);
-  assert.equal(fields[1].classList.contains('active'), true);
-
-  objective.value = 'ratio';
-  workbench.updateContext();
-  assert.deepEqual(boxes.map(box => [box.value, box.checked, box.disabled, box.card.hidden]), [
-    ['spur', true, false, false],
-    ['belt', false, false, false],
-    ['rack', false, true, true]
-  ]);
-  assert.equal(fields[0].classList.contains('active'), true);
-
-  // L'instantané est consommé : un choix manuel ultérieur survit au prochain
-  // passage dans updateContext.
-  boxes[1].checked = true;
-  workbench.updateContext();
-  assert.equal(boxes[1].checked, true);
+  assert.deepEqual(boxes.map(box => box.checked), before, 'updateContext ne doit plus cocher ni décocher');
 });
