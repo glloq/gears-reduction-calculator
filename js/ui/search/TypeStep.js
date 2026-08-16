@@ -14,10 +14,15 @@
 
   var KNOWLEDGE = GearApp.requirements.TransmissionAdvisor.KNOWLEDGE;
 
-  var ENTRIES = [
-    { policy: 'auto', icon: '✦', label: 'Conseillez-moi', help: 'Le système choisit les technologies adaptées.' },
-    { policy: 'restrict', icon: '⚙', label: 'Je connais le type', help: 'Droit, planétaire, vis, courroie, chaîne…' },
-    { policy: 'template', icon: '⛓', label: 'Architecture personnalisée', help: 'Plusieurs étages ou technologies imposées.' }
+  // La politique technologique n'est plus la première question : c'est une
+  // décision INDÉPENDANTE de la méthode de recherche. On peut vouloir le
+  // meilleur compromis en imposant un planétaire, ou viser un rapport exact en
+  // laissant le système choisir la famille.
+  var POLICIES = [
+    { policy: 'auto', label: 'Automatique', help: 'Toutes les technologies compatibles sont explorées.' },
+    { policy: 'prefer', label: 'Préférer', help: 'Ces familles d’abord, sans écarter une meilleure alternative.' },
+    { policy: 'restrict', label: 'Imposer', help: 'N’explorer que ces familles.' },
+    { policy: 'template', label: 'Architecture', help: 'Fixer la famille de chaque étage.' }
   ];
 
   // §3 : on demande la géométrie fonctionnelle, jamais « droit ou hélicoïdal ».
@@ -67,33 +72,73 @@
   TypeStep.prototype.setDraft = function (draft) { this.draft = draft; return this; };
 
   TypeStep.prototype.render = function () {
-    var self = this, selection = this.draft.technologySelection;
     this.host.textContent = '';
+    this._renderIntent();
+    this._renderPolicy();
+    // La disposition décrit le besoin, pas la technologie : elle vaut quelle
+    // que soit la politique, et c'est elle qui nourrit le conseiller.
+    this._renderDisposition();
+    var policy = this.draft.technologySelection.policy;
+    if (policy === 'template') this._renderArchitecture();
+    else if (policy !== 'auto') this._renderFamilies();
+    return this;
+  };
 
-    var entryRow = document.createElement('div');
-    entryRow.className = 'type-entries';
-    ENTRIES.forEach(function (entry) {
-      var active = selection.policy === entry.policy ||
-        (entry.policy === 'restrict' && selection.policy === 'prefer');
+  /** Première décision : que cherche-t-on ? */
+  TypeStep.prototype._renderIntent = function () {
+    var self = this, intent = this.draft.intent;
+    var section = document.createElement('section');
+    section.className = 'type-section';
+    section.innerHTML = '<h3>Que cherchez-vous&nbsp;?</h3>';
+
+    var row = document.createElement('div');
+    row.className = 'type-entries';
+    row.id = 'intentCards';
+    GearApp.requirements.searchIntent.MODES.forEach(function (mode) {
+      var active = intent.mode === mode.id;
       var card = button('type-entry' + (active ? ' active' : ''), '');
-      card.dataset.policy = entry.policy;
+      card.dataset.intent = mode.id;
       card.setAttribute('aria-pressed', String(active));
-      card.innerHTML = '<span class="type-entry-icon" aria-hidden="true">' + entry.icon + '</span>' +
-        '<strong>' + entry.label + '</strong><small>' + entry.help + '</small>';
-      card.addEventListener('click', function () {
+      card.innerHTML = '<span class="type-entry-icon" aria-hidden="true">' + mode.icon + '</span>' +
+        '<strong>' + mode.label + '</strong><small>' + mode.help + '</small>';
+      card.addEventListener('click', function () { intent.setMode(mode.id); self._changed(); });
+      row.appendChild(card);
+    });
+    section.appendChild(row);
+    this.host.appendChild(section);
+  };
+
+  /** Seconde décision, indépendante : comment choisir la technologie ? */
+  TypeStep.prototype._renderPolicy = function () {
+    var self = this, selection = this.draft.technologySelection;
+    var section = document.createElement('section');
+    section.className = 'type-section';
+    section.innerHTML = '<h3>Comment choisir la technologie&nbsp;?</h3>';
+
+    var row = document.createElement('div');
+    row.className = 'family-policy';
+    row.id = 'technologyPolicy';
+    POLICIES.forEach(function (entry) {
+      var active = selection.policy === entry.policy;
+      var node = button('policy-option' + (active ? ' active' : ''), entry.label, function () {
         selection.setPolicy(entry.policy);
         if (entry.policy === 'template' && !selection.template.length) selection.addStage(null).addStage(null);
         self._changed();
       });
-      entryRow.appendChild(card);
+      node.dataset.policy = entry.policy;
+      node.title = entry.help;
+      node.setAttribute('aria-pressed', String(active));
+      row.appendChild(node);
     });
-    this.host.appendChild(entryRow);
+    section.appendChild(row);
 
-    if (selection.policy === 'auto') this._renderDisposition();
-    else if (selection.policy === 'template') this._renderArchitecture();
-    else this._renderFamilies();
-
-    return this;
+    var hint = document.createElement('p');
+    hint.className = 'field-help';
+    hint.id = 'technologyPolicyHint';
+    var current = POLICIES.filter(function (e) { return e.policy === selection.policy; })[0];
+    hint.textContent = current ? current.help : '';
+    section.appendChild(hint);
+    this.host.appendChild(section);
   };
 
   // ----- Parcours A : géométrie fonctionnelle (§3) -----
@@ -200,28 +245,6 @@
     var self = this, selection = this.draft.technologySelection;
     var section = document.createElement('section');
     section.className = 'type-section';
-
-    var policy = document.createElement('div');
-    policy.className = 'family-policy';
-    policy.id = 'familyPolicy';
-    [{ id: 'restrict', label: 'Type imposé' }, { id: 'prefer', label: 'Type préféré' }].forEach(function (option) {
-      var active = selection.policy === option.id;
-      var node = button('policy-option' + (active ? ' active' : ''), option.label, function () {
-        selection.setPolicy(option.id);
-        self._changed();
-      });
-      node.dataset.policy = option.id;
-      node.setAttribute('aria-pressed', String(active));
-      policy.appendChild(node);
-    });
-    var hint = document.createElement('p');
-    hint.className = 'field-help';
-    hint.textContent = selection.policy === 'prefer'
-      ? 'Ces familles seront privilégiées, mais une meilleure alternative restera proposée.'
-      : 'Seules ces familles seront explorées.';
-    section.appendChild(policy);
-    section.appendChild(hint);
-
     GROUPS.forEach(function (group) {
       var heading = document.createElement('h4');
       heading.textContent = group.label;
@@ -310,7 +333,7 @@
   };
 
   GearApp.ui.TypeStep = TypeStep;
-  TypeStep.ENTRIES = ENTRIES;
+  TypeStep.POLICIES = POLICIES;
   TypeStep.DISPOSITIONS = DISPOSITIONS;
 
 })(GearApp);

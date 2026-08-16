@@ -77,6 +77,7 @@
     seed = seed || {};
     this.requirement = new R.RequirementModel(seed.requirement || {});
     this.preferences = new R.PreferenceModel(seed.preferences || {});
+    this.intent = new R.SearchIntentModel(seed.intent || {});
     this.technologySelection = new R.TechnologySelectionModel(seed.technologySelection || {});
     this.technical = new R.TechnicalSettingsModel(seed.technical || {});
     this._advice = null;
@@ -100,9 +101,17 @@
       ? ['rack'] : R.TransmissionAdvisor.ROTARY.slice();
   };
 
-  SearchSession.prototype.selectedTechnologies = function () {
+  /** L'univers moins ce que le conseiller a formellement écarté. */
+  SearchSession.prototype.compatibleTechnologies = function () {
     var universe = this.universe();
-    var resolved = this.technologySelection.resolve(this.advice().selection, universe);
+    var excluded = this.advice().excluded.map(function (entry) { return entry.id; });
+    var compatible = universe.filter(function (id) { return excluded.indexOf(id) === -1; });
+    return compatible.length ? compatible : universe;
+  };
+
+  SearchSession.prototype.selectedTechnologies = function () {
+    var universe = this.compatibleTechnologies();
+    var resolved = this.technologySelection.resolve(this.advice().ranking, universe);
     // Une politique ne peut pas faire sortir de l'univers du problème.
     var allowed = resolved.filter(function (id) { return universe.indexOf(id) !== -1; });
     return allowed.length ? allowed : universe.slice(0, 1);
@@ -120,6 +129,13 @@
     // « 4 par défaut » ferait chercher des trains que l'utilisateur a exclus.
     var imposed = this.technologySelection.stagesRequired();
     if (imposed) request.maxStages = imposed;
+    // La méthode fixe la largeur de la fenêtre de rapport : « le meilleur
+    // compromis » n'a pas de sens à 0,1 % près, et une cible n'en a pas à 5 %.
+    // Une intention explicite sur la grandeur (« ≈ 12 ± 2 % ») reste prioritaire.
+    var tolerance = this.intent.ratioTolerance();
+    if (tolerance != null && !this.requirement.ratio.isKnown()) {
+      request.ratioTolerancePercent = Math.max(request.ratioTolerancePercent, tolerance);
+    }
     return request;
   };
 
@@ -208,7 +224,7 @@
 
   /** Résumé d'une ligne du cahier des charges, pour le bandeau (§16). */
   SearchSession.prototype.summarise = function () {
-    var requirement = this.requirement, bits = [];
+    var requirement = this.requirement, bits = [this.intent.describe()];
     var problem = requirement.inferProblem();
     if (problem.mode === 'rotationTranslation') {
       var travel = requirement.travelRequirement();
@@ -239,6 +255,7 @@
 
   SearchSession.prototype.toJSON = function () {
     return {
+      intent: this.intent.toJSON(),
       requirement: this.requirement.toJSON(),
       preferences: this.preferences.toJSON(),
       technologySelection: this.technologySelection.toJSON(),
@@ -251,6 +268,7 @@
 
   /** Promotion du brouillon : la session adopte son contenu, en place. */
   SearchSession.prototype.adopt = function (draft) {
+    this.intent = draft.intent;
     this.requirement = draft.requirement;
     this.preferences = draft.preferences;
     this.technologySelection = draft.technologySelection;

@@ -77,21 +77,42 @@ test('editing works on a draft, so an abandoned edit changes nothing', () => {
 test('four policies cover the four real intents', () => {
   assert.deepEqual(Selection.POLICIES.map(p => p.id), ['auto', 'prefer', 'restrict', 'template']);
 
-  const advice = ['internal', 'planetary', 'spur'];
+  // Le conseiller ORDONNE l'univers compatible ; il ne le referme pas.
+  const ranking = ['internal', 'planetary', 'spur'];
   const universe = ['spur', 'helical', 'internal', 'bevel', 'planetary', 'worm', 'belt', 'chain'];
 
-  const auto = new Selection.TechnologySelectionModel();
-  assert.deepEqual(auto.resolve(advice, universe), advice);
+  // AUTO explore TOUT le compatible, dans l'ordre conseillé : se limiter au
+  // classement reviendrait à décider avant d'avoir calculé.
+  const auto = new Selection.TechnologySelectionModel().resolve(ranking, universe);
+  assert.equal(auto.length, universe.length, 'automatique doit tout explorer');
+  assert.deepEqual(auto.slice(0, 3), ranking, 'et le faire dans l’ordre conseillé');
 
-  // « Uniquement du planétaire » ferme la porte.
+  // « Uniquement du planétaire » ferme la porte, et c'est le seul mode qui le fait.
   const restrict = new Selection.TechnologySelectionModel({ policy: 'restrict', families: ['planetary'] });
-  assert.deepEqual(restrict.resolve(advice, universe), ['planetary']);
+  assert.deepEqual(restrict.resolve(ranking, universe), ['planetary']);
 
-  // « Je préférerais du planétaire » la laisse ouverte, en tête de liste.
+  // « Je préférerais du planétaire » la laisse GRANDE ouverte.
   const prefer = new Selection.TechnologySelectionModel({ policy: 'prefer', families: ['planetary'] });
-  const preferred = prefer.resolve(advice, universe);
+  const preferred = prefer.resolve(ranking, universe);
   assert.equal(preferred[0], 'planetary');
-  assert.ok(preferred.includes('spur'), 'une meilleure alternative doit rester explorée');
+  assert.equal(preferred.length, universe.length, 'préférer n’exclut rien');
+  assert.ok(preferred.includes('worm'), 'même une famille jamais conseillée reste calculée');
+});
+
+test('the advisor eliminates, orders and explains — it never closes the domain', () => {
+  const { RequirementModel } = require('../js/requirements/RequirementModel.js');
+  const Advisor = require('../js/requirements/TransmissionAdvisor.js');
+  const advice = Advisor.advise(
+    new RequirementModel({ input: { speed: 1500 }, output: { speed: 125 } }),
+    new Preferences.PreferenceModel());
+
+  // La recommandation reste courte — c'est un affichage.
+  assert.ok(advice.selection.length <= Advisor.MAX_RECOMMENDED);
+  // Le classement, lui, couvre tout ce qui n'est pas formellement écarté.
+  assert.equal(advice.ranking.length, Advisor.ROTARY.length - advice.excluded.length);
+  assert.ok(advice.ranking.length > advice.selection.length, 'le domaine dépasse la recommandation');
+  // Et il est trié : le mieux classé d'abord.
+  assert.equal(advice.ranking[0], advice.recommended[0].id);
 });
 
 test('a preference tilts the ranking without filtering anything', () => {
@@ -169,12 +190,41 @@ test('the mandatory path is three steps, the technical part is optional', () => 
   assert.match(modal, /Options techniques avancées/);
 });
 
-test('the first question is how to choose, not which of nine families', () => {
-  assert.deepEqual(typeStep.match(/policy: '(\w+)'/g).slice(0, 3), ["policy: 'auto'", "policy: 'restrict'", "policy: 'template'"]);
-  // Le parcours conseillé parle géométrie, pas denture.
+test('the first step asks two independent questions', () => {
+  const Intent = require('../js/requirements/SearchIntentModel.js');
+  // Ce qu'on cherche…
+  assert.match(typeStep, /Que cherchez-vous/);
+  assert.deepEqual(Intent.MODES.map(m => m.id), ['best', 'target', 'constrained']);
+  // …et, séparément, comment choisir la technologie.
+  assert.match(typeStep, /Comment choisir la technologie/);
+  assert.deepEqual(typeStep.match(/policy: '(\w+)'/g).slice(0, 4),
+    ["policy: 'auto'", "policy: 'prefer'", "policy: 'restrict'", "policy: 'template'"]);
+  // La disposition décrit le besoin : elle vaut quelle que soit la politique.
   assert.match(typeStep, /Disposition souhaitée/);
   assert.match(typeStep, /Renvoi d’angle/);
   assert.match(typeStep, /Arbres éloignés/);
+});
+
+test('only the modes the solver can honour are offered', () => {
+  const Intent = require('../js/requirements/SearchIntentModel.js');
+  // Les modes prévus mais irréalisables sont déclarés, jamais affichés :
+  // une carte sans effet serait pire que son absence.
+  assert.ok(Intent.PLANNED.length >= 2);
+  for (const planned of Intent.PLANNED) {
+    assert.ok(!Intent.mode(planned.id), planned.id + ' ne doit pas être proposé');
+    assert.ok(planned.needs, planned.id + ' doit dire ce qui lui manque');
+  }
+});
+
+test('the method widens or tightens the ratio window, and never overrides an intent', () => {
+  const Intent = require('../js/requirements/SearchIntentModel.js');
+  assert.equal(new Intent.SearchIntentModel({ mode: 'target' }).ratioTolerance(), null,
+    'viser une cible laisse parler l’intention de la grandeur');
+  assert.ok(new Intent.SearchIntentModel({ mode: 'best' }).ratioTolerance() > 0);
+  assert.ok(new Intent.SearchIntentModel({ mode: 'constrained' }).ratioTolerance() >
+    new Intent.SearchIntentModel({ mode: 'best' }).ratioTolerance());
+  // Un rapport saisi directement garde sa tolérance : la méthode n'écrase rien.
+  assert.match(session, /!this\.requirement\.ratio\.isKnown\(\)/);
 });
 
 // ===== Contraintes et préférences, inchangées dans leur fond (§8) =====
@@ -374,4 +424,61 @@ test('a client-side constraint that empties the pool is named, not blamed elsewh
   assert.match(app, /les écarte toutes/);
   // La sonde de relaxation voit les mêmes exigences que la recherche.
   assert.match(app, /session\.effectivePreferences\(\)/);
+});
+
+// ===== P0 : le front de Pareto dépend du cahier des charges =====
+
+const Evaluator = require('../js/requirements/SolutionEvaluator.js');
+
+test('the front gains an axis when a priority or a criterion calls for it', () => {
+  const keys = prefs => Evaluator.objectivesFor(prefs).map(o => o.key);
+  // Sans rien demander : les quatre axes universels.
+  assert.deepEqual(keys(new Preferences.PreferenceModel()), ['size', 'efficiency', 'error', 'stages']);
+  // Demander la robustesse l'ajoute au front, pas seulement au score.
+  assert.ok(keys(new Preferences.PreferenceModel({ primary: 'robust' })).includes('robust'));
+  // Poser un coefficient de sécurité produit le même effet, sans priorité.
+  const withSafety = new Preferences.PreferenceModel();
+  withSafety.require('bendingSafety', Quantity.atLeast(2));
+  assert.ok(keys(withSafety).includes('robust'));
+  // Et une préférence de pertes ajoute son axe.
+  const withLoss = new Preferences.PreferenceModel();
+  withLoss.require('powerLoss', Quantity.atMost(80), true);
+  assert.ok(keys(withLoss).includes('loss'));
+});
+
+test('a safer but slightly bigger solution survives when robustness is asked for', () => {
+  // C'est le cas que le front figé perdait : B est battue sur les quatre axes
+  // universels, mais elle est deux fois plus sûre.
+  const A = {
+    stages: [{ type: 'spur' }], efficiency: 0.95, errorPercent: 0.1,
+    dimensions: { x: 70, y: 70, z: 20, maxDiameter: 70 },
+    mechanical: [{ bending: { safetyFactor: 1.5 } }]
+  };
+  const B = {
+    stages: [{ type: 'spur' }], efficiency: 0.94, errorPercent: 0.2,
+    dimensions: { x: 75, y: 75, z: 22, maxDiameter: 75 },
+    mechanical: [{ bending: { safetyFactor: 4 } }]
+  };
+  const blind = Evaluator.evaluate([A, B], new Preferences.PreferenceModel());
+  assert.deepEqual(blind.front, [0], 'sans axe robustesse, B est dominée et disparaît');
+
+  const aware = Evaluator.evaluate([A, B], new Preferences.PreferenceModel({ primary: 'robust' }));
+  assert.ok(aware.front.includes(1), 'avec l’axe robustesse, B reste sur le front');
+  assert.ok(aware.objectives.includes('robust'));
+});
+
+test('a preferred family improves the ranking without excluding anything', () => {
+  const solutions = [
+    { stages: [{ type: 'spur' }], efficiency: 0.95, errorPercent: 0.2,
+      dimensions: { x: 60, y: 60, z: 20, maxDiameter: 60 }, mechanical: [{}] },
+    { stages: [{ type: 'planetary' }], efficiency: 0.95, errorPercent: 0.2,
+      dimensions: { x: 60, y: 60, z: 20, maxDiameter: 60 }, mechanical: [{}] }
+  ];
+  const prefs = new Preferences.PreferenceModel();
+  const neutral = Evaluator.evaluate(solutions, prefs);
+  const tilted = Evaluator.evaluate(solutions, prefs,
+    new Selection.TechnologySelectionModel({ policy: 'prefer', families: ['planetary'] }));
+  assert.equal(neutral.scores[1], neutral.scores[0], 'à égalité sans préférence');
+  assert.ok(tilted.scores[1] < tilted.scores[0], 'la famille préférée passe devant');
+  assert.equal(tilted.front.length, neutral.front.length, 'et rien n’est exclu');
 });

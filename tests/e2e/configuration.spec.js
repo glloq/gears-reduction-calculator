@@ -15,8 +15,9 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   // §17 : plus de barre latérale de configuration, ni de tiroir mobile.
   await expect(page.locator('#sidebar')).toHaveCount(0);
   await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
-  // Première question : comment choisir, pas laquelle des neuf familles.
-  await expect(page.locator('.type-entry')).toHaveCount(3);
+  // Deux décisions indépendantes : la méthode, puis la politique technologique.
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(3);
+  await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(4);
   expect(errors).toEqual([]);
 });
 
@@ -60,7 +61,7 @@ test('a confirmed edit replaces the search in one go', async ({ page }) => {
 
 test('the advised path asks for a geometry, never for a tooth profile', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('#technologyPolicy [data-policy="auto"]').click();
   await expect(page.locator('.disposition-card')).toHaveCount(6);
   await expect(page.locator('.disposition-card[data-disposition="angle"]')).toBeVisible();
 
@@ -90,9 +91,9 @@ test('a family can be preferred without closing the door on better ones', async 
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="planetary"]').click();
-  await expect(page.locator('.policy-option[data-policy="restrict"]')).toHaveClass(/active/);
+  await expect(page.locator('#technologyPolicy [data-policy="restrict"]')).toHaveClass(/active/);
 
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
@@ -104,7 +105,7 @@ test('a family can be preferred without closing the door on better ones', async 
 
   await page.locator('#editSearchBtn').click();
   await page.locator('[data-step="type"]').click();
-  await page.locator('.policy-option[data-policy="prefer"]').click();
+  await page.locator('#technologyPolicy [data-policy="prefer"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
   // Préféré : la famille reste en tête, mais l'exploration s'ouvre.
@@ -118,7 +119,7 @@ test('an imposed architecture fixes the families stage by stage', async ({ page 
   await page.goto('/');
   await setQuantity(page, 'ratio', 20);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="template"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"template\"]').click();
   await expect(page.locator('.architecture-stage')).toHaveCount(2);
 
   await page.locator('.architecture-stage[data-stage="0"] select').selectOption('bevel');
@@ -301,7 +302,7 @@ test('the criteria menu suggests what matters here, catalogue one click away', a
   await page.goto('/');
   await setQuantity(page, 'ratio', 40);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="belt"]').click();
 
   await page.locator('[data-step="criteria"]').click();
@@ -325,7 +326,7 @@ test('only the explored families expose their own parameters', async ({ page }) 
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="worm"]').click();
 
   await page.locator('[data-step="criteria"]').click();
@@ -368,7 +369,7 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   await setQuantity(page, 'ratio', 9);
   // Uniquement des couples droits : chacun inverse le sens de sortie.
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="spur"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
@@ -376,10 +377,10 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   // Deux étages droits rendent le sens identique : la contrainte les garde.
   await page.locator('#editSearchBtn').click();
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"auto\"]').click();
   await page.locator('[data-architecture="direction"]').selectOption('same');
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
 
@@ -387,10 +388,10 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   // au lieu d'accuser une contrainte de dimension.
   await page.locator('#editSearchBtn').click();
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"auto\"]').click();
   await page.locator('[data-architecture="direction"]').selectOption('reverse');
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('#workspaceEmptyHint')).toContainText('sens de sortie', { timeout: 30000 });
   await expect(page.locator('.solution-card')).toHaveCount(0);

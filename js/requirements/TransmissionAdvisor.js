@@ -219,13 +219,19 @@
     // Une sélection vide bloquerait la recherche : on retient alors les
     // meilleures candidates restantes plutôt que de renvoyer l'utilisateur
     // vers un formulaire vide.
+    // Le conseiller ORDONNE et ÉLIMINE, il ne ferme pas le domaine. `ranking`
+    // est l'univers compatible, du plus prometteur au moins ; `selection` n'est
+    // qu'un raccourci d'affichage. Confondre les deux revenait à ne jamais
+    // calculer une famille « possible » qui aurait pu gagner sur le terrain.
+    var ranking = usable.map(function (e) { return e.id; });
     var selection = recommended.map(function (e) { return e.id; });
     if (!selection.length) selection = possible.slice(0, 3).map(function (e) { return e.id; });
     if (!selection.length && context.linear) selection = ['rack'];
 
     return {
       recommended: recommended, possible: possible, excluded: excluded,
-      selection: selection, coverage: coverage(context, selection), context: context
+      ranking: ranking, selection: selection,
+      coverage: coverage(context, ranking), context: context
     };
   }
 
