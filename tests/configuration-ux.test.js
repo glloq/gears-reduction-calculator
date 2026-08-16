@@ -28,14 +28,36 @@ test('the page carries no configuration form any more', () => {
   assert.match(html, /id="editSearchBtn"/);
 });
 
-test('the technical panels are moved, never duplicated', () => {
-  // Un identifiant dupliqué casserait SearchParams : le modal DÉPLACE.
-  assert.match(modal, /adoptLegacyPanels/);
-  assert.match(modal, /appendChild\(panel\)/);
+test('the old form stays out of the modal, and out of sight (§20)', () => {
+  // Le plus gros reliquat de l'ancienne UI : montrer les panneaux numérotés
+  // dans « Options techniques avancées » revenait à poser deux fois la même
+  // question, dans deux langages différents.
+  assert.doesNotMatch(modal, /adoptLegacyPanels/);
+  assert.match(modal, /releaseLegacyPanels/);
+  assert.match(modal, /legacyHost/);
+  // Ils restent dans la page, cachés : ce sont encore les miroirs lus par
+  // SearchParams, les presets et les URLs partagées.
+  assert.match(html, /id="legacyHost" hidden/);
   for (const id of ['panel-avance-racine', 'technologyPanel', 'max_diameter', 'etages', 'weight_size', 'type_template']) {
     const count = (html.match(new RegExp(`id="${id}"`, 'g')) || []).length;
     assert.equal(count, 1, `#${id} doit exister exactement une fois`);
   }
+});
+
+test('what only the old form carried now has an editor of its own (§20)', () => {
+  // Chaque réglage retiré de la vue doit rester atteignable, sinon on n'a pas
+  // simplifié : on a amputé.
+  const Technical = require('../js/requirements/TechnicalSettingsModel.js');
+  const covered = (modal.match(/group: '(\w+)', key: '(\w+)'/g) || [])
+    .map(entry => entry.match(/group: '(\w+)', key: '(\w+)'/).slice(1).join('.'));
+  for (const pair of ['materials.input', 'materials.output', 'module.mode', 'module.min', 'module.max',
+    'shaft.supportDistanceMm', 'shaft.allowableShearMPa', 'manufacturing.minimumModule',
+    'manufacturing.printerDiameter', 'manufacturing.additiveDerating']) {
+    assert.ok(covered.includes(pair), pair + ' n’est plus éditable nulle part');
+  }
+  // Et l'éditeur écrit sur le MODÈLE, jamais sur un champ historique.
+  assert.match(modal, /technical\.set\(field\.group, field\.key/);
+  assert.ok(Technical.DEFAULTS.shaft && Technical.DEFAULTS.materials);
 });
 
 test('every mirrored control still exists, so old links keep working', () => {
@@ -187,15 +209,21 @@ test('the mandatory path is three steps, the technical part is optional', () => 
   assert.match(steps, /'need'/);
   assert.match(steps, /'criteria'/);
   assert.equal((steps.match(/id: '/g) || []).length, 3, 'exactement trois étapes obligatoires');
-  assert.match(modal, /Options techniques avancées/);
+  // §12 : les réglages secondaires ne sont plus un second formulaire déroulé,
+  // mais cinq lignes qui disent leur valeur et s'ouvrent à la demande.
+  assert.match(modal, /var OPTION_ROWS = \[/);
+  assert.match(modal, /label: 'Paramètres techniques'/);
+  assert.match(modal, /_optionSummary/);
 });
 
 test('the first step asks two independent questions', () => {
   const Intent = require('../js/requirements/SearchIntentModel.js');
   // Ce qu'on cherche…
   assert.match(typeStep, /Que cherchez-vous/);
-  assert.deepEqual(Intent.MODES.map(m => m.id),
-    ['best', 'target', 'constrained', 'parts', 'maximize', 'improve']);
+  // Trois points de départ, pas six : « meilleur compromis », « contraintes »
+  // et « pièces existantes » n'étaient pas des méthodes mais, respectivement,
+  // une stratégie de classement et deux jeux de données déjà saisis.
+  assert.deepEqual(Intent.MODES.map(m => m.id), ['design', 'maximize', 'improve']);
   // …et, séparément, comment choisir la technologie.
   assert.match(typeStep, /Comment choisir la technologie/);
   assert.deepEqual(typeStep.match(/policy: '(\w+)'/g).slice(0, 4),
@@ -219,19 +247,37 @@ test('only the modes the solver can honour are offered', () => {
   for (const mode of Intent.MODES) {
     if (mode.explore) assert.match(typeStep, /intent\.explores\(\)/);
     if (mode.improve) assert.match(typeStep, /intent\.improves\(\)/);
-    if (mode.parts) assert.match(modal, /startsFromParts\(\)/);
+    if (mode.parts) assert.match(modal, /usesParts\(\)/);
   }
 });
 
-test('the method widens or tightens the ratio window, and never overrides an intent', () => {
+test('the quantity decides the ratio window, not a declared method', () => {
   const Intent = require('../js/requirements/SearchIntentModel.js');
-  assert.equal(new Intent.SearchIntentModel({ mode: 'target' }).ratioTolerance(), null,
-    'viser une cible laisse parler l’intention de la grandeur');
-  assert.ok(new Intent.SearchIntentModel({ mode: 'best' }).ratioTolerance() > 0);
-  assert.ok(new Intent.SearchIntentModel({ mode: 'constrained' }).ratioTolerance() >
-    new Intent.SearchIntentModel({ mode: 'best' }).ratioTolerance());
+  // Concevoir n'impose AUCUNE tolérance : « = 12 » veut dire cible stricte,
+  // « ≈ 12 » un compromis, « 10 → 15 » une plage. Le modèle Quantity dit déjà
+  // tout cela, et une carte de méthode ne peut que le contredire.
+  assert.equal(new Intent.SearchIntentModel({ mode: 'design' }).ratioTolerance(), null);
+  const Compiler = require('../js/requirements/ConstraintCompiler.js');
+  const Q = require('../js/requirements/Quantity.js');
+  const strict = Compiler.ratioTolerance(Q.exact(12));
+  const soft = Compiler.ratioTolerance(Q.target(12, 4));
+  const span = Compiler.ratioTolerance(Q.between(10, 15));
+  assert.ok(strict.percent < soft.percent, 'une cible exacte est plus stricte qu’un « ≈ »');
+  assert.ok(span.percent > soft.percent, 'une plage est plus large qu’un « ≈ » serré');
   // Un rapport saisi directement garde sa tolérance : la méthode n'écrase rien.
   assert.match(session, /!this\.requirement\.ratio\.isKnown\(\)/);
+});
+
+test('an old shared search still lands on the journey it meant', () => {
+  const Intent = require('../js/requirements/SearchIntentModel.js');
+  // Les quatre anciennes méthodes sont toutes des façons de CONCEVOIR.
+  for (const old of ['best', 'target', 'constrained', 'parts']) {
+    assert.equal(new Intent.SearchIntentModel({ mode: old }).mode, 'design', old);
+  }
+  // Exploration et amélioration gardent leur identifiant.
+  assert.equal(new Intent.SearchIntentModel({ mode: 'maximize' }).mode, 'maximize');
+  assert.equal(new Intent.SearchIntentModel({ mode: 'improve' }).mode, 'improve');
+  assert.equal(new Intent.SearchIntentModel({ mode: 'jamais-vu' }).mode, 'design');
 });
 
 // ===== Contraintes et préférences, inchangées dans leur fond (§8) =====
@@ -246,9 +292,16 @@ test('a constraint still filters and a preference still only ranks', () => {
   assert.ok(prefs.penalty(big) > 0);
 });
 
-test('the secondary priority appears only when it is used (§10)', () => {
+test('the secondary priority opens AND closes again (§10)', () => {
   assert.match(modal, /id = 'secondaryPriorityToggle'/);
-  assert.match(modal, /if \(self\.draft\.preferences\.secondary\) secondaryHost\.hidden = false/);
+  // Le bloc ne s'impose pas, mais le bouton ne disparaît jamais : il se
+  // cachait après usage, si bien qu'une secondaire ouverte par erreur ne
+  // pouvait plus être refermée.
+  assert.doesNotMatch(modal, /toggle\.hidden = /);
+  assert.match(modal, /Retirer la priorité secondaire/);
+  assert.match(modal, /Ajouter une priorité secondaire/);
+  // Refermer retire réellement la priorité, au lieu de la laisser agir cachée.
+  assert.match(modal, /if \(self\._secondaryOpen\) self\.draft\.preferences\.secondary = null/);
 });
 
 // ===== Le mode global reste supprimé (passe précédente) =====
@@ -417,7 +470,7 @@ test('a shaft distance makes belts and chains relevant, and says so', () => {
 });
 
 test('the service cycle is reachable, and only expands once asked for', () => {
-  assert.match(modal, /id = 'serviceOptions'/);
+  assert.match(modal, /id: 'serviceOptions'/);
   assert.match(modal, /Estimer la fatigue/);
   assert.match(modal, /Durée de vie visée/);
   assert.match(modal, /Type de charge/);
@@ -524,15 +577,15 @@ test('a stage can accept several families, as the model always allowed', () => {
   assert.doesNotMatch(typeStep, /Famille de l’étage/);
 });
 
-test('existing parts are a search method, not a buried technical setting', () => {
-  const Intent = require('../js/requirements/SearchIntentModel.js');
-  assert.ok(Intent.mode('parts'), 'partir de ses composants est une méthode');
-  assert.equal(new Intent.SearchIntentModel({ mode: 'parts' }).startsFromParts(), true);
-  assert.equal(new Intent.SearchIntentModel({ mode: 'best' }).startsFromParts(), false);
-  // Module, dentures imposées et plages sont éditables au premier plan.
-  for (const id of ['part_module_fixed', 'part_gearing_drivingFixed', 'part_gearing_drivenMax']) {
-    assert.match(modal, new RegExp("'" + id.replace(/_/g, '_') + "'").source ? /part_/ : /part_/);
-  }
+test('starting from one s own parts is DEDUCED, never declared', () => {
+  // Saisir un inventaire, c'est déjà dire qu'on cherche dans son stock :
+  // demander en plus « souhaitez-vous partir de vos pièces ? » ferait répéter
+  // le geste. La question a donc disparu, la capacité non.
+  assert.doesNotMatch(session, /startsFromParts/);
+  assert.match(session, /SearchSession\.prototype\.usesParts = function/);
+  assert.match(session, /teethInventory \|\| \[\]\)\.length > 0/);
+  assert.match(modal, /draft\.usesParts\(\)/);
+  // Module, dentures imposées et plages restent éditables au premier plan.
   assert.match(modal, /part_' \+ field\.group \+ '_' \+ field\.key/);
   assert.match(modal, /drivingFixed/);
   assert.match(modal, /drivenMax/);

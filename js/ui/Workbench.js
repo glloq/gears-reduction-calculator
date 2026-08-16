@@ -113,7 +113,8 @@
     });
 
     var edit = el('editSearchBtn');
-    if (edit) edit.addEventListener('click', function () { self.modal.open(0); });
+    // §25 : rouvrir une recherche définie ramène à l'étape qui la porte.
+    if (edit) edit.addEventListener('click', function () { self.modal.open(); });
     var fresh = el('newSearchBtn');
     if (fresh) fresh.addEventListener('click', function () {
       // §21 : une nouvelle recherche repart vide, sans valeur imposée en silence.

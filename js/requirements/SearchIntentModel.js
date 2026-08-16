@@ -11,10 +11,13 @@
 // compromis EN imposant un planétaire, ou viser un rapport exact en laissant
 // le système choisir la famille.
 //
-// Seuls figurent ici les modes que le moteur sait réellement traiter. Les
-// autres (maximiser sans cible, repartir d'un réducteur existant) demandent une
-// extension du solveur : les afficher en attendant produirait des cartes sans
-// effet, ce qui est pire que leur absence.
+// Trois points de départ suffisent : CONCEVOIR, EXPLORER, AMÉLIORER. Tout le
+// reste — viser une cible ou accepter un compromis, partir de contraintes,
+// puiser dans son stock — se déduit de ce que l'utilisateur a écrit. Le lui
+// redemander sous forme de cartes lui ferait répéter ce qu'il vient de dire.
+//
+// Seuls figurent ici les modes que le moteur sait réellement traiter : une
+// carte sans effet est pire que son absence.
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory();
@@ -31,40 +34,35 @@
   'use strict';
 
   /**
+   * TROIS points de départ, et pas un de plus. Les six « méthodes »
+   * précédentes mélangeaient trois choses de natures différentes :
+   *
+   *   une vraie méthode de résolution   viser / explorer / améliorer
+   *   une stratégie de classement       « trouver le meilleur »
+   *   des données déjà en main          contraintes, pièces disponibles
+   *
+   * Seule la première est une décision que l'utilisateur doit prendre. Les
+   * deux autres, le logiciel les DÉDUIT : un rapport écrit « = 12 » demande
+   * une cible stricte, « ≈ 12 » autorise un compromis, « 10 → 15 » ouvre une
+   * plage ; un Ø ≤ 80 mm posé EST une contrainte de départ ; un inventaire de
+   * dentures saisi EST une recherche dans son stock. Demander tout cela en
+   * plus, sous forme de cartes, revenait à faire répéter ce qui était déjà dit.
+   *
    * `focus` désigne l'étape sur laquelle le modal ouvre : chaque méthode part
    * de ce que l'utilisateur a réellement en main.
-   * `tolerance` est la tolérance de rapport par défaut, en pourcent : chercher
-   * « le meilleur compromis » n'a pas de sens à 0,1 % près, et viser une cible
-   * n'en a pas non plus à 5 %.
+   * `tolerance` est la tolérance de rapport imposée par la méthode, en
+   * pourcent, ou null pour laisser parler l'intention de la grandeur.
    */
   var MODES = [
     {
-      id: 'best', label: 'Trouver le meilleur', icon: '★',
-      help: 'Le système compare les architectures possibles et propose le meilleur compromis.',
-      focus: 'need', tolerance: 3,
-      summary: 'Meilleur compromis'
-    },
-    {
-      id: 'target', label: 'Atteindre une cible', icon: '◎',
-      help: 'Je connais le rapport, la vitesse ou le couple à obtenir.',
+      id: 'design', label: 'Concevoir', icon: '⚙',
+      help: 'Je connais au moins une partie de ce que je veux : rapport, vitesse, couple, dimensions, pièces disponibles…',
       focus: 'need', tolerance: null,          // l'intention de la grandeur fait foi
-      summary: 'Cible à atteindre'
+      summary: 'Concevoir'
     },
     {
-      id: 'constrained', label: 'Partir de contraintes', icon: '◫',
-      help: 'Je pars de l’espace disponible ou d’une architecture imposée.',
-      focus: 'criteria', tolerance: 5,
-      summary: 'Sous contraintes'
-    },
-    {
-      id: 'parts', label: 'Pièces existantes', icon: '⚙',
-      help: 'J’ai un module, des dentures ou un entraxe imposés.',
-      focus: 'criteria', tolerance: 8, parts: true,
-      summary: 'Depuis les composants'
-    },
-    {
-      id: 'maximize', label: 'Pousser une performance', icon: '↗',
-      help: 'Pas de rapport imposé : quel est le maximum atteignable sous mes contraintes ?',
+      id: 'maximize', label: 'Explorer les limites', icon: '↗',
+      help: 'Je ne connais pas encore le rapport : quel maximum puis-je atteindre sous mes contraintes ?',
       focus: 'need', tolerance: null, explore: true,
       summary: 'Espace de conception'
     },
@@ -75,6 +73,13 @@
       summary: 'Depuis l’existant'
     }
   ];
+
+  /**
+   * Anciennes méthodes, ramenées à leur parcours. Une session partagée ou
+   * restaurée porte encore ces identifiants : les ignorer la ferait repartir
+   * du mode par défaut sans le dire.
+   */
+  var ALIASES = { best: 'design', target: 'design', constrained: 'design', parts: 'design' };
 
   /**
    * Performances qu'une exploration peut pousser. Les mots vivent ici, les
@@ -111,21 +116,27 @@
     return null;
   }
 
+  /** Résout un identifiant, y compris celui d'une ancienne méthode. */
+  function resolve(id) {
+    return mode(id) ? id : (ALIASES[id] && mode(ALIASES[id]) ? ALIASES[id] : null);
+  }
+
   function SearchIntentModel(seed) {
-    this.mode = 'best';
+    this.mode = 'design';
     this.objective = 'torque';
     if (seed) this.merge(seed);
   }
 
   SearchIntentModel.prototype.merge = function (seed) {
-    if (typeof seed === 'string') { if (mode(seed)) this.mode = seed; return this; }
-    if (seed && seed.mode && mode(seed.mode)) this.mode = seed.mode;
+    if (typeof seed === 'string') return this.setMode(seed);
+    if (seed && seed.mode) this.setMode(seed.mode);
     if (seed && seed.objective && objective(seed.objective)) this.objective = seed.objective;
     return this;
   };
 
   SearchIntentModel.prototype.setMode = function (id) {
-    if (mode(id)) this.mode = id;
+    var resolved = resolve(id);
+    if (resolved) this.mode = resolved;
     return this;
   };
 
@@ -161,11 +172,9 @@
     return target ? this.descriptor().summary + ' → ' + target.label.toLowerCase() : this.descriptor().summary;
   };
 
-  /** Cette méthode part-elle d'un inventaire de composants ? */
-  SearchIntentModel.prototype.startsFromParts = function () { return !!this.descriptor().parts; };
-
   SearchIntentModel.prototype.toJSON = function () { return { mode: this.mode, objective: this.objective }; };
 
   return { SearchIntentModel: SearchIntentModel, MODES: MODES, PLANNED: PLANNED, mode: mode,
-    OBJECTIVES: OBJECTIVES, objective: objective, DEFAULT_SPAN: DEFAULT_SPAN };
+    OBJECTIVES: OBJECTIVES, objective: objective, DEFAULT_SPAN: DEFAULT_SPAN,
+    ALIASES: ALIASES, resolve: resolve };
 });

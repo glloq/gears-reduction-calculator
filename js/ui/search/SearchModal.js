@@ -4,25 +4,27 @@
 // solutions. Tout ce qui définit la recherche vit ici, en trois étapes
 // obligatoires et une section technique facultative :
 //
-//   1. Type      comment choisir les technologies
-//   2. Besoin    entrée, sortie, rapport
-//   3. Critères  contraintes, priorités, fabrication
+//   1. Recherche  ce qu'on cherche, et comment choisir les technologies
+//   2. Besoin     entrée, sortie, rapport
+//   3. Affiner    contraintes, priorités, fabrication
 //
 // §18 : le modal édite un BROUILLON cloné de la session. Annuler le jette,
 // « Rechercher » le promeut. Sans cela, une édition abandonnée laisserait les
 // résultats, le viewer, les chips, les exports et l'URL décrire un besoin qui
 // n'est plus celui affiché.
 //
-// Le markup n'est pas dupliqué : les panneaux techniques historiques sont
-// DÉPLACÉS dans le modal à l'ouverture. Aucun identifiant n'est perdu, donc
-// SearchParams, les presets et les URLs partagées gardent leur contrat.
+// L'ancien formulaire ne remonte plus ici : il reste dans la page, caché, comme
+// miroir de compatibilité pour SearchParams, les presets et les URLs partagées.
+// Ce qu'il portait seul a maintenant son propre éditeur, branché sur le modèle.
 (function (GearApp) {
   'use strict';
 
+  // « Type » ne décrivait plus l'étape depuis qu'elle commence par « que
+  // cherchez-vous ? » et porte la stratégie, la technologie et l'architecture.
   var STEPS = [
-    { id: 'type', label: 'Type' },
+    { id: 'type', label: 'Recherche' },
     { id: 'need', label: 'Besoin' },
-    { id: 'criteria', label: 'Critères' }
+    { id: 'criteria', label: 'Affiner' }
   ];
 
   function el(id) { return document.getElementById(id); }
@@ -103,6 +105,23 @@
     summary.id = 'searchModalSummary';
     summary.setAttribute('aria-label', 'Votre recherche');
     body.appendChild(summary);
+    // §27 : sur téléphone, le résumé prenait jusqu'à 30 % de la hauteur pour
+    // une information secondaire. Il se replie en une barre d'une ligne, que
+    // l'on déplie d'une tape. Sur grand écran, la barre n'existe pas.
+    this.summaryBar = node('button', 'summary-bar', '');
+    this.summaryBar.type = 'button';
+    this.summaryBar.id = 'summaryToggle';
+    this.summaryBar.addEventListener('click', function () {
+      summary.classList.toggle('summary-open');
+      self.summaryBar.setAttribute('aria-expanded', String(summary.classList.contains('summary-open')));
+    });
+    summary.appendChild(this.summaryBar);
+    // §23 : les niveaux d'analyse étaient affichés DEUX fois — dans l'étape
+    // Besoin et dans le résumé. Ils n'ont leur place qu'ici, où ils restent
+    // visibles quelle que soit l'étape en cours.
+    var levels = node('div', 'analysis-levels');
+    levels.id = 'analysisLevels';
+    summary.appendChild(levels);
 
     panel.appendChild(body);
 
@@ -115,6 +134,13 @@
 
     var spacer = node('span', 'search-modal-spacer');
     footer.appendChild(spacer);
+
+    // §16 : « 500 000 itérations » ne méritait pas une section entière, mais
+    // savoir ce qui va réellement partir au moteur mérite d'être sous les yeux
+    // au moment de cliquer.
+    this.context = node('span', 'search-modal-context');
+    this.context.id = 'searchModalContext';
+    footer.appendChild(this.context);
 
     this.nextButton = node('button', 'btn-small', 'Suivant');
     this.nextButton.type = 'button';
@@ -136,15 +162,18 @@
     document.addEventListener('keydown', function (event) {
       if (root.hidden) return;
       if (event.key === 'Escape') { event.preventDefault(); self.cancel(); }
+      // §28 : sans piège de focus, la tabulation sort du dialogue et parcourt
+      // une page qu'on ne voit pas. `aria-modal` le dit aux lecteurs d'écran ;
+      // il ne l'impose pas au clavier.
+      if (event.key === 'Tab') self._trapFocus(event);
     });
 
     this._buildPanes();
   };
 
   /**
-   * Le contenu des étapes 2 et 3 est du markup neuf ; les panneaux techniques
-   * historiques sont déplacés depuis la page, ce qui préserve leurs
-   * identifiants et tout ce qui les lit.
+   * Tout le contenu des étapes est du markup neuf, branché sur les modèles.
+   * Les identifiants historiques ne vivent plus que dans la page cachée.
    */
   SearchModal.prototype._buildPanes = function () {
     var need = this.panes.need;
@@ -171,9 +200,6 @@
     diagnostic.id = 'requirementDiagnostic';
     diagnostic.setAttribute('aria-live', 'polite');
     need.appendChild(diagnostic);
-    var levels = node('div', 'analysis-levels');
-    levels.id = 'analysisLevels';
-    need.appendChild(levels);
 
     var criteria = this.panes.criteria;
     criteria.appendChild(node('h3', null, 'Contraintes et préférences'));
@@ -211,45 +237,79 @@
     secondary.hidden = true;
     criteria.appendChild(secondary);
 
-    criteria.appendChild(node('h3', null, 'Composants disponibles'));
-    var parts = node('div', 'parts-options');
-    parts.id = 'partsOptions';
-    criteria.appendChild(parts);
+    // §12 à §16 : l'étape 3 était devenue un second formulaire expert — cinq
+    // grands blocs déroulés en permanence pour des réglages que la plupart des
+    // recherches ne touchent jamais. Ils deviennent cinq LIGNES, chacune
+    // annonçant sa valeur courante et ne s'ouvrant que si on le demande.
+    criteria.appendChild(node('h3', null, 'Autres options'));
+    var rows = node('div', 'option-rows');
+    rows.id = 'optionRows';
+    criteria.appendChild(rows);
 
-    criteria.appendChild(node('h3', null, 'Profondeur de recherche'));
-    var depth = node('div', 'depth-options');
-    depth.id = 'depthOptions';
-    depth.setAttribute('role', 'radiogroup');
-    criteria.appendChild(depth);
-
-    criteria.appendChild(node('h3', null, 'Service et environnement'));
-    var service = node('div', 'service-options');
-    service.id = 'serviceOptions';
-    criteria.appendChild(service);
-
-    criteria.appendChild(node('h3', null, 'Comment sera-t-il fabriqué ?'));
-    var fabrication = node('div', 'fabrication-options');
-    fabrication.id = 'fabricationOptions';
-    fabrication.setAttribute('role', 'radiogroup');
-    criteria.appendChild(fabrication);
-
-    var advanced = node('details', 'advanced-settings');
-    advanced.id = 'modalAdvanced';
-    advanced.appendChild(node('summary', null, 'Options techniques avancées'));
-    var advancedBody = node('div', 'advanced-body');
-    advancedBody.id = 'modalAdvancedBody';
-    // §15 : les paramètres propres aux familles explorées viennent EN PREMIER,
-    // avant les panneaux génériques : ce sont ceux qui concernent ce projet.
-    var typeParams = node('div', 'type-parameters-host');
-    typeParams.id = 'typeParametersHost';
-    advancedBody.appendChild(typeParams);
-    advanced.appendChild(advancedBody);
-    criteria.appendChild(advanced);
+    var self = this;
+    this._optionOpen = {};
+    OPTION_ROWS.forEach(function (entry) {
+      var row = node('div', 'option-row');
+      row.dataset.option = entry.key;
+      var head = node('button', 'option-row-head',
+        '<span class="option-row-label">' + entry.label + '</span>' +
+        '<span class="option-row-value"></span><span class="option-row-mark">›</span>');
+      head.type = 'button';
+      head.dataset.option = entry.key;
+      head.setAttribute('aria-expanded', 'false');
+      head.addEventListener('click', function () {
+        self._optionOpen[entry.key] = !self._optionOpen[entry.key];
+        self.render(false);
+      });
+      row.appendChild(head);
+      var body = node('div', 'option-row-body');
+      body.dataset.optionBody = entry.key;
+      body.hidden = true;
+      entry.hosts.forEach(function (host) {
+        var node_ = node('div', host.className);
+        node_.id = host.id;
+        if (host.role) node_.setAttribute('role', host.role);
+        body.appendChild(node_);
+      });
+      row.appendChild(body);
+      rows.appendChild(row);
+    });
   };
 
-  /** Déplace les panneaux techniques historiques dans le modal, une seule fois. */
-  SearchModal.prototype.adoptLegacyPanels = function () {
-    var host = el('modalAdvancedBody');
+  /**
+   * Les cinq réglages secondaires de l'étape 3. Chacun dit ce qu'il vaut
+   * aujourd'hui : « Standard », « Aucune », « Non définie » — de quoi savoir
+   * qu'il n'y a rien à y faire sans avoir à l'ouvrir.
+   */
+  var OPTION_ROWS = [
+    { key: 'fabrication', label: 'Fabrication',
+      hosts: [{ id: 'fabricationOptions', className: 'fabrication-options', role: 'radiogroup' }] },
+    { key: 'parts', label: 'Pièces disponibles',
+      hosts: [{ id: 'partsOptions', className: 'parts-options' }] },
+    { key: 'service', label: 'Usage et durée de vie',
+      hosts: [{ id: 'serviceOptions', className: 'service-options' }] },
+    { key: 'depth', label: 'Recherche',
+      hosts: [{ id: 'depthOptions', className: 'depth-options', role: 'radiogroup' }] },
+    // §15 : les paramètres propres aux familles explorées viennent EN PREMIER,
+    // avant les réglages génériques : ce sont ceux qui concernent ce projet.
+    { key: 'technical', label: 'Paramètres techniques',
+      hosts: [{ id: 'typeParametersHost', className: 'type-parameters-host' },
+        { id: 'technicalSettingsHost', className: 'technical-settings' }] }
+  ];
+
+  /**
+   * §20 : l'ancien formulaire ne remonte plus dans le modal. Il restait le plus
+   * gros reliquat de l'UI précédente — sliders, panneaux numérotés, doublons de
+   * tout ce que le modal propose déjà — et le montrer revenait à demander deux
+   * fois la même chose, dans deux langages différents.
+   *
+   * Les contrôles historiques restent dans la page, cachés : ce sont les
+   * MIROIRS que `SearchParams.fromForm`, les presets et les URLs partagées
+   * lisent encore. Ce qu'ils portaient d'irremplaçable — matériaux, module,
+   * arbres, limites de fabrication — a désormais son propre éditeur ci-dessous.
+   */
+  SearchModal.prototype.releaseLegacyPanels = function () {
+    var host = el('legacyHost');
     if (!host) return this;
     ['panel-avance-racine', 'technologyPanel'].forEach(function (id) {
       var panel = el(id);
@@ -258,14 +318,123 @@
     return this;
   };
 
+  /**
+   * Les réglages qui n'ont pas d'autre place, édités sur le MODÈLE et non sur
+   * l'ancien formulaire. Chaque entrée dit son groupe et sa clé dans
+   * `TechnicalSettingsModel` : aucun identifiant historique n'est en jeu ici.
+   */
+  var TECHNICAL_GROUPS = [
+    { label: 'Matériaux', fields: [
+      { group: 'materials', key: 'input', label: 'Pignon', type: 'select', options: 'materials' },
+      { group: 'materials', key: 'output', label: 'Roue', type: 'select', options: 'materials' }
+    ] },
+    { label: 'Module', fields: [
+      { group: 'module', key: 'mode', label: 'Choix du module', type: 'select', options: [
+        { value: 'fixed', label: 'imposé' }, { value: 'automatic', label: 'automatique' }
+      ] },
+      { group: 'module', key: 'min', label: 'Module auto min', type: 'number', min: 0.1, step: 0.1, blank: true },
+      { group: 'module', key: 'max', label: 'Module auto max', type: 'number', min: 0.1, step: 0.1, blank: true }
+    ] },
+    { label: 'Arbres', fields: [
+      { group: 'shaft', key: 'supportDistanceMm', label: 'Portée entre paliers', unit: 'mm', type: 'number', min: 0, step: 1, blank: true },
+      { group: 'shaft', key: 'allowableShearMPa', label: 'Cisaillement admissible', unit: 'MPa', type: 'number', min: 1, step: 1 }
+    ] },
+    { label: 'Limites de fabrication', fields: [
+      { group: 'manufacturing', key: 'minimumModule', label: 'Module minimum', unit: 'mm', type: 'number', min: 0, step: 0.05, blank: true },
+      { group: 'manufacturing', key: 'minimumTeeth', label: 'Dents minimum', type: 'number', min: 0, step: 1, blank: true },
+      { group: 'manufacturing', key: 'minimumFaceWidth', label: 'Largeur minimum', unit: 'mm', type: 'number', min: 0, step: 0.5, blank: true },
+      { group: 'manufacturing', key: 'printerDiameter', label: 'Plateau d’impression', unit: 'mm', type: 'number', min: 0, step: 10, blank: true },
+      { group: 'manufacturing', key: 'additiveDerating', label: 'Abattement imprimé', type: 'number', min: 0.1, max: 1, step: 0.05 }
+    ] }
+  ];
+
+  SearchModal.prototype._bindTechnical = function (refresh) {
+    var self = this, host = el('technicalSettingsHost');
+
+    this._renderTechnical = function () {
+      host.textContent = '';
+      TECHNICAL_GROUPS.forEach(function (group) {
+        var block = node('div', 'technical-group');
+        block.dataset.group = group.label;
+        block.appendChild(node('h4', null, group.label));
+        var grid = node('div', 'technical-grid');
+        group.fields.forEach(function (field) {
+          grid.appendChild(technicalField(self.draft.technical, field, function () {
+            self.draft.invalidate();
+            refresh(false);
+          }));
+        });
+        block.appendChild(grid);
+        host.appendChild(block);
+      });
+    };
+  };
+
+  /** Matériaux connus du moteur : le catalogue fait foi, pas une liste recopiée. */
+  function materialOptions() {
+    var materials = (GearApp.core && GearApp.core.Engineering && GearApp.core.Engineering.materials) ||
+      (typeof GearEngineering !== 'undefined' && GearEngineering.materials) || {};
+    return Object.keys(materials).map(function (id) {
+      return { value: id, label: materials[id].label || materials[id].name || id };
+    });
+  }
+
+  function technicalField(technical, field, onCommit) {
+    var wrap = node('label', 'technical-field');
+    wrap.appendChild(node('span', null, field.label));
+    var value = technical[field.group][field.key];
+    var input;
+
+    if (field.type === 'select') {
+      input = document.createElement('select');
+      var options = field.options === 'materials' ? materialOptions() : field.options;
+      options.forEach(function (option) {
+        var node_ = document.createElement('option');
+        node_.value = option.value;
+        node_.textContent = option.label;
+        if (option.value === value) node_.selected = true;
+        input.appendChild(node_);
+      });
+      input.addEventListener('change', function () {
+        technical.set(field.group, field.key, input.value);
+        onCommit();
+      });
+    } else {
+      input = document.createElement('input');
+      input.type = 'number';
+      if (field.min != null) input.min = field.min;
+      if (field.max != null) input.max = field.max;
+      input.step = field.step || 'any';
+      if (field.blank) input.placeholder = 'libre';
+      input.value = value == null ? '' : String(value);
+      input.addEventListener('change', function () {
+        var parsed = parseFloat(input.value);
+        var next = isFinite(parsed) ? parsed : (field.blank ? null : value);
+        technical.set(field.group, field.key, next);
+        onCommit();
+      });
+    }
+    input.id = 'tech_' + field.group + '_' + field.key;
+    wrap.appendChild(input);
+    if (field.unit) wrap.appendChild(node('span', 'parts-unit', field.unit));
+    return wrap;
+  }
+
   // ===== Cycle de vie =====
 
   SearchModal.prototype.open = function (step) {
+    // §28 : on rendra le focus à ce qui a ouvert le dialogue. Le perdre
+    // renverrait l'utilisateur au clavier tout en haut de la page.
+    this._opener = document.activeElement;
     this.draft = this.session.draft();
-    this.step = typeof step === 'number' ? step : 0;
+    // Un bloc ouvert à la main ne survit pas à la fermeture du modal : c'est
+    // la recherche adoptée qui décide de ce qui se rouvre.
+    this._secondaryOpen = false;
+    if (this.typeStep) this.typeStep._open = {};
+    this.step = typeof step === 'number' ? step : this._focusStep();
     this.root.hidden = false;
     document.body.classList.add('modal-open');
-    this.adoptLegacyPanels();
+    this.releaseLegacyPanels();
     this._mount();
     this.render();
     var first = this.root.querySelector('.search-pane:not([hidden]) button, .search-pane:not([hidden]) input');
@@ -273,21 +442,153 @@
     return this;
   };
 
+  /**
+   * §25 : chaque méthode déclare par quelle étape elle commence, et cette
+   * information ne servait à rien. Une recherche vide ouvre sur le choix de la
+   * méthode ; une recherche déjà définie rouvre là où elle se modifie
+   * vraiment — le besoin, ou le réducteur décrit.
+   */
+  /** Éléments réellement atteignables au clavier dans le dialogue. */
+  SearchModal.prototype._focusable = function () {
+    var selector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]),' +
+      ' textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+    return Array.prototype.filter.call(this.root.querySelectorAll(selector), function (node) {
+      return node.offsetParent !== null || node === document.activeElement;
+    });
+  };
+
+  SearchModal.prototype._trapFocus = function (event) {
+    var nodes = this._focusable();
+    if (!nodes.length) return;
+    var first = nodes[0], last = nodes[nodes.length - 1];
+    var active = document.activeElement;
+    if (event.shiftKey && (active === first || !this.root.contains(active))) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault(); first.focus();
+    }
+  };
+
+  SearchModal.prototype._focusStep = function () {
+    if (!this.draft || this.draft.isEmpty()) return 0;
+    var id = this.draft.intent.focusStep();
+    for (var i = 0; i < STEPS.length; i++) if (STEPS[i].id === id) return i;
+    return 0;
+  };
+
+  /**
+   * §24 : une étape n'était qu'active ou inactive. Dire laquelle retient
+   * encore la recherche évite de chercher l'information manquante à l'aveugle.
+   */
+  var STEP_OF_ERROR = {
+    'no-problem': 'need', 'no-existing': 'type',
+    'existing-stage': 'type', 'no-technology': 'type'
+  };
+
+  SearchModal.prototype._stepStates = function () {
+    var blocking = {};
+    this.draft.diagnose().forEach(function (note) {
+      if (note.level === 'error' && STEP_OF_ERROR[note.code]) blocking[STEP_OF_ERROR[note.code]] = true;
+    });
+    return blocking;
+  };
+
+  /**
+   * Ce qu'une ligne d'option annonce sans être ouverte. Toute la valeur du
+   * repli tient là : si la ligne ne disait pas où elle en est, la replier
+   * reviendrait à cacher l'information au lieu de la résumer.
+   */
+  /** Ce qui partira au moteur, en une ligne, à côté du bouton. */
+  /** Pourquoi la recherche ne peut pas partir, en une phrase. */
+  SearchModal.prototype._blockedReason = function () {
+    var errors = this.draft.diagnose().filter(function (note) { return note.level === 'error'; });
+    return errors.length ? errors[0].text : 'Complétez le besoin pour lancer la recherche';
+  };
+
+  SearchModal.prototype._context = function () {
+    var draft = this.draft;
+    var depth = draft.technical.depth();
+    var families = draft.selectedTechnologies().length;
+    return [
+      depth ? depth.label : draft.technical.search.maxSolutions + ' solutions',
+      families + (families > 1 ? ' technologies' : ' technologie'),
+      '≤ ' + draft.compile().maxStages + ' étages'
+    ].join(' · ');
+  };
+
+  SearchModal.prototype._optionSummary = function (key) {
+    var draft = this.draft, technical = draft.technical;
+    switch (key) {
+      case 'fabrication': {
+        var process = PROCESSES.filter(function (entry) {
+          return entry.id === draft.requirement.fabrication.process;
+        })[0];
+        return process ? process.label : 'Standard';
+      }
+      case 'parts': {
+        if (!draft.usesParts()) return 'Aucune';
+        var teeth = (technical.gearing.teethInventory || []).length;
+        var modules = (technical.module.list || []).length;
+        var said = [];
+        if (teeth) said.push(teeth + ' dentures');
+        if (modules) said.push(modules + (modules > 1 ? ' modules' : ' module'));
+        if (technical.gearing.drivingFixed != null) said.push('pignon ' + technical.gearing.drivingFixed);
+        if (technical.gearing.drivenFixed != null) said.push('roue ' + technical.gearing.drivenFixed);
+        return said.length ? said.join(' · ') : 'Plages personnalisées';
+      }
+      case 'service':
+        return technical.fatigue.enabled
+          ? technical.fatigue.years + ' ans, ' + technical.fatigue.hoursPerDay + ' h/j'
+          : 'Non évaluée';
+      case 'depth': {
+        var depth = technical.depth();
+        return depth ? depth.label : technical.search.maxSolutions + ' solutions au plus';
+      }
+      case 'technical': {
+        var groups = technical.customisedGroups().filter(function (group) {
+          return group !== 'search' && group !== 'manufacturing';
+        });
+        return groups.length ? groups.length + (groups.length > 1 ? ' groupes modifiés' : ' groupe modifié') : 'Par défaut';
+      }
+      default: return '';
+    }
+  };
+
+  SearchModal.prototype._renderOptionRows = function () {
+    var self = this;
+    OPTION_ROWS.forEach(function (entry) {
+      var head = self.root.querySelector('.option-row-head[data-option="' + entry.key + '"]');
+      var body = self.root.querySelector('[data-option-body="' + entry.key + '"]');
+      if (!head || !body) return;
+      var open = !!self._optionOpen[entry.key];
+      head.querySelector('.option-row-value').textContent = self._optionSummary(entry.key);
+      head.querySelector('.option-row-mark').textContent = open ? '⌄' : '›';
+      head.setAttribute('aria-expanded', String(open));
+      body.hidden = !open;
+    });
+  };
+
   SearchModal.prototype.cancel = function () {
     // Le brouillon est jeté : la recherche affichée n'a jamais bougé.
     this.draft = null;
-    this.root.hidden = true;
-    document.body.classList.remove('modal-open');
+    this._close();
     this.onClose();
     return this;
+  };
+
+  /** Ferme le dialogue et rend le focus à ce qui l'avait ouvert (§28). */
+  SearchModal.prototype._close = function () {
+    this.root.hidden = true;
+    document.body.classList.remove('modal-open');
+    if (this._opener && this._opener.focus && document.contains(this._opener)) this._opener.focus();
+    this._opener = null;
   };
 
   SearchModal.prototype.submit = function () {
     if (!this.draft || !this.draft.isReady()) { this.render(); return this; }
     this.session.adopt(this.draft);
     this.draft = null;
-    this.root.hidden = true;
-    document.body.classList.remove('modal-open');
+    this._close();
     this.onSearch();
     return this;
   };
@@ -316,6 +617,7 @@
       this._bindService(refresh);
       this._bindParts(refresh);
       this._bindDepth(refresh);
+      this._bindTechnical(refresh);
     }
     this.typeStep.setDraft(this.draft);
     this.sheet.session = this.draft;
@@ -344,9 +646,13 @@
       container.appendChild(button);
     }
 
+    // Le bouton reste TOUJOURS visible : il ouvrait la priorité secondaire puis
+    // se cachait lui-même, si bien qu'une secondaire ouverte par erreur ne
+    // pouvait plus être refermée. Un interrupteur qui disparaît une fois
+    // actionné n'est pas un interrupteur.
     if (toggle) toggle.addEventListener('click', function () {
-      secondaryHost.hidden = !secondaryHost.hidden;
-      toggle.setAttribute('aria-expanded', String(!secondaryHost.hidden));
+      if (self._secondaryOpen) self.draft.preferences.secondary = null;
+      self._secondaryOpen = !self._secondaryOpen;
       refresh();
     });
 
@@ -355,9 +661,14 @@
       secondaryHost.textContent = '';
       axes.forEach(function (axis) { chip(axis, host, false); });
       axes.forEach(function (axis) { chip(axis, secondaryHost, true); });
-      // La secondaire ne s'impose pas : elle n'apparaît que si elle sert (§10).
-      if (self.draft.preferences.secondary) secondaryHost.hidden = false;
-      toggle.hidden = !secondaryHost.hidden;
+      // Une secondaire déjà choisie ouvre le bloc d'elle-même ; sinon il ne
+      // s'impose pas (§10).
+      var open = self._secondaryOpen || !!self.draft.preferences.secondary;
+      self._secondaryOpen = open;
+      secondaryHost.hidden = !open;
+      toggle.textContent = open ? '− Retirer la priorité secondaire' : '+ Ajouter une priorité secondaire';
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-controls', 'prioritySecondary');
     };
   };
 
@@ -489,16 +800,6 @@
 
     this._renderParts = function () {
       host.textContent = '';
-      // Repliés par défaut : ils ne concernent que qui part de son stock.
-      var open = self.draft.intent.startsFromParts() || self.draft.technical.isCustomised('gearing')
-        || self.draft.technical.isCustomised('module');
-      host.hidden = false;
-      var details = document.createElement('details');
-      details.className = 'parts-panel';
-      details.id = 'partsPanel';
-      details.open = open;
-      details.appendChild(node('summary', null, 'Module, dentures et entraxe imposés'));
-
       var grid = node('div', 'parts-grid');
       PART_FIELDS.forEach(function (field) {
         var label = node('label', 'parts-field');
@@ -518,11 +819,10 @@
           refresh(false);
         });
         label.appendChild(input);
-        var unit = node('span', 'parts-unit', field.unit);
-        label.appendChild(unit);
+        label.appendChild(node('span', 'parts-unit', field.unit));
         grid.appendChild(label);
       });
-      details.appendChild(grid);
+      host.appendChild(grid);
 
       // Une plage dit « entre 20 et 60 dents ». Un stock dit « 20, 24, 40, 60 »,
       // et aucune plage ne saura jamais l'exprimer : c'est pourtant ce qu'on a
@@ -542,9 +842,8 @@
         });
         label.appendChild(input);
         label.appendChild(node('small', 'parts-hint', field.hint));
-        details.appendChild(label);
+        host.appendChild(label);
       });
-      host.appendChild(details);
     };
   };
 
@@ -596,11 +895,15 @@
   SearchModal.prototype.render = function (structural) {
     if (!this.draft) return this;
     var self = this;
+    var blocking = this._stepStates();
     STEPS.forEach(function (step, index) {
       self.panes[step.id].hidden = index !== self.step;
       var button = self.root.querySelector('[data-step="' + step.id + '"]');
       button.classList.toggle('active', index === self.step);
+      button.classList.toggle('step-blocked', !!blocking[step.id]);
+      button.classList.toggle('step-done', !blocking[step.id]);
       button.setAttribute('aria-current', index === self.step ? 'step' : 'false');
+      button.title = blocking[step.id] ? 'Information manquante à cette étape' : '';
     });
 
     if (this.step === 0) this.typeStep.render();
@@ -612,15 +915,22 @@
       this._renderService();
       this._renderParts();
       this._renderDepth();
+      this._renderTechnical();
       this.typeParameters.render();
+      this._renderOptionRows();
     }
     this._renderAnalysisLevels();
     this._renderSummary();
 
+    this.context.textContent = this._context();
     this.backButton.disabled = this.step === 0;
     this.nextButton.hidden = this.step === STEPS.length - 1;
-    this.searchButton.disabled = !this.draft.isReady();
-    this.searchButton.title = this.draft.isReady() ? '' : 'Complétez le besoin pour lancer la recherche';
+    var ready = this.draft.isReady();
+    this.searchButton.disabled = !ready;
+    // §28 : un bouton désactivé doit dire POURQUOI, et le dire au lecteur
+    // d'écran — un `title` seul ne lui parvient pas.
+    this.searchButton.title = ready ? '' : this._blockedReason();
+    this.searchButton.setAttribute('aria-describedby', 'searchSummaryState');
     return this;
   };
 
@@ -639,11 +949,25 @@
     });
   };
 
+  /** Rubriques qui ne décrivent pas la recherche mais ses modalités (§22). */
+  var SECONDARY_SECTIONS = ['Composants', 'Recherche'];
+
   SearchModal.prototype._renderSummary = function () {
     var host = el('searchModalSummary');
     if (!host) return;
+    // Le bloc des niveaux d'analyse est un enfant permanent : on ne le détruit
+    // pas avec le reste, on le remet en place après les rubriques.
+    var levels = el('analysisLevels'), bar = this.summaryBar;
     host.textContent = '';
+    if (bar) host.appendChild(bar);
     host.appendChild(node('h3', null, 'Votre recherche'));
+    // §22 : le résumé est une bonne idée tant qu'il ne devient pas une seconde
+    // page de configuration. Ce qui décrit la recherche reste visible ; ce qui
+    // n'en règle que les modalités attend qu'on le demande.
+    var self = this;
+    var more = node('div', 'search-summary-more');
+    more.id = 'searchSummaryMore';
+    more.hidden = !this._summaryExpanded;
     this.draft.brief().forEach(function (section) {
       var block = node('div', 'search-summary-section');
       block.dataset.section = section.title;
@@ -655,10 +979,26 @@
         list.appendChild(item);
       });
       block.appendChild(list);
-      host.appendChild(block);
+      (SECONDARY_SECTIONS.indexOf(section.title) === -1 ? host : more).appendChild(block);
     });
+    if (more.childNodes.length) {
+      var toggle = node('button', 'btn-link search-summary-toggle',
+        this._summaryExpanded ? 'Masquer le détail' : 'Voir le résumé complet');
+      toggle.type = 'button';
+      toggle.id = 'searchSummaryToggle';
+      toggle.setAttribute('aria-expanded', String(!!this._summaryExpanded));
+      toggle.addEventListener('click', function () {
+        self._summaryExpanded = !self._summaryExpanded;
+        self.render(false);
+      });
+      host.appendChild(toggle);
+      host.appendChild(more);
+    }
+
+    if (levels) host.appendChild(levels);
 
     var ready = this.draft.isReady();
+    if (bar) bar.textContent = 'Résumé · ' + (ready ? '✓ prêt' : '! ' + this._blockedReason());
     var state = node('p', 'search-summary-state ' + (ready ? 'ready' : 'blocked'));
     state.id = 'searchSummaryState';
     if (ready) {

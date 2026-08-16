@@ -66,7 +66,20 @@
     { id: 'input_material', group: 'materials', key: 'input', kind: 'text' },
     { id: 'output_material', group: 'materials', key: 'output', kind: 'text' },
     { id: 'teeth_inventory', group: 'gearing', key: 'teethInventory', kind: 'list' },
-    { id: 'module_list', group: 'module', key: 'list', kind: 'list' }
+    { id: 'module_list', group: 'module', key: 'list', kind: 'list' },
+    { id: 'support_distance', group: 'shaft', key: 'supportDistanceMm', nullable: true },
+    { id: 'shaft_allowable_shear', group: 'shaft', key: 'allowableShearMPa' },
+    { id: 'manufacturing_mode', group: 'manufacturing', key: 'process', kind: 'text' },
+    { id: 'manufacturing_min_module', group: 'manufacturing', key: 'minimumModule', nullable: true },
+    { id: 'manufacturing_min_teeth', group: 'manufacturing', key: 'minimumTeeth', nullable: true },
+    { id: 'manufacturing_min_width', group: 'manufacturing', key: 'minimumFaceWidth', nullable: true },
+    { id: 'printer_diameter', group: 'manufacturing', key: 'printerDiameter', nullable: true },
+    { id: 'additive_derating', group: 'manufacturing', key: 'additiveDerating' },
+    { id: 'fatigue_enabled', group: 'fatigue', key: 'enabled', kind: 'flag' },
+    { id: 'hours_per_day', group: 'fatigue', key: 'hoursPerDay' },
+    { id: 'days_per_year', group: 'fatigue', key: 'daysPerYear' },
+    { id: 'service_years', group: 'fatigue', key: 'years' },
+    { id: 'load_type', group: 'fatigue', key: 'loadType', kind: 'text' }
   ];
 
   /** Les bornes de dentures sont portées par un curseur : des textes, pas des champs. */
@@ -144,6 +157,20 @@
       fatigue: this.technical.fatigue,
       shaft: this.technical.shaft
     };
+  };
+
+  /**
+   * Cette recherche part-elle de composants déjà possédés ? C'est une
+   * DÉDUCTION, plus une case à cocher : saisir « dentures 16, 20, 40 » ou un
+   * pignon imposé, c'est déjà dire qu'on cherche dans son stock. Demander en
+   * plus « souhaitez-vous partir de vos pièces ? » ferait répéter le geste.
+   */
+  SearchSession.prototype.usesParts = function () {
+    var gearing = this.technical.gearing, module = this.technical.module;
+    return (gearing.teethInventory || []).length > 0 ||
+      (module.list || []).length > 0 ||
+      gearing.drivingFixed != null || gearing.drivenFixed != null ||
+      this.technical.isCustomised('gearing') || this.technical.isCustomised('module');
   };
 
   /** Le réducteur existant, analysé — la référence de toute comparaison. */
@@ -489,9 +516,9 @@
       'jusqu’à ' + this.compile().maxStages + ' étages'
     ]);
 
-    section('Analyse', this.analysisLevels().map(function (level) {
-      return (level.available ? '✓ ' : '△ ') + level.label.toLowerCase();
-    }));
+    // Les niveaux d'analyse ne sont PAS repris ici : le résumé les affiche
+    // déjà, en clair et avec ce qui leur manque (§23). Les répéter en version
+    // appauvrie n'ajoutait rien et allongeait la colonne.
     return sections;
   };
 

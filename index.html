@@ -68,7 +68,7 @@
             <li><kbd>?</kbd> : ouvrir/fermer l'aide</li>
           </ul>
           <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, clic sur un étage = inspection, double-clic = édition.</p>
-          <p><strong>Mode expert :</strong> matériaux, fatigue, pondération multicritère et graphique de sécurité.</p>
+          <p><strong>Options avancées :</strong> matériaux, fatigue, arbres et limites de fabrication sont accessibles depuis le modal de recherche.</p>
         </div>
       </details>
 
@@ -81,10 +81,11 @@
 
   <div class="app-body">
 
-    <!-- §17 : plus de barre latérale de configuration. Ne subsiste, hors flux,
-         que ce qui doit rester dans le DOM : les miroirs de compatibilité, les
-         panneaux techniques que le modal déplace chez lui à l'ouverture, et le
-         bouton de lancement que le modal déclenche. -->
+    <!-- §17 et §20 : plus de barre latérale de configuration, et l'ancien
+         formulaire ne remonte plus dans le modal. Ne subsiste ici, caché, que
+         ce qui doit rester dans le DOM : les miroirs de compatibilité lus par
+         SearchParams, les presets et les URLs partagées, et le bouton de
+         lancement que le modal déclenche. Rien de tout cela n'est montré. -->
     <div class="legacy-host" id="legacyHost" hidden aria-hidden="true">
         <div class="legacy-mirrors" id="legacyMirrors" hidden aria-hidden="true">
           <select id="objective_mode" data-persist tabindex="-1">

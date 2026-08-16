@@ -67,6 +67,11 @@
     this.host = host;
     this.draft = draft;
     this.onChange = onChange || function () {};
+    // Sections dépliées à la main. Un réglage déjà personnalisé s'ouvre seul :
+    // ceci ne mémorise que les ouvertures que rien d'autre ne justifie.
+    this._open = {};
+    // §11 : un seul étage du réducteur existant est déplié à la fois.
+    this._openStage = null;
   }
 
   TypeStep.prototype.setDraft = function (draft) { this.draft = draft; return this; };
@@ -77,14 +82,92 @@
     // Décrire ce qu'on a précède toute question sur ce qu'on veut : c'est la
     // machine décrite qui fixe le rapport à conserver.
     if (this.draft.intent.improves()) this._renderExisting();
-    this._renderPolicy();
-    // La disposition décrit le besoin, pas la technologie : elle vaut quelle
-    // que soit la politique, et c'est elle qui nourrit le conseiller.
-    this._renderDisposition();
-    var policy = this.draft.technologySelection.policy;
-    if (policy === 'template') this._renderArchitecture();
-    else if (policy !== 'auto') this._renderFamilies();
+
+    // §7, §8 : technologie et disposition sont d'excellentes fonctions, mais
+    // quatre boutons et six cartes en permanence font payer à TOUS le prix
+    // d'un réglage que la plupart laissent sur « Automatique ». Elles se
+    // réduisent donc à une ligne de résumé, dépliable d'un clic — et déjà
+    // dépliée dès que l'utilisateur y a touché.
+    this._renderSetting('technology', 'Technologie', this._technologyValue(), function (host) {
+      this._renderPolicy(host);
+      var policy = this.draft.technologySelection.policy;
+      if (policy === 'template') this._renderArchitecture(host);
+      else if (policy !== 'auto') this._renderFamilies(host);
+      // §9 : le conseil n'a rien à dire tant que le besoin est vide. Il ne
+      // s'affiche donc qu'ici, une fois qu'on vient chercher de l'aide.
+      host.appendChild(this._advice());
+    });
+    this._renderSetting('disposition', 'Disposition', this._dispositionValue(), function (host) {
+      this._renderDisposition(host);
+    });
     return this;
+  };
+
+  /**
+   * Une ligne « Réglage — valeur — Modifier », qui ne déploie son contenu que
+   * lorsqu'on le demande, ou lorsqu'il n'est plus au réglage d'usine.
+   */
+  TypeStep.prototype._renderSetting = function (key, label, value, renderBody) {
+    var self = this;
+    var section = document.createElement('section');
+    section.className = 'type-section setting-section';
+    section.dataset.setting = key;
+
+    // Un réglage déjà personnalisé s'ouvre seul, mais on doit pouvoir le
+    // replier : sans état explicite, `!open` serait aussitôt réécrasé par
+    // `customised` et le bouton « Replier » n'aurait aucun effet.
+    var explicit = this._open[key];
+    var open = explicit === undefined ? value.customised : explicit;
+    var row = document.createElement('div');
+    row.className = 'setting-row';
+    row.innerHTML = '<span class="setting-label">' + label + '</span>' +
+      '<span class="setting-value">' + value.text + '</span>';
+    var toggle = button('setting-toggle', open ? 'Replier' : 'Modifier…', function () {
+      self._open[key] = !open;
+      self._changed();
+    });
+    toggle.dataset.setting = key;
+    toggle.setAttribute('aria-expanded', String(open));
+    row.appendChild(toggle);
+    section.appendChild(row);
+    this.host.appendChild(section);
+
+    if (!open) return;
+    var body = document.createElement('div');
+    body.className = 'setting-body';
+    body.dataset.settingBody = key;
+    section.appendChild(body);
+    renderBody.call(this, body);
+  };
+
+  /** Ce que la ligne « Technologie » annonce sans être dépliée. */
+  TypeStep.prototype._technologyValue = function () {
+    var selection = this.draft.technologySelection;
+    var names = {};
+    Object.keys(KNOWLEDGE).forEach(function (id) { names[id] = KNOWLEDGE[id].name; });
+    var explored = this.draft.selectedTechnologies().length;
+    return {
+      customised: selection.policy !== 'auto',
+      text: selection.describe(names) + ' · ' + explored +
+        (explored > 1 ? ' familles explorées' : ' famille explorée')
+    };
+  };
+
+  /** Ce que la ligne « Disposition » annonce sans être dépliée. */
+  TypeStep.prototype._dispositionValue = function () {
+    var current = this._currentDisposition();
+    var architecture = this.draft.requirement.architecture;
+    var entry = DISPOSITIONS.filter(function (d) { return d.id === current; })[0];
+    var extras = FUNCTION_OPTIONS.filter(function (option) {
+      return architecture[option.key] && architecture[option.key] !== 'any';
+    }).map(function (option) {
+      var chosen = option.options.filter(function (o) { return o.value === architecture[option.key]; })[0];
+      return chosen ? chosen.label : null;
+    }).filter(Boolean);
+    return {
+      customised: current !== 'any' || extras.length > 0,
+      text: [entry ? entry.label : 'Indifférente'].concat(extras).join(' · ')
+    };
   };
 
   /** Première décision : que cherche-t-on ? */
@@ -169,10 +252,28 @@
     list.className = 'existing-stages';
     list.id = 'existingStages';
 
+    // §11 : afficher tous les étages avec tous leurs champs à la fois était
+    // fonctionnellement juste et visuellement écrasant. Un seul étage s'ouvre —
+    // les autres se résument à ce qu'ils sont, ce qui suffit pour s'y retrouver.
     existing.stages.forEach(function (stage, index) {
       var item = document.createElement('li');
       item.className = 'existing-stage';
       item.dataset.stage = String(index);
+      var open = self._openStage === index;
+
+      if (!open) {
+        var summary = button('existing-stage-summary', '', function () {
+          self._openStage = index;
+          self._changed();
+        });
+        summary.dataset.stage = String(index);
+        summary.innerHTML = '<strong>Étage ' + (index + 1) + '</strong>' +
+          '<span>' + stageSummary(stage, Helpers) + '</span><span class="existing-stage-edit">Modifier</span>';
+        item.appendChild(summary);
+        item.classList.add('existing-stage-folded');
+        list.appendChild(item);
+        return;
+      }
 
       var family = document.createElement('select');
       family.className = 'existing-family';
@@ -207,6 +308,7 @@
 
       var remove = button('existing-stage-remove', '×', function () {
         existing.removeStage(index);
+        self._openStage = null;
         self._changed();
       });
       remove.setAttribute('aria-label', 'Retirer l’étage ' + (index + 1));
@@ -217,6 +319,8 @@
 
     var add = button('btn-small', '+ Ajouter un étage', function () {
       existing.addStage('spur', 1);
+      // Un étage qu'on vient d'ajouter est celui qu'on veut remplir.
+      self._openStage = existing.stages.length - 1;
       self._changed();
     });
     add.id = 'addExistingStageBtn';
@@ -266,6 +370,19 @@
     this.host.appendChild(section);
   };
 
+  /** Un étage replié en une ligne : « Droit · 20 → 60 dents · module 1 ». */
+  function stageSummary(stage, Helpers) {
+    var name = KNOWLEDGE[stage.type === 'epicyclic' ? 'planetary' : stage.type];
+    var values = Helpers.fieldsFor(stage.type).map(function (field) {
+      return Helpers.get(stage, field.path);
+    }).filter(function (value) { return value != null; });
+    var module = stage.parameters && stage.parameters.module;
+    return [name ? name.name : stage.type]
+      .concat(values.length === 2 ? [values[0] + ' → ' + values[1]] : values)
+      .concat(module ? ['module ' + module] : [])
+      .join(' · ');
+  }
+
   function numberField(label, unit, value, spec, onCommit, id) {
     var wrap = document.createElement('label');
     wrap.className = 'existing-field';
@@ -292,7 +409,7 @@
   }
 
   /** Seconde décision, indépendante : comment choisir la technologie ? */
-  TypeStep.prototype._renderPolicy = function () {
+  TypeStep.prototype._renderPolicy = function (host) {
     var self = this, selection = this.draft.technologySelection;
     var section = document.createElement('section');
     section.className = 'type-section';
@@ -321,12 +438,12 @@
     var current = POLICIES.filter(function (e) { return e.policy === selection.policy; })[0];
     hint.textContent = current ? current.help : '';
     section.appendChild(hint);
-    this.host.appendChild(section);
+    host.appendChild(section);
   };
 
   // ----- Parcours A : géométrie fonctionnelle (§3) -----
 
-  TypeStep.prototype._renderDisposition = function () {
+  TypeStep.prototype._renderDisposition = function (host) {
     var self = this, architecture = this.draft.requirement.architecture;
     var section = document.createElement('section');
     section.className = 'type-section';
@@ -375,8 +492,7 @@
     });
     section.appendChild(functions);
 
-    section.appendChild(this._advice());
-    this.host.appendChild(section);
+    host.appendChild(section);
   };
 
   TypeStep.prototype._currentDisposition = function () {
@@ -424,7 +540,7 @@
 
   // ----- Parcours B : familles connues (§4) -----
 
-  TypeStep.prototype._renderFamilies = function () {
+  TypeStep.prototype._renderFamilies = function (host) {
     var self = this, selection = this.draft.technologySelection;
     var section = document.createElement('section');
     section.className = 'type-section';
@@ -446,12 +562,12 @@
       });
       section.appendChild(grid);
     });
-    this.host.appendChild(section);
+    host.appendChild(section);
   };
 
   // ----- Parcours C : architecture par étage (§5) -----
 
-  TypeStep.prototype._renderArchitecture = function () {
+  TypeStep.prototype._renderArchitecture = function (host) {
     var self = this, selection = this.draft.technologySelection;
     var section = document.createElement('section');
     section.className = 'type-section';
@@ -516,12 +632,17 @@
     });
     add.id = 'addStageBtn';
     section.appendChild(add);
-    this.host.appendChild(section);
+    host.appendChild(section);
   };
 
+  /**
+   * §18 : une seule source de rendu. `_changed` appelait `render()` PUIS
+   * `onChange()`, qui remonte au modal, qui rappelle `render()` : le même DOM
+   * était reconstruit deux fois par clic, avec le focus perdu au passage. Le
+   * modal seul décide quand redessiner.
+   */
   TypeStep.prototype._changed = function () {
     this.draft.invalidate();
-    this.render();
     this.onChange();
   };
 

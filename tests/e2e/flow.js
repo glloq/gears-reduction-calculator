@@ -13,6 +13,28 @@ async function openModal(page) {
 }
 
 /**
+ * Déplie un réglage de la première étape (technologie, disposition). Ils sont
+ * repliés tant qu'on n'y a pas touché : c'est tout l'objet de la passe UX.
+ */
+async function openSetting(page, key) {
+  await page.locator('[data-step="type"]').click();
+  const body = page.locator(`[data-setting-body="${key}"]`);
+  if (!(await body.count())) await page.locator(`.setting-toggle[data-setting="${key}"]`).click();
+  await body.waitFor();
+}
+
+/**
+ * Déplie une ligne d'option de l'étape « Affiner ». Elles sont repliées tant
+ * qu'on ne les demande pas : la plupart des recherches n'y touchent jamais.
+ */
+async function openOption(page, key) {
+  await page.locator('[data-step="criteria"]').click();
+  const body = page.locator(`[data-option-body="${key}"]`);
+  if (await body.isHidden()) await page.locator(`.option-row-head[data-option="${key}"]`).click();
+  await body.waitFor({ state: 'visible' });
+}
+
+/**
  * Pose une grandeur sur la fiche, en la révélant d'abord si besoin.
  * @param {string} path ex. 'ratio', 'output.speed'
  * @param {string|number} value valeur, ou [min, max] pour une plage
@@ -47,7 +69,7 @@ async function defineSearch(page, spec) {
     await setQuantity(page, path, value, kind);
   }
   if (spec.families) {
-    await page.locator('[data-step="type"]').click();
+    await openSetting(page, 'technology');
     await page.locator('#technologyPolicy [data-policy="restrict"]').click();
     for (const family of spec.families) await page.locator(`.family-card[data-family="${family}"]`).click();
   }
@@ -71,4 +93,4 @@ async function search(page, spec) {
   await page.locator('.solution-card').first().waitFor({ timeout: 30000 });
 }
 
-module.exports = { openModal, setQuantity, defineSearch, search };
+module.exports = { openModal, setQuantity, defineSearch, search, openSetting, openOption };
