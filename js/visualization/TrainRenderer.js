@@ -28,60 +28,6 @@
   function rad(deg) { return deg * Math.PI / 180; }
   function fmt(value, digits) { return Number.isFinite(value) ? value.toFixed(digits == null ? 2 : digits) : '—'; }
 
-  // ===== Profil en développante (adapté de l'ancien GearSVG, 8 pts/flanc) =====
-
-  function involutePoints(rb, ra, baseAngle, direction, count) {
-    var pts = [];
-    var tMax = Math.sqrt(Math.max(0, (ra / rb) * (ra / rb) - 1));
-    for (var i = 0; i <= count; i++) {
-      var t = tMax * i / count;
-      var r = rb * Math.sqrt(1 + t * t);
-      if (r > ra + 1e-9) break;
-      var angle = baseAngle + direction * (t - Math.atan(t));
-      pts.push({ x: r * Math.cos(angle), y: r * Math.sin(angle) });
-    }
-    return pts;
-  }
-
-  function gearPath(teeth, pitchR, tipR, rootR, pressureAngleDeg) {
-    teeth = Math.max(3, Math.round(finite(teeth, 12)));
-    var baseR = pitchR * Math.cos(rad(finite(pressureAngleDeg, 20)));
-    var startR = Math.max(baseR, rootR);
-    var pitch = 2 * Math.PI / teeth;
-    var half = pitch / 4;
-    var d = '';
-    for (var i = 0; i < teeth; i++) {
-      var a = i * pitch;
-      var left = involutePoints(startR, tipR, a - half, 1, 8);
-      var right = involutePoints(startR, tipR, a + half, -1, 8);
-      if (!left.length || !right.length) continue;
-      var gap = a - pitch / 2;
-      d += (d ? ' L ' : 'M ') + (rootR * Math.cos(gap)).toFixed(2) + ' ' + (rootR * Math.sin(gap)).toFixed(2);
-      d += ' L ' + (rootR * Math.cos(a - half)).toFixed(2) + ' ' + (rootR * Math.sin(a - half)).toFixed(2);
-      left.forEach(function (p) { d += ' L ' + p.x.toFixed(2) + ' ' + p.y.toFixed(2); });
-      d += ' L ' + (tipR * Math.cos(a)).toFixed(2) + ' ' + (tipR * Math.sin(a)).toFixed(2);
-      right.reverse().forEach(function (p) { d += ' L ' + p.x.toFixed(2) + ' ' + p.y.toFixed(2); });
-      d += ' L ' + (rootR * Math.cos(a + half)).toFixed(2) + ' ' + (rootR * Math.sin(a + half)).toFixed(2);
-    }
-    return d ? d + ' Z' : '';
-  }
-
-  // Denture trapézoïdale simple (poulies crantées, pignons de chaîne,
-  // couronne intérieure) — robuste pour tous les Z.
-  function toothedRingPath(teeth, outerR, innerR, dutyCycle) {
-    teeth = Math.max(4, Math.round(finite(teeth, 12)));
-    var pitch = 2 * Math.PI / teeth;
-    var w = pitch * (dutyCycle || 0.35) / 2;
-    var parts = [];
-    for (var i = 0; i < teeth; i++) {
-      var a = i * pitch;
-      [[innerR, a - pitch / 2], [innerR, a - w], [outerR, a - w * 0.6], [outerR, a + w * 0.6], [innerR, a + w]].forEach(function (p) {
-        parts.push((p[0] * Math.cos(p[1])).toFixed(2) + ' ' + (p[0] * Math.sin(p[1])).toFixed(2));
-      });
-    }
-    return parts.length ? 'M ' + parts.join(' L ') + ' Z' : '';
-  }
-
   function TrainRenderer(container) {
     this.container = typeof container === 'string' ? document.getElementById(container) : container;
     this.svg = null;
@@ -95,6 +41,8 @@
     this._savedViewBox = null;
     this._dragged = false;
     this._selected = -1;
+    var self = this;
+    this.animation = new GearAnimationController({ onUpdate: function (angle) { self.setAnimationAngle(angle); } });
   }
 
   // ===== Rendu =====
@@ -107,6 +55,8 @@
     this._rotors = [];
     this._spans = [];
     this._selected = -1;
+    this.scene = GearSceneBuilder.build(solution);
+    this.animation.setScene(this.scene);
 
     var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || []);
     var svg = n('svg', { class: 'train-svg', role: 'img', 'aria-label': 'Denture réaliste — ' + (solution.stages || []).length + ' étage(s)' });
@@ -126,7 +76,6 @@
     this._fit(keepView);
     this._bindPanZoom();
     this._bindStageInteractions();
-    this._hideInspector();
     if (this._animating) { this._animating = false; this.toggleAnimation(); }
 
     this.container.dispatchEvent(new CustomEvent('visualization:renderer', { detail: { renderer: this } }));
@@ -155,6 +104,11 @@
     entry.wheels.forEach(function (wheel) {
       group.appendChild(self._buildWheel(wheel, entry));
     });
+
+    var anchor = entry.wheels[0] || { cx: 0, cy: 0, outsideD: 20 };
+    GearForceOverlay.render(n, group, mech.forces, { x: anchor.cx, y: anchor.cy });
+    GearWarningOverlay.render(n, group, GearWarningOverlay.derive(stage, mech), index,
+      { x: anchor.cx + finite(anchor.outsideD, 20) / 2 + 8, y: anchor.cy - finite(anchor.outsideD, 20) / 2 });
 
     // Décor : libellé d'étage (couloirs anti-collision posés dans _placeLabels)
     // et cote d'entraxe.
@@ -186,7 +140,7 @@
     var m = finite(wheel.module, 1);
 
     if (wheel.kind === 'gear') {
-      rotor.appendChild(n('path', { class: 'tooth-profile', d: gearPath(wheel.teeth, pitchR, tipR, rootR, wheel.pressureAngle) }));
+      rotor.appendChild(n('path', { class: 'tooth-profile', d: GearToothProfileCache.get({ type: entry.type, teeth: wheel.teeth, module: m, pressureAngle: wheel.pressureAngle, pitchRadius: pitchR, tipRadius: tipR, rootRadius: rootR }) }));
       rotor.appendChild(n('circle', { class: 'pitch-circle', r: pitchR.toFixed(2) }));
       var hubR = Math.max(1.2, Math.min(rootR * 0.35, 6 * m));
       rotor.appendChild(n('circle', { class: 'gear-hub', r: hubR.toFixed(2) }));
@@ -196,14 +150,14 @@
       // Le contour du trou reste à (pas + creux) et plonge vers le centre
       // jusqu'à (pas − saillie) : dents pointées vers l'intérieur.
       var ringOuter = tipR;
-      var teethPath = toothedRingPath(wheel.teeth, pitchR - m, pitchR + 1.25 * m, 0.45);
+      var teethPath = GearToothProfile.toothedRingPath(wheel.teeth, pitchR - m, pitchR + 1.25 * m, 0.45);
       rotor.appendChild(n('path', {
         class: 'tooth-profile ring-profile', 'fill-rule': 'evenodd',
         d: 'M ' + ringOuter + ' 0 A ' + ringOuter + ' ' + ringOuter + ' 0 1 0 ' + (-ringOuter) + ' 0 A ' + ringOuter + ' ' + ringOuter + ' 0 1 0 ' + ringOuter + ' 0 Z ' + teethPath
       }));
       rotor.appendChild(n('circle', { class: 'pitch-circle', r: pitchR.toFixed(2) }));
     } else if (wheel.kind === 'pulley' || wheel.kind === 'sprocket') {
-      rotor.appendChild(n('path', { class: 'tooth-profile', d: toothedRingPath(wheel.teeth, tipR, rootR, wheel.kind === 'sprocket' ? 0.22 : 0.45) }));
+      rotor.appendChild(n('path', { class: 'tooth-profile', d: GearToothProfile.toothedRingPath(wheel.teeth, tipR, rootR, wheel.kind === 'sprocket' ? 0.22 : 0.45) }));
       rotor.appendChild(n('circle', { class: 'pitch-circle', r: pitchR.toFixed(2) }));
       var hub2 = Math.max(1.2, Math.min(rootR * 0.3, 5 * m));
       rotor.appendChild(n('circle', { class: 'gear-hub', r: hub2.toFixed(2) }));
@@ -229,6 +183,13 @@
         d: 'M 0 ' + (-pitchR).toFixed(2) + ' L ' + w + ' ' + (-pitchR * 0.72).toFixed(2) + ' L ' + w + ' ' + (pitchR * 0.72).toFixed(2) + ' L 0 ' + pitchR.toFixed(2) + ' Z'
       }));
       rotor.appendChild(n('path', { class: 'pitch-circle', d: 'M 0 ' + (-pitchR) + ' V ' + pitchR }));
+    } else if (wheel.kind === 'rack') {
+      var rackLength = finite(wheel.length, 100), toothPitch = Math.max(2, Math.PI * m), rackPath = 'M ' + (-rackLength / 2).toFixed(2) + ' ' + (2 * m).toFixed(2);
+      for (var rx = -rackLength / 2; rx <= rackLength / 2; rx += toothPitch) {
+        rackPath += ' L ' + rx.toFixed(2) + ' 0 L ' + Math.min(rackLength / 2, rx + toothPitch / 2).toFixed(2) + ' ' + (-2 * m).toFixed(2);
+      }
+      rackPath += ' L ' + (rackLength / 2).toFixed(2) + ' ' + (2 * m).toFixed(2) + ' Z';
+      rotor.appendChild(n('path', { class: 'tooth-profile rack-teeth', d: rackPath }));
     }
 
     // Z=n au-dessus du moyeu (hors rotor : ne tourne pas), omis si trop petit.
@@ -433,35 +394,26 @@
   // ===== Animation (delta-time, rotors seuls) =====
 
   TrainRenderer.prototype.toggleAnimation = function () {
-    if (this._animating) { this._stopAnimation(); return; }
-    this._animating = true;
-    if (this.svg) this.svg.classList.add('is-animated');
-    var self = this;
-    this._lastTs = 0;
-    var BASE_DEG_PER_S = 120; // vitesse visuelle de l'arbre d'entrée
-    function tick(ts) {
-      if (!self._animating) return;
-      if (!self.svg || !self.svg.isConnected) { self._stopAnimation(); return; }
-      var dt = self._lastTs ? (ts - self._lastTs) / 1000 : 0;
-      self._lastTs = ts;
-      self._rotors.forEach(function (rotor) {
-        rotor.angle = (rotor.angle + BASE_DEG_PER_S * rotor.speed * dt) % 360;
-        rotor.el.setAttribute('transform', 'rotate(' + rotor.angle.toFixed(2) + ')');
-      });
-      self._spans.forEach(function (span, i) {
-        var offset = (parseFloat(span.el.dataset.offset || '0') + 30 * dt) % 1000;
-        span.el.dataset.offset = offset;
-        span.el.setAttribute('stroke-dashoffset', (-offset).toFixed(1));
-      });
-      self._raf = requestAnimationFrame(tick);
-    }
-    this._raf = requestAnimationFrame(tick);
+    this.animation.toggle();
+    this._animating = this.animation.playing;
+    if (this.svg) this.svg.classList.toggle('is-animated', this._animating);
   };
 
+  TrainRenderer.prototype.setAnimationAngle = function (inputAngle) {
+    if (!this.svg || !this.svg.isConnected) return;
+    this._rotors.forEach(function (rotor) {
+      rotor.angle = inputAngle * rotor.speed;
+      rotor.el.setAttribute('transform', 'rotate(' + rotor.angle.toFixed(2) + ')');
+    });
+    this._spans.forEach(function (span) { span.el.setAttribute('stroke-dashoffset', (-inputAngle * 0.25).toFixed(1)); });
+  };
+
+  TrainRenderer.prototype.setAnimationSpeed = function (speed) { this.animation.setSpeed(speed); };
+  TrainRenderer.prototype.setAnimationDirection = function (direction) { this.animation.setDirection(direction); };
+
   TrainRenderer.prototype._stopAnimation = function () {
+    this.animation.pause();
     this._animating = false;
-    if (this._raf) cancelAnimationFrame(this._raf);
-    this._raf = null;
     if (this.svg) this.svg.classList.remove('is-animated');
   };
 
@@ -490,77 +442,17 @@
     return this.svg ? this.svg.querySelector('.train-stage[data-stage="' + index + '"]') : null;
   };
 
-  TrainRenderer.prototype.selectStage = function (index) {
+  TrainRenderer.prototype.selectStage = function (index, silent) {
     if (!this.svg) return;
     this._selected = index;
     Array.from(this.svg.querySelectorAll('.train-stage')).forEach(function (group) {
       group.classList.toggle('selected', Number(group.dataset.stage) === index);
     });
-    this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: index } }));
-    this._showInspector(index);
+    if (!silent) this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: index } }));
   };
 
   TrainRenderer.prototype._requestEdit = function (index) {
     this.container.dispatchEvent(new CustomEvent('viewer:stage-edit', { detail: { index: index } }));
-  };
-
-  TrainRenderer.prototype._inspector = function () {
-    var card = document.getElementById('stageInspector');
-    if (!card) {
-      card = document.createElement('aside');
-      card.id = 'stageInspector';
-      card.className = 'stage-inspector';
-      card.hidden = true;
-      card.setAttribute('aria-live', 'polite');
-      this.container.appendChild(card);
-    }
-    return card;
-  };
-
-  TrainRenderer.prototype._hideInspector = function () {
-    var card = document.getElementById('stageInspector');
-    if (card) card.hidden = true;
-  };
-
-  TrainRenderer.prototype._showInspector = function (index) {
-    var solution = this.solution;
-    if (!solution) return;
-    var stage = (solution.stages || [])[index];
-    var mech = (solution.mechanical || [])[index] || {};
-    if (!stage) return;
-    var card = this._inspector();
-    var g = stage.geometry || {};
-    var teeth = [];
-    try { teeth = GearTransmissionRegistry.getToothCounts(stage); } catch (e) { teeth = []; }
-    var typeName = stage.type;
-    try { typeName = GearApp.models.typeRegistry.get(stage.type === 'planetary' ? 'epicyclic' : stage.type).nomCourt; } catch (e) { /* garde */ }
-
-    function row(label, value) {
-      return value == null || value === '' ? '' : '<div><span>' + label + '</span><strong>' + value + '</strong></div>';
-    }
-    var sf = mech.bending && mech.bending.safetyFactor;
-    var sh = mech.contact && mech.contact.safetyFactor;
-    card.innerHTML =
-      '<header><span class="type-badge ' + stage.type + '">' + (index + 1) + ' · ' + typeName + '</span>' +
-      '<button type="button" class="btn-small" id="stageInspectorClose" aria-label="Fermer">✕</button></header>' +
-      '<div class="inspector-grid">' +
-      row('Dents', teeth.filter(Boolean).join(' / ')) +
-      row('Rapport', fmt(mech.ratio, 3) + ':1') +
-      row('Rendement', Number.isFinite(mech.efficiency) ? fmt(mech.efficiency * 100, 1) + ' %' : null) +
-      row('Entraxe', Number.isFinite(g.centerDistance) ? fmt(g.centerDistance, 2) + ' mm' : null) +
-      row('Module', stage.parameters && Number.isFinite(stage.parameters.module) ? stage.parameters.module + ' mm' : null) +
-      row('SF / SH', (Number.isFinite(sf) ? fmt(sf, 2) : '—') + ' / ' + (Number.isFinite(sh) ? fmt(sh, 2) : '—')) +
-      '</div>' +
-      '<button type="button" class="btn-small btn-primary" id="stageInspectorEdit">Modifier cet étage</button>';
-    card.hidden = false;
-
-    var self = this;
-    card.querySelector('#stageInspectorClose').addEventListener('click', function () {
-      card.hidden = true;
-      self._selected = -1;
-      Array.from(self.svg.querySelectorAll('.train-stage.selected')).forEach(function (s) { s.classList.remove('selected'); });
-    });
-    card.querySelector('#stageInspectorEdit').addEventListener('click', function () { self._requestEdit(index); });
   };
 
   // ===== Exports autonomes (jetons résolus) =====
@@ -590,12 +482,7 @@
 
   TrainRenderer.prototype.exportSVG = function () {
     if (!this.svg) return '';
-    var copy = this.svg.cloneNode(true);
-    copy.setAttribute('xmlns', NS);
-    var style = document.createElementNS(NS, 'style');
-    style.textContent = this._resolvedStyle();
-    copy.insertBefore(style, copy.firstChild);
-    return new XMLSerializer().serializeToString(copy);
+    return GearSvgExport.serialize(this.svg, { styleText: this._resolvedStyle() });
   };
 
   TrainRenderer.prototype.exportPNG = function (callback) {

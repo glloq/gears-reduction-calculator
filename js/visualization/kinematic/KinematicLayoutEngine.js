@@ -25,6 +25,15 @@
     var vertical = projection === 'orthogonal' ? point.z : point.y - point.z * 0.3;
     return { id: point.id, x: origin.x + horizontal, y: origin.y + vertical, z: point.z, axis: point.axis, orientation: point.axis.name, role: point.role };
   }
+  function collisionScore(points) {
+    var score = 0;
+    for (var i = 0; i < points.length; i++) for (var j = i + 1; j < points.length; j++) {
+      var dx = points[i].x - points[j].x, dy = points[i].y - points[j].y;
+      var distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < 42) score += 42 - distance;
+    }
+    return score;
+  }
 
   function KinematicLayoutEngine(options) {
     options = options || {};
@@ -34,7 +43,7 @@
   }
 
   KinematicLayoutEngine.prototype.layout = function (stages, projectionName) {
-    var projection = projectionName || 'main', self = this;
+    var requestedProjection = projectionName || 'main', projection = requestedProjection, self = this;
     var current = { id: 0, x: 0, y: 0, z: 0, axis: AXES[0], role: 'INPUT' };
     var shafts = [current], worldNodes = [];
 
@@ -64,15 +73,28 @@
     });
     if (current) current.role = 'OUTPUT';
 
+    if (projection === 'auto') {
+      var candidates = ['main', 'orthogonal'];
+      projection = candidates.reduce(function (best, candidate) {
+        var candidatePoints = shafts.map(function (shaft) { return project(shaft, candidate, self.origin); });
+        var candidateScore = collisionScore(candidatePoints);
+        return !best || candidateScore < best.score ? { name: candidate, score: candidateScore } : best;
+      }, null).name;
+    }
+    var projectedShafts = shafts.filter(function (shaft, index, all) {
+      return all.findIndex(function (candidate) { return candidate.id === shaft.id; }) === index;
+    }).map(function (shaft) { return project(shaft, projection, self.origin); });
     var nodes = worldNodes.map(function (node) {
       return { index: node.index, stage: node.stage, relation: node.relation,
         input: project(node.input, projection, self.origin), output: project(node.output, projection, self.origin), projection: projection };
     });
-    return { nodes: nodes, shafts: shafts, worldNodes: worldNodes,
-      width: Math.max(460, stages.length * this.stageSpacing + 220), height: 330, projection: projection };
+    return { nodes: nodes, shafts: shafts, projectedShafts: projectedShafts, worldNodes: worldNodes,
+      width: Math.max(460, stages.length * this.stageSpacing + 220), height: 330,
+      projection: projection, requestedProjection: requestedProjection };
   };
 
   KinematicLayoutEngine.relation = relation;
   KinematicLayoutEngine.project = project;
+  KinematicLayoutEngine.collisionScore = collisionScore;
   return KinematicLayoutEngine;
 });

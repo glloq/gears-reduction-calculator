@@ -90,6 +90,14 @@ test('the viewer is a full-width hero above the results grid', () => {
   assert.match(html, /class="view-mode active rotary-only" data-view="teeth"/);
 });
 
+test('the viewer exposes adaptive display and animation controls', () => {
+  assert.match(html, /id="viewerSpeed"/);
+  assert.match(html, /id="viewerReverse"/);
+  assert.match(html, /id="viewerDisplayMenu"/);
+  assert.match(html, /data-overlay="dimensions"/);
+  assert.match(html, /data-overlay="powerFlow"/);
+});
+
 test('behavior is bound in JS, not in inline attributes', () => {
   assert.doesNotMatch(html, /onclick=/);
 });

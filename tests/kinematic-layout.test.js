@@ -43,3 +43,26 @@ test('main and orthogonal projections expose different spatial coordinates', () 
   assert.notEqual(main.y, orthogonal.y);
   assert.equal(engine.layout([{ type: 'rack' }]).worldNodes[0].output.axis.name, 'LINEAR');
 });
+
+test('projected shafts are unique and retain stable S identifiers', () => {
+  const result = new Layout().layout([
+    { type: 'planetary' },
+    { type: 'spur' },
+    { type: 'planetary' }
+  ]);
+  assert.deepEqual(result.projectedShafts.map(shaft => shaft.id), [0, 2]);
+  assert.equal(result.projectedShafts[0].role, 'INPUT');
+});
+
+test('auto projection selects the least colliding supported projection', () => {
+  const engine = new Layout();
+  const stages = [{ type: 'spur' }, { type: 'bevel' }, { type: 'spur' }, { type: 'worm' }];
+  const automatic = engine.layout(stages, 'auto');
+  assert.equal(automatic.requestedProjection, 'auto');
+  assert.ok(['main', 'orthogonal'].includes(automatic.projection));
+  const scores = ['main', 'orthogonal'].map(name => {
+    const points = engine.layout(stages, name).projectedShafts;
+    return { name, score: Layout.collisionScore(points) };
+  });
+  assert.equal(automatic.projection, scores.sort((a, b) => a.score - b.score)[0].name);
+});

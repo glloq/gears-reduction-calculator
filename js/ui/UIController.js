@@ -23,7 +23,6 @@
     // ligne de l'éditeur.
     function onStageSelected(event){controller._syncMechanicalRow(event.detail.index);controller._eventBus.emit('editor:focus-stage',{stage:event.detail.index});}
     visualContainer.addEventListener('viewer:stage-selected',onStageSelected);
-    visualContainer.addEventListener('kinematic:stage-selected',onStageSelected);
     // Double-clic / bouton « Modifier cet étage » : ouvre l'onglet éditeur puis
     // focalise la ligne (dans un rAF, l'onglet doit être visible pour scroller).
     visualContainer.addEventListener('viewer:stage-edit',function(event){
