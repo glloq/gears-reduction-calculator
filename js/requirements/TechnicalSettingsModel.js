@@ -24,10 +24,28 @@
 })(typeof self !== 'undefined' ? self : this, function (Registry) {
   'use strict';
 
+  // §8 : « 500 000 itérations » ne dit rien à personne. La profondeur nomme
+  // l'arbitrage réel — qualité du balayage contre temps de calcul — et les
+  // nombres restent en dessous, dans les options techniques.
+  var DEPTHS = [
+    { id: 'quick', label: 'Rapide', help: 'Aperçu et dimensionnement initial.', maxSolutions: 40, maxIterations: 120000 },
+    { id: 'standard', label: 'Standard', help: 'Comparaison complète, recommandé.', maxSolutions: 100, maxIterations: 500000 },
+    { id: 'deep', label: 'Approfondie', help: 'Explore davantage d’architectures.', maxSolutions: 200, maxIterations: 1500000 },
+    { id: 'exhaustive', label: 'Exhaustive', help: 'Privilégie la qualité au temps de calcul.', maxSolutions: 400, maxIterations: 5000000 }
+  ];
+
+  function depth(id) {
+    for (var i = 0; i < DEPTHS.length; i++) if (DEPTHS[i].id === id) return DEPTHS[i];
+    return null;
+  }
+
   var DEFAULTS = {
-    search: { maxSolutions: 100, maxIterations: 500000 },
-    gearing: { drivingMin: 10, drivingMax: 30, drivenMin: 20, drivenMax: 50, drivingFixed: null, drivenFixed: null, reductionOnly: true },
-    module: { mode: 'fixed', fixed: 1, min: null, max: null },
+    search: { depth: 'standard', maxSolutions: 100, maxIterations: 500000 },
+    // `teethInventory` et `module.list` énumèrent ce qu'on POSSÈDE : une plage
+    // dit « entre 20 et 60 dents », un inventaire dit « 20, 24, 40 et 60 », et
+    // aucune plage ne saura jamais exprimer le second.
+    gearing: { drivingMin: 10, drivingMax: 30, drivenMin: 20, drivenMax: 50, drivingFixed: null, drivenFixed: null, reductionOnly: true, teethInventory: [] },
+    module: { mode: 'fixed', fixed: 1, min: null, max: null, list: [] },
     manufacturing: { process: 'standard', minimumModule: null, minimumTeeth: null, minimumFaceWidth: null, printerDiameter: null, additiveDerating: 1 },
     materials: { input: 'C45', output: 'C45' },
     fatigue: { enabled: false, hoursPerDay: 8, daysPerYear: 250, years: 10, loadType: 'constant' },
@@ -72,6 +90,35 @@
     return this;
   };
 
+  /**
+   * Choisit une profondeur. Les nombres suivent, sauf s'ils ont été réglés à
+   * la main : une valeur choisie explicitement ne doit pas être écrasée par un
+   * bouton qui ne prétend qu'à un ordre de grandeur.
+   */
+  TechnicalSettingsModel.prototype.setDepth = function (id) {
+    var preset = depth(id);
+    if (!preset) return this;
+    var current = depth(this.search.depth);
+    var untouched = !current ||
+      (this.search.maxSolutions === current.maxSolutions && this.search.maxIterations === current.maxIterations);
+    this.search.depth = id;
+    if (untouched) {
+      this.search.maxSolutions = preset.maxSolutions;
+      this.search.maxIterations = preset.maxIterations;
+    }
+    return this;
+  };
+
+  /** La profondeur nommée, ou null si les nombres n'en décrivent aucune. */
+  TechnicalSettingsModel.prototype.depth = function () {
+    for (var i = 0; i < DEPTHS.length; i++) {
+      if (DEPTHS[i].maxSolutions === this.search.maxSolutions && DEPTHS[i].maxIterations === this.search.maxIterations) {
+        return DEPTHS[i];
+      }
+    }
+    return null;
+  };
+
   TechnicalSettingsModel.prototype.set = function (group, key, value) {
     if (!this[group]) return this;
     this[group][key] = value;
@@ -97,7 +144,13 @@
   TechnicalSettingsModel.prototype.isCustomised = function (group) {
     var reference = DEFAULTS[group];
     if (!reference) return false;
-    return Object.keys(reference).some(function (key) { return this[group][key] !== reference[key]; }, this);
+    return Object.keys(reference).some(function (key) {
+      var value = this[group][key], base = reference[key];
+      // Un inventaire est cloné à la construction : comparer les références
+      // ferait déclarer « modifié » tout groupe qui en contient un.
+      if (Array.isArray(base)) return (value || []).length !== base.length;
+      return value !== base;
+    }, this);
   };
 
   TechnicalSettingsModel.prototype.customisedGroups = function () {
@@ -125,9 +178,11 @@
       dentMeneeMin: this.gearing.drivenMin, dentMeneeMax: this.gearing.drivenMax,
       dentMenanteFixe: this.gearing.drivingFixed, dentMeneeFixe: this.gearing.drivenFixed,
       reductionOnly: this.gearing.reductionOnly,
+      teethInventory: (this.gearing.teethInventory || []).slice(),
       maxSolutions: this.search.maxSolutions, maxIterations: this.search.maxIterations,
       module: this.module.fixed, moduleMode: this.module.mode,
       moduleMin: this.module.min, moduleMax: this.module.max,
+      moduleList: (this.module.list || []).slice(),
       inputMaterial: this.materials.input, outputMaterial: this.materials.output,
       additiveDerating: this.manufacturing.additiveDerating,
       manufacturing: {
@@ -160,5 +215,6 @@
     return Registry.parameterDefinitions[typeId === 'planetary' ? 'planetary' : typeId] || null;
   };
 
-  return { TechnicalSettingsModel: TechnicalSettingsModel, DEFAULTS: DEFAULTS, ADDITIVE_DERATING: ADDITIVE_DERATING };
+  return { TechnicalSettingsModel: TechnicalSettingsModel, DEFAULTS: DEFAULTS,
+    ADDITIVE_DERATING: ADDITIVE_DERATING, DEPTHS: DEPTHS, depth: depth };
 });

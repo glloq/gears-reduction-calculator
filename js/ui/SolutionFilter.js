@@ -66,8 +66,20 @@
     stages: function (a, b) {
       return a.solution.stages.length - b.solution.stages.length ||
         a.solution.errorPercent - b.solution.errorPercent;
-    }
+    },
+    // Explorer un espace de conception, c'est chercher un maximum : le tri par
+    // « recommandé » le noierait au milieu des compromis.
+    torque: function (a, b) { return highestFirst(a.solution.outputTorqueNm, b.solution.outputTorqueNm); },
+    ratio: function (a, b) { return highestFirst(a.solution.ratio, b.solution.ratio); }
   };
+
+  /** Plus grand d'abord ; les valeurs non calculées ferment la marche. */
+  function highestFirst(a, b) {
+    var fa = Number.isFinite(a), fb = Number.isFinite(b);
+    if (fa && fb) return b - a;
+    if (fa !== fb) return fa ? -1 : 1;
+    return 0;
+  }
 
   /**
    * Applique les critères au vivier. Un critère null/undefined laisse passer.

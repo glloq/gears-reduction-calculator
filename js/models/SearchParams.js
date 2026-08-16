@@ -47,6 +47,15 @@
     }
   };
 
+  /** Une liste saisie à la main : « 16, 20 24 » vaut [16, 20, 24]. Vide = null. */
+  function numberList(node) {
+    if (!node) return null;
+    var values = String(node.value || '').split(/[^0-9.]+/)
+      .map(function (piece) { return parseFloat(piece); })
+      .filter(function (value) { return Number.isFinite(value) && value > 0; });
+    return values.length ? values : null;
+  }
+
   function SearchParams() {
     this.rapportCible = 12;
     this.dentMenanteMin = 10;
@@ -59,6 +68,9 @@
     this.maxIterations = 500000;
     this.dentMenanteFixe = null;
     this.dentMeneeFixe = null;
+    // Inventaire réel : ce qu'on possède, énuméré. Vide = pas d'inventaire.
+    this.teethInventory = null;
+    this.moduleList = null;
     this.reductionOnly = true;
     this.typesActifs = ['spur'];
     this.module = null;
@@ -93,6 +105,9 @@
     p.maxEtages = parseInt(document.getElementById("etages").value);
     p.maxSolutions = parseInt(document.getElementById("max_solutions").value);
     p.maxIterations = parseInt(document.getElementById("max_iterations").value);
+
+    p.teethInventory = numberList(document.getElementById("teeth_inventory"));
+    p.moduleList = numberList(document.getElementById("module_list"));
 
     var fixeA = document.getElementById("dent_menante_fixe").value;
     var fixeB = document.getElementById("dent_menee_fixe").value;
@@ -234,6 +249,8 @@
       ,moduleMode: this.moduleMode
       ,moduleMin: this.moduleMin
       ,moduleMax: this.moduleMax
+      ,moduleList: this.moduleList||null
+      ,teethInventory: this.teethInventory||null
       ,vitesseEntree: this.vitesseEntree
       ,coupleEntree: this.coupleEntree
       ,inputMaterial: this.inputMaterial
@@ -299,7 +316,8 @@
 
     var SIMPLE_FIELDS = [
     'rapport', 'precision', 'etages', 'max_solutions', 'max_iterations',
-    'dent_menante_fixe', 'dent_menee_fixe', 'module', 'vitesse_entree', 'couple_entree'
+    'dent_menante_fixe', 'dent_menee_fixe', 'module', 'vitesse_entree', 'couple_entree',
+    'teeth_inventory', 'module_list'
   ];
 
   var PRO_FIELDS = ['angle_pression', 'coeff_frottement', 'largeur_dent', 'limite_elastique', 'qualite_iso'];

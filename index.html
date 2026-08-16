@@ -194,7 +194,7 @@
 
           <div class="field-grid rotary-only">
             <div><label for="etages">Étages max</label><input type="number" id="etages" value="4" min="1" max="8"></div>
-            <div><label for="max_solutions" title="Nombre de solutions collectées pour la barre d'affinage">Taille du vivier</label><input type="number" id="max_solutions" value="100" min="1" max="200"></div>
+            <div><label for="max_solutions" title="Nombre de solutions collectées pour la barre d'affinage">Taille du vivier</label><input type="number" id="max_solutions" value="100" min="1" max="400"></div>
           </div>
           <div class="linear-only">
             <label for="max_solutions_linear_hint" class="visually-hidden">Nombre de résultats</label>
@@ -219,6 +219,11 @@
               <input type="checkbox" id="reduction_only" checked>
               Réduction uniquement (menée &gt; menante)
             </label>
+
+            <label for="teeth_inventory">Dentures en stock (liste)</label>
+            <input type="text" id="teeth_inventory" data-persist placeholder="vide = plages ci-dessus">
+            <label for="module_list">Modules en stock (liste)</label>
+            <input type="text" id="module_list" data-persist placeholder="vide = module ci-dessous">
           </div>
         </div>
       </details>
@@ -437,6 +442,8 @@
                 <option value="compactness">Encombrement</option>
                 <option value="sf">Robustesse</option>
                 <option value="stages">Simplicité</option>
+                <option value="torque">Couple de sortie</option>
+                <option value="ratio">Rapport</option>
               </select></label>
               <button id="refineResetBtn" class="btn-small" type="button" title="Réinitialiser les filtres">Réinitialiser</button>
             </div>
@@ -607,6 +614,7 @@
   <script src="js/requirements/LegacySearchAdapter.js" defer></script>
   <script src="js/requirements/SolutionEvaluator.js" defer></script>
   <script src="js/requirements/NearMissAnalyzer.js" defer></script>
+  <script src="js/requirements/ExplorationPlanner.js" defer></script>
 
   <script src="js/models/TransmissionTypeRegistry.js" defer></script>
   <script src="js/models/SearchParams.js" defer></script>
@@ -648,6 +656,10 @@
   <script src="js/visualization/ViewerToolbar.js" defer></script>
 
   <!-- UI -->
+  <!-- ExistingReducer réutilise les aides de StageEditor : il les suit. -->
+  <script src="js/ui/StageEditor.js" defer></script>
+  <script src="js/requirements/ExistingReducer.js" defer></script>
+  <script src="js/requirements/SearchIntentModel.js" defer></script>
   <script src="js/requirements/TechnologySelectionModel.js" defer></script>
   <script src="js/requirements/TechnicalSettingsModel.js" defer></script>
   <script src="js/ui/SearchSession.js" defer></script>
@@ -666,7 +678,6 @@
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
   <script src="js/ui/SolutionExplorer.js" defer></script>
-  <script src="js/ui/StageEditor.js" defer></script>
   <script src="js/ui/ComparePanel.js" defer></script>
   <script src="js/ui/ConstraintManager.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>

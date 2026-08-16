@@ -15,8 +15,9 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   // §17 : plus de barre latérale de configuration, ni de tiroir mobile.
   await expect(page.locator('#sidebar')).toHaveCount(0);
   await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
-  // Première question : comment choisir, pas laquelle des neuf familles.
-  await expect(page.locator('.type-entry')).toHaveCount(3);
+  // Deux décisions indépendantes : la méthode, puis la politique technologique.
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(6);
+  await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(4);
   expect(errors).toEqual([]);
 });
 
@@ -60,7 +61,7 @@ test('a confirmed edit replaces the search in one go', async ({ page }) => {
 
 test('the advised path asks for a geometry, never for a tooth profile', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('#technologyPolicy [data-policy="auto"]').click();
   await expect(page.locator('.disposition-card')).toHaveCount(6);
   await expect(page.locator('.disposition-card[data-disposition="angle"]')).toBeVisible();
 
@@ -90,9 +91,9 @@ test('a family can be preferred without closing the door on better ones', async 
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="planetary"]').click();
-  await expect(page.locator('.policy-option[data-policy="restrict"]')).toHaveClass(/active/);
+  await expect(page.locator('#technologyPolicy [data-policy="restrict"]')).toHaveClass(/active/);
 
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
@@ -104,7 +105,7 @@ test('a family can be preferred without closing the door on better ones', async 
 
   await page.locator('#editSearchBtn').click();
   await page.locator('[data-step="type"]').click();
-  await page.locator('.policy-option[data-policy="prefer"]').click();
+  await page.locator('#technologyPolicy [data-policy="prefer"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
   // Préféré : la famille reste en tête, mais l'exploration s'ouvre.
@@ -118,11 +119,11 @@ test('an imposed architecture fixes the families stage by stage', async ({ page 
   await page.goto('/');
   await setQuantity(page, 'ratio', 20);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="template"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"template\"]').click();
   await expect(page.locator('.architecture-stage')).toHaveCount(2);
 
-  await page.locator('.architecture-stage[data-stage="0"] select').selectOption('bevel');
-  await page.locator('.architecture-stage[data-stage="1"] select').selectOption('helical');
+  await page.locator('.architecture-stage[data-stage="0"] .stage-choice[data-family="bevel"]').click();
+  await page.locator('.architecture-stage[data-stage="1"] .stage-choice[data-family="helical"]').click();
   await page.locator('#addStageBtn').click();
   await expect(page.locator('.architecture-stage')).toHaveCount(3);
   await page.locator('.architecture-stage[data-stage="2"] .architecture-stage-remove').click();
@@ -167,7 +168,10 @@ test('the secondary priority stays hidden until it is asked for', async ({ page 
   await expect(page.locator('#prioritySecondary')).toBeVisible();
   await page.locator('.priority-chip-primary[data-axis="compact"]').click();
   await page.locator('.priority-chip-secondary[data-axis="quiet"]').click();
-  await expect(page.locator('#searchModalSummary')).toContainText('Compact, puis silencieux');
+  // Le résumé est désormais structuré : l'ordre se lit, il n'est plus une phrase.
+  const optimisation = page.locator('.search-summary-section[data-section="Optimisation"]');
+  await expect(optimisation).toContainText('1. Compact');
+  await expect(optimisation).toContainText('2. Silencieux');
 });
 
 test('the manufacturing process feeds the advice', async ({ page }) => {
@@ -301,7 +305,7 @@ test('the criteria menu suggests what matters here, catalogue one click away', a
   await page.goto('/');
   await setQuantity(page, 'ratio', 40);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="belt"]').click();
 
   await page.locator('[data-step="criteria"]').click();
@@ -325,7 +329,7 @@ test('only the explored families expose their own parameters', async ({ page }) 
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="worm"]').click();
 
   await page.locator('[data-step="criteria"]').click();
@@ -368,7 +372,7 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   await setQuantity(page, 'ratio', 9);
   // Uniquement des couples droits : chacun inverse le sens de sortie.
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="spur"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
@@ -376,10 +380,10 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   // Deux étages droits rendent le sens identique : la contrainte les garde.
   await page.locator('#editSearchBtn').click();
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"auto\"]').click();
   await page.locator('[data-architecture="direction"]').selectOption('same');
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
 
@@ -387,10 +391,10 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   // au lieu d'accuser une contrainte de dimension.
   await page.locator('#editSearchBtn').click();
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="auto"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"auto\"]').click();
   await page.locator('[data-architecture="direction"]').selectOption('reverse');
   await page.locator('[data-step="type"]').click();
-  await page.locator('.type-entry[data-policy="restrict"]').click();
+  await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('#workspaceEmptyHint')).toContainText('sens de sortie', { timeout: 30000 });
   await expect(page.locator('.solution-card')).toHaveCount(0);
@@ -419,4 +423,206 @@ test('a shaft distance to span brings belts and chains forward', async ({ page }
   await page.locator('[data-step="type"]').click();
   await expect(page.locator('#typeAdvice .advice-row').first()).toContainText(/Courroie|Chaîne/);
   await expect(page.locator('#typeAdvice')).toContainText('distance entre arbres');
+});
+
+// ===== P1 : profondeur, composants, choix multiple par étage, résumé =====
+
+test('a stage accepts several families at once', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 25);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#technologyPolicy [data-policy="template"]').click();
+  const stage = page.locator('.architecture-stage[data-stage="0"]');
+  // « Auto » est l'état de départ ; deux familles peuvent coexister sur un cran.
+  await expect(stage.locator('.stage-choice[data-family=""]')).toHaveClass(/active/);
+  await stage.locator('.stage-choice[data-family="bevel"]').click();
+  await stage.locator('.stage-choice[data-family="worm"]').click();
+  await expect(stage.locator('.stage-choice.active')).toHaveCount(2);
+  await expect(stage.locator('.stage-choice[data-family=""]')).not.toHaveClass(/active/);
+
+  // Les deux partent au moteur.
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+  const template = JSON.parse(await page.inputValue('#type_template'));
+  expect(template[0].sort()).toEqual(['bevel', 'worm']);
+});
+
+test('search depth is named, and the numbers stay underneath', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('[data-step="criteria"]').click();
+  await expect(page.locator('.depth-option')).toHaveCount(4);
+  await expect(page.locator('.depth-option.active')).toHaveText('Standard');
+
+  await page.locator('.depth-option[data-depth="exhaustive"]').click();
+  await expect(page.locator('.depth-option.active')).toHaveText('Exhaustive');
+  await expect(page.locator('#searchModalSummary')).toContainText('Exhaustive');
+  // Le nombre suit, mais n'est pas ce qu'on a demandé à l'utilisateur.
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  expect(Number(await page.inputValue('#max_iterations'))).toBeGreaterThan(1000000);
+});
+
+test('existing parts are reachable as a starting point', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#intentCards [data-intent="parts"]').click();
+  await page.locator('[data-step="criteria"]').click();
+  // La méthode « pièces existantes » ouvre le bloc d'emblée.
+  await expect(page.locator('#partsPanel')).toHaveAttribute('open', /.*/);
+  await page.locator('#part_module_fixed').fill('1.5');
+  await page.locator('#part_module_fixed').blur();
+  await page.locator('#part_gearing_drivingFixed').fill('16');
+  await page.locator('#part_gearing_drivingFixed').blur();
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  expect(await page.inputValue('#module')).toBe('1.5');
+  expect(await page.inputValue('#dent_menante_fixe')).toBe('16');
+});
+
+test('the side summary is structured, and repeats no unit', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'input.speed', 1500);
+  await setQuantity(page, 'input.power', 750);
+  await setQuantity(page, 'output.speed', 100);
+
+  const titles = await page.locator('.search-summary-section h4').allTextContents();
+  expect(titles).toContain('Méthode');
+  expect(titles).toContain('Entrée');
+  expect(titles).toContain('Analyse');
+  // Le couple déduit est annoncé comme calculé, une seule fois son unité.
+  await expect(page.locator('.search-summary-section[data-section="Entrée"]')).toContainText('calculés');
+  const entree = await page.locator('.search-summary-section[data-section="Entrée"]').textContent();
+  expect(entree).not.toMatch(/rpm\s*rpm|N·m\s*N·m/);
+  // Aucune rubrique vide : « Contraintes » n'apparaît pas tant qu'il n'y en a pas.
+  expect(titles).not.toContain('Contraintes');
+});
+
+// ===== P2 : pousser une performance, sans rapport cible =====
+
+test('an exploration answers « how much can I get » instead of « find me 12:1 »', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await page.locator('[data-step="type"]').click();
+  // La performance à pousser n'existe pas tant que la méthode ne l'appelle pas.
+  await expect(page.locator('#intentObjectives')).toHaveCount(0);
+  await page.locator('#intentCards [data-intent="maximize"]').click();
+  await expect(page.locator('.intent-objective')).toHaveCount(5);
+  await expect(page.locator('.intent-objective.active')).toHaveText('Couple de sortie');
+  // L'espace balayé est ANNONCÉ : une plage par défaut muette serait imposée.
+  await expect(page.locator('#intentSpanNote')).toContainText('rapports 1 à 200:1');
+
+  // Un moteur, un encombrement, aucun rapport demandé.
+  await setQuantity(page, 'input.speed', 1500);
+  await setQuantity(page, 'input.power', 750);
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('#addConstraintBtn').click();
+  await page.locator('#constraintMenu [data-field="maxDiameter"]').click();
+  const chip = page.locator('.constraint-chip[data-constraint="maxDiameter"]');
+  await chip.locator('[data-slot="a"]').fill('120');
+  await chip.locator('[data-slot="a"]').blur();
+  await expect(page.locator('.search-summary-section[data-section="Exploration"]')).toContainText('bandes balayées');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 120000 });
+  // Le vivier est classé par la performance poursuivie, pas par « recommandé ».
+  expect(await page.inputValue('#refine_sort')).toBe('torque');
+  const torques = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.solution-card'))
+      .slice(0, 8)
+      .map(card => card.textContent.match(/Couple([\d\s.,]+)N·m/))
+      .filter(Boolean)
+      .map(match => parseFloat(match[1].replace(/\s/g, '').replace(',', '.'))));
+  expect(torques.length).toBeGreaterThan(3);
+  for (let i = 1; i < torques.length; i++) expect(torques[i]).toBeLessThanOrEqual(torques[i - 1]);
+  // Aucun rapport n'a été visé : aucune carte ne peut annoncer en rater un.
+  await expect(page.locator('.solution-card').first()).toContainText('Écart de 0 %');
+  expect(errors).toEqual([]);
+});
+
+test('a real parts inventory is combined, and nothing outside it is proposed', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 3);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#intentCards [data-intent="parts"]').click();
+  await page.locator('[data-step="criteria"]').click();
+  await expect(page.locator('#partsPanel')).toHaveAttribute('open', /.*/);
+
+  // « J'ai des roues de 16, 20, 48 et 60 dents, en module 1,5. »
+  await page.locator('#inventory_gearing_teethInventory').fill('16, 20, 48, 60');
+  await page.locator('#inventory_gearing_teethInventory').blur();
+  await page.locator('#inventory_module_list').fill('1.5');
+  await page.locator('#inventory_module_list').blur();
+  await expect(page.locator('.search-summary-section[data-section="Composants"]'))
+    .toContainText('4 dentures en stock');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 60000 });
+  // Le miroir historique porte l'inventaire : URL partagée et comparaison suivent.
+  expect(await page.inputValue('#teeth_inventory')).toBe('16, 20, 48, 60');
+
+  const teeth = await page.evaluate(() => {
+    const pool = window.GearApp._explorer.getPool();
+    return pool.flatMap(s => s.stages).flatMap(stage => [stage.input && stage.input.teeth, stage.output && stage.output.teeth]);
+  });
+  expect(teeth.length).toBeGreaterThan(0);
+  for (const count of teeth) {
+    if (count != null) expect([16, 20, 48, 60]).toContain(count);
+  }
+});
+
+// ===== §G : améliorer un réducteur existant =====
+
+test('an existing reducer becomes the reference, and better is found at its ratio', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#intentCards [data-intent="improve"]').click();
+  await expect(page.locator('#existingSummary')).toContainText('Décrivez au moins un étage');
+
+  // « J'ai : étage 1 = 20 → 60 module 1, étage 2 = 15 → 45 module 1,5. »
+  await page.locator('#addExistingStageBtn').click();
+  await page.locator('#existing_0_input_teeth').fill('20');
+  await page.locator('#existing_0_input_teeth').blur();
+  await page.locator('#existing_0_output_teeth').fill('60');
+  await page.locator('#existing_0_output_teeth').blur();
+  await page.locator('#addExistingStageBtn').click();
+  await page.locator('#existing_1_input_teeth').fill('15');
+  await page.locator('#existing_1_input_teeth').blur();
+  await page.locator('#existing_1_output_teeth').fill('45');
+  await page.locator('#existing_1_output_teeth').blur();
+  await page.locator('#existing_1_module').fill('1.5');
+  await page.locator('#existing_1_module').blur();
+
+  // Le réducteur est MESURÉ dès sa description, avant toute recherche.
+  await expect(page.locator('#existingSummary')).toContainText('Rapport 9:1');
+  await expect(page.locator('#existingSummary')).toContainText('rendement');
+  await expect(page.locator('.search-summary-section[data-section="Réducteur actuel"]'))
+    .toContainText('2 étages, rapport 9:1');
+  await page.locator('#existingGoals [data-goal="compact"]').click();
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 60000 });
+  expect(await page.inputValue('#refine_sort')).toBe('compactness');
+
+  const verdict = await page.evaluate(() => {
+    const pool = window.GearApp._explorer.getPool();
+    const reference = pool.find(s => s.isExisting);
+    const volume = s => s.dimensions.x * s.dimensions.y * Math.max(1, s.dimensions.z);
+    const others = pool.filter(s => !s.isExisting);
+    return {
+      hasReference: !!reference,
+      referenceRatio: reference && reference.ratio,
+      sameRatio: others.every(s => Math.abs(s.ratio - 9) / 9 < 0.03),
+      better: others.some(s => volume(s) < volume(reference))
+    };
+  });
+  // La référence est DANS le vivier : sans elle, « plus compact » qu'quoi ?
+  expect(verdict.hasReference).toBe(true);
+  expect(verdict.referenceRatio).toBeCloseTo(9, 6);
+  expect(verdict.sameRatio).toBe(true);
+  expect(verdict.better).toBe(true);
+  expect(errors).toEqual([]);
 });

@@ -14,10 +14,15 @@
 
   var KNOWLEDGE = GearApp.requirements.TransmissionAdvisor.KNOWLEDGE;
 
-  var ENTRIES = [
-    { policy: 'auto', icon: '✦', label: 'Conseillez-moi', help: 'Le système choisit les technologies adaptées.' },
-    { policy: 'restrict', icon: '⚙', label: 'Je connais le type', help: 'Droit, planétaire, vis, courroie, chaîne…' },
-    { policy: 'template', icon: '⛓', label: 'Architecture personnalisée', help: 'Plusieurs étages ou technologies imposées.' }
+  // La politique technologique n'est plus la première question : c'est une
+  // décision INDÉPENDANTE de la méthode de recherche. On peut vouloir le
+  // meilleur compromis en imposant un planétaire, ou viser un rapport exact en
+  // laissant le système choisir la famille.
+  var POLICIES = [
+    { policy: 'auto', label: 'Automatique', help: 'Toutes les technologies compatibles sont explorées.' },
+    { policy: 'prefer', label: 'Préférer', help: 'Ces familles d’abord, sans écarter une meilleure alternative.' },
+    { policy: 'restrict', label: 'Imposer', help: 'N’explorer que ces familles.' },
+    { policy: 'template', label: 'Architecture', help: 'Fixer la famille de chaque étage.' }
   ];
 
   // §3 : on demande la géométrie fonctionnelle, jamais « droit ou hélicoïdal ».
@@ -67,33 +72,256 @@
   TypeStep.prototype.setDraft = function (draft) { this.draft = draft; return this; };
 
   TypeStep.prototype.render = function () {
-    var self = this, selection = this.draft.technologySelection;
     this.host.textContent = '';
+    this._renderIntent();
+    // Décrire ce qu'on a précède toute question sur ce qu'on veut : c'est la
+    // machine décrite qui fixe le rapport à conserver.
+    if (this.draft.intent.improves()) this._renderExisting();
+    this._renderPolicy();
+    // La disposition décrit le besoin, pas la technologie : elle vaut quelle
+    // que soit la politique, et c'est elle qui nourrit le conseiller.
+    this._renderDisposition();
+    var policy = this.draft.technologySelection.policy;
+    if (policy === 'template') this._renderArchitecture();
+    else if (policy !== 'auto') this._renderFamilies();
+    return this;
+  };
 
-    var entryRow = document.createElement('div');
-    entryRow.className = 'type-entries';
-    ENTRIES.forEach(function (entry) {
-      var active = selection.policy === entry.policy ||
-        (entry.policy === 'restrict' && selection.policy === 'prefer');
+  /** Première décision : que cherche-t-on ? */
+  TypeStep.prototype._renderIntent = function () {
+    var self = this, intent = this.draft.intent;
+    var section = document.createElement('section');
+    section.className = 'type-section';
+    section.innerHTML = '<h3>Que cherchez-vous&nbsp;?</h3>';
+
+    var row = document.createElement('div');
+    row.className = 'type-entries';
+    row.id = 'intentCards';
+    GearApp.requirements.searchIntent.MODES.forEach(function (mode) {
+      var active = intent.mode === mode.id;
       var card = button('type-entry' + (active ? ' active' : ''), '');
-      card.dataset.policy = entry.policy;
+      card.dataset.intent = mode.id;
       card.setAttribute('aria-pressed', String(active));
-      card.innerHTML = '<span class="type-entry-icon" aria-hidden="true">' + entry.icon + '</span>' +
-        '<strong>' + entry.label + '</strong><small>' + entry.help + '</small>';
-      card.addEventListener('click', function () {
+      card.innerHTML = '<span class="type-entry-icon" aria-hidden="true">' + mode.icon + '</span>' +
+        '<strong>' + mode.label + '</strong><small>' + mode.help + '</small>';
+      card.addEventListener('click', function () { intent.setMode(mode.id); self._changed(); });
+      row.appendChild(card);
+    });
+    section.appendChild(row);
+
+    // La performance poursuivie n'existe que pour l'exploration : l'afficher
+    // ailleurs demanderait un choix sans effet (§15).
+    if (intent.explores()) {
+      var pick = document.createElement('div');
+      pick.className = 'intent-objectives';
+      pick.id = 'intentObjectives';
+      pick.innerHTML = '<span class="intent-objective-label">Performance à pousser</span>';
+      GearApp.requirements.searchIntent.OBJECTIVES.forEach(function (entry) {
+        var active = intent.objective === entry.id;
+        var chip = button('intent-objective' + (active ? ' active' : ''), entry.label, function () {
+          intent.setObjective(entry.id);
+          self._changed();
+        });
+        chip.dataset.objective = entry.id;
+        chip.title = entry.help;
+        chip.setAttribute('aria-pressed', String(active));
+        pick.appendChild(chip);
+      });
+      section.appendChild(pick);
+
+      var note = document.createElement('p');
+      note.className = 'intent-span-note';
+      note.id = 'intentSpanNote';
+      note.textContent = spanNote(this.draft);
+      section.appendChild(note);
+    }
+    this.host.appendChild(section);
+  };
+
+  /**
+   * L'espace balayé, dit en toutes lettres. Une plage par défaut annoncée reste
+   * une décision de l'utilisateur ; une plage par défaut muette n'en est pas une.
+   */
+  function spanNote(draft) {
+    var span = draft.explorationSpan();
+    var bands = GearApp.requirements.ExplorationPlanner.bands(span.min, span.max).length;
+    return 'Espace balayé : rapports ' + short(span.min) + ' à ' + short(span.max) + ':1, en ' + bands + ' bandes' +
+      (span.stated ? ' (d’après le rapport demandé).' : '. Posez un rapport en plage à l’étape Besoin pour le restreindre.');
+  }
+
+  function short(value) {
+    return value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
+  }
+
+  /**
+   * §G : décrire le réducteur qu'on possède déjà. Les mêmes champs que
+   * l'éditeur d'étages, avant toute recherche — c'est ce qui manquait pour que
+   * « je veux plus compact » ait un point de départ mesurable.
+   */
+  TypeStep.prototype._renderExisting = function () {
+    var self = this, existing = this.draft.existing;
+    var Helpers = GearApp.requirements.existingReducer;
+    var section = document.createElement('section');
+    section.className = 'type-section';
+    section.innerHTML = '<h3>Votre réducteur actuel&nbsp;?</h3>';
+
+    var list = document.createElement('ol');
+    list.className = 'existing-stages';
+    list.id = 'existingStages';
+
+    existing.stages.forEach(function (stage, index) {
+      var item = document.createElement('li');
+      item.className = 'existing-stage';
+      item.dataset.stage = String(index);
+
+      var family = document.createElement('select');
+      family.className = 'existing-family';
+      family.setAttribute('aria-label', 'Type de l’étage existant ' + (index + 1));
+      GROUPS.forEach(function (group) {
+        group.families.forEach(function (id) {
+          if (id === 'rack') return;
+          var option = document.createElement('option');
+          option.value = id;
+          option.textContent = KNOWLEDGE[id].name;
+          if (id === (stage.type === 'epicyclic' ? 'planetary' : stage.type)) option.selected = true;
+          family.appendChild(option);
+        });
+      });
+      family.addEventListener('change', function () {
+        existing.setType(index, family.value);
+        self._changed();
+      });
+      item.appendChild(family);
+
+      Helpers.fieldsFor(stage.type).forEach(function (field) {
+        item.appendChild(numberField(field.label, field.unit, Helpers.get(stage, field.path), field, function (value) {
+          existing.setField(index, field.path, value);
+          self._changed();
+        }, 'existing_' + index + '_' + field.path.replace('.', '_')));
+      });
+      item.appendChild(numberField('Module', 'mm', stage.parameters && stage.parameters.module,
+        { min: 0.1, step: 0.05 }, function (value) {
+          existing.setField(index, 'parameters.module', value);
+          self._changed();
+        }, 'existing_' + index + '_module'));
+
+      var remove = button('existing-stage-remove', '×', function () {
+        existing.removeStage(index);
+        self._changed();
+      });
+      remove.setAttribute('aria-label', 'Retirer l’étage ' + (index + 1));
+      item.appendChild(remove);
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+
+    var add = button('btn-small', '+ Ajouter un étage', function () {
+      existing.addStage('spur', 1);
+      self._changed();
+    });
+    add.id = 'addExistingStageBtn';
+    section.appendChild(add);
+
+    // Les erreurs de saisie se disent là où on saisit, pas au moment du clic
+    // sur « Rechercher ».
+    var errors = existing.errors();
+    if (errors.length) {
+      var warn = document.createElement('ul');
+      warn.className = 'existing-errors';
+      warn.id = 'existingErrors';
+      errors.forEach(function (entry) {
+        var line = document.createElement('li');
+        line.textContent = 'Étage ' + entry.stage + ' : ' + entry.text;
+        warn.appendChild(line);
+      });
+      section.appendChild(warn);
+    }
+
+    var reference = this.draft.baseline();
+    var summary = document.createElement('p');
+    summary.className = 'existing-summary';
+    summary.id = 'existingSummary';
+    summary.textContent = reference
+      ? 'Rapport ' + (Math.round(reference.ratio * 100) / 100) + ':1, Ø ' +
+        Math.round(reference.dimensions.maxDiameter) + ' mm, rendement ' +
+        Math.round(reference.efficiency * 100) + ' %. Les solutions seront cherchées à ce rapport.'
+      : 'Décrivez au moins un étage valide pour mesurer votre réducteur.';
+    section.appendChild(summary);
+
+    var goals = document.createElement('div');
+    goals.className = 'existing-goals';
+    goals.id = 'existingGoals';
+    goals.innerHTML = '<span class="intent-objective-label">Ce que vous voulez gagner</span>';
+    Helpers.GOALS.forEach(function (entry) {
+      var active = existing.goal === entry.id;
+      var chip = button('intent-objective' + (active ? ' active' : ''), entry.label, function () {
+        existing.setGoal(entry.id);
+        self._changed();
+      });
+      chip.dataset.goal = entry.id;
+      chip.setAttribute('aria-pressed', String(active));
+      goals.appendChild(chip);
+    });
+    section.appendChild(goals);
+    this.host.appendChild(section);
+  };
+
+  function numberField(label, unit, value, spec, onCommit, id) {
+    var wrap = document.createElement('label');
+    wrap.className = 'existing-field';
+    wrap.appendChild(document.createTextNode(label));
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.id = id;
+    if (spec.min != null) input.min = spec.min;
+    if (spec.max != null) input.max = spec.max;
+    input.step = spec.step || 1;
+    input.value = value == null ? '' : String(value);
+    input.addEventListener('change', function () {
+      var parsed = parseFloat(input.value);
+      if (isFinite(parsed)) onCommit(parsed);
+    });
+    wrap.appendChild(input);
+    if (unit) {
+      var suffix = document.createElement('span');
+      suffix.className = 'parts-unit';
+      suffix.textContent = unit;
+      wrap.appendChild(suffix);
+    }
+    return wrap;
+  }
+
+  /** Seconde décision, indépendante : comment choisir la technologie ? */
+  TypeStep.prototype._renderPolicy = function () {
+    var self = this, selection = this.draft.technologySelection;
+    var section = document.createElement('section');
+    section.className = 'type-section';
+    section.innerHTML = '<h3>Comment choisir la technologie&nbsp;?</h3>';
+
+    var row = document.createElement('div');
+    row.className = 'family-policy';
+    row.id = 'technologyPolicy';
+    POLICIES.forEach(function (entry) {
+      var active = selection.policy === entry.policy;
+      var node = button('policy-option' + (active ? ' active' : ''), entry.label, function () {
         selection.setPolicy(entry.policy);
         if (entry.policy === 'template' && !selection.template.length) selection.addStage(null).addStage(null);
         self._changed();
       });
-      entryRow.appendChild(card);
+      node.dataset.policy = entry.policy;
+      node.title = entry.help;
+      node.setAttribute('aria-pressed', String(active));
+      row.appendChild(node);
     });
-    this.host.appendChild(entryRow);
+    section.appendChild(row);
 
-    if (selection.policy === 'auto') this._renderDisposition();
-    else if (selection.policy === 'template') this._renderArchitecture();
-    else this._renderFamilies();
-
-    return this;
+    var hint = document.createElement('p');
+    hint.className = 'field-help';
+    hint.id = 'technologyPolicyHint';
+    var current = POLICIES.filter(function (e) { return e.policy === selection.policy; })[0];
+    hint.textContent = current ? current.help : '';
+    section.appendChild(hint);
+    this.host.appendChild(section);
   };
 
   // ----- Parcours A : géométrie fonctionnelle (§3) -----
@@ -200,28 +428,6 @@
     var self = this, selection = this.draft.technologySelection;
     var section = document.createElement('section');
     section.className = 'type-section';
-
-    var policy = document.createElement('div');
-    policy.className = 'family-policy';
-    policy.id = 'familyPolicy';
-    [{ id: 'restrict', label: 'Type imposé' }, { id: 'prefer', label: 'Type préféré' }].forEach(function (option) {
-      var active = selection.policy === option.id;
-      var node = button('policy-option' + (active ? ' active' : ''), option.label, function () {
-        selection.setPolicy(option.id);
-        self._changed();
-      });
-      node.dataset.policy = option.id;
-      node.setAttribute('aria-pressed', String(active));
-      policy.appendChild(node);
-    });
-    var hint = document.createElement('p');
-    hint.className = 'field-help';
-    hint.textContent = selection.policy === 'prefer'
-      ? 'Ces familles seront privilégiées, mais une meilleure alternative restera proposée.'
-      : 'Seules ces familles seront explorées.';
-    section.appendChild(policy);
-    section.appendChild(hint);
-
     GROUPS.forEach(function (group) {
       var heading = document.createElement('h4');
       heading.textContent = group.label;
@@ -264,25 +470,35 @@
       label.textContent = 'Étage ' + (index + 1);
       item.appendChild(label);
 
-      var select = document.createElement('select');
-      select.setAttribute('aria-label', 'Famille de l’étage ' + (index + 1));
-      var auto = document.createElement('option');
-      auto.value = ''; auto.textContent = 'Auto';
-      select.appendChild(auto);
+      // Un cran accepte PLUSIEURS familles : « conique ou vis sans fin » est un
+      // cahier des charges courant, qu'un select unique ne savait pas dire.
+      var choices = document.createElement('div');
+      choices.className = 'stage-choices';
+      var auto = button('stage-choice' + (slot && slot.length ? '' : ' active'), 'Auto', function () {
+        selection.setStage(index, null);
+        self._changed();
+      });
+      auto.dataset.family = '';
+      auto.title = 'Toute famille compatible pour cet étage';
+      choices.appendChild(auto);
+
       GROUPS.forEach(function (group) {
         group.families.forEach(function (id) {
           if (id === 'rack') return;                 // la crémaillère n'est pas un étage de train
-          var option = document.createElement('option');
-          option.value = id; option.textContent = KNOWLEDGE[id].name;
-          select.appendChild(option);
+          var active = !!(slot && slot.indexOf(id) !== -1);
+          var chip = button('stage-choice' + (active ? ' active' : ''), KNOWLEDGE[id].name, function () {
+            var next = (slot || []).slice();
+            var at = next.indexOf(id);
+            if (at === -1) next.push(id); else next.splice(at, 1);
+            selection.setStage(index, next.length ? next : null);
+            self._changed();
+          });
+          chip.dataset.family = id;
+          chip.setAttribute('aria-pressed', String(active));
+          choices.appendChild(chip);
         });
       });
-      select.value = slot && slot.length === 1 ? slot[0] : '';
-      select.addEventListener('change', function () {
-        selection.setStage(index, select.value ? [select.value] : null);
-        self._changed();
-      });
-      item.appendChild(select);
+      item.appendChild(choices);
 
       var remove = button('architecture-stage-remove', '×', function () {
         selection.removeStage(index);
@@ -310,7 +526,7 @@
   };
 
   GearApp.ui.TypeStep = TypeStep;
-  TypeStep.ENTRIES = ENTRIES;
+  TypeStep.POLICIES = POLICIES;
   TypeStep.DISPOSITIONS = DISPOSITIONS;
 
 })(GearApp);

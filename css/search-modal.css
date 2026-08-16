@@ -178,7 +178,7 @@
 .architecture-stage {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) 2rem;
-  align-items: center;
+  align-items: start;
   gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--line);
@@ -323,3 +323,113 @@ body.modal-open { overflow: hidden; }
 .service-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--sp-2); }
 .service-field { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
 .service-field input[type="number"], .service-field select { flex: 0 1 6rem; }
+
+/* ----- §F : plusieurs familles possibles par étage ----- */
+
+.stage-choices { display: flex; flex-wrap: wrap; gap: 4px; }
+.stage-choice {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface-1);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.stage-choice:hover { border-color: var(--accent); color: var(--accent); }
+.stage-choice.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* ----- §E et §8 : composants disponibles, profondeur de recherche ----- */
+
+.parts-panel { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); padding: var(--sp-2); }
+.parts-panel > summary { font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.parts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.parts-field { display: flex; align-items: center; gap: var(--sp-1); margin: 0; font-size: var(--font-xs); }
+.parts-field span:first-child { flex: 1; }
+.parts-field input { flex: 0 1 4.5rem; }
+.parts-unit { color: var(--muted); }
+
+.depth-options { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.depth-option {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  font-size: var(--font-xs); font-weight: 600; color: var(--muted);
+}
+.depth-option.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.depth-options .field-help { flex-basis: 100%; margin: 0; }
+
+/* ----- §14 : résumé par sections ----- */
+
+.search-summary-section { margin-bottom: var(--sp-3); }
+.search-summary-section h4 {
+  margin: 0 0 2px;
+  font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+}
+
+/* ----- P2 : explorer un espace de conception, sans rapport cible ----- */
+
+.intent-objectives {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+.intent-objective-label {
+  font-size: var(--font-xs); font-weight: 600; color: var(--muted);
+  margin-right: var(--sp-1);
+}
+.intent-objective {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface-1);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.intent-objective:hover { border-color: var(--accent); color: var(--accent); }
+.intent-objective.active {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+.intent-span-note {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+/* Inventaire réel : une liste, pas une plage. */
+.parts-inventory { display: block; margin-top: var(--sp-2); font-size: var(--font-xs); }
+.parts-inventory > span { display: block; font-weight: 600; margin-bottom: 2px; }
+.parts-inventory input { width: 100%; }
+.parts-hint { display: block; color: var(--muted); margin-top: 2px; }
+
+/* ----- §G : le réducteur qu'on a déjà ----- */
+
+.existing-stages { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.existing-stage {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.existing-family { flex: 0 1 10rem; font-size: var(--font-xs); }
+.existing-field {
+  display: flex; align-items: center; gap: 4px;
+  font-size: var(--font-xs); color: var(--muted);
+}
+.existing-field input { flex: 0 0 4.5rem; }
+.existing-stage-remove {
+  margin-left: auto;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-1); color: var(--muted);
+  width: 1.75rem; height: 1.75rem; line-height: 1;
+}
+.existing-stage-remove:hover { border-color: var(--danger, #d33); color: var(--danger, #d33); }
+.existing-errors {
+  margin: var(--sp-1) 0 0; padding-left: 1.2rem;
+  font-size: var(--font-xs); color: var(--danger, #d33);
+}
+.existing-summary { margin: var(--sp-1) 0 0; font-size: var(--font-xs); color: var(--muted); }
+.existing-goals {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}

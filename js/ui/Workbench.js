@@ -606,7 +606,8 @@
     // que soient les filtres, et ne s'affiche que si l'écart est réel.
     var Evaluator = GearApp.requirements.SolutionEvaluator;
     var preferences = this.session ? this.session.preferences : null;
-    var annotation = Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences);
+    var annotation = Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences,
+      this.session ? this.session.technologySelection : null);
     var poolIndexOf = info && info.pool ? function (position) { return self._indices[position]; }
       : function (position) { return position; };
 

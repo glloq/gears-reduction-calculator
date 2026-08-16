@@ -29,6 +29,7 @@
     maxSolutions: 100, maxIterations: 500000,
     module: 1, moduleMode: 'fixed', moduleMin: null, moduleMax: null,
     reductionOnly: true, typeParameters: null, typeTemplate: null,
+    teethInventory: null, moduleList: null,
     inputMaterial: 'C45', outputMaterial: 'C45', additiveDerating: 1,
     manufacturing: null, fatigue: null, shaft: null
   };
@@ -75,6 +76,10 @@
     params.moduleMode = settings.moduleMode;
     params.moduleMin = settings.moduleMin;
     params.moduleMax = settings.moduleMax;
+    // Inventaire réel : une liste vide n'est pas un inventaire, c'est
+    // l'absence d'inventaire — la transmettre fermerait toute recherche.
+    params.teethInventory = nonEmpty(settings.teethInventory);
+    params.moduleList = nonEmpty(settings.moduleList);
     params.inputMaterial = settings.inputMaterial;
     params.outputMaterial = settings.outputMaterial;
     params.additiveDerating = settings.additiveDerating;
@@ -100,6 +105,10 @@
     });
     if (total) keys.forEach(function (key) { out[key] /= total; });
     return out;
+  }
+
+  function nonEmpty(list) {
+    return Array.isArray(list) && list.length ? list.slice() : null;
   }
 
   function number(value, fallback) {

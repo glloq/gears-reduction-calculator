@@ -97,31 +97,42 @@
 
   /**
    * Les familles que le moteur doit explorer.
-   * @param {string[]} advised sélection du conseiller
+   *
+   * Point capital : « automatique » et « préféré » explorent TOUT l'univers
+   * compatible. Se limiter au classement du conseiller revenait à décider
+   * avant de calculer — une famille jugée seulement « possible » peut donner
+   * la meilleure géométrie réelle, et on ne l'aurait jamais su. Le classement
+   * ne sert donc qu'à ORDONNER l'exploration, jamais à la refermer.
+   *
+   * @param {string[]} ranking univers compatible, ordonné par le conseiller
    * @param {string[]} [available] univers autorisé (rotatif ou linéaire)
    */
-  TechnologySelectionModel.prototype.resolve = function (advised, available) {
-    var universe = unique(available && available.length ? available : advised);
-    var advice = unique(advised);
+  TechnologySelectionModel.prototype.resolve = function (ranking, available) {
+    var ordered = unique(ranking);
+    var universe = unique(available && available.length ? available : ranking);
+    // L'ordre du conseiller d'abord, puis tout ce qu'il n'a pas classé.
+    var full = ordered.filter(function (id) { return universe.indexOf(id) !== -1; });
+    universe.forEach(function (id) { if (full.indexOf(id) === -1) full.push(id); });
+
     switch (this.policy) {
       case 'restrict':
-        return this.families.length ? this.families.slice() : advice;
+        return this.families.length ? this.families.slice() : full;
       case 'prefer': {
-        // Les préférées EN PREMIER, puis le conseil : la recherche reste
-        // ouverte, seul le classement penche du bon côté.
-        var merged = this.families.slice();
-        advice.forEach(function (id) { if (merged.indexOf(id) === -1) merged.push(id); });
-        return merged.length ? merged : advice;
+        // Les préférées en tête, puis TOUT le reste : la promesse « une
+        // meilleure alternative restera proposée » n'est tenable qu'ainsi.
+        var merged = this.families.filter(function (id) { return universe.indexOf(id) !== -1; });
+        full.forEach(function (id) { if (merged.indexOf(id) === -1) merged.push(id); });
+        return merged.length ? merged : full;
       }
       case 'template': {
         var needed = [];
         this.template.forEach(function (slot) {
-          (slot || universe).forEach(function (id) { if (needed.indexOf(id) === -1) needed.push(id); });
+          (slot || full).forEach(function (id) { if (needed.indexOf(id) === -1) needed.push(id); });
         });
-        return needed.length ? needed : advice;
+        return needed.length ? needed : full;
       }
       default:
-        return advice;
+        return full;
     }
   };
 

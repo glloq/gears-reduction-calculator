@@ -1,11 +1,13 @@
 // SearchSession.js - L'état d'un projet, et la seule route vers le moteur.
 //
-// La session porte quatre modèles et rien d'autre :
+// La session porte des modèles, et rien d'autre :
 //
+//   SearchIntentModel         ce qu'on demande au solveur de TROUVER
 //   RequirementModel          ce que l'utilisateur a et veut
 //   PreferenceModel           ce qui filtre, ce qui classe
 //   TechnologySelectionModel  comment il veut choisir les familles
 //   TechnicalSettingsModel    les réglages qui ne relèvent pas du besoin
+//   ExistingReducer           la machine dont il part, quand il en a une
 //
 //        → ConstraintCompiler → LegacySearchAdapter → SearchParams → moteur
 //
@@ -45,6 +47,36 @@
     stages: { max: 'etages' }
   };
 
+  /**
+   * Réglages techniques reflétés par l'ancien formulaire. Sans eux, choisir
+   * une profondeur « Exhaustive » ou un module imposé restait invisible pour
+   * tout ce qui relit encore les champs : le panneau de comparaison et l'URL
+   * partagée repartaient sur les valeurs d'usine.
+   */
+  var TECHNICAL_MIRRORS = [
+    { id: 'max_solutions', group: 'search', key: 'maxSolutions' },
+    { id: 'max_iterations', group: 'search', key: 'maxIterations' },
+    { id: 'dent_menante_fixe', group: 'gearing', key: 'drivingFixed', nullable: true },
+    { id: 'dent_menee_fixe', group: 'gearing', key: 'drivenFixed', nullable: true },
+    { id: 'reduction_only', group: 'gearing', key: 'reductionOnly', kind: 'flag' },
+    { id: 'module', group: 'module', key: 'fixed' },
+    { id: 'module_mode', group: 'module', key: 'mode', kind: 'text' },
+    { id: 'module_min', group: 'module', key: 'min', nullable: true },
+    { id: 'module_max', group: 'module', key: 'max', nullable: true },
+    { id: 'input_material', group: 'materials', key: 'input', kind: 'text' },
+    { id: 'output_material', group: 'materials', key: 'output', kind: 'text' },
+    { id: 'teeth_inventory', group: 'gearing', key: 'teethInventory', kind: 'list' },
+    { id: 'module_list', group: 'module', key: 'list', kind: 'list' }
+  ];
+
+  /** Les bornes de dentures sont portées par un curseur : des textes, pas des champs. */
+  var TEETH_READOUTS = [
+    { id: 'val_menante_min', key: 'drivingMin' },
+    { id: 'val_menante_max', key: 'drivingMax' },
+    { id: 'val_menee_min', key: 'drivenMin' },
+    { id: 'val_menee_max', key: 'drivenMax' }
+  ];
+
   function el(id) { return document.getElementById(id); }
 
   function write(id, value) {
@@ -67,6 +99,17 @@
     return typeof value === 'number' ? Math.round(value * 10000) / 10000 : value;
   }
 
+  function round1(value) {
+    return typeof value === 'number' && isFinite(value) ? Math.round(value * 10) / 10 : value;
+  }
+
+  /** « 16, 20 24 » vaut [16, 20, 24] : un inventaire se saisit comme on le dit. */
+  function numberList(text) {
+    return String(text || '').split(/[^0-9.]+/)
+      .map(function (piece) { return parseFloat(piece); })
+      .filter(function (value) { return isFinite(value) && value > 0; });
+  }
+
   /**
    * §21 : une nouvelle recherche est VIDE. Les anciennes valeurs d'usine
    * (1500 rpm, 10 N·m, rapport 12) dimensionnaient réellement les solutions
@@ -77,10 +120,37 @@
     seed = seed || {};
     this.requirement = new R.RequirementModel(seed.requirement || {});
     this.preferences = new R.PreferenceModel(seed.preferences || {});
+    this.intent = new R.SearchIntentModel(seed.intent || {});
     this.technologySelection = new R.TechnologySelectionModel(seed.technologySelection || {});
     this.technical = new R.TechnicalSettingsModel(seed.technical || {});
+    this.existing = new R.ExistingReducer(seed.existing || {});
     this._advice = null;
   }
+
+  /**
+   * Options d'ingénierie du besoin courant, pour analyser une chaîne décrite à
+   * la main. Le réducteur existant DOIT être mesuré avec les mêmes hypothèses
+   * que ses remplaçants, sinon la comparaison compare deux mondes.
+   */
+  SearchSession.prototype.engineeringOptions = function () {
+    var torque = this.requirement.inputTorqueRequirement().nominal();
+    return {
+      inputSpeedRpm: this.requirement.input.speed.nominal() || 1500,
+      inputTorqueNm: torque == null ? 10 : torque,
+      inputMaterial: this.technical.materials.input,
+      outputMaterial: this.technical.materials.output,
+      additiveDerating: this.technical.manufacturing.additiveDerating,
+      weights: this.preferences.weights(),
+      fatigue: this.technical.fatigue,
+      shaft: this.technical.shaft
+    };
+  };
+
+  /** Le réducteur existant, analysé — la référence de toute comparaison. */
+  SearchSession.prototype.baseline = function () {
+    if (!this.intent.improves() || !this.existing.isDescribed()) return null;
+    return this.existing.analyze(this.engineeringOptions());
+  };
 
   // ===== Conseiller, mémorisé par état =====
 
@@ -100,9 +170,17 @@
       ? ['rack'] : R.TransmissionAdvisor.ROTARY.slice();
   };
 
-  SearchSession.prototype.selectedTechnologies = function () {
+  /** L'univers moins ce que le conseiller a formellement écarté. */
+  SearchSession.prototype.compatibleTechnologies = function () {
     var universe = this.universe();
-    var resolved = this.technologySelection.resolve(this.advice().selection, universe);
+    var excluded = this.advice().excluded.map(function (entry) { return entry.id; });
+    var compatible = universe.filter(function (id) { return excluded.indexOf(id) === -1; });
+    return compatible.length ? compatible : universe;
+  };
+
+  SearchSession.prototype.selectedTechnologies = function () {
+    var universe = this.compatibleTechnologies();
+    var resolved = this.technologySelection.resolve(this.advice().ranking, universe);
     // Une politique ne peut pas faire sortir de l'univers du problème.
     var allowed = resolved.filter(function (id) { return universe.indexOf(id) !== -1; });
     return allowed.length ? allowed : universe.slice(0, 1);
@@ -120,6 +198,19 @@
     // « 4 par défaut » ferait chercher des trains que l'utilisateur a exclus.
     var imposed = this.technologySelection.stagesRequired();
     if (imposed) request.maxStages = imposed;
+    // La méthode fixe la largeur de la fenêtre de rapport : « le meilleur
+    // compromis » n'a pas de sens à 0,1 % près, et une cible n'en a pas à 5 %.
+    // Une intention explicite sur la grandeur (« ≈ 12 ± 2 % ») reste prioritaire.
+    var tolerance = this.intent.ratioTolerance();
+    if (tolerance != null && !this.requirement.ratio.isKnown()) {
+      request.ratioTolerancePercent = Math.max(request.ratioTolerancePercent, tolerance);
+    }
+    // Améliorer l'existant, c'est chercher à RAPPORT ÉGAL : le rapport n'est
+    // pas une exigence à saisir, il est déjà dans la machine qu'on décrit.
+    if (this.intent.improves() && request.ratio == null) {
+      var existingRatio = this.existing.ratio();
+      if (existingRatio) request.ratio = existingRatio;
+    }
     return request;
   };
 
@@ -154,6 +245,63 @@
     });
   };
 
+  /**
+   * L'espace de rapports à balayer quand aucune cible n'est visée. Il vient de
+   * ce que l'utilisateur a dit — « rapport 10 → 60 » — et à défaut d'une plage
+   * annoncée, jamais devinée en silence : le modal l'affiche et il est
+   * modifiable comme n'importe quelle grandeur.
+   */
+  SearchSession.prototype.explorationSpan = function () {
+    var Planner = R.ExplorationPlanner, fallback = R.searchIntent.DEFAULT_SPAN;
+    var ratio = this.requirement.ratioRequirement();
+    if (ratio.isKnown()) {
+      var bounds = ratio.bounds();
+      var min = bounds.min != null ? Math.abs(bounds.min) : null;
+      var max = bounds.max != null ? Math.abs(bounds.max) : null;
+      if (min != null || max != null) {
+        return {
+          min: min != null ? min : Math.max(Planner.MIN_RATIO, fallback.min),
+          max: max != null ? max : Math.max(fallback.max, (min || 1) * 10),
+          stated: true
+        };
+      }
+    }
+    return { min: fallback.min, max: fallback.max, stated: false };
+  };
+
+  /**
+   * Le plan d'exploration, ou null si la méthode vise un rapport. Chaque entrée
+   * est une recherche ordinaire : c'est leur réunion qui décrit l'espace.
+   */
+  SearchSession.prototype.explorationPlan = function (overrides) {
+    if (!this.intent.explores()) return null;
+    var span = this.explorationSpan();
+    var target = this.intent.objectiveDescriptor();
+    return {
+      span: span,
+      objective: this.intent.objective,
+      sort: target ? target.sort : 'score',
+      runs: R.ExplorationPlanner.plan(this.toSearchParams(overrides), span)
+    };
+  };
+
+  /**
+   * Tri du vivier imposé par la méthode, ou null pour le classement habituel.
+   * Une exploration comme une amélioration poursuivent une performance :
+   * « recommandé » répondrait à une autre question que celle qui a été posée.
+   */
+  SearchSession.prototype.poolSort = function () {
+    if (this.intent.explores()) {
+      var target = this.intent.objectiveDescriptor();
+      return target ? target.sort : null;
+    }
+    if (this.intent.improves()) {
+      var wanted = R.existingReducer.goal(this.existing.goal);
+      return wanted ? wanted.sort : null;
+    }
+    return null;
+  };
+
   SearchSession.prototype.toSearchParams = function (overrides) {
     var request = this.compile(overrides);
     var settings = this.technical.toAdapterSettings();
@@ -173,6 +321,13 @@
     var problem = requirement.inferProblem();
     var levels = [];
 
+    // Une exploration se passe de rapport visé : la bande en fournit un. Une
+    // amélioration le tire du réducteur décrit. Dans les deux cas la géométrie
+    // est calculable, et prétendre le contraire découragerait à tort.
+    if (this.intent.explores() || (this.intent.improves() && this.existing.ratio())) {
+      problem = { mode: problem.mode || 'ratio', reason: problem.reason };
+    }
+
     levels.push({ id: 'geometry', label: 'Géométrie et rapport', available: !!problem.mode,
       missing: problem.mode ? null : 'besoin incomplet' });
     levels.push({ id: 'kinematics', label: 'Cinématique', available: !!problem.mode && requirement.input.speed.isKnown(),
@@ -191,6 +346,40 @@
 
   SearchSession.prototype.diagnose = function () {
     var notes = this.requirement.diagnose().slice();
+    if (this.intent.explores()) {
+      var span = this.explorationSpan();
+      // « Il manque de quoi déterminer le rapport » est vrai, et sans objet :
+      // ne pas fixer le rapport EST la méthode choisie.
+      notes = notes.filter(function (note) { return note.code !== 'no-problem'; });
+      notes.unshift({ level: 'ok', code: 'exploration',
+        text: 'Espace exploré : rapports ' + round(span.min) + ' à ' + round(span.max) + ':1' +
+          (span.stated ? '' : ' (plage par défaut, modifiable dans le besoin)') + '.' });
+    }
+    if (this.intent.improves()) {
+      notes = notes.filter(function (note) { return note.code !== 'no-problem'; });
+      var described = this.existing.describe();
+      if (!described) {
+        notes.unshift({ level: 'error', code: 'no-existing', text: 'Décrivez le réducteur que vous avez : au moins un étage.' });
+      } else {
+        this.existing.errors().forEach(function (entry) {
+          notes.push({ level: 'error', code: 'existing-stage', text: 'Étage ' + entry.stage + ' : ' + entry.text });
+        });
+        var reference = this.baseline();
+        notes.unshift({ level: reference ? 'ok' : 'warn', code: 'existing',
+          text: reference
+            ? 'Réducteur actuel : ' + described + ', Ø ' + Math.round(reference.dimensions.maxDiameter) +
+              ' mm, rendement ' + Math.round(reference.efficiency * 100) + ' %.'
+            : 'Réducteur actuel : ' + described + ' (non analysable en l’état).' });
+      }
+    }
+    if (this.intent.explores()) {
+      if (this.intent.objective === 'torque' && !this.requirement.inputTorqueRequirement().isKnown()) {
+        // Le couple de sortie est proportionnel au couple d'entrée : le
+        // CLASSEMENT reste juste sans lui, seules les valeurs sont arbitraires.
+        notes.push({ level: 'warn', code: 'assumed-input-torque',
+          text: 'Sans couple ni puissance d’entrée, le classement reste valable mais les couples affichés sont indicatifs.' });
+      }
+    }
     if (this.technologySelection.policy === 'auto') {
       this.advice().coverage.forEach(function (gap) { notes.push({ level: 'warn', code: gap.code, text: gap.text }); });
     }
@@ -203,25 +392,126 @@
   };
 
   SearchSession.prototype.isReady = function () {
-    return this.requirement.isComplete() && this.technologySelection.isComplete() && this.selectedTechnologies().length > 0;
+    // Une exploration n'a pas de rapport à déterminer : c'est tout son objet.
+    // Exiger un besoin « complet » lui interdirait de démarrer. Une
+    // amélioration, elle, tire son rapport du réducteur décrit.
+    var need = this.intent.explores() ? true
+      : this.intent.improves() ? (!!this.existing.ratio() && !this.existing.errors().length)
+      : this.requirement.isComplete();
+    return need && this.technologySelection.isComplete() && this.selectedTechnologies().length > 0;
+  };
+
+  /**
+   * Le cahier des charges par sections (§14). Chaque entrée n'apparaît que si
+   * elle a quelque chose à dire : un résumé qui liste des rubriques vides
+   * n'informe pas, il occupe.
+   */
+  SearchSession.prototype.brief = function () {
+    var requirement = this.requirement, sections = [];
+    var names = {};
+    Object.keys(R.TransmissionAdvisor.KNOWLEDGE).forEach(function (id) {
+      names[id] = R.TransmissionAdvisor.KNOWLEDGE[id].name;
+    });
+
+    function section(title, lines) {
+      var kept = lines.filter(Boolean);
+      if (kept.length) sections.push({ title: title, lines: kept });
+    }
+
+    section('Méthode', [this.intent.descriptor().icon + ' ' + this.intent.describe()]);
+
+    var explored = this.selectedTechnologies();
+    section('Technologies', [
+      this.technologySelection.describe(names),
+      explored.length + (explored.length > 1 ? ' familles explorées' : ' famille explorée')
+    ]);
+
+    // `describe()` porte déjà l'unité de la grandeur : la répéter donnerait
+    // « = 1500 rpm rpm ».
+    function say(quantity, suffix) {
+      return quantity.isKnown() ? quantity.describe() + (suffix ? ' ' + suffix : '') : null;
+    }
+
+    section('Entrée', [
+      say(requirement.input.speed),
+      say(requirement.input.power),
+      requirement.input.torque.isKnown()
+        ? say(requirement.input.torque)
+        : say(requirement.inputTorqueRequirement(), 'calculés')
+    ]);
+
+    var ratio = requirement.ratioRequirement();
+    section('Sortie', [
+      say(requirement.output.speed),
+      say(requirement.output.torque),
+      say(requirement.output.force),
+      say(requirement.output.travelPerRev, 'par tour'),
+      ratio.isKnown() ? 'rapport ' + ratio.describe() : null
+    ]);
+
+    if (this.intent.explores()) {
+      var span = this.explorationSpan(), target = this.intent.objectiveDescriptor();
+      section('Exploration', [
+        'maximiser : ' + target.label.toLowerCase(),
+        'rapports ' + round(span.min) + ' à ' + round(span.max) + ':1' + (span.stated ? '' : ' (par défaut)'),
+        R.ExplorationPlanner.bands(span.min, span.max).length + ' bandes balayées'
+      ]);
+    }
+
+    if (this.intent.improves() && this.existing.isDescribed()) {
+      var reference = this.baseline();
+      var wanted = R.existingReducer.goal(this.existing.goal);
+      section('Réducteur actuel', [
+        this.existing.describe(),
+        reference ? 'Ø ' + Math.round(reference.dimensions.maxDiameter) + ' mm, rendement ' +
+          Math.round(reference.efficiency * 100) + ' %, ' + round1(reference.outputTorqueNm) + ' N·m' : null,
+        wanted ? 'objectif : ' + wanted.label.toLowerCase() : null
+      ]);
+    }
+
+    section('Contraintes', this.effectivePreferences().constraints().map(function (entry) {
+      return entry.meta.label + ' ' + entry.quantity.describe();
+    }));
+
+    var axes = this.preferences.activeAxes();
+    section('Optimisation', axes.map(function (axis, index) { return (index + 1) + '. ' + axis.label; }));
+
+    var teeth = this.technical.gearing.teethInventory || [];
+    var modules = this.technical.module.list || [];
+    section('Composants', [
+      teeth.length ? teeth.length + ' dentures en stock : ' + teeth.join(', ') : null,
+      modules.length ? 'modules : ' + modules.join(', ') : null
+    ]);
+
+    var depth = this.technical.depth();
+    section('Recherche', [
+      depth ? depth.label : this.technical.search.maxSolutions + ' solutions au plus',
+      'jusqu’à ' + this.compile().maxStages + ' étages'
+    ]);
+
+    section('Analyse', this.analysisLevels().map(function (level) {
+      return (level.available ? '✓ ' : '△ ') + level.label.toLowerCase();
+    }));
+    return sections;
   };
 
   /** Résumé d'une ligne du cahier des charges, pour le bandeau (§16). */
   SearchSession.prototype.summarise = function () {
-    var requirement = this.requirement, bits = [];
+    var requirement = this.requirement, bits = [this.intent.describe()];
     var problem = requirement.inferProblem();
+    // `describe()` porte déjà l'unité : la répéter donnait « 1500 rpm rpm ».
     if (problem.mode === 'rotationTranslation') {
       var travel = requirement.travelRequirement();
-      if (travel.isKnown()) bits.push(travel.describe() + '/tr');
-      if (requirement.output.force.isKnown()) bits.push('Force ' + requirement.output.force.describe() + ' N');
+      if (travel.isKnown()) bits.push(travel.describe() + ' par tour');
+      if (requirement.output.force.isKnown()) bits.push('Force ' + requirement.output.force.describe());
     } else {
       if (requirement.input.speed.isKnown() && requirement.output.speed.isKnown()) {
-        bits.push(requirement.input.speed.describe() + ' → ' + requirement.output.speed.describe() + ' rpm');
+        bits.push(requirement.input.speed.describe() + ' → ' + requirement.output.speed.describe());
       } else {
         var ratio = requirement.ratioRequirement();
         if (ratio.isKnown()) bits.push(ratio.describe());
       }
-      if (requirement.output.torque.isKnown()) bits.push('Couple ' + requirement.output.torque.describe() + ' N·m');
+      if (requirement.output.torque.isKnown()) bits.push('Couple ' + requirement.output.torque.describe());
     }
     var names = {};
     Object.keys(R.TransmissionAdvisor.KNOWLEDGE).forEach(function (id) {
@@ -239,10 +529,12 @@
 
   SearchSession.prototype.toJSON = function () {
     return {
+      intent: this.intent.toJSON(),
       requirement: this.requirement.toJSON(),
       preferences: this.preferences.toJSON(),
       technologySelection: this.technologySelection.toJSON(),
-      technical: this.technical.toJSON()
+      technical: this.technical.toJSON(),
+      existing: this.existing.toJSON()
     };
   };
 
@@ -251,10 +543,12 @@
 
   /** Promotion du brouillon : la session adopte son contenu, en place. */
   SearchSession.prototype.adopt = function (draft) {
+    this.intent = draft.intent;
     this.requirement = draft.requirement;
     this.preferences = draft.preferences;
     this.technologySelection = draft.technologySelection;
     this.technical = draft.technical;
+    this.existing = draft.existing;
     this._advice = null;
     return this;
   };
@@ -288,6 +582,19 @@
     Object.keys(weights).forEach(function (key) { write('weight_' + key, weights[key]); });
     var template = el('type_template');
     if (template) template.value = JSON.stringify(this.technologySelection.toTemplate() || []);
+    TECHNICAL_MIRRORS.forEach(function (mirror) {
+      var node = el(mirror.id);
+      if (!node) return;
+      var value = self.technical[mirror.group][mirror.key];
+      if (mirror.kind === 'flag') node.checked = !!value;
+      else if (mirror.kind === 'list') node.value = (value || []).join(', ');
+      else if (mirror.kind === 'text') { if (value != null) node.value = String(value); }
+      else write(mirror.id, value);
+    });
+    TEETH_READOUTS.forEach(function (readout) {
+      var node = el(readout.id);
+      if (node) node.textContent = String(self.technical.gearing[readout.key]);
+    });
     var parameters = this.technical.typeParameters;
     Object.keys(parameters).forEach(function (typeId) {
       Object.keys(parameters[typeId]).forEach(function (key) {
@@ -346,6 +653,37 @@
     });
     preferences.primary = axisForSearchMode((el('search_mode') || {}).value);
     this.preferences = preferences;
+
+    // Les réglages techniques font le même chemin retour : une URL partagée
+    // porte le module, la profondeur et les dentures, pas seulement le besoin.
+    var technical = new R.TechnicalSettingsModel();
+    TECHNICAL_MIRRORS.forEach(function (mirror) {
+      var node = el(mirror.id);
+      if (!node) return;
+      if (mirror.kind === 'flag') { technical.set(mirror.group, mirror.key, !!node.checked); return; }
+      if (mirror.kind === 'list') { technical.set(mirror.group, mirror.key, numberList(node.value)); return; }
+      if (mirror.kind === 'text') { if (node.value) technical.set(mirror.group, mirror.key, node.value); return; }
+      var value = read(mirror.id);
+      // Un champ vide ne veut dire « aucune valeur » que là où c'est un choix
+      // possible : ailleurs, il ne doit pas effacer le réglage d'usine.
+      if (value != null || mirror.nullable) technical.set(mirror.group, mirror.key, value);
+    });
+    TEETH_READOUTS.forEach(function (readout) {
+      var node = el(readout.id), value = node ? Number(node.textContent) : NaN;
+      if (isFinite(value)) technical.set('gearing', readout.key, value);
+    });
+    Object.keys(technical.typeParameters).forEach(function (typeId) {
+      Object.keys(technical.typeParameters[typeId]).forEach(function (key) {
+        var node = el('tp_' + typeId + '_' + key);
+        if (!node) return;
+        if (node.type === 'checkbox') technical.setTypeParameter(typeId, key, node.checked);
+        else if (node.value !== '') {
+          var number = Number(node.value);
+          technical.setTypeParameter(typeId, key, isFinite(number) && node.type !== 'text' ? number : node.value);
+        }
+      });
+    });
+    this.technical = technical;
 
     this._advice = null;
     var checked = Array.prototype.map.call(document.querySelectorAll('.type-checkbox:checked'), function (b) { return aliasType(b.value); });

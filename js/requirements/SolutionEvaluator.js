@@ -54,15 +54,87 @@
     return values.length ? Math.min.apply(Math, values) : null;
   }
 
-  // Objectifs DÉFINIS POUR TOUTE SOLUTION : ce sont les seuls admis dans le
-  // front, sans quoi la dominance perdrait sa transitivité dès qu'une valeur
-  // manque (une courroie n'a pas de coefficient de sécurité).
-  var PARETO_OBJECTIVES = [
-    { key: 'size', label: 'encombrement', lower: function (s) { return volume(s); } },
-    { key: 'efficiency', label: 'rendement', lower: function (s) { return finite(s.efficiency) ? 1 - s.efficiency : null; } },
-    { key: 'error', label: 'précision', lower: function (s) { return finite(s.errorPercent) ? Math.abs(s.errorPercent) : null; } },
-    { key: 'stages', label: 'simplicité', lower: function (s) { return (s.stages || []).length || null; } }
+  // Axes toujours présents : ils décrivent tout réducteur, quel qu'il soit.
+  var BASE_OBJECTIVES = [
+    { key: 'size', label: 'encombrement', weight: 'size', lower: function (s) { return volume(s); } },
+    { key: 'efficiency', label: 'rendement', weight: 'efficiency', lower: function (s) { return finite(s.efficiency) ? 1 - s.efficiency : null; } },
+    { key: 'error', label: 'précision', weight: 'ratio', lower: function (s) { return finite(s.errorPercent) ? Math.abs(s.errorPercent) : null; } },
+    { key: 'stages', label: 'simplicité', weight: 'stages', lower: function (s) { return (s.stages || []).length || null; } }
   ];
+
+  // Axes AJOUTÉS selon le cahier des charges. Un front figé sur quatre critères
+  // écartait des solutions décisives : une architecture un peu plus grosse mais
+  // deux fois plus sûre était « dominée », donc invisible — alors même que
+  // l'utilisateur avait demandé la robustesse. Le front doit dépendre de ce
+  // qu'on cherche.
+  var OPTIONAL_OBJECTIVES = {
+    robust: { key: 'robust', label: 'robustesse', weight: 'stress',
+      lower: function (s) { var v = minSafety(s); return finite(v) ? -v : null; } },
+    quiet: { key: 'quiet', label: 'silence', weight: 'noise',
+      lower: function (s) { var v = familyTrait(s, 'quiet'); return finite(v) ? -v : null; } },
+    cost: { key: 'cost', label: 'coût', weight: 'cost',
+      lower: function (s) { var v = familyTrait(s, 'cost'); return finite(v) ? -v : null; } },
+    manufacturing: { key: 'manufacturing', label: 'fabricabilité', weight: 'manufacturing',
+      lower: function (s) { var v = familyTrait(s, 'printable'); return finite(v) ? -v : null; } },
+    loss: { key: 'loss', label: 'pertes', weight: 'efficiency',
+      lower: function (s) { return finite(s.lossPowerW) ? s.lossPowerW : null; } },
+    velocity: { key: 'velocity', label: 'vitesse périphérique', weight: 'noise',
+      lower: function (s) { return pitchLineVelocity(s); } },
+    torque: { key: 'torque', label: 'couple de sortie', weight: 'stress',
+      lower: function (s) { return finite(s.outputTorqueNm) ? -s.outputTorqueNm : null; } }
+  };
+
+  /** Vitesse au primitif maximale, recalculée ici pour rester sans dépendance. */
+  function pitchLineVelocity(solution) {
+    var speed = solution.inputSpeedRpm;
+    if (!finite(speed)) return null;
+    var best = null;
+    (solution.mechanical || []).forEach(function (stage) {
+      var diameter = stage.geometry && stage.geometry.pitchDiameterInput;
+      if (finite(diameter)) {
+        var value = Math.PI * diameter * Math.abs(speed) / 60000;
+        if (best == null || value > best) best = value;
+      }
+      speed /= Math.abs(stage.ratio) || 1;
+    });
+    return best;
+  }
+
+  /** Ce qu'une priorité ajoute au front. */
+  var AXIS_OBJECTIVE = {
+    robust: 'robust', quiet: 'quiet', cheap: 'cost',
+    manufacturable: 'manufacturing', efficiency: 'loss'
+  };
+
+  /** Ce qu'un critère posé ajoute au front : on ne classe que ce qui compte. */
+  var CRITERION_OBJECTIVE = {
+    bendingSafety: 'robust', contactSafety: 'robust', outputTorque: 'torque',
+    powerLoss: 'loss', pitchLineVelocity: 'velocity'
+  };
+
+  /**
+   * Les axes du front pour CE cahier des charges.
+   * Une valeur manquante (une courroie n'a pas de coefficient de sécurité) est
+   * normalisée à 0,5 : ni avantage ni pénalité, et la dominance reste
+   * transitive puisque c'est une constante.
+   */
+  function objectivesFor(preferences) {
+    var objectives = BASE_OBJECTIVES.slice();
+    var seen = {};
+    objectives.forEach(function (objective) { seen[objective.key] = true; });
+
+    function add(key) {
+      var objective = OPTIONAL_OBJECTIVES[key];
+      if (objective && !seen[key]) { seen[key] = true; objectives.push(objective); }
+    }
+    if (!preferences) return objectives;
+    preferences.activeAxes().forEach(function (axis) { add(AXIS_OBJECTIVE[axis.id]); });
+    preferences.list().forEach(function (entry) { add(CRITERION_OBJECTIVE[entry.key]); });
+    return objectives;
+  }
+
+  /** Conservé pour compatibilité : les axes systématiques. */
+  var PARETO_OBJECTIVES = BASE_OBJECTIVES;
 
   // Catégories montrées à l'utilisateur. `metric` : plus haut = meilleur.
   var CATEGORIES = [
@@ -108,11 +180,12 @@
    * @param {object} [preferences] PreferenceModel : pondère et signale les violations
    * @returns {{front, best, order, byIndex, scores, compliance}}
    */
-  function evaluate(pool, preferences) {
+  function evaluate(pool, preferences, selection) {
     var solutions = Array.isArray(pool) ? pool : [];
-    if (!solutions.length) return { front: [], best: {}, order: [], byIndex: {}, scores: [], compliance: [] };
+    if (!solutions.length) return { front: [], best: {}, order: [], byIndex: {}, scores: [], compliance: [], objectives: [] };
 
-    var readers = PARETO_OBJECTIVES.map(function (objective) { return normalizer(solutions, objective.lower); });
+    var objectives = objectivesFor(preferences);
+    var readers = objectives.map(function (objective) { return normalizer(solutions, objective.lower); });
     var vectors = solutions.map(function (solution) {
       return readers.map(function (read) { return read(solution); });
     });
@@ -126,22 +199,22 @@
       if (!dominated) front.push(i);
     }
 
-    // Score agrégé sur le front, pondéré par les priorités. Les poids du moteur
-    // sont réutilisés tels quels : une seule définition de « ce qui compte ».
+    // Score agrégé sur les MÊMES axes que le front, pondéré par les priorités :
+    // classer sur quatre critères un front qui en compte six reviendrait à
+    // ignorer précisément ce que l'utilisateur a demandé.
     var weights = preferences ? preferences.weights() : null;
-    var axisWeight = {
-      size: weights ? weights.size : 1, efficiency: weights ? weights.efficiency : 1,
-      error: weights ? weights.ratio : 1, stages: weights ? weights.stages : 1
-    };
     var scores = solutions.map(function (solution, index) {
       var total = 0, sum = 0;
-      PARETO_OBJECTIVES.forEach(function (objective, k) {
-        var weight = axisWeight[objective.key] || 1;
+      objectives.forEach(function (objective, k) {
+        var weight = weights ? (weights[objective.weight] || 1) : 1;
         total += weight * vectors[index][k]; sum += weight;
       });
       var base = sum ? total / sum : 0;
-      // Une préférence non satisfaite dégrade le classement sans exclure.
-      return base + (preferences ? preferences.penalty(solution) * 0.5 : 0);
+      // Une préférence non satisfaite dégrade le classement sans exclure ;
+      // une famille explicitement préférée l'améliore, sans rien exclure non plus.
+      var penalty = preferences ? preferences.penalty(solution) * 0.5 : 0;
+      var bonus = selection && selection.preferenceBonus ? selection.preferenceBonus(solution) * 0.15 : 0;
+      return base + penalty - bonus;
     });
 
     var best = {};
@@ -183,7 +256,8 @@
       return preferences ? preferences.violations(solution) : [];
     });
 
-    return { front: front, best: best, order: order, byIndex: byIndex, scores: scores, compliance: compliance };
+    return { front: front, best: best, order: order, byIndex: byIndex, scores: scores,
+      compliance: compliance, objectives: objectives.map(function (o) { return o.key; }) };
   }
 
   var LABELS = { recommended: 'Recommandée' };
@@ -214,6 +288,7 @@
 
   return {
     evaluate: evaluate, explain: explain, label: label,
-    CATEGORIES: CATEGORIES, PARETO_OBJECTIVES: PARETO_OBJECTIVES, MEANINGFUL_GAIN: MEANINGFUL_GAIN
+    CATEGORIES: CATEGORIES, PARETO_OBJECTIVES: PARETO_OBJECTIVES, MEANINGFUL_GAIN: MEANINGFUL_GAIN,
+    objectivesFor: objectivesFor, BASE_OBJECTIVES: BASE_OBJECTIVES, OPTIONAL_OBJECTIVES: OPTIONAL_OBJECTIVES
   };
 });

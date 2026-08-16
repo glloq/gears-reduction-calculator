@@ -211,6 +211,17 @@
     secondary.hidden = true;
     criteria.appendChild(secondary);
 
+    criteria.appendChild(node('h3', null, 'Composants disponibles'));
+    var parts = node('div', 'parts-options');
+    parts.id = 'partsOptions';
+    criteria.appendChild(parts);
+
+    criteria.appendChild(node('h3', null, 'Profondeur de recherche'));
+    var depth = node('div', 'depth-options');
+    depth.id = 'depthOptions';
+    depth.setAttribute('role', 'radiogroup');
+    criteria.appendChild(depth);
+
     criteria.appendChild(node('h3', null, 'Service et environnement'));
     var service = node('div', 'service-options');
     service.id = 'serviceOptions';
@@ -303,6 +314,8 @@
       this._bindPriorities(refresh);
       this._bindFabrication(refresh);
       this._bindService(refresh);
+      this._bindParts(refresh);
+      this._bindDepth(refresh);
     }
     this.typeStep.setDraft(this.draft);
     this.sheet.session = this.draft;
@@ -458,6 +471,126 @@
     };
   };
 
+  // §E : partir de ce qu'on a. Module, dentures et entraxe existaient dans
+  // `TechnicalSettingsModel` mais n'étaient vus que comme des « paramètres
+  // techniques » ; ce sont pourtant les données de départ de tout projet DIY.
+  var PART_FIELDS = [
+    { group: 'module', key: 'fixed', label: 'Module', unit: 'mm', step: 0.05, min: 0.1 },
+    { group: 'gearing', key: 'drivingFixed', label: 'Pignon imposé', unit: 'dents', step: 1, min: 1, blank: true },
+    { group: 'gearing', key: 'drivenFixed', label: 'Roue imposée', unit: 'dents', step: 1, min: 1, blank: true },
+    { group: 'gearing', key: 'drivingMin', label: 'Pignon de', unit: 'dents', step: 1, min: 1 },
+    { group: 'gearing', key: 'drivingMax', label: 'à', unit: 'dents', step: 1, min: 1 },
+    { group: 'gearing', key: 'drivenMin', label: 'Roue de', unit: 'dents', step: 1, min: 1 },
+    { group: 'gearing', key: 'drivenMax', label: 'à', unit: 'dents', step: 1, min: 1 }
+  ];
+
+  SearchModal.prototype._bindParts = function (refresh) {
+    var self = this, host = el('partsOptions');
+
+    this._renderParts = function () {
+      host.textContent = '';
+      // Repliés par défaut : ils ne concernent que qui part de son stock.
+      var open = self.draft.intent.startsFromParts() || self.draft.technical.isCustomised('gearing')
+        || self.draft.technical.isCustomised('module');
+      host.hidden = false;
+      var details = document.createElement('details');
+      details.className = 'parts-panel';
+      details.id = 'partsPanel';
+      details.open = open;
+      details.appendChild(node('summary', null, 'Module, dentures et entraxe imposés'));
+
+      var grid = node('div', 'parts-grid');
+      PART_FIELDS.forEach(function (field) {
+        var label = node('label', 'parts-field');
+        label.appendChild(node('span', null, field.label));
+        var input = document.createElement('input');
+        input.type = 'number';
+        input.id = 'part_' + field.group + '_' + field.key;
+        if (field.min != null) input.min = field.min;
+        input.step = field.step || 'any';
+        if (field.blank) input.placeholder = 'libre';
+        var value = self.draft.technical[field.group][field.key];
+        input.value = value == null ? '' : String(value);
+        input.addEventListener('change', function () {
+          var parsed = parseFloat(input.value);
+          var next = isFinite(parsed) ? parsed : (field.blank ? null : self.draft.technical[field.group][field.key]);
+          self.draft.technical.set(field.group, field.key, next);
+          refresh(false);
+        });
+        label.appendChild(input);
+        var unit = node('span', 'parts-unit', field.unit);
+        label.appendChild(unit);
+        grid.appendChild(label);
+      });
+      details.appendChild(grid);
+
+      // Une plage dit « entre 20 et 60 dents ». Un stock dit « 20, 24, 40, 60 »,
+      // et aucune plage ne saura jamais l'exprimer : c'est pourtant ce qu'on a
+      // réellement dans un tiroir.
+      INVENTORY_FIELDS.forEach(function (field) {
+        var label = node('label', 'parts-inventory');
+        label.appendChild(node('span', null, field.label));
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'inventory_' + field.group + '_' + field.key;
+        input.placeholder = field.placeholder;
+        input.setAttribute('inputmode', 'numeric');
+        input.value = (self.draft.technical[field.group][field.key] || []).join(', ');
+        input.addEventListener('change', function () {
+          self.draft.technical.set(field.group, field.key, parseList(input.value));
+          refresh(false);
+        });
+        label.appendChild(input);
+        label.appendChild(node('small', 'parts-hint', field.hint));
+        details.appendChild(label);
+      });
+      host.appendChild(details);
+    };
+  };
+
+  /** Ce qu'on possède, énuméré. Tout ce qui n'est pas un nombre est ignoré. */
+  var INVENTORY_FIELDS = [
+    { group: 'gearing', key: 'teethInventory', label: 'Dentures en stock',
+      placeholder: 'ex. 16, 20, 24, 40, 60',
+      hint: 'Seules ces dentures seront combinées. Vide = plages ci-dessus.' },
+    { group: 'module', key: 'list', label: 'Modules en stock',
+      placeholder: 'ex. 1, 1.5',
+      hint: 'Vide = module imposé ou plage automatique.' }
+  ];
+
+  function parseList(text) {
+    return String(text || '').split(/[^0-9.]+/)
+      .map(function (piece) { return parseFloat(piece); })
+      .filter(function (value) { return isFinite(value) && value > 0; });
+  }
+
+  SearchModal.prototype._bindDepth = function (refresh) {
+    var self = this, host = el('depthOptions');
+
+    this._renderDepth = function () {
+      host.textContent = '';
+      var current = self.draft.technical.depth();
+      GearApp.requirements.technicalSettings.DEPTHS.forEach(function (entry) {
+        var active = current && current.id === entry.id;
+        var button = node('button', 'depth-option' + (active ? ' active' : ''), entry.label);
+        button.type = 'button';
+        button.dataset.depth = entry.id;
+        button.title = entry.help;
+        button.setAttribute('role', 'radio');
+        button.setAttribute('aria-checked', String(!!active));
+        button.addEventListener('click', function () {
+          self.draft.technical.setDepth(entry.id);
+          refresh(false);
+        });
+        host.appendChild(button);
+      });
+      var hint = node('p', 'field-help', '');
+      hint.id = 'depthHint';
+      hint.textContent = current ? current.help : 'Limites réglées à la main dans les options techniques.';
+      host.appendChild(hint);
+    };
+  };
+
   // ===== Rendu =====
 
   SearchModal.prototype.render = function (structural) {
@@ -477,6 +610,8 @@
       this._renderPriorities();
       this._renderFabrication();
       this._renderService();
+      this._renderParts();
+      this._renderDepth();
       this.typeParameters.render();
     }
     this._renderAnalysisLevels();
@@ -509,13 +644,19 @@
     if (!host) return;
     host.textContent = '';
     host.appendChild(node('h3', null, 'Votre recherche'));
-    var list = node('ul', 'search-summary-list');
-    this.draft.summarise().forEach(function (line) {
-      var item = document.createElement('li');
-      item.textContent = line;
-      list.appendChild(item);
+    this.draft.brief().forEach(function (section) {
+      var block = node('div', 'search-summary-section');
+      block.dataset.section = section.title;
+      block.appendChild(node('h4', null, section.title));
+      var list = node('ul', 'search-summary-list');
+      section.lines.forEach(function (line) {
+        var item = document.createElement('li');
+        item.textContent = line;
+        list.appendChild(item);
+      });
+      block.appendChild(list);
+      host.appendChild(block);
     });
-    host.appendChild(list);
 
     var ready = this.draft.isReady();
     var state = node('p', 'search-summary-state ' + (ready ? 'ready' : 'blocked'));

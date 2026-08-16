@@ -48,7 +48,7 @@ async function defineSearch(page, spec) {
   }
   if (spec.families) {
     await page.locator('[data-step="type"]').click();
-    await page.locator('.type-entry[data-policy="restrict"]').click();
+    await page.locator('#technologyPolicy [data-policy="restrict"]').click();
     for (const family of spec.families) await page.locator(`.family-card[data-family="${family}"]`).click();
   }
   if (spec.constraints) {
