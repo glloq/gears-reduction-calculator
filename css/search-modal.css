@@ -178,7 +178,7 @@
 .architecture-stage {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) 2rem;
-  align-items: center;
+  align-items: start;
   gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--line);
@@ -323,3 +323,46 @@ body.modal-open { overflow: hidden; }
 .service-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--sp-2); }
 .service-field { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
 .service-field input[type="number"], .service-field select { flex: 0 1 6rem; }
+
+/* ----- §F : plusieurs familles possibles par étage ----- */
+
+.stage-choices { display: flex; flex-wrap: wrap; gap: 4px; }
+.stage-choice {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface-1);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.stage-choice:hover { border-color: var(--accent); color: var(--accent); }
+.stage-choice.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* ----- §E et §8 : composants disponibles, profondeur de recherche ----- */
+
+.parts-panel { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); padding: var(--sp-2); }
+.parts-panel > summary { font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.parts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.parts-field { display: flex; align-items: center; gap: var(--sp-1); margin: 0; font-size: var(--font-xs); }
+.parts-field span:first-child { flex: 1; }
+.parts-field input { flex: 0 1 4.5rem; }
+.parts-unit { color: var(--muted); }
+
+.depth-options { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.depth-option {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  font-size: var(--font-xs); font-weight: 600; color: var(--muted);
+}
+.depth-option.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.depth-options .field-help { flex-basis: 100%; margin: 0; }
+
+/* ----- §14 : résumé par sections ----- */
+
+.search-summary-section { margin-bottom: var(--sp-3); }
+.search-summary-section h4 {
+  margin: 0 0 2px;
+  font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+}

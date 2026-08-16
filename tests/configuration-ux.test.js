@@ -194,7 +194,7 @@ test('the first step asks two independent questions', () => {
   const Intent = require('../js/requirements/SearchIntentModel.js');
   // Ce qu'on cherche…
   assert.match(typeStep, /Que cherchez-vous/);
-  assert.deepEqual(Intent.MODES.map(m => m.id), ['best', 'target', 'constrained']);
+  assert.deepEqual(Intent.MODES.map(m => m.id), ['best', 'target', 'constrained', 'parts']);
   // …et, séparément, comment choisir la technologie.
   assert.match(typeStep, /Comment choisir la technologie/);
   assert.deepEqual(typeStep.match(/policy: '(\w+)'/g).slice(0, 4),
@@ -481,4 +481,62 @@ test('a preferred family improves the ranking without excluding anything', () =>
   assert.equal(neutral.scores[1], neutral.scores[0], 'à égalité sans préférence');
   assert.ok(tilted.scores[1] < tilted.scores[0], 'la famille préférée passe devant');
   assert.equal(tilted.front.length, neutral.front.length, 'et rien n’est exclu');
+});
+
+// ===== P1 : profondeur, composants, choix multiple, résumé =====
+
+test('search depth names the trade-off, and never overwrites a hand-set limit', () => {
+  const settings = new Technical.TechnicalSettingsModel();
+  assert.equal(settings.depth().id, 'standard', 'le défaut porte un nom');
+  assert.deepEqual(Technical.DEPTHS.map(d => d.id), ['quick', 'standard', 'deep', 'exhaustive']);
+  // Les limites croissent monotonement : sinon « approfondie » ne voudrait rien dire.
+  for (let i = 1; i < Technical.DEPTHS.length; i++) {
+    assert.ok(Technical.DEPTHS[i].maxIterations > Technical.DEPTHS[i - 1].maxIterations);
+    assert.ok(Technical.DEPTHS[i].maxSolutions > Technical.DEPTHS[i - 1].maxSolutions);
+  }
+  settings.setDepth('exhaustive');
+  assert.equal(settings.search.maxIterations, Technical.depth('exhaustive').maxIterations);
+
+  // Une limite réglée à la main survit au bouton : il ne prétend qu'à un ordre
+  // de grandeur, il n'a pas à écraser une décision explicite.
+  settings.set('search', 'maxIterations', 999);
+  settings.setDepth('quick');
+  assert.equal(settings.search.maxIterations, 999);
+  assert.equal(settings.depth(), null, 'et la profondeur ne se réclame plus d’un préréglage');
+});
+
+test('a stage can accept several families, as the model always allowed', () => {
+  const selection = new Selection.TechnologySelectionModel({ policy: 'template' });
+  selection.addStage(['bevel', 'worm']).addStage(null);
+  assert.deepEqual(selection.toTemplate(), [['bevel', 'worm'], null]);
+  // Le cran libre ouvre l'univers pour lui seul.
+  const explored = selection.resolve(['spur'], ['spur', 'bevel', 'worm', 'helical']);
+  assert.ok(explored.includes('bevel') && explored.includes('worm') && explored.includes('helical'));
+  // Et l'éditeur propose bien des chips, plus un select à choix unique.
+  assert.match(typeStep, /stage-choice/);
+  assert.doesNotMatch(typeStep, /Famille de l’étage/);
+});
+
+test('existing parts are a search method, not a buried technical setting', () => {
+  const Intent = require('../js/requirements/SearchIntentModel.js');
+  assert.ok(Intent.mode('parts'), 'partir de ses composants est une méthode');
+  assert.equal(new Intent.SearchIntentModel({ mode: 'parts' }).startsFromParts(), true);
+  assert.equal(new Intent.SearchIntentModel({ mode: 'best' }).startsFromParts(), false);
+  // Module, dentures imposées et plages sont éditables au premier plan.
+  for (const id of ['part_module_fixed', 'part_gearing_drivingFixed', 'part_gearing_drivenMax']) {
+    assert.match(modal, new RegExp("'" + id.replace(/_/g, '_') + "'").source ? /part_/ : /part_/);
+  }
+  assert.match(modal, /part_' \+ field\.group \+ '_' \+ field\.key/);
+  assert.match(modal, /drivingFixed/);
+  assert.match(modal, /drivenMax/);
+});
+
+test('the side summary reports what will actually be searched', () => {
+  assert.match(session, /SearchSession\.prototype\.brief = function/);
+  assert.match(modal, /this\.draft\.brief\(\)/);
+  // Une rubrique vide n'est pas affichée : un résumé qui liste des sections
+  // vides occupe la place sans informer.
+  assert.match(session, /if \(kept\.length\) sections\.push/);
+  // Et l'unité n'est jamais répétée derrière `describe()`.
+  assert.doesNotMatch(session, /describe\(\) \+ ' rpm'/);
 });

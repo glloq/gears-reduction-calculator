@@ -24,8 +24,23 @@
 })(typeof self !== 'undefined' ? self : this, function (Registry) {
   'use strict';
 
+  // §8 : « 500 000 itérations » ne dit rien à personne. La profondeur nomme
+  // l'arbitrage réel — qualité du balayage contre temps de calcul — et les
+  // nombres restent en dessous, dans les options techniques.
+  var DEPTHS = [
+    { id: 'quick', label: 'Rapide', help: 'Aperçu et dimensionnement initial.', maxSolutions: 40, maxIterations: 120000 },
+    { id: 'standard', label: 'Standard', help: 'Comparaison complète, recommandé.', maxSolutions: 100, maxIterations: 500000 },
+    { id: 'deep', label: 'Approfondie', help: 'Explore davantage d’architectures.', maxSolutions: 200, maxIterations: 1500000 },
+    { id: 'exhaustive', label: 'Exhaustive', help: 'Privilégie la qualité au temps de calcul.', maxSolutions: 400, maxIterations: 5000000 }
+  ];
+
+  function depth(id) {
+    for (var i = 0; i < DEPTHS.length; i++) if (DEPTHS[i].id === id) return DEPTHS[i];
+    return null;
+  }
+
   var DEFAULTS = {
-    search: { maxSolutions: 100, maxIterations: 500000 },
+    search: { depth: 'standard', maxSolutions: 100, maxIterations: 500000 },
     gearing: { drivingMin: 10, drivingMax: 30, drivenMin: 20, drivenMax: 50, drivingFixed: null, drivenFixed: null, reductionOnly: true },
     module: { mode: 'fixed', fixed: 1, min: null, max: null },
     manufacturing: { process: 'standard', minimumModule: null, minimumTeeth: null, minimumFaceWidth: null, printerDiameter: null, additiveDerating: 1 },
@@ -70,6 +85,35 @@
       }, this);
     }
     return this;
+  };
+
+  /**
+   * Choisit une profondeur. Les nombres suivent, sauf s'ils ont été réglés à
+   * la main : une valeur choisie explicitement ne doit pas être écrasée par un
+   * bouton qui ne prétend qu'à un ordre de grandeur.
+   */
+  TechnicalSettingsModel.prototype.setDepth = function (id) {
+    var preset = depth(id);
+    if (!preset) return this;
+    var current = depth(this.search.depth);
+    var untouched = !current ||
+      (this.search.maxSolutions === current.maxSolutions && this.search.maxIterations === current.maxIterations);
+    this.search.depth = id;
+    if (untouched) {
+      this.search.maxSolutions = preset.maxSolutions;
+      this.search.maxIterations = preset.maxIterations;
+    }
+    return this;
+  };
+
+  /** La profondeur nommée, ou null si les nombres n'en décrivent aucune. */
+  TechnicalSettingsModel.prototype.depth = function () {
+    for (var i = 0; i < DEPTHS.length; i++) {
+      if (DEPTHS[i].maxSolutions === this.search.maxSolutions && DEPTHS[i].maxIterations === this.search.maxIterations) {
+        return DEPTHS[i];
+      }
+    }
+    return null;
   };
 
   TechnicalSettingsModel.prototype.set = function (group, key, value) {
@@ -160,5 +204,6 @@
     return Registry.parameterDefinitions[typeId === 'planetary' ? 'planetary' : typeId] || null;
   };
 
-  return { TechnicalSettingsModel: TechnicalSettingsModel, DEFAULTS: DEFAULTS, ADDITIVE_DERATING: ADDITIVE_DERATING };
+  return { TechnicalSettingsModel: TechnicalSettingsModel, DEFAULTS: DEFAULTS,
+    ADDITIVE_DERATING: ADDITIVE_DERATING, DEPTHS: DEPTHS, depth: depth };
 });

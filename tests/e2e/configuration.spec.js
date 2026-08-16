@@ -16,7 +16,7 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   await expect(page.locator('#sidebar')).toHaveCount(0);
   await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
   // Deux décisions indépendantes : la méthode, puis la politique technologique.
-  await expect(page.locator('#intentCards .type-entry')).toHaveCount(3);
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(4);
   await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(4);
   expect(errors).toEqual([]);
 });
@@ -122,8 +122,8 @@ test('an imposed architecture fixes the families stage by stage', async ({ page 
   await page.locator('#technologyPolicy [data-policy=\"template\"]').click();
   await expect(page.locator('.architecture-stage')).toHaveCount(2);
 
-  await page.locator('.architecture-stage[data-stage="0"] select').selectOption('bevel');
-  await page.locator('.architecture-stage[data-stage="1"] select').selectOption('helical');
+  await page.locator('.architecture-stage[data-stage="0"] .stage-choice[data-family="bevel"]').click();
+  await page.locator('.architecture-stage[data-stage="1"] .stage-choice[data-family="helical"]').click();
   await page.locator('#addStageBtn').click();
   await expect(page.locator('.architecture-stage')).toHaveCount(3);
   await page.locator('.architecture-stage[data-stage="2"] .architecture-stage-remove').click();
@@ -168,7 +168,10 @@ test('the secondary priority stays hidden until it is asked for', async ({ page 
   await expect(page.locator('#prioritySecondary')).toBeVisible();
   await page.locator('.priority-chip-primary[data-axis="compact"]').click();
   await page.locator('.priority-chip-secondary[data-axis="quiet"]').click();
-  await expect(page.locator('#searchModalSummary')).toContainText('Compact, puis silencieux');
+  // Le résumé est désormais structuré : l'ordre se lit, il n'est plus une phrase.
+  const optimisation = page.locator('.search-summary-section[data-section="Optimisation"]');
+  await expect(optimisation).toContainText('1. Compact');
+  await expect(optimisation).toContainText('2. Silencieux');
 });
 
 test('the manufacturing process feeds the advice', async ({ page }) => {
@@ -420,4 +423,79 @@ test('a shaft distance to span brings belts and chains forward', async ({ page }
   await page.locator('[data-step="type"]').click();
   await expect(page.locator('#typeAdvice .advice-row').first()).toContainText(/Courroie|Chaîne/);
   await expect(page.locator('#typeAdvice')).toContainText('distance entre arbres');
+});
+
+// ===== P1 : profondeur, composants, choix multiple par étage, résumé =====
+
+test('a stage accepts several families at once', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 25);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#technologyPolicy [data-policy="template"]').click();
+  const stage = page.locator('.architecture-stage[data-stage="0"]');
+  // « Auto » est l'état de départ ; deux familles peuvent coexister sur un cran.
+  await expect(stage.locator('.stage-choice[data-family=""]')).toHaveClass(/active/);
+  await stage.locator('.stage-choice[data-family="bevel"]').click();
+  await stage.locator('.stage-choice[data-family="worm"]').click();
+  await expect(stage.locator('.stage-choice.active')).toHaveCount(2);
+  await expect(stage.locator('.stage-choice[data-family=""]')).not.toHaveClass(/active/);
+
+  // Les deux partent au moteur.
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+  const template = JSON.parse(await page.inputValue('#type_template'));
+  expect(template[0].sort()).toEqual(['bevel', 'worm']);
+});
+
+test('search depth is named, and the numbers stay underneath', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('[data-step="criteria"]').click();
+  await expect(page.locator('.depth-option')).toHaveCount(4);
+  await expect(page.locator('.depth-option.active')).toHaveText('Standard');
+
+  await page.locator('.depth-option[data-depth="exhaustive"]').click();
+  await expect(page.locator('.depth-option.active')).toHaveText('Exhaustive');
+  await expect(page.locator('#searchModalSummary')).toContainText('Exhaustive');
+  // Le nombre suit, mais n'est pas ce qu'on a demandé à l'utilisateur.
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  expect(Number(await page.inputValue('#max_iterations'))).toBeGreaterThan(1000000);
+});
+
+test('existing parts are reachable as a starting point', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#intentCards [data-intent="parts"]').click();
+  await page.locator('[data-step="criteria"]').click();
+  // La méthode « pièces existantes » ouvre le bloc d'emblée.
+  await expect(page.locator('#partsPanel')).toHaveAttribute('open', /.*/);
+  await page.locator('#part_module_fixed').fill('1.5');
+  await page.locator('#part_module_fixed').blur();
+  await page.locator('#part_gearing_drivingFixed').fill('16');
+  await page.locator('#part_gearing_drivingFixed').blur();
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  expect(await page.inputValue('#module')).toBe('1.5');
+  expect(await page.inputValue('#dent_menante_fixe')).toBe('16');
+});
+
+test('the side summary is structured, and repeats no unit', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'input.speed', 1500);
+  await setQuantity(page, 'input.power', 750);
+  await setQuantity(page, 'output.speed', 100);
+
+  const titles = await page.locator('.search-summary-section h4').allTextContents();
+  expect(titles).toContain('Méthode');
+  expect(titles).toContain('Entrée');
+  expect(titles).toContain('Analyse');
+  // Le couple déduit est annoncé comme calculé, une seule fois son unité.
+  await expect(page.locator('.search-summary-section[data-section="Entrée"]')).toContainText('calculés');
+  const entree = await page.locator('.search-summary-section[data-section="Entrée"]').textContent();
+  expect(entree).not.toMatch(/rpm\s*rpm|N·m\s*N·m/);
+  // Aucune rubrique vide : « Contraintes » n'apparaît pas tant qu'il n'y en a pas.
+  expect(titles).not.toContain('Contraintes');
 });

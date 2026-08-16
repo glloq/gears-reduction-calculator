@@ -52,9 +52,15 @@
     },
     {
       id: 'constrained', label: 'Partir de contraintes', icon: '◫',
-      help: 'Je pars de l’espace disponible, de pièces ou d’une architecture imposés.',
+      help: 'Je pars de l’espace disponible ou d’une architecture imposée.',
       focus: 'criteria', tolerance: 5,
       summary: 'Sous contraintes'
+    },
+    {
+      id: 'parts', label: 'Pièces existantes', icon: '⚙',
+      help: 'J’ai un module, des dentures ou un entraxe imposés.',
+      focus: 'criteria', tolerance: 8, parts: true,
+      summary: 'Depuis les composants'
     }
   ];
 
@@ -97,6 +103,9 @@
   SearchIntentModel.prototype.ratioTolerance = function () { return this.descriptor().tolerance; };
 
   SearchIntentModel.prototype.describe = function () { return this.descriptor().summary; };
+
+  /** Cette méthode part-elle d'un inventaire de composants ? */
+  SearchIntentModel.prototype.startsFromParts = function () { return !!this.descriptor().parts; };
 
   SearchIntentModel.prototype.toJSON = function () { return { mode: this.mode }; };
 

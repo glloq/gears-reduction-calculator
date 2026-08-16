@@ -45,6 +45,34 @@
     stages: { max: 'etages' }
   };
 
+  /**
+   * Réglages techniques reflétés par l'ancien formulaire. Sans eux, choisir
+   * une profondeur « Exhaustive » ou un module imposé restait invisible pour
+   * tout ce qui relit encore les champs : le panneau de comparaison et l'URL
+   * partagée repartaient sur les valeurs d'usine.
+   */
+  var TECHNICAL_MIRRORS = [
+    { id: 'max_solutions', group: 'search', key: 'maxSolutions' },
+    { id: 'max_iterations', group: 'search', key: 'maxIterations' },
+    { id: 'dent_menante_fixe', group: 'gearing', key: 'drivingFixed', nullable: true },
+    { id: 'dent_menee_fixe', group: 'gearing', key: 'drivenFixed', nullable: true },
+    { id: 'reduction_only', group: 'gearing', key: 'reductionOnly', kind: 'flag' },
+    { id: 'module', group: 'module', key: 'fixed' },
+    { id: 'module_mode', group: 'module', key: 'mode', kind: 'text' },
+    { id: 'module_min', group: 'module', key: 'min', nullable: true },
+    { id: 'module_max', group: 'module', key: 'max', nullable: true },
+    { id: 'input_material', group: 'materials', key: 'input', kind: 'text' },
+    { id: 'output_material', group: 'materials', key: 'output', kind: 'text' }
+  ];
+
+  /** Les bornes de dentures sont portées par un curseur : des textes, pas des champs. */
+  var TEETH_READOUTS = [
+    { id: 'val_menante_min', key: 'drivingMin' },
+    { id: 'val_menante_max', key: 'drivingMax' },
+    { id: 'val_menee_min', key: 'drivenMin' },
+    { id: 'val_menee_max', key: 'drivenMax' }
+  ];
+
   function el(id) { return document.getElementById(id); }
 
   function write(id, value) {
@@ -222,22 +250,90 @@
     return this.requirement.isComplete() && this.technologySelection.isComplete() && this.selectedTechnologies().length > 0;
   };
 
+  /**
+   * Le cahier des charges par sections (§14). Chaque entrée n'apparaît que si
+   * elle a quelque chose à dire : un résumé qui liste des rubriques vides
+   * n'informe pas, il occupe.
+   */
+  SearchSession.prototype.brief = function () {
+    var requirement = this.requirement, sections = [];
+    var names = {};
+    Object.keys(R.TransmissionAdvisor.KNOWLEDGE).forEach(function (id) {
+      names[id] = R.TransmissionAdvisor.KNOWLEDGE[id].name;
+    });
+
+    function section(title, lines) {
+      var kept = lines.filter(Boolean);
+      if (kept.length) sections.push({ title: title, lines: kept });
+    }
+
+    section('Méthode', [this.intent.descriptor().icon + ' ' + this.intent.describe()]);
+
+    var explored = this.selectedTechnologies();
+    section('Technologies', [
+      this.technologySelection.describe(names),
+      explored.length + (explored.length > 1 ? ' familles explorées' : ' famille explorée')
+    ]);
+
+    // `describe()` porte déjà l'unité de la grandeur : la répéter donnerait
+    // « = 1500 rpm rpm ».
+    function say(quantity, suffix) {
+      return quantity.isKnown() ? quantity.describe() + (suffix ? ' ' + suffix : '') : null;
+    }
+
+    section('Entrée', [
+      say(requirement.input.speed),
+      say(requirement.input.power),
+      requirement.input.torque.isKnown()
+        ? say(requirement.input.torque)
+        : say(requirement.inputTorqueRequirement(), 'calculés')
+    ]);
+
+    var ratio = requirement.ratioRequirement();
+    section('Sortie', [
+      say(requirement.output.speed),
+      say(requirement.output.torque),
+      say(requirement.output.force),
+      say(requirement.output.travelPerRev, 'par tour'),
+      ratio.isKnown() ? 'rapport ' + ratio.describe() : null
+    ]);
+
+    section('Contraintes', this.effectivePreferences().constraints().map(function (entry) {
+      return entry.meta.label + ' ' + entry.quantity.describe();
+    }));
+
+    var axes = this.preferences.activeAxes();
+    section('Optimisation', axes.map(function (axis, index) { return (index + 1) + '. ' + axis.label; }));
+
+    var depth = this.technical.depth();
+    section('Recherche', [
+      depth ? depth.label : this.technical.search.maxSolutions + ' solutions au plus',
+      'jusqu’à ' + this.compile().maxStages + ' étages'
+    ]);
+
+    section('Analyse', this.analysisLevels().map(function (level) {
+      return (level.available ? '✓ ' : '△ ') + level.label.toLowerCase();
+    }));
+    return sections;
+  };
+
   /** Résumé d'une ligne du cahier des charges, pour le bandeau (§16). */
   SearchSession.prototype.summarise = function () {
     var requirement = this.requirement, bits = [this.intent.describe()];
     var problem = requirement.inferProblem();
+    // `describe()` porte déjà l'unité : la répéter donnait « 1500 rpm rpm ».
     if (problem.mode === 'rotationTranslation') {
       var travel = requirement.travelRequirement();
-      if (travel.isKnown()) bits.push(travel.describe() + '/tr');
-      if (requirement.output.force.isKnown()) bits.push('Force ' + requirement.output.force.describe() + ' N');
+      if (travel.isKnown()) bits.push(travel.describe() + ' par tour');
+      if (requirement.output.force.isKnown()) bits.push('Force ' + requirement.output.force.describe());
     } else {
       if (requirement.input.speed.isKnown() && requirement.output.speed.isKnown()) {
-        bits.push(requirement.input.speed.describe() + ' → ' + requirement.output.speed.describe() + ' rpm');
+        bits.push(requirement.input.speed.describe() + ' → ' + requirement.output.speed.describe());
       } else {
         var ratio = requirement.ratioRequirement();
         if (ratio.isKnown()) bits.push(ratio.describe());
       }
-      if (requirement.output.torque.isKnown()) bits.push('Couple ' + requirement.output.torque.describe() + ' N·m');
+      if (requirement.output.torque.isKnown()) bits.push('Couple ' + requirement.output.torque.describe());
     }
     var names = {};
     Object.keys(R.TransmissionAdvisor.KNOWLEDGE).forEach(function (id) {
@@ -306,6 +402,18 @@
     Object.keys(weights).forEach(function (key) { write('weight_' + key, weights[key]); });
     var template = el('type_template');
     if (template) template.value = JSON.stringify(this.technologySelection.toTemplate() || []);
+    TECHNICAL_MIRRORS.forEach(function (mirror) {
+      var node = el(mirror.id);
+      if (!node) return;
+      var value = self.technical[mirror.group][mirror.key];
+      if (mirror.kind === 'flag') node.checked = !!value;
+      else if (mirror.kind === 'text') { if (value != null) node.value = String(value); }
+      else write(mirror.id, value);
+    });
+    TEETH_READOUTS.forEach(function (readout) {
+      var node = el(readout.id);
+      if (node) node.textContent = String(self.technical.gearing[readout.key]);
+    });
     var parameters = this.technical.typeParameters;
     Object.keys(parameters).forEach(function (typeId) {
       Object.keys(parameters[typeId]).forEach(function (key) {
@@ -364,6 +472,36 @@
     });
     preferences.primary = axisForSearchMode((el('search_mode') || {}).value);
     this.preferences = preferences;
+
+    // Les réglages techniques font le même chemin retour : une URL partagée
+    // porte le module, la profondeur et les dentures, pas seulement le besoin.
+    var technical = new R.TechnicalSettingsModel();
+    TECHNICAL_MIRRORS.forEach(function (mirror) {
+      var node = el(mirror.id);
+      if (!node) return;
+      if (mirror.kind === 'flag') { technical.set(mirror.group, mirror.key, !!node.checked); return; }
+      if (mirror.kind === 'text') { if (node.value) technical.set(mirror.group, mirror.key, node.value); return; }
+      var value = read(mirror.id);
+      // Un champ vide ne veut dire « aucune valeur » que là où c'est un choix
+      // possible : ailleurs, il ne doit pas effacer le réglage d'usine.
+      if (value != null || mirror.nullable) technical.set(mirror.group, mirror.key, value);
+    });
+    TEETH_READOUTS.forEach(function (readout) {
+      var node = el(readout.id), value = node ? Number(node.textContent) : NaN;
+      if (isFinite(value)) technical.set('gearing', readout.key, value);
+    });
+    Object.keys(technical.typeParameters).forEach(function (typeId) {
+      Object.keys(technical.typeParameters[typeId]).forEach(function (key) {
+        var node = el('tp_' + typeId + '_' + key);
+        if (!node) return;
+        if (node.type === 'checkbox') technical.setTypeParameter(typeId, key, node.checked);
+        else if (node.value !== '') {
+          var number = Number(node.value);
+          technical.setTypeParameter(typeId, key, isFinite(number) && node.type !== 'text' ? number : node.value);
+        }
+      });
+    });
+    this.technical = technical;
 
     this._advice = null;
     var checked = Array.prototype.map.call(document.querySelectorAll('.type-checkbox:checked'), function (b) { return aliasType(b.value); });

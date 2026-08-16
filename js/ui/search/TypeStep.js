@@ -287,25 +287,35 @@
       label.textContent = 'Étage ' + (index + 1);
       item.appendChild(label);
 
-      var select = document.createElement('select');
-      select.setAttribute('aria-label', 'Famille de l’étage ' + (index + 1));
-      var auto = document.createElement('option');
-      auto.value = ''; auto.textContent = 'Auto';
-      select.appendChild(auto);
+      // Un cran accepte PLUSIEURS familles : « conique ou vis sans fin » est un
+      // cahier des charges courant, qu'un select unique ne savait pas dire.
+      var choices = document.createElement('div');
+      choices.className = 'stage-choices';
+      var auto = button('stage-choice' + (slot && slot.length ? '' : ' active'), 'Auto', function () {
+        selection.setStage(index, null);
+        self._changed();
+      });
+      auto.dataset.family = '';
+      auto.title = 'Toute famille compatible pour cet étage';
+      choices.appendChild(auto);
+
       GROUPS.forEach(function (group) {
         group.families.forEach(function (id) {
           if (id === 'rack') return;                 // la crémaillère n'est pas un étage de train
-          var option = document.createElement('option');
-          option.value = id; option.textContent = KNOWLEDGE[id].name;
-          select.appendChild(option);
+          var active = !!(slot && slot.indexOf(id) !== -1);
+          var chip = button('stage-choice' + (active ? ' active' : ''), KNOWLEDGE[id].name, function () {
+            var next = (slot || []).slice();
+            var at = next.indexOf(id);
+            if (at === -1) next.push(id); else next.splice(at, 1);
+            selection.setStage(index, next.length ? next : null);
+            self._changed();
+          });
+          chip.dataset.family = id;
+          chip.setAttribute('aria-pressed', String(active));
+          choices.appendChild(chip);
         });
       });
-      select.value = slot && slot.length === 1 ? slot[0] : '';
-      select.addEventListener('change', function () {
-        selection.setStage(index, select.value ? [select.value] : null);
-        self._changed();
-      });
-      item.appendChild(select);
+      item.appendChild(choices);
 
       var remove = button('architecture-stage-remove', '×', function () {
         selection.removeStage(index);
