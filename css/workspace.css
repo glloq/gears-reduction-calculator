@@ -385,3 +385,10 @@
   .detail-tabs { width: 100%; }
   button { min-height: 40px; }
 }
+
+/* §18 : ce que le filtrage vient de changer à la sélection. */
+.refine-notice {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--font-xs);
+  color: var(--muted);
+}

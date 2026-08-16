@@ -449,6 +449,9 @@
               <button id="refineResetBtn" class="btn-small" type="button" title="Réinitialiser les filtres">Réinitialiser</button>
             </div>
             <div id="refineChips" class="constraint-chips" hidden aria-live="polite"></div>
+            <!-- Ce que le filtrage vient de faire à la sélection : sans cela le
+                 viewer pouvait montrer une solution absente de la liste. -->
+            <p id="refineNotice" class="refine-notice" role="status" hidden></p>
             <div class="constraint-add">
               <button type="button" class="btn-add-constraint" id="addFilterBtn" aria-expanded="false" aria-controls="refineMenu">
                 + Ajouter un filtre<span class="constraint-count" hidden></span>

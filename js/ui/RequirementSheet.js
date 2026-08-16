@@ -13,30 +13,44 @@
 
   var FIELDS = GearApp.requirements.requirement.FIELDS;
 
+  // §8 : les symboles sont parfaits une fois compris, opaques avant. Un
+  // `<select>` natif affiche le MÊME texte ouvert et fermé — épeler « Exact »
+  // dans la liste l'épellerait aussi dans la case, et ferait déborder la
+  // colonne. Le mot est donc porté par l'infobulle et par le nom accessible,
+  // et l'épellation à l'ouverture attend un vrai composant de liste.
   var KINDS = [
-    { id: 'exact', label: '=' },
-    { id: 'target', label: '≈' },
-    { id: 'min', label: '≥' },
-    { id: 'max', label: '≤' },
-    { id: 'range', label: '⇄' }
+    { id: 'exact', label: '=', name: 'Exact' },
+    { id: 'target', label: '≈', name: 'Cible' },
+    { id: 'min', label: '≥', name: 'Minimum' },
+    { id: 'max', label: '≤', name: 'Maximum' },
+    { id: 'range', label: '⇄', name: 'Plage' }
   ];
 
   // Choix 2B : des fonctions, pas des grandeurs. Chacune remplit la fiche.
+  /**
+   * Raccourcis : ils disent QUELLES grandeurs décrivent le problème, et rien
+   * d'autre. Ils remplissaient auparavant des valeurs d'exemple (1500 → 125
+   * rpm, 80 N·m…) qui dimensionnaient réellement la recherche sans que
+   * personne ne les ait choisies. Ils ouvrent maintenant les bonnes lignes,
+   * vides, et posent le focus sur la première.
+   */
   var SHORTCUTS = [
-    { id: 'slow', label: 'Ralentir un moteur', apply: function (model, Q) {
-      model.set('input.speed', Q.exact(1500)).set('output.speed', Q.exact(125))
-        .clear('ratio').clear('output.travelPerRev').clear('output.force').clear('output.linearSpeed'); } },
-    { id: 'torque', label: 'Augmenter le couple', apply: function (model, Q) {
-      model.set('input.speed', Q.exact(1500)).set('input.torque', Q.exact(2))
-        .set('output.torque', Q.atLeast(80)).set('output.speed', Q.between(20, 40))
-        .clear('ratio').clear('output.travelPerRev').clear('output.force'); } },
-    { id: 'angle', label: 'Changer d’axe', apply: function (model, Q) {
-      model.set('ratio', Q.exact(20)).clear('output.speed').clear('output.travelPerRev').clear('output.force');
-      model.architecture.axisAngle = 90; } },
-    { id: 'linear', label: 'Déplacer linéairement', apply: function (model, Q) {
-      model.set('output.travelPerRev', Q.exact(100)).clear('ratio').clear('output.speed').clear('output.torque'); } },
-    { id: 'ratio', label: 'Rapport connu', apply: function (model, Q) {
-      model.set('ratio', Q.exact(12)).clear('output.speed').clear('output.travelPerRev').clear('output.force').clear('output.linearSpeed'); } }
+    { id: 'slow', label: 'Ralentir un moteur',
+      reveal: ['input.speed', 'output.speed'],
+      clear: ['ratio', 'output.travelPerRev', 'output.force', 'output.linearSpeed'] },
+    { id: 'torque', label: 'Augmenter le couple',
+      reveal: ['input.speed', 'input.torque', 'output.torque', 'output.speed'],
+      clear: ['ratio', 'output.travelPerRev', 'output.force'] },
+    { id: 'angle', label: 'Changer d’axe',
+      reveal: ['ratio'],
+      clear: ['output.speed', 'output.travelPerRev', 'output.force'],
+      architecture: { axisAngle: 90 } },
+    { id: 'linear', label: 'Déplacer linéairement',
+      reveal: ['output.travelPerRev'],
+      clear: ['ratio', 'output.speed', 'output.torque'] },
+    { id: 'ratio', label: 'Rapport connu',
+      reveal: ['ratio'],
+      clear: ['output.speed', 'output.travelPerRev', 'output.force', 'output.linearSpeed'] }
   ];
 
   function el(id) { return document.getElementById(id); }
@@ -54,8 +68,12 @@
 
   /** Grandeurs à afficher : les essentielles, plus tout ce qui est renseigné. */
   RequirementSheet.prototype.visibleFields = function () {
-    var model = this.session.requirement, linear = model.inferProblem().mode === 'rotationTranslation';
+    var session = this.session, model = session.requirement;
+    var linear = model.inferProblem().mode === 'rotationTranslation';
     return FIELDS.filter(function (field) {
+      // Une grandeur MONTRÉE compte, même vide : c'est ce qui permet d'ouvrir
+      // « Rapport » sans lui inventer une valeur.
+      if (session.isRevealed(field.path)) return true;
       if (field.linear && !linear) return model.get(field.path).isKnown();
       return field.essential || model.get(field.path).isKnown();
     });
@@ -114,11 +132,13 @@
 
     var kind = document.createElement('select');
     kind.className = 'quantity-kind';
-    kind.setAttribute('aria-label', field.label + ' : type de valeur');
+    kind.setAttribute('aria-label', field.label + ' : type de valeur (exact, cible, minimum, maximum, plage)');
     KINDS.forEach(function (option) {
       var node = document.createElement('option');
-      node.value = option.id; node.textContent = option.label;
-      node.title = titleFor(option.id);
+      node.value = option.id;
+      node.textContent = option.label;
+      node.title = option.name + ' — ' + titleFor(option.id);
+      node.setAttribute('aria-label', option.name);
       kind.appendChild(node);
     });
     kind.value = quantity.isKnown() ? quantity.kind : 'exact';
@@ -153,7 +173,10 @@
       remove.setAttribute('aria-label', 'Retirer ' + field.label);
       remove.textContent = '×';
       remove.addEventListener('click', function () {
+        // Retirer une ligne la retire vraiment : une grandeur seulement
+        // MONTRÉE doit aussi cesser de l'être, sinon elle revient aussitôt.
         self.session.requirement.clear(field.path);
+        self.session.conceal(field.path);
         self._changed();
       });
       row.appendChild(remove);
@@ -212,11 +235,13 @@
       item.dataset.field = field.path;
       item.textContent = field.label;
       item.addEventListener('click', function () {
-        var Q = GearApp.requirements.Quantity;
-        self.session.requirement.set(field.path, Q.exact(defaultFor(field), field.unit));
+        // §2 : la ligne s'ouvre VIDE. Poser « 12:1 » parce qu'on a cliqué sur
+        // « Rapport » dimensionnerait le réducteur à la place de l'utilisateur.
+        self.session.reveal(field.path);
         self.menu.hidden = true;
         self.addButton.setAttribute('aria-expanded', 'false');
         self._changed();
+        self._focus(field.path);
       });
       self.menu.appendChild(item);
     });
@@ -280,8 +305,12 @@
         button.dataset.shortcut = shortcut.id;
         button.textContent = shortcut.label;
         button.addEventListener('click', function () {
-          shortcut.apply(self.session.requirement, GearApp.requirements.Quantity);
+          var model = self.session.requirement;
+          (shortcut.clear || []).forEach(function (path) { model.clear(path); self.session.conceal(path); });
+          (shortcut.reveal || []).forEach(function (path) { self.session.reveal(path); });
+          if (shortcut.architecture) Object.assign(model.architecture, shortcut.architecture);
           self._changed();
+          self._focus(shortcut.reveal && shortcut.reveal[0]);
         });
         self.shortcuts.appendChild(button);
       });
@@ -314,18 +343,12 @@
     return isFinite(parsed) ? parsed : null;
   }
 
-  function defaultFor(field) {
-    switch (field.path) {
-      case 'output.speed': return 125;
-      case 'output.torque': return 80;
-      case 'output.force': return 200;
-      case 'output.travelPerRev': return 100;
-      case 'output.linearSpeed': return 500;
-      case 'ratio': return 12;
-      case 'input.speed': return 1500;
-      default: return 10;
-    }
-  }
+  /** Pose le curseur dans la ligne qui vient d'apparaître. */
+  RequirementSheet.prototype._focus = function (path) {
+    if (!path || !this.root) return;
+    var input = this.root.querySelector('.quantity-row[data-path="' + path + '"] [data-slot="a"]');
+    if (input && input.focus) input.focus();
+  };
 
   function titleFor(kind) {
     return { exact: 'Exactement cette valeur', target: 'Autour de cette valeur', min: 'Au moins', max: 'Au plus', range: 'Entre deux valeurs' }[kind] || '';

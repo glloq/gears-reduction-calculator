@@ -263,13 +263,49 @@
   var LABELS = { recommended: 'Recommandée' };
   CATEGORIES.forEach(function (category) { LABELS[category.id] = category.label; });
 
-  function label(id) { return LABELS[id] || id; }
+  /**
+   * §17 : « Recommandée » répond à « quel est le meilleur compromis ? ». Ce
+   * n'est pas la question posée quand on a demandé le couple maximum, ni quand
+   * on cherche à battre un réducteur existant. Le vocabulaire des résultats
+   * doit suivre la question, sinon la réponse semble porter sur autre chose.
+   */
+  var LEAD_LABELS = {
+    maximize: { torque: 'Couple maximum', ratio: 'Rapport maximum', efficiency: 'Rendement maximum',
+      compact: 'Le plus compact', simple: 'Le plus simple' },
+    improve: { compact: 'Meilleure amélioration', efficiency: 'Meilleure amélioration',
+      torque: 'Meilleure amélioration', simple: 'Meilleure amélioration' }
+  };
+
+  /**
+   * Libellé du badge de tête pour cette intention.
+   * @param {object} [intent] `{mode, objective}` — sans lui, le compromis.
+   */
+  function leadLabel(intent) {
+    if (!intent) return LABELS.recommended;
+    var table = LEAD_LABELS[intent.mode];
+    return (table && table[intent.objective]) || LABELS.recommended;
+  }
+
+  function label(id, intent) {
+    if (id === 'recommended') return leadLabel(intent);
+    return LABELS[id] || id;
+  }
+
+  /** Pourquoi cette solution mène, dans les termes de la question posée. */
+  function leadReason(intent) {
+    if (intent && intent.mode === 'maximize') {
+      var target = LEAD_LABELS.maximize[intent.objective];
+      return target ? target.toLowerCase() + ' de l’espace exploré' : 'meilleur de l’espace exploré';
+    }
+    if (intent && intent.mode === 'improve') return 'meilleur gain face au réducteur décrit';
+    return 'meilleur compromis pour vos priorités';
+  }
 
   /** Justification en français, jamais un score nu. */
-  function explain(solution, badges, violations) {
+  function explain(solution, badges, violations, intent) {
     var parts = [];
     (badges || []).forEach(function (id) {
-      if (id === 'recommended') { parts.push('meilleur compromis pour vos priorités'); return; }
+      if (id === 'recommended') { parts.push(leadReason(intent)); return; }
       for (var i = 0; i < CATEGORIES.length; i++) if (CATEGORIES[i].id === id) parts.push(CATEGORIES[i].reason);
     });
     if (!parts.length) {
@@ -287,7 +323,8 @@
   }
 
   return {
-    evaluate: evaluate, explain: explain, label: label,
+    evaluate: evaluate, explain: explain, label: label, leadLabel: leadLabel,
+    LEAD_LABELS: LEAD_LABELS,
     CATEGORIES: CATEGORIES, PARETO_OBJECTIVES: PARETO_OBJECTIVES, MEANINGFUL_GAIN: MEANINGFUL_GAIN,
     objectivesFor: objectivesFor, BASE_OBJECTIVES: BASE_OBJECTIVES, OPTIONAL_OBJECTIVES: OPTIONAL_OBJECTIVES
   };

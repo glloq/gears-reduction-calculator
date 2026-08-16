@@ -607,6 +607,9 @@
     // que soient les filtres, et ne s'affiche que si l'écart est réel.
     var Evaluator = GearApp.requirements.SolutionEvaluator;
     var preferences = this.session ? this.session.preferences : null;
+    // §17 : le vocabulaire des badges suit la question posée — « couple
+    // maximum » quand c'est le couple qu'on poussait, pas « recommandée ».
+    var intent = this.session ? this.session.intent : null;
     var annotation = Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences,
       this.session ? this.session.technologySelection : null);
     var poolIndexOf = info && info.pool ? function (position) { return self._indices[position]; }
@@ -623,7 +626,7 @@
       tile.tabIndex = 0;
       tile.dataset.index = index;
       tile.setAttribute('aria-label', 'Solution ' + (position + 1) +
-        (badges.length ? ' — ' + badges.map(Evaluator.label).join(', ') : ''));
+        (badges.length ? ' — ' + badges.map(function (id) { return Evaluator.label(id, intent); }).join(', ') : ''));
 
       var linear = s.mode === 'rotationTranslation';
       // Cartes volontairement courtes : de quoi DÉCIDER. SF/SH, efforts et
@@ -642,13 +645,13 @@
            ['Étages', String((s.stages || []).length), false]];
 
       var badgeMarkup = badges.map(function (id) {
-        return '<span class="recommendation-badge ' + id + '">' + (id === 'recommended' ? '★ ' : '') + Evaluator.label(id) + '</span>';
+        return '<span class="recommendation-badge ' + id + '">' + (id === 'recommended' ? '★ ' : '') + Evaluator.label(id, intent) + '</span>';
       }).join('');
       var origin = s.origin === 'variante' ? '<span class="recommendation-badge variant">Variante</span>' : '';
       var architecture = (s.stages || []).map(function (x) { return TYPE_NAMES[x.type] || x.type; }).join(' → ');
       // Choix 13C : la carte dit aussi si la solution TIENT les contraintes.
       var violations = annotation.compliance[poolIndexOf(position)] || (preferences ? [] : null);
-      var why = Evaluator.explain(s, badges, violations);
+      var why = Evaluator.explain(s, badges, violations, intent);
 
       tile.innerHTML =
         '<header class="solution-card-head">' + badgeMarkup + origin +

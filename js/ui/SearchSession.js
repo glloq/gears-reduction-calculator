@@ -137,8 +137,28 @@
     this.technologySelection = new R.TechnologySelectionModel(seed.technologySelection || {});
     this.technical = new R.TechnicalSettingsModel(seed.technical || {});
     this.existing = new R.ExistingReducer(seed.existing || {});
+    // Grandeurs MONTRÉES mais pas encore renseignées. Ajouter « Rapport » doit
+    // ouvrir une ligne vide, pas poser 12:1 : une valeur que l'utilisateur n'a
+    // pas choisie ne doit jamais dimensionner son réducteur en silence (§21).
+    this.revealed = (seed.revealed || []).slice();
     this._advice = null;
   }
+
+  /** Montre une grandeur sans rien y écrire. */
+  SearchSession.prototype.reveal = function (path) {
+    if (this.revealed.indexOf(path) === -1) this.revealed.push(path);
+    return this;
+  };
+
+  SearchSession.prototype.conceal = function (path) {
+    var at = this.revealed.indexOf(path);
+    if (at !== -1) this.revealed.splice(at, 1);
+    return this;
+  };
+
+  SearchSession.prototype.isRevealed = function (path) {
+    return this.revealed.indexOf(path) !== -1;
+  };
 
   /**
    * Options d'ingénierie du besoin courant, pour analyser une chaîne décrite à
@@ -561,7 +581,8 @@
       preferences: this.preferences.toJSON(),
       technologySelection: this.technologySelection.toJSON(),
       technical: this.technical.toJSON(),
-      existing: this.existing.toJSON()
+      existing: this.existing.toJSON(),
+      revealed: this.revealed.slice()
     };
   };
 
@@ -576,6 +597,7 @@
     this.technologySelection = draft.technologySelection;
     this.technical = draft.technical;
     this.existing = draft.existing;
+    this.revealed = draft.revealed;
     this._advice = null;
     return this;
   };
