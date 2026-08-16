@@ -6,10 +6,10 @@
  * UMD : testable sous Node (tests/geometry-layout.test.js).
  */
 (function (root, factory) {
-  var api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.GearGeometryLayout = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+  var common = typeof module === 'object' && module.exports;
+  var api = factory(common ? require('../core/SceneBuilder.js') : root.GearSceneBuilder);
+  if (common) module.exports = api; else root.GearGeometryLayout = api;
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -20,90 +20,84 @@
   }
   function present(value) { return Number.isFinite(value) && value > 0 ? value : null; }
 
-  function member(role, kind, cx, cy, sizes, label) {
-    return { role: role, kind: kind, cx: cx, cy: cy, label: label,
-      pitchDiameter: present(sizes.pitch), outsideDiameter: present(sizes.outside),
-      rootDiameter: present(sizes.root), baseDiameter: present(sizes.base),
-      teeth: present(sizes.teeth), width: present(sizes.width) };
+  /**
+   * Membre positionné, construit à partir d'un MEMBRE DE LA SCÈNE.
+   * `schematic` propage la provenance : une cote reconstruite ne doit pas être
+   * cotée comme si le moteur l'avait calculée.
+   */
+  function place(entry, role, cx, cy, label, extra) {
+    var g = entry ? entry.geometry : {};
+    return Object.assign({
+      memberId: entry ? entry.id : null,
+      role: role, kind: entry ? entry.kind : 'gear', cx: cx, cy: cy, label: label,
+      pitchDiameter: present(g.pitchDiameter), outsideDiameter: present(g.outsideDiameter),
+      rootDiameter: present(g.rootDiameter), baseDiameter: present(g.baseDiameter),
+      teeth: present(g.teeth), width: present(g.width),
+      coneAngleDeg: Number.isFinite(g.coneAngleDeg) ? g.coneAngleDeg : null,
+      travelPerRevolution: present(g.travelPerRevolution),
+      schematic: !!(entry && entry.schematic),
+      exact: entry ? entry.isExact.bind(entry) : function () { return false; }
+    }, extra || {});
   }
 
   /**
    * Membres d'un étage, aux positions réelles issues de l'entraxe calculé.
    * Le repère local a pour origine le centre du membre d'entrée.
    */
-  function members(stage, x, y, centerDistance) {
-    var g = stage.geometry || {};
-    var p = stage.parameters || {};
-    var m = finite(p.module, 1);
-    var width = finite(g.width, null);
+  function members(scene, index, stage, x, y, centerDistance) {
+    var byRole = {};
+    scene.stageMembers(index).forEach(function (entry) { byRole[entry.role] = entry; });
     var type = stage.type === 'epicyclic' ? 'planetary' : stage.type;
 
     if (type === 'planetary') {
-      var sun = finite(g.sunDiameter, m * finite(stage.sunTeeth, 12));
-      var ring = finite(g.ringDiameter, m * finite(stage.ringTeeth, 48));
-      var planet = finite(g.planetDiameter, (ring - sun) / 2);
-      var count = Math.max(2, Math.round(finite(stage.planetCount, 3)));
-      var orbit = (sun + planet) / 2;
+      var count = Math.max(2, Math.round(finite(byRole.P && byRole.P.count, 3)));
+      var orbit = finite(byRole.P && byRole.P.orbitRadius, 0);
       var list = [
-        member('ring', 'internal-ring', x, y, { pitch: ring, outside: ring + 2 * m, teeth: stage.ringTeeth, width: width }, 'R · couronne'),
-        member('sun', 'gear', x, y, { pitch: sun, outside: sun + 2 * m, root: sun - 2.5 * m, teeth: stage.sunTeeth, width: width }, 'S · solaire')
+        place(byRole.R, 'ring', x, y, 'R · couronne'),
+        place(byRole.S, 'sun', x, y, 'S · solaire')
       ];
       for (var i = 0; i < count; i++) {
         var a = 2 * Math.PI * i / count;
-        list.push(member('planet', 'gear', x + Math.cos(a) * orbit, y + Math.sin(a) * orbit,
-          { pitch: planet, outside: planet + 2 * m, root: planet - 2.5 * m, teeth: stage.planetTeeth, width: width }, 'P · satellite'));
+        list.push(place(byRole.P, 'planet', x + Math.cos(a) * orbit, y + Math.sin(a) * orbit, 'P · satellite'));
       }
-      list.push(member('carrier', 'carrier', x, y, { pitch: 2 * orbit }, 'C · porte-satellites'));
+      list.push(place(byRole.C, 'carrier', x, y, 'C · porte-satellites',
+        { pitchDiameter: orbit ? 2 * orbit : null, count: count }));
       return list;
     }
     if (type === 'rack') {
-      var pinion = finite(g.pitchDiameterInput, m * finite(stage.pinionTeeth, 20));
+      var pinionD = finite(byRole.input && byRole.input.geometry.pitchDiameter, 20);
       return [
-        member('input', 'gear', x, y - pinion / 2, { pitch: pinion, outside: finite(g.maxDiameter, pinion + 2 * m),
-          root: pinion - 2.5 * m, teeth: stage.pinionTeeth, width: width }, 'Pignon'),
-        member('output', 'rack', x, y, { pitch: null, width: width }, 'Crémaillère')
+        place(byRole.input, 'input', x, y - pinionD / 2, 'Pignon'),
+        place(byRole.rack, 'output', x, y, 'Crémaillère', { linearId: byRole.rack ? byRole.rack.id : null })
       ];
     }
     if (type === 'bevel') {
-      var sigma = finite(g.shaftAngleDeg, 90);
-      var d1 = finite(g.pitchDiameterInput, 20), d2 = finite(g.pitchDiameterOutput, 40);
-      var out = member('output', 'cone', x + Math.cos(rad(sigma - 90)) * (d1 + d2) / 2,
-        y + Math.sin(rad(sigma - 90)) * (d1 + d2) / 2 + d1 / 2,
-        { pitch: d2, outside: g.outerDiameterOutput, teeth: stage.output && stage.output.teeth, width: width }, 'Roue conique');
-      out.coneAngleDeg = finite(g.pitchConeAngleOutput, 45);
-      var input = member('input', 'cone', x, y,
-        { pitch: d1, outside: g.outerDiameterInput, teeth: stage.input && stage.input.teeth, width: width }, 'Pignon conique');
-      input.coneAngleDeg = finite(g.pitchConeAngleInput, 45);
-      input.shaftAngleDeg = sigma;
-      return [input, out];
+      var sigma = finite((scene.connections[index] || {}).shaftAngleDeg, 90);
+      var d1 = finite(byRole.input && byRole.input.geometry.pitchDiameter, 20);
+      var d2 = finite(byRole.output && byRole.output.geometry.pitchDiameter, 40);
+      var input = place(byRole.input, 'input', x, y, 'Pignon conique', { shaftAngleDeg: sigma });
+      var output = place(byRole.output, 'output',
+        x + Math.cos(rad(sigma - 90)) * (d1 + d2) / 2,
+        y + Math.sin(rad(sigma - 90)) * (d1 + d2) / 2 + d1 / 2, 'Roue conique');
+      return [input, output];
     }
     if (type === 'worm') {
       // Axes perpendiculaires : la roue se place sous la vis, à l'entraxe réel.
       return [
-        member('input', 'worm', x, y, { pitch: finite(g.pitchDiameterInput, 10), teeth: stage.wormStarts, width: width }, 'Vis'),
-        member('output', 'gear', x, y + centerDistance, { pitch: finite(g.pitchDiameterOutput, 40),
-          outside: finite(g.maxDiameter, null), teeth: stage.wheelTeeth, width: width }, 'Roue')
+        place(byRole.input, 'input', x, y, 'Vis'),
+        place(byRole.output, 'output', x, y + centerDistance, 'Roue')
       ];
     }
     if (type === 'internal') {
       return [
-        member('output', 'internal-ring', x, y, { pitch: finite(g.pitchDiameterOutput, 60),
-          outside: g.outsideDiameterOutput, base: g.baseDiameterOutput, teeth: stage.output && stage.output.teeth, width: width }, 'Couronne'),
-        member('input', 'gear', x + centerDistance, y, { pitch: finite(g.pitchDiameterInput, 20),
-          outside: g.outsideDiameterInput, root: g.rootDiameterInput, base: g.baseDiameterInput,
-          teeth: stage.input && stage.input.teeth, width: width }, 'Pignon')
+        place(byRole.output, 'output', x, y, 'Couronne'),
+        place(byRole.input, 'input', x + centerDistance, y, 'Pignon')
       ];
     }
     var flexible = type === 'belt' || type === 'chain';
     return [
-      member('input', flexible ? (type === 'belt' ? 'pulley' : 'sprocket') : 'gear', x, y,
-        { pitch: finite(g.pitchDiameterInput, 20), outside: g.outsideDiameterInput, root: g.rootDiameterInput,
-          base: g.baseDiameterInput, teeth: stage.input && stage.input.teeth, width: width },
-        flexible ? 'Poulie/pignon entrée' : 'Entrée'),
-      member('output', flexible ? (type === 'belt' ? 'pulley' : 'sprocket') : 'gear', x + centerDistance, y,
-        { pitch: finite(g.pitchDiameterOutput, 40), outside: g.outsideDiameterOutput, root: g.rootDiameterOutput,
-          base: g.baseDiameterOutput, teeth: stage.output && stage.output.teeth, width: width },
-        flexible ? 'Poulie/pignon sortie' : 'Sortie')
+      place(byRole.input, 'input', x, y, flexible ? 'Poulie/pignon entrée' : 'Entrée'),
+      place(byRole.output, 'output', x + centerDistance, y, flexible ? 'Poulie/pignon sortie' : 'Sortie')
     ];
   }
 
@@ -126,6 +120,7 @@
 
   function build(solution, options) {
     var opts = options || {};
+    var scene = opts.scene && opts.scene.member ? opts.scene : SceneBuilder.build(solution || {});
     // Marges et écarts PROPORTIONNELS au réducteur : un train de pignons de
     // 20 mm et un convoyeur de 2 m doivent occuper la même part du dessin.
     var span = (solution && solution.stages || []).reduce(function (max, stage) {
@@ -143,7 +138,9 @@
       if (stage.type === 'rack') width = Math.max(width, finite(geometry.travelPerRevolution, size * 2));
       var item = { index: index, stage: stage, type: stage.type, x: cursor + size / 2, y: margin + size / 2 + headroom,
         width: width, height: size + 2 * headroom, diameter: size, centerDistance: center };
-      item.members = members(stage, item.x, item.y, center);
+      item.exactCenterDistance = !!(scene.connections[index] && scene.connections[index].exactCenterDistance);
+      item.schematic = scene.stageMembers(index).some(function (entry) { return entry.schematic; });
+      item.members = members(scene, index, stage, item.x, item.y, center);
       item.dimensions = stageDimensions(stage, center);
       item.axis = { x1: item.x - size / 2 - margin * 0.3, x2: item.x + width + margin * 0.3, y: item.y };
       cursor += width + gap;
@@ -151,10 +148,10 @@
       return item;
     });
     var overall = (solution && solution.dimensions) || {};
-    return { stages: stages, margin: margin, headroom: headroom,
+    return { stages: stages, scene: scene, margin: margin, headroom: headroom,
       bounds: { x: 0, y: 0, width: Math.max(4 * margin, cursor - gap + margin), height: Math.max(3 * margin, bottom + margin) },
       envelope: { length: present(overall.length), maxDiameter: present(overall.maxDiameter), width: present(overall.width) } };
   }
 
-  return { build: build, members: members, stageDimensions: stageDimensions };
+  return { build: build, members: members, place: place, stageDimensions: stageDimensions };
 });

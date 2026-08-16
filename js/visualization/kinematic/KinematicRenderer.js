@@ -34,12 +34,20 @@
 
   // ===== Arbres =====
 
-  /** Vitesse relative d'un arbre : 1 pour l'entrée, sortie de son étage sinon. */
+  /**
+   * Vitesse relative d'un arbre, lue dans la SCÈNE : ce sont les mêmes arbres
+   * que ceux du modèle canonique, pas une reconstruction locale.
+   */
   KinematicRenderer.prototype._shaftSpeed = function (shaft) {
-    var state = this.scene && this.scene.kinematics;
-    if (!state) return shaft.stageIndex == null ? 1 : 0;
-    if (shaft.stageIndex == null) return 1;
-    return GearKinematicsEngine.relative(state, 's' + shaft.stageIndex + '-output');
+    if (!this.scene) return shaft.stageIndex == null ? 1 : 0;
+    var record = shaft.stageIndex == null ? this.scene.shafts[0] : this.scene.shaftFor(shaft.stageIndex);
+    return record && Number.isFinite(record.relativeSpeed) ? record.relativeSpeed : 0;
+  };
+
+  /** Identifiant du membre dont la rotation représente cet arbre. */
+  KinematicRenderer.prototype._shaftMember = function (shaft) {
+    if (shaft.stageIndex == null) return 's0-input';
+    return 's' + shaft.stageIndex + '-output';
   };
 
   /**
@@ -62,7 +70,7 @@
     var rpm = Number.isFinite(inputRpm) ? inputRpm * speed : null;
     var spin = KinematicPrimitives.spinMark(shaft.x, shaft.y, vertical ? 28 : 40);
     overlay.appendChild(spin);
-    this._spins.push({ el: spin, x: shaft.x, y: shaft.y, speed: speed });
+    this._spins.push({ el: spin, x: shaft.x, y: shaft.y, memberId: this._shaftMember(shaft) });
 
     var text = 'S' + shaft.id + (shaft.coaxial ? '′' : '');
     if (rpm != null) text += ' · ' + fmt(Math.abs(rpm), 0) + ' rpm ' + (speed < 0 ? '↻' : '↺');
@@ -209,11 +217,19 @@
   };
 
   KinematicRenderer.prototype.setAnimationAngle = function (inputAngle) {
-    if (!this.svg || !this.svg.isConnected) return;
+    if (!this.svg || !this.svg.isConnected || !this.scene) return;
     this._angle = finite(inputAngle, 0);
-    var angle = this._angle;
+    this.applyPose(GearKinematicsEngine.pose(this.scene.kinematics, this._angle));
+  };
+
+  /** applyPose(pose) — mêmes angles que la Denture et la Géométrie. */
+  KinematicRenderer.prototype.applyPose = function (pose) {
+    if (!this.svg || !pose) return;
+    var members = pose.members || {};
+    var angle = finite(pose.inputAngle, 0);
     this._spins.forEach(function (spin) {
-      spin.el.setAttribute('transform', 'rotate(' + (spin.speed * angle).toFixed(2) + ' ' + spin.x.toFixed(2) + ' ' + spin.y.toFixed(2) + ')');
+      var posed = members[spin.memberId] || {};
+      spin.el.setAttribute('transform', 'rotate(' + finite(posed.angle, 0).toFixed(2) + ' ' + spin.x.toFixed(2) + ' ' + spin.y.toFixed(2) + ')');
     });
     // Point lumineux parcourant la chaîne entrée → sortie.
     if (this._flow && this._flow.points.length > 1) {

@@ -174,6 +174,117 @@ test('belts and chains use the exact tangent path and travelling elements', asyn
   }
 });
 
+test('angle 0 to 120 moves something in every family and every view', async ({ page }) => {
+  // Le test qui manquait : chaque famille DOIT bouger dans chaque vue où un
+  // mouvement est attendu. C'est ce qui empêche une vue de rester muette.
+  const expected = {
+    spur: { teeth: true, geometry: true, kinematic: true },
+    helical: { teeth: true, geometry: true, kinematic: true },
+    internal: { teeth: true, geometry: true, kinematic: true },
+    bevel: { teeth: true, geometry: true, kinematic: true },
+    worm: { teeth: true, geometry: true, kinematic: true },
+    belt: { teeth: true, geometry: true, kinematic: true },
+    chain: { teeth: true, geometry: true, kinematic: true },
+    planetary: { teeth: true, geometry: true, kinematic: true },
+    rack: { teeth: true, geometry: true, kinematic: true }
+  };
+  for (const [name, views] of Object.entries(expected)) {
+    await mount(page, [name]);
+    for (const [view, shouldMove] of Object.entries(views)) {
+      await showView(page, view);
+      const moved = await page.evaluate(() => {
+        // Empreinte de TOUTES les transformations animées de la vue courante.
+        const snapshot = () => Array.from(document.querySelectorAll(
+          '#svgContainer .rotor, #svgContainer .planet-orbit, #svgContainer .carrier-arms,' +
+          '#svgContainer .cone-phase, #svgContainer .train-wheel, #svgContainer .index-rotor,' +
+          '#svgContainer .linear-slider, #svgContainer .spin-mark, #svgContainer .belt-tooth,' +
+          '#svgContainer .chain-link, #svgContainer .power-pulse'
+        )).map(el => el.getAttribute('transform') + '|' + el.getAttribute('cx') + ',' + el.getAttribute('cy')).join(';');
+        const renderer = window.__viewer.renderer();
+        renderer.setAnimationAngle(0);
+        const before = snapshot();
+        renderer.setAnimationAngle(120);
+        return { before, after: snapshot() };
+      });
+      if (shouldMove) expect(moved.after, name + ' / ' + view + ' est resté figé').not.toBe(moved.before);
+      expect(moved.after, name + ' / ' + view).not.toMatch(/NaN/);
+    }
+  }
+});
+
+test('the same input angle yields the same member angles in all three views', async ({ page }) => {
+  await mount(page, ['spur', 'planetary']);
+  const angles = {};
+  for (const view of ['teeth', 'geometry', 'kinematic']) {
+    await showView(page, view);
+    angles[view] = await page.evaluate(() => {
+      const renderer = window.__viewer.renderer();
+      renderer.setAnimationAngle(150);
+      // La pose est demandée au moteur, pas relue dans le DOM : c'est elle qui
+      // doit être identique d'une vue à l'autre.
+      const pose = GearKinematicsEngine.pose(renderer.scene.kinematics, 150);
+      return Object.fromEntries(Object.entries(pose.members).map(([id, m]) => [id, Number(m.angle.toFixed(6))]));
+    });
+  }
+  expect(angles.geometry).toEqual(angles.teeth);
+  expect(angles.kinematic).toEqual(angles.teeth);
+  // Et cette pose n'est pas triviale : les membres ne tournent pas tous pareil.
+  expect(new Set(Object.values(angles.teeth)).size).toBeGreaterThan(2);
+});
+
+test('belt markers travel around the pulleys, not only along the strands', async ({ page }) => {
+  await mount(page, ['belt']);
+  await showView(page, 'teeth');
+  const trace = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    const marker = document.querySelector('.belt-tooth');
+    const link = renderer.model.stages[0].links[0];
+    const centre1 = link.path.centre1, centre2 = link.path.centre2;
+    const positions = [];
+    // Un tour complet de COURROIE, pas d'arbre : la courroie est bien plus
+    // longue que la circonférence de la petite poulie.
+    const perRevolution = Math.PI * 2 * link.path.radius1;
+    const span = 360 * link.path.length / perRevolution;
+    for (let i = 0; i <= 120; i++) {
+      renderer.setAnimationAngle(i * span / 120);
+      const t = marker.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
+      const x = Number(t[1]), y = Number(t[2]);
+      positions.push({ x, y,
+        d1: Math.hypot(x - centre1.x, y - centre1.y), d2: Math.hypot(x - centre2.x, y - centre2.y) });
+    }
+    return { positions, r1: link.path.radius1, r2: link.path.radius2 };
+  });
+  // Le marqueur touche les deux poulies au cours du parcours.
+  const onPulley1 = trace.positions.filter(p => Math.abs(p.d1 - trace.r1) < 0.5).length;
+  const onPulley2 = trace.positions.filter(p => Math.abs(p.d2 - trace.r2) < 0.5).length;
+  expect(onPulley1, 'jamais enroulé sur la petite poulie').toBeGreaterThan(0);
+  expect(onPulley2, 'jamais enroulé sur la grande poulie').toBeGreaterThan(0);
+  // Il ne rentre jamais dans une poulie, et ne saute jamais.
+  trace.positions.forEach(p => {
+    expect(p.d1).toBeGreaterThan(trace.r1 - 0.5);
+    expect(p.d2).toBeGreaterThan(trace.r2 - 0.5);
+  });
+});
+
+test('the animation cadence follows the mode, the poses never do', async ({ page }) => {
+  await mount(page, ['spur']);
+  await showView(page, 'teeth');
+  const cadence = await page.evaluate(() => {
+    const animation = window.__viewer.renderer().animation;
+    const pedagogical = animation.setMode('pedagogical').degreesPerSecond();
+    const relative = animation.setMode('relative').degreesPerSecond();
+    animation.setMode('pedagogical');
+    return { pedagogical, relative, inputRpm: animation.inputRpm };
+  });
+  expect(cadence.inputRpm).toBe(1500);
+  expect(cadence.pedagogical).toBeGreaterThan(0);
+  expect(cadence.relative).toBeGreaterThan(0);
+  // Le bouton de la barre bascule réellement le mode partagé.
+  await page.locator('#viewerMode').click();
+  await expect(page.locator('#viewerMode')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => window.__viewer.renderer().animation.mode)).toBe('relative');
+});
+
 test('the level of detail follows the zoom, adding construction traces', async ({ page }) => {
   await mount(page, ['spur']);
   await showView(page, 'teeth');

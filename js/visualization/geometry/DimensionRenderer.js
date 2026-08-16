@@ -55,24 +55,31 @@
     var baseline = item.y + item.diameter / 2 + step * 2;
 
     if (has(item.centerDistance)) {
+      var exactCenter = item.exactCenterDistance !== false;
       var a = members[0], b = members[1];
       if (a && b) {
-        linear(group, primitives, a.cx, baseline, b.cx, baseline, 'c = ' + fmt(item.centerDistance) + ' mm',
-          { from: a.cy, to: b.cy }, scale);
+        linear(group, primitives, a.cx, baseline, b.cx, baseline,
+          (exactCenter ? 'c = ' : '~ c = ') + fmt(item.centerDistance) + ' mm', { from: a.cy, to: b.cy }, scale);
       } else {
         linear(group, primitives, item.x, baseline, item.x + item.centerDistance, baseline,
-          'c = ' + fmt(item.centerDistance) + ' mm', null, scale);
+          (exactCenter ? 'c = ' : '~ c = ') + fmt(item.centerDistance) + ' mm', null, scale);
       }
     }
 
     // Les cotes de diamètre sont empilées : deux roues concentriques (ou
     // simplement proches) ne doivent jamais superposer leurs valeurs.
+    // Une cote RECONSTRUITE est marquée « ~ » et prend la classe `schematic` :
+    // sur un plan, une valeur non calculée ne doit pas se lire comme une cote.
     members.filter(function (member) { return member.role !== 'planet' && member.role !== 'carrier'; })
       .forEach(function (member, index) {
-        diameter(group, primitives, member, member.pitchDiameter, 'Ø', 'pitch-diameter', -step * (index + 0.4), scale);
+        var exactPitch = member.exact ? member.exact('pitchDiameter') : true;
+        diameter(group, primitives, member, member.pitchDiameter, exactPitch ? 'Ø' : '~ Ø',
+          'pitch-diameter' + (exactPitch ? '' : ' schematic'), -step * (index + 0.4), scale);
         if (has(member.outsideDiameter) && Math.abs(member.outsideDiameter - member.pitchDiameter) > 0.05) {
+          var exactTip = member.exact ? member.exact('outsideDiameter') : true;
           primitives.label(group, member.cx, member.cy - member.outsideDiameter / 2 - step * (index + 0.5),
-            'Ø tête ' + fmt(member.outsideDiameter) + ' mm', 'geometry-dimension outside-diameter', { scale: scale });
+            (exactTip ? 'Ø tête ' : '~ Ø tête ') + fmt(member.outsideDiameter) + ' mm',
+            'geometry-dimension outside-diameter' + (exactTip ? '' : ' schematic'), { scale: scale });
         }
       });
 

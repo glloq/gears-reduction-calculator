@@ -7,21 +7,35 @@
   'use strict';
   function finite(v) { return Number.isFinite(v); }
   function format(v, digits, suffix) { return finite(v) ? v.toFixed(digits == null ? 2 : digits) + (suffix || '') : null; }
-  function model(solution, index, registry) {
+  /**
+   * Les vitesses viennent de la SCÈNE quand elle est fournie : l'inspecteur ne
+   * refait pas la cascade des rapports, il lit le même moteur cinématique que
+   * les trois vues. La reconstruction locale ne subsiste qu'en dernier recours.
+   */
+  function model(solution, index, registry, scene) {
     var stage = (solution && solution.stages || [])[index], mech = (solution && solution.mechanical || [])[index] || {};
     if (!stage) return null;
     var geometry = stage.geometry || mech.geometry || {}, teeth = [];
     try { teeth = registry && registry.getToothCounts ? registry.getToothCounts(stage) : []; } catch (e) { teeth = []; }
-    var inputRpm = index === 0 ? solution.inputSpeedRpm : null;
-    if (!finite(inputRpm) && finite(solution.inputSpeedRpm)) inputRpm = solution.inputSpeedRpm / (solution.mechanical || []).slice(0, index).reduce(function (r, m) { return r * (Math.abs(m.ratio) || 1); }, 1);
-    var outputRpm = finite(inputRpm) && finite(mech.ratio) ? inputRpm / Math.abs(mech.ratio) : null;
+    var inputRpm = null, outputRpm = null;
+    if (scene && scene.member) {
+      var driving = scene.member('s' + index + '-input') || scene.member('s' + index + '-S');
+      var driven = scene.member('s' + index + '-output') || scene.member('s' + index + '-C');
+      if (driving && finite(driving.mechanical.rpm)) inputRpm = driving.mechanical.rpm;
+      if (driven && finite(driven.mechanical.rpm)) outputRpm = driven.mechanical.rpm;
+    }
+    if (!finite(inputRpm)) {
+      inputRpm = index === 0 ? solution.inputSpeedRpm : null;
+      if (!finite(inputRpm) && finite(solution.inputSpeedRpm)) inputRpm = solution.inputSpeedRpm / (solution.mechanical || []).slice(0, index).reduce(function (r, m) { return r * (Math.abs(m.ratio) || 1); }, 1);
+    }
+    if (!finite(outputRpm)) outputRpm = finite(inputRpm) && finite(mech.ratio) ? inputRpm / Math.abs(mech.ratio) : null;
     return { index: index, type: stage.type, teeth: teeth.filter(function (v) { return finite(v) && v > 0; }), ratio: mech.ratio,
       efficiency: mech.efficiency, centerDistance: geometry.centerDistance, module: stage.parameters && stage.parameters.module,
       inputRpm: inputRpm, outputRpm: outputRpm, inputTorque: mech.inputTorqueNm, outputTorque: mech.outputTorqueNm || mech.torqueNm,
       bendingSafety: mech.bending && mech.bending.safetyFactor, contactSafety: mech.contact && mech.contact.safetyFactor };
   }
   function Inspector(container, options) { this.container = container; this.options = options || {}; this.solution = null; this.element = null; }
-  Inspector.prototype.setSolution = function (solution) { this.solution = solution; return this; };
+  Inspector.prototype.setSolution = function (solution, scene) { this.solution = solution; this.scene = scene || null; return this; };
   Inspector.prototype._element = function () {
     if (this.element && this.element.isConnected) return this.element;
     if (this.element) { this.container.appendChild(this.element); return this.element; }
@@ -33,13 +47,13 @@
   };
   Inspector.prototype.hide = function () { if (this.element) this.element.hidden = true; };
   Inspector.prototype.show = function (index) {
-    var data = model(this.solution, index, this.options.registry); if (!data) return;
+    var data = model(this.solution, index, this.options.registry, this.scene); if (!data) return;
     var card = this._element(), self = this; card.textContent = '';
     var header = document.createElement('header'), title = document.createElement('span'); title.className = 'type-badge ' + data.type; title.textContent = (index + 1) + ' · ' + data.type;
     var close = document.createElement('button'); close.type = 'button'; close.className = 'btn-small'; close.setAttribute('aria-label', 'Fermer'); close.textContent = '✕'; header.appendChild(title); header.appendChild(close); card.appendChild(header);
     var grid = document.createElement('div'); grid.className = 'inspector-grid';
     [["Dents", data.teeth.join(' / ') || null], ['Rapport', format(data.ratio, 3, ':1')], ['Rendement', finite(data.efficiency) ? format(data.efficiency * 100, 1, ' %') : null],
-      ['Entraxe', format(data.centerDistance, 2, ' mm')], ['Module', finite(data.module) ? data.module + ' mm' : null], ['Vitesse', finite(data.inputRpm) && finite(data.outputRpm) ? format(data.inputRpm, 0, ' → ') + format(data.outputRpm, 0, ' rpm') : null],
+      ['Entraxe', format(data.centerDistance, 2, ' mm')], ['Module', finite(data.module) ? data.module + ' mm' : null], ['Vitesse', finite(data.inputRpm) && finite(data.outputRpm) ? format(Math.abs(data.inputRpm), 0, ' → ') + format(Math.abs(data.outputRpm), 0, ' rpm ') + (data.outputRpm < 0 ? '↻' : '↺') : null],
       ['Couple', finite(data.inputTorque) && finite(data.outputTorque) ? format(data.inputTorque, 1, ' → ') + format(data.outputTorque, 1, ' Nm') : null], ['SF / SH', (format(data.bendingSafety, 2) || '—') + ' / ' + (format(data.contactSafety, 2) || '—')]].forEach(function (item) {
         if (item[1] == null || item[1] === '') return; var row = document.createElement('div'), label = document.createElement('span'), value = document.createElement('strong'); label.textContent = item[0]; value.textContent = item[1]; row.appendChild(label); row.appendChild(value); grid.appendChild(row);
       });

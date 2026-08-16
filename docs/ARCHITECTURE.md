@@ -112,29 +112,49 @@ toute cote vient du moteur ; un renderer ne fait que placer et dessiner.
 Solution
    │
    ▼
-SceneBuilder ──────────► KinematicsEngine ──► AnimationController
-   │ géométrie réelle          │ ω, sens, Willis, translations
-   │ membres, arbres           │
-   ▼                           ▼
-TrainLayout / GeometryLayout / KinematicLayoutEngine
+KinematicsEngine ──► ω, sens, Willis, translations, pose(angle)
+   │
+   ▼
+SceneBuilder ──────► members[] · shafts[] · connections[]
+   │                 (géométrie par membre + provenance de chaque cote)
+   ▼
+TrainLayout / GeometryLayout / KinematicLayoutEngine   ← placement seul
    │
    ▼
 TrainRenderer   GeometryRenderer   KinematicRenderer
-        └──── ViewportController · SvgExport · StageInspector ────┘
-                    overlays/ForceOverlay · overlays/WarningOverlay
+   └── applyPose(KinematicsEngine.pose(scene.kinematics, angle)) ──┘
+   └── ViewportController · SvgExport · StageInspector ────────────┘
+              overlays/ForceOverlay · overlays/WarningOverlay
 ```
 
-- **SceneBuilder** : modèle graphique canonique dérivé d'une solution. Ne
-  fabrique aucune dimension : il consomme `stage.geometry`, `solution.mechanical`
-  et le registre de transmissions.
+- **SceneBuilder** : modèle graphique canonique, et SEUL endroit où l'on répond
+  à « quelle est la géométrie du membre X ? ». Les trois layouts consomment
+  `scene.members` ; aucun ne relit `stage.geometry` pour son compte. Chaque cote
+  porte sa **provenance** — `engine` (calculée, cotable) ou `derived`
+  (reconstruite) — et une cote reconstruite est tracée en pointillé et préfixée
+  « ~ » : jamais de repli silencieux. La scène distingue aussi l'**axe** partagé
+  d'un étage coaxial et l'**arbre** réel qui, lui, tourne à une autre vitesse.
 - **KinematicsEngine** : source unique de la cinématique. `build(solution)` donne
   la vitesse signée de chaque membre (y compris satellites : rotation propre +
   orbite du porte-satellites, via la relation de Willis du registre) ;
   `pose(state, angle)` donne l'état instantané pour un angle d'entrée en degrés,
   y compris translations de crémaillère et défilement de courroie en mm réels.
+  **Les renderers ne composent aucune pose eux-mêmes** : chacun expose
+  `applyPose(pose)` et ne fait qu'appliquer les angles reçus. C'est ce qui rend
+  vérifiable — et vérifié — que les trois vues montrent le même instant.
+- **AnimationController** : horloge partagée, en degrés d'arbre d'entrée. Deux
+  cadences, et deux cadences seulement : *pédagogique* (120°/s, constante, quel
+  que soit le régime) et *relative* (proportionnelle au régime réel d'entrée,
+  bornée). Les poses produites sont identiques dans les deux modes.
 - **AnimationController / ViewportController** : horloge et zoom/pan communs. Le
   zoom est ancré au pointeur, borné relativement à la vue ajustée, et supporte le
   pincement tactile — même comportement dans les trois vues.
+- **ToothProfile** : génération du profil. Le flanc est la développante du
+  cercle de base RÉEL — quand le cercle de pied passe au-dessus du cercle de
+  base, la courbe démarre plus loin sur la même développante, on ne substitue
+  jamais `rb`. L'épaisseur au primitif vaut exactement `m(π/2 + 2x·tan α)`, et
+  une dent qui deviendrait pointue est tronquée au lieu de se croiser. Les
+  dentures intérieures passent par le même générateur.
 - **TrainRenderer + TrainLayout + teeth/** : vue « Denture ». Profils en
   développante aux cotes calculées, avec un **niveau de détail piloté par la
   taille réelle à l'écran** (silhouette → dents simplifiées → développante →
