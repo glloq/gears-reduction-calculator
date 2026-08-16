@@ -75,15 +75,6 @@
 /* Mode linéaire : seuls écart, encombrement et tri ont un sens */
 .refine-bar.refine-linear .refine-rotary { display: none; }
 
-.tile-origin {
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--warning);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
 .solution-cards { display: grid; gap: var(--sp-2); margin-top: var(--sp-3); }
 
 .results-table-mode .solution-cards { display: none; }

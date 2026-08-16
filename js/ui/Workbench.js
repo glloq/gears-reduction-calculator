@@ -567,8 +567,21 @@
       cards.setAttribute('aria-selected', String(!tableMode));
       table.setAttribute('aria-selected', String(tableMode));
     }
-    cards.addEventListener('click', function () { set(false); });
-    table.addEventListener('click', function () { set(true); });
+    // Sous cette largeur, un tableau à douze colonnes n'est plus lisible : on
+    // impose les cartes. Le choix explicite de l'utilisateur n'est pas perdu
+    // pour autant, il reprend effet dès que la fenêtre redevient assez large.
+    var narrow = window.matchMedia('(max-width: 700px)');
+    var wanted = false;
+    function apply() {
+      set(wanted && !narrow.matches);
+      table.disabled = narrow.matches;
+      table.title = narrow.matches ? 'Le tableau demande un écran plus large' : '';
+    }
+    cards.addEventListener('click', function () { wanted = false; apply(); });
+    table.addEventListener('click', function () { wanted = true; apply(); });
+    if (narrow.addEventListener) narrow.addEventListener('change', apply);
+    else if (narrow.addListener) narrow.addListener(apply);
+    apply();
   };
 
   // ===== Onglets de détail (Schéma / Analyse / Graphiques / Journal) =====

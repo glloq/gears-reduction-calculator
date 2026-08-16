@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { watchConsoleErrors } = require('./console-errors.js');
 
 /** Champs réellement visibles : `checkVisibility` tient compte des <details> fermés. */
 async function visibleFields(page) {
@@ -7,12 +8,7 @@ async function visibleFields(page) {
     .map(el => el.id));
 }
 
-function watchErrors(page) {
-  const errors = [];
-  page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
-  page.on('pageerror', e => errors.push(e.message));
-  return errors;
-}
+const watchErrors = watchConsoleErrors;
 
 test('a beginner can search without opening a single advanced panel', async ({ page }) => {
   const errors = watchErrors(page);
@@ -232,4 +228,29 @@ test('the mobile layout keeps the viewer usable and drops the wide table', async
   // Les résultats restent en cartes : aucun débordement horizontal de la page.
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+
+  // Le tableau large n'est pas seulement caché par défaut : il est hors
+  // d'atteinte tant que l'écran est étroit.
+  await expect(page.locator('#tableViewBtn')).toBeDisabled();
+  await expect(page.locator('#result-container')).not.toHaveClass(/results-table-mode/);
+});
+
+test('the table view comes back on a wide screen, and remembers the choice', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 20000 });
+
+  await page.locator('#tableViewBtn').click();
+  await expect(page.locator('#result-container')).toHaveClass(/results-table-mode/);
+
+  // Rétrécir bascule d'office en cartes…
+  await page.setViewportSize({ width: 390, height: 820 });
+  await expect(page.locator('#result-container')).not.toHaveClass(/results-table-mode/);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  // …et élargir restitue le tableau demandé, sans nouveau clic.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator('#result-container')).toHaveClass(/results-table-mode/);
 });
