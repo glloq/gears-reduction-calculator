@@ -61,14 +61,42 @@
       help: 'J’ai un module, des dentures ou un entraxe imposés.',
       focus: 'criteria', tolerance: 8, parts: true,
       summary: 'Depuis les composants'
+    },
+    {
+      id: 'maximize', label: 'Pousser une performance', icon: '↗',
+      help: 'Pas de rapport imposé : quel est le maximum atteignable sous mes contraintes ?',
+      focus: 'need', tolerance: null, explore: true,
+      summary: 'Espace de conception'
     }
   ];
 
+  /**
+   * Performances qu'une exploration peut pousser. Les mots vivent ici, les
+   * formules dans `ExplorationPlanner` : une seule source pour chacun.
+   */
+  var OBJECTIVES = [
+    { id: 'torque', label: 'Couple de sortie', help: 'Le plus grand couple tenable sous ces contraintes.', sort: 'torque' },
+    { id: 'ratio', label: 'Rapport de réduction', help: 'La plus forte réduction qui tienne.', sort: 'ratio' },
+    { id: 'efficiency', label: 'Rendement', help: 'Le moins de pertes possible.', sort: 'efficiency' },
+    { id: 'compact', label: 'Encombrement', help: 'Le plus petit réducteur possible.', sort: 'compactness' },
+    { id: 'simple', label: 'Simplicité', help: 'Le moins d’étages possible.', sort: 'stages' }
+  ];
+
+  /**
+   * Espace balayé par défaut, faute d'indication. Il est ANNONCÉ, jamais
+   * imposé en silence (§10) : le modal l'affiche comme une plage modifiable.
+   */
+  var DEFAULT_SPAN = { min: 1, max: 200 };
+
   /** Modes reconnus mais non encore réalisables : déclarés, jamais affichés. */
   var PLANNED = [
-    { id: 'maximize', label: 'Maximiser une performance', needs: 'un solveur sans rapport cible' },
-    { id: 'improveExisting', label: 'Améliorer un réducteur existant', needs: 'un orchestrateur de recherches' }
+    { id: 'improveExisting', label: 'Améliorer un réducteur existant', needs: 'un comparateur de variantes' }
   ];
+
+  function objective(id) {
+    for (var i = 0; i < OBJECTIVES.length; i++) if (OBJECTIVES[i].id === id) return OBJECTIVES[i];
+    return null;
+  }
 
   function mode(id) {
     for (var i = 0; i < MODES.length; i++) if (MODES[i].id === id) return MODES[i];
@@ -77,12 +105,14 @@
 
   function SearchIntentModel(seed) {
     this.mode = 'best';
+    this.objective = 'torque';
     if (seed) this.merge(seed);
   }
 
   SearchIntentModel.prototype.merge = function (seed) {
     if (typeof seed === 'string') { if (mode(seed)) this.mode = seed; return this; }
     if (seed && seed.mode && mode(seed.mode)) this.mode = seed.mode;
+    if (seed && seed.objective && objective(seed.objective)) this.objective = seed.objective;
     return this;
   };
 
@@ -90,6 +120,19 @@
     if (mode(id)) this.mode = id;
     return this;
   };
+
+  SearchIntentModel.prototype.setObjective = function (id) {
+    if (objective(id)) this.objective = id;
+    return this;
+  };
+
+  /** La performance poursuivie, quand la méthode en poursuit une. */
+  SearchIntentModel.prototype.objectiveDescriptor = function () {
+    return this.explores() ? objective(this.objective) || OBJECTIVES[0] : null;
+  };
+
+  /** Cette méthode balaye-t-elle un espace au lieu de viser un rapport ? */
+  SearchIntentModel.prototype.explores = function () { return !!this.descriptor().explore; };
 
   SearchIntentModel.prototype.descriptor = function () { return mode(this.mode) || MODES[0]; };
 
@@ -102,12 +145,16 @@
    */
   SearchIntentModel.prototype.ratioTolerance = function () { return this.descriptor().tolerance; };
 
-  SearchIntentModel.prototype.describe = function () { return this.descriptor().summary; };
+  SearchIntentModel.prototype.describe = function () {
+    var target = this.objectiveDescriptor();
+    return target ? this.descriptor().summary + ' → ' + target.label.toLowerCase() : this.descriptor().summary;
+  };
 
   /** Cette méthode part-elle d'un inventaire de composants ? */
   SearchIntentModel.prototype.startsFromParts = function () { return !!this.descriptor().parts; };
 
-  SearchIntentModel.prototype.toJSON = function () { return { mode: this.mode }; };
+  SearchIntentModel.prototype.toJSON = function () { return { mode: this.mode, objective: this.objective }; };
 
-  return { SearchIntentModel: SearchIntentModel, MODES: MODES, PLANNED: PLANNED, mode: mode };
+  return { SearchIntentModel: SearchIntentModel, MODES: MODES, PLANNED: PLANNED, mode: mode,
+    OBJECTIVES: OBJECTIVES, objective: objective, DEFAULT_SPAN: DEFAULT_SPAN };
 });

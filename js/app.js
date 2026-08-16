@@ -111,7 +111,11 @@
     // Choix 20C : la recherche part du MODÈLE, plus du formulaire. Le
     // formulaire n'est plus qu'un reflet, écrit par la session.
     var session = workbench && workbench.session;
-    var searchParams = session ? session.toSearchParams() : ui.paramForm.getSearchParams();
+    // Une exploration ne lance pas UNE recherche mais une série de recherches
+    // bornées, dont on réunit les viviers. Les paramètres validés sont ceux de
+    // la première bande : ce sont eux qui partiront réellement au moteur.
+    var plan = session ? session.explorationPlan() : null;
+    var searchParams = plan ? plan.runs[0] : (session ? session.toSearchParams() : ui.paramForm.getSearchParams());
     var validationMessage = document.getElementById('validationMessage');
     if (validationMessage) validationMessage.textContent = '';
     if (searchParams.moduleMode === 'automatic' && searchParams.moduleMin && searchParams.moduleMax && searchParams.moduleMax <= searchParams.moduleMin) {
@@ -135,7 +139,7 @@
     _saveToHistory(searchParams);
     _renderHistory();
 
-    engine.rechercher(searchParams).then(function (rawResults) {
+    (plan ? _explore(plan) : engine.rechercher(searchParams)).then(function (rawResults) {
       // Le moteur ne sait pas tout filtrer : la session applique ce qui reste.
       var resultats = session ? session.filterPool(rawResults) : rawResults;
       progressBar.style.width = "100%";
@@ -163,7 +167,7 @@
           _resetButton();
         });
       }
-      explorer.setPool(resultats, searchParams, ui.lastStats());
+      explorer.setPool(resultats, searchParams, ui.lastStats(), null, plan ? { sort: plan.sort } : null);
       ui.logger.setStatus(resultats.length > 0
         ? resultats.length + ' solution(s) dans le vivier'
         : "Aucune solution trouvée"
@@ -175,6 +179,39 @@
       console.error(err);
       _resetButton();
     });
+  }
+
+  /** Vivier maximal d'une exploration : au-delà, la barre d'affinage trie du bruit. */
+  var MAX_EXPLORATION_POOL = 400;
+
+  /**
+   * Balaye l'espace de conception bande par bande. Les recherches sont
+   * SÉQUENTIELLES : un seul worker à la fois, donc un « Arrêter » qui arrête
+   * vraiment, et une barre de progression qui avance pour de bon.
+   */
+  function _explore(plan) {
+    var Planner = GearApp.requirements.ExplorationPlanner;
+    var pools = [], total = plan.runs.length;
+    var chain = plan.runs.reduce(function (previous, params, index) {
+      return previous.then(function () {
+        if (!isSearching) return null;                 // interrompu entre deux bandes
+        var band = params.explorationBand;
+        ui.logger.setStatus('Exploration ' + (index + 1) + '/' + total +
+          ' — rapports ' + _shortRatio(band.min) + ' à ' + _shortRatio(band.max) + ':1');
+        var bar = document.getElementById('progress-bar');
+        if (bar) bar.style.width = Math.round(index / total * 100) + '%';
+        return engine.rechercher(params).then(function (pool) { pools.push(pool || []); });
+      });
+    }, Promise.resolve());
+    return chain.then(function () {
+      var merged = Planner.merge(pools, plan.objective, MAX_EXPLORATION_POOL);
+      ui.logger.setStatus(merged.length + ' architecture(s) dans l’espace exploré');
+      return merged;
+    });
+  }
+
+  function _shortRatio(value) {
+    return value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
   }
 
   /**

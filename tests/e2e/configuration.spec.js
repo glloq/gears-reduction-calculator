@@ -16,7 +16,7 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   await expect(page.locator('#sidebar')).toHaveCount(0);
   await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
   // Deux décisions indépendantes : la méthode, puis la politique technologique.
-  await expect(page.locator('#intentCards .type-entry')).toHaveCount(4);
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(5);
   await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(4);
   expect(errors).toEqual([]);
 });
@@ -498,4 +498,46 @@ test('the side summary is structured, and repeats no unit', async ({ page }) => 
   expect(entree).not.toMatch(/rpm\s*rpm|N·m\s*N·m/);
   // Aucune rubrique vide : « Contraintes » n'apparaît pas tant qu'il n'y en a pas.
   expect(titles).not.toContain('Contraintes');
+});
+
+// ===== P2 : pousser une performance, sans rapport cible =====
+
+test('an exploration answers « how much can I get » instead of « find me 12:1 »', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await page.locator('[data-step="type"]').click();
+  // La performance à pousser n'existe pas tant que la méthode ne l'appelle pas.
+  await expect(page.locator('#intentObjectives')).toHaveCount(0);
+  await page.locator('#intentCards [data-intent="maximize"]').click();
+  await expect(page.locator('.intent-objective')).toHaveCount(5);
+  await expect(page.locator('.intent-objective.active')).toHaveText('Couple de sortie');
+  // L'espace balayé est ANNONCÉ : une plage par défaut muette serait imposée.
+  await expect(page.locator('#intentSpanNote')).toContainText('rapports 1 à 200:1');
+
+  // Un moteur, un encombrement, aucun rapport demandé.
+  await setQuantity(page, 'input.speed', 1500);
+  await setQuantity(page, 'input.power', 750);
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('#addConstraintBtn').click();
+  await page.locator('#constraintMenu [data-field="maxDiameter"]').click();
+  const chip = page.locator('.constraint-chip[data-constraint="maxDiameter"]');
+  await chip.locator('[data-slot="a"]').fill('120');
+  await chip.locator('[data-slot="a"]').blur();
+  await expect(page.locator('.search-summary-section[data-section="Exploration"]')).toContainText('bandes balayées');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 120000 });
+  // Le vivier est classé par la performance poursuivie, pas par « recommandé ».
+  expect(await page.inputValue('#refine_sort')).toBe('torque');
+  const torques = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.solution-card'))
+      .slice(0, 8)
+      .map(card => card.textContent.match(/Couple([\d\s.,]+)N·m/))
+      .filter(Boolean)
+      .map(match => parseFloat(match[1].replace(/\s/g, '').replace(',', '.'))));
+  expect(torques.length).toBeGreaterThan(3);
+  for (let i = 1; i < torques.length; i++) expect(torques[i]).toBeLessThanOrEqual(torques[i - 1]);
+  // Aucun rapport n'a été visé : aucune carte ne peut annoncer en rater un.
+  await expect(page.locator('.solution-card').first()).toContainText('Écart de 0 %');
+  expect(errors).toEqual([]);
 });

@@ -198,6 +198,46 @@
     });
   };
 
+  /**
+   * L'espace de rapports à balayer quand aucune cible n'est visée. Il vient de
+   * ce que l'utilisateur a dit — « rapport 10 → 60 » — et à défaut d'une plage
+   * annoncée, jamais devinée en silence : le modal l'affiche et il est
+   * modifiable comme n'importe quelle grandeur.
+   */
+  SearchSession.prototype.explorationSpan = function () {
+    var Planner = R.ExplorationPlanner, fallback = R.searchIntent.DEFAULT_SPAN;
+    var ratio = this.requirement.ratioRequirement();
+    if (ratio.isKnown()) {
+      var bounds = ratio.bounds();
+      var min = bounds.min != null ? Math.abs(bounds.min) : null;
+      var max = bounds.max != null ? Math.abs(bounds.max) : null;
+      if (min != null || max != null) {
+        return {
+          min: min != null ? min : Math.max(Planner.MIN_RATIO, fallback.min),
+          max: max != null ? max : Math.max(fallback.max, (min || 1) * 10),
+          stated: true
+        };
+      }
+    }
+    return { min: fallback.min, max: fallback.max, stated: false };
+  };
+
+  /**
+   * Le plan d'exploration, ou null si la méthode vise un rapport. Chaque entrée
+   * est une recherche ordinaire : c'est leur réunion qui décrit l'espace.
+   */
+  SearchSession.prototype.explorationPlan = function (overrides) {
+    if (!this.intent.explores()) return null;
+    var span = this.explorationSpan();
+    var target = this.intent.objectiveDescriptor();
+    return {
+      span: span,
+      objective: this.intent.objective,
+      sort: target ? target.sort : 'score',
+      runs: R.ExplorationPlanner.plan(this.toSearchParams(overrides), span)
+    };
+  };
+
   SearchSession.prototype.toSearchParams = function (overrides) {
     var request = this.compile(overrides);
     var settings = this.technical.toAdapterSettings();
@@ -217,6 +257,9 @@
     var problem = requirement.inferProblem();
     var levels = [];
 
+    // Une exploration se passe de rapport visé : la bande en fournit un.
+    if (this.intent.explores()) problem = { mode: problem.mode || 'ratio', reason: problem.reason };
+
     levels.push({ id: 'geometry', label: 'Géométrie et rapport', available: !!problem.mode,
       missing: problem.mode ? null : 'besoin incomplet' });
     levels.push({ id: 'kinematics', label: 'Cinématique', available: !!problem.mode && requirement.input.speed.isKnown(),
@@ -235,6 +278,21 @@
 
   SearchSession.prototype.diagnose = function () {
     var notes = this.requirement.diagnose().slice();
+    if (this.intent.explores()) {
+      var span = this.explorationSpan();
+      // « Il manque de quoi déterminer le rapport » est vrai, et sans objet :
+      // ne pas fixer le rapport EST la méthode choisie.
+      notes = notes.filter(function (note) { return note.code !== 'no-problem'; });
+      notes.unshift({ level: 'ok', code: 'exploration',
+        text: 'Espace exploré : rapports ' + round(span.min) + ' à ' + round(span.max) + ':1' +
+          (span.stated ? '' : ' (plage par défaut, modifiable dans le besoin)') + '.' });
+      if (this.intent.objective === 'torque' && !this.requirement.inputTorqueRequirement().isKnown()) {
+        // Le couple de sortie est proportionnel au couple d'entrée : le
+        // CLASSEMENT reste juste sans lui, seules les valeurs sont arbitraires.
+        notes.push({ level: 'warn', code: 'assumed-input-torque',
+          text: 'Sans couple ni puissance d’entrée, le classement reste valable mais les couples affichés sont indicatifs.' });
+      }
+    }
     if (this.technologySelection.policy === 'auto') {
       this.advice().coverage.forEach(function (gap) { notes.push({ level: 'warn', code: gap.code, text: gap.text }); });
     }
@@ -247,7 +305,10 @@
   };
 
   SearchSession.prototype.isReady = function () {
-    return this.requirement.isComplete() && this.technologySelection.isComplete() && this.selectedTechnologies().length > 0;
+    // Une exploration n'a pas de rapport à déterminer : c'est tout son objet.
+    // Exiger un besoin « complet » lui interdirait de démarrer.
+    var need = this.intent.explores() ? true : this.requirement.isComplete();
+    return need && this.technologySelection.isComplete() && this.selectedTechnologies().length > 0;
   };
 
   /**
@@ -297,6 +358,15 @@
       say(requirement.output.travelPerRev, 'par tour'),
       ratio.isKnown() ? 'rapport ' + ratio.describe() : null
     ]);
+
+    if (this.intent.explores()) {
+      var span = this.explorationSpan(), target = this.intent.objectiveDescriptor();
+      section('Exploration', [
+        'maximiser : ' + target.label.toLowerCase(),
+        'rapports ' + round(span.min) + ' à ' + round(span.max) + ':1' + (span.stated ? '' : ' (par défaut)'),
+        R.ExplorationPlanner.bands(span.min, span.max).length + ' bandes balayées'
+      ]);
+    }
 
     section('Contraintes', this.effectivePreferences().constraints().map(function (entry) {
       return entry.meta.label + ' ' + entry.quantity.describe();

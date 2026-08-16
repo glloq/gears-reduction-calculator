@@ -102,8 +102,11 @@
 
   // ===== Vivier =====
 
-  SolutionExplorer.prototype.setPool = function (solutions, searchParams, stats, diagnosis) {
+  SolutionExplorer.prototype.setPool = function (solutions, searchParams, stats, diagnosis, options) {
     var self = this;
+    // Une exploration classe par la performance poursuivie : « recommandé »
+    // répondrait à une autre question que celle qui a été posée.
+    this._defaultSort = (options && options.sort) || 'score';
     this._pool = solutions || [];
     this._pool.forEach(function (solution) {
       if (solution.uid === undefined) {
@@ -173,7 +176,7 @@
   SolutionExplorer.prototype._resetCriteria = function () {
     NUMERIC_FIELDS.forEach(function (id) { var input = el(id); if (input) input.value = ''; });
     var sort = el('refine_sort');
-    if (sort) sort.value = 'score';
+    if (sort) sort.value = this._defaultSort || 'score';
     this._disabledTypes = {};
     if (this.filters) this.filters.render();
   };

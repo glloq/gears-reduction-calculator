@@ -366,3 +366,32 @@ body.modal-open { overflow: hidden; }
   margin: 0 0 2px;
   font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
 }
+
+/* ----- P2 : explorer un espace de conception, sans rapport cible ----- */
+
+.intent-objectives {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+.intent-objective-label {
+  font-size: var(--font-xs); font-weight: 600; color: var(--muted);
+  margin-right: var(--sp-1);
+}
+.intent-objective {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface-1);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.intent-objective:hover { border-color: var(--accent); color: var(--accent); }
+.intent-objective.active {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+.intent-span-note {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--font-xs);
+  color: var(--muted);
+}

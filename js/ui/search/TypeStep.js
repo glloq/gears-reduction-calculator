@@ -105,8 +105,50 @@
       row.appendChild(card);
     });
     section.appendChild(row);
+
+    // La performance poursuivie n'existe que pour l'exploration : l'afficher
+    // ailleurs demanderait un choix sans effet (§15).
+    if (intent.explores()) {
+      var pick = document.createElement('div');
+      pick.className = 'intent-objectives';
+      pick.id = 'intentObjectives';
+      pick.innerHTML = '<span class="intent-objective-label">Performance à pousser</span>';
+      GearApp.requirements.searchIntent.OBJECTIVES.forEach(function (entry) {
+        var active = intent.objective === entry.id;
+        var chip = button('intent-objective' + (active ? ' active' : ''), entry.label, function () {
+          intent.setObjective(entry.id);
+          self._changed();
+        });
+        chip.dataset.objective = entry.id;
+        chip.title = entry.help;
+        chip.setAttribute('aria-pressed', String(active));
+        pick.appendChild(chip);
+      });
+      section.appendChild(pick);
+
+      var note = document.createElement('p');
+      note.className = 'intent-span-note';
+      note.id = 'intentSpanNote';
+      note.textContent = spanNote(this.draft);
+      section.appendChild(note);
+    }
     this.host.appendChild(section);
   };
+
+  /**
+   * L'espace balayé, dit en toutes lettres. Une plage par défaut annoncée reste
+   * une décision de l'utilisateur ; une plage par défaut muette n'en est pas une.
+   */
+  function spanNote(draft) {
+    var span = draft.explorationSpan();
+    var bands = GearApp.requirements.ExplorationPlanner.bands(span.min, span.max).length;
+    return 'Espace balayé : rapports ' + short(span.min) + ' à ' + short(span.max) + ':1, en ' + bands + ' bandes' +
+      (span.stated ? ' (d’après le rapport demandé).' : '. Posez un rapport en plage à l’étape Besoin pour le restreindre.');
+  }
+
+  function short(value) {
+    return value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
+  }
 
   /** Seconde décision, indépendante : comment choisir la technologie ? */
   TypeStep.prototype._renderPolicy = function () {
