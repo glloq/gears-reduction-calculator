@@ -523,3 +523,12 @@ body.modal-open { overflow: hidden; }
 
 /* §22 : le détail du résumé attend qu'on le demande. */
 .search-summary-toggle { font-size: var(--font-xs); padding: 0; margin-top: var(--sp-1); }
+
+/* §5 : ce qu'un changement de disposition vient de retirer, dit et réversible. */
+.disposition-notice {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-1) var(--sp-2);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  font-size: var(--font-xs); color: var(--muted);
+}

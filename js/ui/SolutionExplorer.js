@@ -98,6 +98,10 @@
 
     var reset = el('refineResetBtn');
     if (reset) reset.addEventListener('click', function () { self._resetCriteria(); self._publish(false); });
+
+    // La sélection peut venir d'ailleurs (clic sur une carte, éditeur d'étages) :
+    // sans l'écouter, l'explorateur croirait toujours afficher la première.
+    this.bus.on('solution:selected', function (data) { self._selectedIndex = data.index; });
   };
 
   // ===== Vivier =====
@@ -118,6 +122,9 @@
     this._stats = stats || null;
     // Diagnostic de relaxation, produit par la sonde quand le vivier est vide.
     this._diagnosis = diagnosis || null;
+    this._selectedIndex = null;
+    var notice = el('refineNotice');
+    if (notice) { notice.textContent = ''; notice.hidden = true; }
     this._resetCriteria();
     this._renderChips();
 
@@ -137,9 +144,7 @@
     }
     this._pool.push(solution);
     this._publish(false);
-    var index = this._pool.length - 1;
-    this.bus.emit('solution:selected', { index: index, solution: solution });
-    if (this.resultsTable && this.resultsTable.setSelectedIndex) this.resultsTable.setSelectedIndex(index);
+    this._select({ index: this._pool.length - 1, solution: solution });
   };
 
   SolutionExplorer.prototype.getPool = function () { return this._pool; };
@@ -224,6 +229,7 @@
   };
 
   SolutionExplorer.prototype._publish = function (fresh) {
+    var self = this;
     var view = GearSolutionFilter.apply(this._pool, this._criteria());
     var solutions = view.map(function (item) { return item.solution; });
     var indices = view.map(function (item) { return item.index; });
@@ -245,13 +251,47 @@
 
     if (fresh) {
       if (this.ui && this.ui.updatePoolCharts) this.ui.updatePoolCharts(this._pool, this._params);
-      if (view.length) {
-        this.bus.emit('solution:selected', { index: view[0].index, solution: view[0].solution });
-        if (this.resultsTable && this.resultsTable.setSelectedIndex) this.resultsTable.setSelectedIndex(view[0].index);
-      } else if (this.ui && this.ui.clearDetail) {
-        this.ui.clearDetail();
-      }
+      if (view.length) this._select(view[0]);
+      else if (this.ui && this.ui.clearDetail) this.ui.clearDetail();
+      return;
     }
+
+    // Un affinage ne changeait pas la sélection : la solution affichée dans le
+    // viewer pouvait donc avoir disparu de la liste tout en restant à l'écran,
+    // Ø 90 mm sous un filtre « Ø ≤ 80 ». La vue et le viewer doivent décrire
+    // le même objet.
+    var stillVisible = view.some(function (item) { return item.index === self._selectedIndex; });
+    if (stillVisible) return;
+    if (view.length) {
+      this._select(view[0]);
+      this._announce('La solution affichée ne passait plus les filtres : la première de la liste a été sélectionnée.');
+    } else if (this.ui && this.ui.clearDetail) {
+      this.ui.clearDetail();
+      this._selectedIndex = null;
+      this._announce('Aucune des ' + this._pool.length + ' solutions ne passe vos filtres.', true);
+    }
+  };
+
+  SolutionExplorer.prototype._select = function (item) {
+    this._selectedIndex = item.index;
+    this.bus.emit('solution:selected', { index: item.index, solution: item.solution });
+    if (this.resultsTable && this.resultsTable.setSelectedIndex) this.resultsTable.setSelectedIndex(item.index);
+  };
+
+  /** Dit ce que le filtrage vient de changer, sans interrompre le geste. */
+  SolutionExplorer.prototype._announce = function (text, offerReset) {
+    var self = this, host = el('refineNotice');
+    if (!host) return;
+    host.textContent = text + ' ';
+    host.hidden = false;
+    if (!offerReset) return;
+    var undo = document.createElement('button');
+    undo.type = 'button';
+    undo.className = 'btn-link';
+    undo.id = 'refineNoticeReset';
+    undo.textContent = 'Réinitialiser les filtres';
+    undo.addEventListener('click', function () { self._resetCriteria(); self._publish(false); });
+    host.appendChild(undo);
   };
 
   GearApp.ui.SolutionExplorer = SolutionExplorer;

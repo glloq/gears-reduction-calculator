@@ -26,14 +26,34 @@
   ];
 
   // §3 : on demande la géométrie fonctionnelle, jamais « droit ou hélicoïdal ».
+  //
+  // Chaque carte décrit l'état COMPLET, jamais seulement ce qu'elle change.
+  // « Arbres éloignés » posait `spread = true` et aucune autre disposition ne
+  // le remettait à false : revenir à « Indifférente » laissait donc le
+  // conseiller croire à des arbres éloignés, et la carte active restait
+  // « Arbres éloignés » puisque `_currentDisposition()` teste `spread`.
   var DISPOSITIONS = [
-    { id: 'any', label: 'Indifférente', sketch: 'Le système choisit', apply: function (a) { a.axisAngle = 0; a.coaxial = 'any'; } },
-    { id: 'parallel', label: 'Axes parallèles', sketch: 'entrée ───── sortie', apply: function (a) { a.axisAngle = 0; a.coaxial = 'avoid'; } },
-    { id: 'coaxial', label: 'Coaxial', sketch: 'entrée ──○── sortie', apply: function (a) { a.axisAngle = 0; a.coaxial = 'required'; } },
-    { id: 'angle', label: 'Renvoi d’angle', sketch: 'entrée ─┐ sortie', apply: function (a) { a.axisAngle = 90; a.coaxial = 'any'; } },
-    { id: 'spread', label: 'Arbres éloignés', sketch: 'courroie / chaîne', apply: function (a) { a.axisAngle = 0; a.coaxial = 'avoid'; a.spread = true; } },
-    { id: 'linear', label: 'Translation', sketch: 'rotation → déplacement', apply: function (a) { a.axisAngle = 0; a.coaxial = 'any'; }, linear: true }
+    { id: 'any', label: 'Indifférente', sketch: 'Le système choisit',
+      state: { axisAngle: 0, coaxial: 'any', spread: false } },
+    { id: 'parallel', label: 'Axes parallèles', sketch: 'entrée ───── sortie',
+      state: { axisAngle: 0, coaxial: 'avoid', spread: false } },
+    { id: 'coaxial', label: 'Coaxial', sketch: 'entrée ──○── sortie',
+      state: { axisAngle: 0, coaxial: 'required', spread: false } },
+    { id: 'angle', label: 'Renvoi d’angle', sketch: 'entrée ─┐ sortie',
+      state: { axisAngle: 90, coaxial: 'any', spread: false } },
+    { id: 'spread', label: 'Arbres éloignés', sketch: 'courroie / chaîne',
+      state: { axisAngle: 0, coaxial: 'avoid', spread: true } },
+    { id: 'linear', label: 'Translation', sketch: 'rotation → déplacement',
+      state: { axisAngle: 0, coaxial: 'any', spread: false }, linear: true }
   ];
+
+  /** Grandeurs qui n'ont de sens que pour un mouvement linéaire. */
+  var LINEAR_PATHS = ['output.travelPerRev', 'output.force', 'output.linearSpeed'];
+  var LINEAR_LABELS = {
+    'output.travelPerRev': 'course par tour',
+    'output.force': 'force',
+    'output.linearSpeed': 'vitesse linéaire'
+  };
 
   var FUNCTION_OPTIONS = [
     { key: 'selfLocking', label: 'Maintien de charge', options: [
@@ -456,13 +476,14 @@
       card.dataset.disposition = disposition.id;
       card.innerHTML = '<strong>' + disposition.label + '</strong><small>' + disposition.sketch + '</small>';
       card.addEventListener('click', function () {
-        disposition.apply(architecture);
+        Object.assign(architecture, disposition.state);
         // « Translation » n'est pas une disposition d'axes : c'est un autre
-        // problème, et il se pose en renseignant une course.
-        if (disposition.linear && !self.draft.requirement.output.travelPerRev.isKnown()) {
-          self.draft.requirement.set('output.travelPerRev', GearApp.requirements.Quantity.exact(100, 'mm'));
-        } else if (!disposition.linear) {
-          self.draft.requirement.clear('output.travelPerRev');
+        // problème, et il se pose en renseignant une course — VIDE. Poser
+        // 100 mm/tr dimensionnerait la crémaillère à la place de l'utilisateur.
+        if (disposition.linear) {
+          self.draft.reveal('output.travelPerRev');
+        } else {
+          self._leaveLinear();
         }
         self._changed();
       });
@@ -492,7 +513,54 @@
     });
     section.appendChild(functions);
 
+    // Ce qui vient d'être retiré est ANNONCÉ, et récupérable : perdre en
+    // silence et conserver en silence sont deux fautes symétriques.
+    if (this._removedLinear) {
+      var notice = document.createElement('p');
+      notice.className = 'disposition-notice';
+      notice.id = 'linearRemovedNotice';
+      notice.setAttribute('role', 'status');
+      var names = this._removedLinear.map(function (entry) { return LINEAR_LABELS[entry.path]; });
+      notice.textContent = 'Données linéaires retirées : ' + names.join(', ') + '. ';
+      var undo = button('btn-link', 'Rétablir', function () {
+        self._restoreLinear();
+        self._changed();
+      });
+      undo.id = 'restoreLinearBtn';
+      notice.appendChild(undo);
+      section.appendChild(notice);
+    }
+
     host.appendChild(section);
+  };
+
+  /**
+   * Quitter le linéaire retire les grandeurs qui n'ont plus de sens. Les
+   * effacer en silence serait aussi trompeur que les garder : le modèle
+   * continuerait sinon d'en déduire un problème linéaire. On les retire donc,
+   * et on le DIT, avec de quoi revenir en arrière.
+   */
+  TypeStep.prototype._leaveLinear = function () {
+    var requirement = this.draft.requirement, removed = [];
+    LINEAR_PATHS.forEach(function (path) {
+      var quantity = requirement.get(path);
+      if (quantity.isKnown()) removed.push({ path: path, quantity: quantity });
+    });
+    LINEAR_PATHS.forEach(function (path) {
+      requirement.clear(path);
+      this.draft.conceal(path);
+    }, this);
+    this._removedLinear = removed.length ? removed : null;
+  };
+
+  /** Rétablit ce que le passage en rotatif venait de retirer. */
+  TypeStep.prototype._restoreLinear = function () {
+    var requirement = this.draft.requirement;
+    (this._removedLinear || []).forEach(function (entry) {
+      requirement.set(entry.path, entry.quantity);
+    });
+    this._removedLinear = null;
+    return this;
   };
 
   TypeStep.prototype._currentDisposition = function () {
