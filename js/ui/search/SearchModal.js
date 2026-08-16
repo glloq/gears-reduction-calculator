@@ -523,9 +523,46 @@
         grid.appendChild(label);
       });
       details.appendChild(grid);
+
+      // Une plage dit « entre 20 et 60 dents ». Un stock dit « 20, 24, 40, 60 »,
+      // et aucune plage ne saura jamais l'exprimer : c'est pourtant ce qu'on a
+      // réellement dans un tiroir.
+      INVENTORY_FIELDS.forEach(function (field) {
+        var label = node('label', 'parts-inventory');
+        label.appendChild(node('span', null, field.label));
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'inventory_' + field.group + '_' + field.key;
+        input.placeholder = field.placeholder;
+        input.setAttribute('inputmode', 'numeric');
+        input.value = (self.draft.technical[field.group][field.key] || []).join(', ');
+        input.addEventListener('change', function () {
+          self.draft.technical.set(field.group, field.key, parseList(input.value));
+          refresh(false);
+        });
+        label.appendChild(input);
+        label.appendChild(node('small', 'parts-hint', field.hint));
+        details.appendChild(label);
+      });
       host.appendChild(details);
     };
   };
+
+  /** Ce qu'on possède, énuméré. Tout ce qui n'est pas un nombre est ignoré. */
+  var INVENTORY_FIELDS = [
+    { group: 'gearing', key: 'teethInventory', label: 'Dentures en stock',
+      placeholder: 'ex. 16, 20, 24, 40, 60',
+      hint: 'Seules ces dentures seront combinées. Vide = plages ci-dessus.' },
+    { group: 'module', key: 'list', label: 'Modules en stock',
+      placeholder: 'ex. 1, 1.5',
+      hint: 'Vide = module imposé ou plage automatique.' }
+  ];
+
+  function parseList(text) {
+    return String(text || '').split(/[^0-9.]+/)
+      .map(function (piece) { return parseFloat(piece); })
+      .filter(function (value) { return isFinite(value) && value > 0; });
+  }
 
   SearchModal.prototype._bindDepth = function (refresh) {
     var self = this, host = el('depthOptions');

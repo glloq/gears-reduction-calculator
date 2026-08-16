@@ -41,8 +41,11 @@
 
   var DEFAULTS = {
     search: { depth: 'standard', maxSolutions: 100, maxIterations: 500000 },
-    gearing: { drivingMin: 10, drivingMax: 30, drivenMin: 20, drivenMax: 50, drivingFixed: null, drivenFixed: null, reductionOnly: true },
-    module: { mode: 'fixed', fixed: 1, min: null, max: null },
+    // `teethInventory` et `module.list` énumèrent ce qu'on POSSÈDE : une plage
+    // dit « entre 20 et 60 dents », un inventaire dit « 20, 24, 40 et 60 », et
+    // aucune plage ne saura jamais exprimer le second.
+    gearing: { drivingMin: 10, drivingMax: 30, drivenMin: 20, drivenMax: 50, drivingFixed: null, drivenFixed: null, reductionOnly: true, teethInventory: [] },
+    module: { mode: 'fixed', fixed: 1, min: null, max: null, list: [] },
     manufacturing: { process: 'standard', minimumModule: null, minimumTeeth: null, minimumFaceWidth: null, printerDiameter: null, additiveDerating: 1 },
     materials: { input: 'C45', output: 'C45' },
     fatigue: { enabled: false, hoursPerDay: 8, daysPerYear: 250, years: 10, loadType: 'constant' },
@@ -141,7 +144,13 @@
   TechnicalSettingsModel.prototype.isCustomised = function (group) {
     var reference = DEFAULTS[group];
     if (!reference) return false;
-    return Object.keys(reference).some(function (key) { return this[group][key] !== reference[key]; }, this);
+    return Object.keys(reference).some(function (key) {
+      var value = this[group][key], base = reference[key];
+      // Un inventaire est cloné à la construction : comparer les références
+      // ferait déclarer « modifié » tout groupe qui en contient un.
+      if (Array.isArray(base)) return (value || []).length !== base.length;
+      return value !== base;
+    }, this);
   };
 
   TechnicalSettingsModel.prototype.customisedGroups = function () {
@@ -169,9 +178,11 @@
       dentMeneeMin: this.gearing.drivenMin, dentMeneeMax: this.gearing.drivenMax,
       dentMenanteFixe: this.gearing.drivingFixed, dentMeneeFixe: this.gearing.drivenFixed,
       reductionOnly: this.gearing.reductionOnly,
+      teethInventory: (this.gearing.teethInventory || []).slice(),
       maxSolutions: this.search.maxSolutions, maxIterations: this.search.maxIterations,
       module: this.module.fixed, moduleMode: this.module.mode,
       moduleMin: this.module.min, moduleMax: this.module.max,
+      moduleList: (this.module.list || []).slice(),
       inputMaterial: this.materials.input, outputMaterial: this.materials.output,
       additiveDerating: this.manufacturing.additiveDerating,
       manufacturing: {

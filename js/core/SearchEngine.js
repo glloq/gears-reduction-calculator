@@ -22,8 +22,23 @@
   function moduleChoices(p){
     var active=(p.typesActifs||['spur']).filter(function(id){return id!=='rack';});
     if(active.length&&active.every(function(id){var def=Registry.get(id);return def&&def.capabilities&&!def.capabilities.usesModule;}))return [null];
+    // Inventaire réel : on ne choisit pas dans les modules normalisés, on
+    // choisit parmi ceux qu'on possède.
+    var owned=list(p.moduleList);
+    if(owned.length)return owned.filter(function(m){return m>0;});
     if(p.moduleMode!=='automatic')return Number.isFinite(p.module)&&p.module>0?[p.module]:[];
     return STANDARD_MODULES.filter(function(m){return (!p.moduleMin||m>=p.moduleMin)&&(!p.moduleMax||m<=p.moduleMax);});
+  }
+  function list(value){return Array.isArray(value)?value.filter(function(v){return Number.isFinite(v);}):[];}
+  /**
+   * L'inventaire énumère des NOMBRES DE DENTS de roues possédées. Les filets
+   * d'une vis sans fin n'en sont pas une : les compter là exclurait toute vis
+   * dès qu'on possède un stock d'engrenages droits.
+   */
+  function inInventory(stage,inventory){
+    var input=teeth(stage,'input'),output=teeth(stage,'output');
+    if(stage.type!=='worm'&&input!=null&&inventory.indexOf(input)===-1)return false;
+    return !(output!=null&&inventory.indexOf(output)===-1);
   }
   function applyModule(stages,m){stages.forEach(function(s){s.parameters=s.parameters||{};var def=Registry.get(s.type);if(def.capabilities.usesModule&&m!=null)s.parameters.module=m;else if(!def.capabilities.usesModule)delete s.parameters.module;});}
   function assessment(solution){var known=[],coverage='full';solution.mechanical.forEach(function(m){if(m.mechanicalStatus!=='evaluated'||m.bendingStatus!=='evaluated'||m.contactStatus!=='evaluated')coverage=coverage==='full'?'partial':coverage;if(m.mechanicalStatus==='unsupported')coverage='unsupported';if(m.bending&&Number.isFinite(m.bending.safetyFactor))known.push(m.bending.safetyFactor);if(m.contact&&Number.isFinite(m.contact.safetyFactor))known.push(m.contact.safetyFactor);});return {coverage:coverage,minimum:known.length?Math.min.apply(Math,known):null};}
@@ -44,9 +59,14 @@
     // Gabarit d'architecture : typeTemplate[d] = types autorisés à la profondeur d
     // (null = libre). Les crans au-delà de la longueur explorée sont ignorés.
     var typeTemplate=(p.typeTemplate||[]).map(function(slot){return slot&&slot.length?slot.map(function(id){return id==='epicyclic'?'planetary':id;}):null;});
+    var inventory=list(p.teethInventory);
     var opts={inputMin:p.dentMenanteMin||6,inputMax:p.dentMenanteMax||60,outputMin:p.dentMeneeMin||6,outputMax:p.dentMeneeMax||120,reductionOnly:p.allowReductionOnly!==false,typeParameters:typeParameters};
+    // Un inventaire ÉLARGIT le balayage à ce qu'il contient : sinon posséder
+    // une roue de 80 dents ne servirait à rien tant que la plage s'arrête à 50.
+    if(inventory.length){opts.inputMin=Math.min(opts.inputMin,Math.min.apply(Math,inventory));opts.inputMax=Math.max(opts.inputMax,Math.max.apply(Math,inventory));opts.outputMin=Math.min(opts.outputMin,Math.min.apply(Math,inventory));opts.outputMax=Math.max(opts.outputMax,Math.max.apply(Math,inventory));}
     var candidates=[];
     active.forEach(function(id){var def=Registry.get(id);if(!def)return;def.generateCandidates(opts).forEach(function(stage){
+      if(inventory.length&&!inInventory(stage,inventory)){rejections.geometry++;return;}
       try{var ratio=def.calculateRatio(stage);if(def.validateConfiguration(stage)&&isFinite(ratio)&&ratio!==0&&Math.abs(ratio)<=def.constraints.maxRatio)candidates.push({stage:stage,ratio:Math.abs(ratio)});else rejections.geometry++;}catch(e){rejections.geometry++;}
     });});
     var maxIterations=Math.max(1,p.maxIterations||500000),target=p.rapportCible,tolerance=p.precisionToleree==null?.1:p.precisionToleree;

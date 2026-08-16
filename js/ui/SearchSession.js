@@ -62,7 +62,9 @@
     { id: 'module_min', group: 'module', key: 'min', nullable: true },
     { id: 'module_max', group: 'module', key: 'max', nullable: true },
     { id: 'input_material', group: 'materials', key: 'input', kind: 'text' },
-    { id: 'output_material', group: 'materials', key: 'output', kind: 'text' }
+    { id: 'output_material', group: 'materials', key: 'output', kind: 'text' },
+    { id: 'teeth_inventory', group: 'gearing', key: 'teethInventory', kind: 'list' },
+    { id: 'module_list', group: 'module', key: 'list', kind: 'list' }
   ];
 
   /** Les bornes de dentures sont portées par un curseur : des textes, pas des champs. */
@@ -93,6 +95,13 @@
 
   function round(value) {
     return typeof value === 'number' ? Math.round(value * 10000) / 10000 : value;
+  }
+
+  /** « 16, 20 24 » vaut [16, 20, 24] : un inventaire se saisit comme on le dit. */
+  function numberList(text) {
+    return String(text || '').split(/[^0-9.]+/)
+      .map(function (piece) { return parseFloat(piece); })
+      .filter(function (value) { return isFinite(value) && value > 0; });
   }
 
   /**
@@ -375,6 +384,13 @@
     var axes = this.preferences.activeAxes();
     section('Optimisation', axes.map(function (axis, index) { return (index + 1) + '. ' + axis.label; }));
 
+    var teeth = this.technical.gearing.teethInventory || [];
+    var modules = this.technical.module.list || [];
+    section('Composants', [
+      teeth.length ? teeth.length + ' dentures en stock : ' + teeth.join(', ') : null,
+      modules.length ? 'modules : ' + modules.join(', ') : null
+    ]);
+
     var depth = this.technical.depth();
     section('Recherche', [
       depth ? depth.label : this.technical.search.maxSolutions + ' solutions au plus',
@@ -477,6 +493,7 @@
       if (!node) return;
       var value = self.technical[mirror.group][mirror.key];
       if (mirror.kind === 'flag') node.checked = !!value;
+      else if (mirror.kind === 'list') node.value = (value || []).join(', ');
       else if (mirror.kind === 'text') { if (value != null) node.value = String(value); }
       else write(mirror.id, value);
     });
@@ -550,6 +567,7 @@
       var node = el(mirror.id);
       if (!node) return;
       if (mirror.kind === 'flag') { technical.set(mirror.group, mirror.key, !!node.checked); return; }
+      if (mirror.kind === 'list') { technical.set(mirror.group, mirror.key, numberList(node.value)); return; }
       if (mirror.kind === 'text') { if (node.value) technical.set(mirror.group, mirror.key, node.value); return; }
       var value = read(mirror.id);
       // Un champ vide ne veut dire « aucune valeur » que là où c'est un choix

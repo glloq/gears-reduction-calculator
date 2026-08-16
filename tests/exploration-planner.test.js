@@ -131,3 +131,59 @@ test('the session plans an exploration, and the app runs the bands one at a time
   assert.match(app, /plan\.runs\.reduce/);
   assert.match(app, /if \(!isSearching\) return null;/);
 });
+
+// ===== §E : partir d'un inventaire réel de composants =====
+
+test('an inventory combines only the teeth one actually owns', () => {
+  const owned = [16, 20, 48, 60];
+  const base = {
+    rapportCible: 3, precisionToleree: 12, maxEtages: 1, maxSolutions: 40, maxIterations: 40000,
+    typesActifs: ['spur'], typeParameters: { spur: { module: 1 } }, allowReductionOnly: true,
+    module: 1, moduleMode: 'fixed', vitesseEntree: 1500, coupleEntree: 2,
+    // Volontairement trop étroites : l'inventaire doit ÉLARGIR le balayage,
+    // sinon posséder une roue de 60 dents ne servirait à rien.
+    dentMenanteMin: 20, dentMenanteMax: 22, dentMeneeMin: 40, dentMeneeMax: 42
+  };
+  const free = Search.search(base).solutions;
+  const stocked = Search.search(Object.assign({}, base, { teethInventory: owned })).solutions;
+
+  assert.ok(stocked.length, 'un stock cohérent doit donner des solutions');
+  for (const solution of stocked) {
+    for (const stage of solution.stages) {
+      assert.ok(owned.includes(stage.input.teeth), stage.input.teeth + ' n’est pas en stock');
+      assert.ok(owned.includes(stage.output.teeth), stage.output.teeth + ' n’est pas en stock');
+    }
+  }
+  // 20 → 60 n'était atteignable pour aucune plage de la recherche libre.
+  assert.ok(stocked.some(s => s.stages[0].input.teeth === 20 && s.stages[0].output.teeth === 60));
+  assert.ok(!free.some(s => s.stages[0].output.teeth === 60));
+});
+
+test('a module stock replaces the standard ladder, and an empty one changes nothing', () => {
+  const base = {
+    rapportCible: 3, precisionToleree: 5, maxEtages: 1, maxSolutions: 20, maxIterations: 20000,
+    typesActifs: ['spur'], typeParameters: { spur: {} }, allowReductionOnly: true,
+    dentMenanteMin: 10, dentMenanteMax: 12, dentMeneeMin: 30, dentMeneeMax: 36,
+    module: 1, moduleMode: 'fixed', vitesseEntree: 1500, coupleEntree: 2
+  };
+  const stocked = Search.search(Object.assign({}, base, { moduleList: [1.5] })).solutions;
+  assert.ok(stocked.length);
+  assert.ok(stocked.every(s => s.stages[0].parameters.module === 1.5));
+  // Une liste vide n'est pas un inventaire : c'est l'absence d'inventaire.
+  const empty = Search.search(Object.assign({}, base, { moduleList: [], teethInventory: [] })).solutions;
+  assert.equal(empty.length, Search.search(base).solutions.length);
+});
+
+test('a gear stock never rules out a worm because of its number of starts', () => {
+  const base = {
+    rapportCible: 30, precisionToleree: 2, maxEtages: 1, maxSolutions: 20, maxIterations: 40000,
+    typesActifs: ['worm'], typeParameters: { worm: { wormStartsMin: 1, wormStartsMax: 2, module: 1 } },
+    allowReductionOnly: true, module: 1, moduleMode: 'fixed', vitesseEntree: 1500, coupleEntree: 2,
+    dentMenanteMin: 1, dentMenanteMax: 4, dentMeneeMin: 20, dentMeneeMax: 70
+  };
+  // Un filet de vis n'est pas une roue : l'inventaire ne doit porter que sur
+  // la roue creuse, sinon posséder des engrenages interdirait toute vis.
+  const solutions = Search.search(Object.assign({}, base, { teethInventory: [30, 60] })).solutions;
+  assert.ok(solutions.length, 'la vis doit rester atteignable');
+  assert.ok(solutions.every(s => [30, 60].includes(s.stages[0].wheelTeeth)));
+});

@@ -541,3 +541,34 @@ test('an exploration answers « how much can I get » instead of « find me 12:1
   await expect(page.locator('.solution-card').first()).toContainText('Écart de 0 %');
   expect(errors).toEqual([]);
 });
+
+test('a real parts inventory is combined, and nothing outside it is proposed', async ({ page }) => {
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 3);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#intentCards [data-intent="parts"]').click();
+  await page.locator('[data-step="criteria"]').click();
+  await expect(page.locator('#partsPanel')).toHaveAttribute('open', /.*/);
+
+  // « J'ai des roues de 16, 20, 48 et 60 dents, en module 1,5. »
+  await page.locator('#inventory_gearing_teethInventory').fill('16, 20, 48, 60');
+  await page.locator('#inventory_gearing_teethInventory').blur();
+  await page.locator('#inventory_module_list').fill('1.5');
+  await page.locator('#inventory_module_list').blur();
+  await expect(page.locator('.search-summary-section[data-section="Composants"]'))
+    .toContainText('4 dentures en stock');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 60000 });
+  // Le miroir historique porte l'inventaire : URL partagée et comparaison suivent.
+  expect(await page.inputValue('#teeth_inventory')).toBe('16, 20, 48, 60');
+
+  const teeth = await page.evaluate(() => {
+    const pool = window.GearApp._explorer.getPool();
+    return pool.flatMap(s => s.stages).flatMap(stage => [stage.input && stage.input.teeth, stage.output && stage.output.teeth]);
+  });
+  expect(teeth.length).toBeGreaterThan(0);
+  for (const count of teeth) {
+    if (count != null) expect([16, 20, 48, 60]).toContain(count);
+  }
+});
