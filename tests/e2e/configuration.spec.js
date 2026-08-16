@@ -16,7 +16,7 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   await expect(page.locator('#sidebar')).toHaveCount(0);
   await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
   // Deux décisions indépendantes : la méthode, puis la politique technologique.
-  await expect(page.locator('#intentCards .type-entry')).toHaveCount(5);
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(6);
   await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(4);
   expect(errors).toEqual([]);
 });
@@ -571,4 +571,58 @@ test('a real parts inventory is combined, and nothing outside it is proposed', a
   for (const count of teeth) {
     if (count != null) expect([16, 20, 48, 60]).toContain(count);
   }
+});
+
+// ===== §G : améliorer un réducteur existant =====
+
+test('an existing reducer becomes the reference, and better is found at its ratio', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#intentCards [data-intent="improve"]').click();
+  await expect(page.locator('#existingSummary')).toContainText('Décrivez au moins un étage');
+
+  // « J'ai : étage 1 = 20 → 60 module 1, étage 2 = 15 → 45 module 1,5. »
+  await page.locator('#addExistingStageBtn').click();
+  await page.locator('#existing_0_input_teeth').fill('20');
+  await page.locator('#existing_0_input_teeth').blur();
+  await page.locator('#existing_0_output_teeth').fill('60');
+  await page.locator('#existing_0_output_teeth').blur();
+  await page.locator('#addExistingStageBtn').click();
+  await page.locator('#existing_1_input_teeth').fill('15');
+  await page.locator('#existing_1_input_teeth').blur();
+  await page.locator('#existing_1_output_teeth').fill('45');
+  await page.locator('#existing_1_output_teeth').blur();
+  await page.locator('#existing_1_module').fill('1.5');
+  await page.locator('#existing_1_module').blur();
+
+  // Le réducteur est MESURÉ dès sa description, avant toute recherche.
+  await expect(page.locator('#existingSummary')).toContainText('Rapport 9:1');
+  await expect(page.locator('#existingSummary')).toContainText('rendement');
+  await expect(page.locator('.search-summary-section[data-section="Réducteur actuel"]'))
+    .toContainText('2 étages, rapport 9:1');
+  await page.locator('#existingGoals [data-goal="compact"]').click();
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 60000 });
+  expect(await page.inputValue('#refine_sort')).toBe('compactness');
+
+  const verdict = await page.evaluate(() => {
+    const pool = window.GearApp._explorer.getPool();
+    const reference = pool.find(s => s.isExisting);
+    const volume = s => s.dimensions.x * s.dimensions.y * Math.max(1, s.dimensions.z);
+    const others = pool.filter(s => !s.isExisting);
+    return {
+      hasReference: !!reference,
+      referenceRatio: reference && reference.ratio,
+      sameRatio: others.every(s => Math.abs(s.ratio - 9) / 9 < 0.03),
+      better: others.some(s => volume(s) < volume(reference))
+    };
+  });
+  // La référence est DANS le vivier : sans elle, « plus compact » qu'quoi ?
+  expect(verdict.hasReference).toBe(true);
+  expect(verdict.referenceRatio).toBeCloseTo(9, 6);
+  expect(verdict.sameRatio).toBe(true);
+  expect(verdict.better).toBe(true);
+  expect(errors).toEqual([]);
 });

@@ -401,3 +401,35 @@ body.modal-open { overflow: hidden; }
 .parts-inventory > span { display: block; font-weight: 600; margin-bottom: 2px; }
 .parts-inventory input { width: 100%; }
 .parts-hint { display: block; color: var(--muted); margin-top: 2px; }
+
+/* ----- §G : le réducteur qu'on a déjà ----- */
+
+.existing-stages { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.existing-stage {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.existing-family { flex: 0 1 10rem; font-size: var(--font-xs); }
+.existing-field {
+  display: flex; align-items: center; gap: 4px;
+  font-size: var(--font-xs); color: var(--muted);
+}
+.existing-field input { flex: 0 0 4.5rem; }
+.existing-stage-remove {
+  margin-left: auto;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-1); color: var(--muted);
+  width: 1.75rem; height: 1.75rem; line-height: 1;
+}
+.existing-stage-remove:hover { border-color: var(--danger, #d33); color: var(--danger, #d33); }
+.existing-errors {
+  margin: var(--sp-1) 0 0; padding-left: 1.2rem;
+  font-size: var(--font-xs); color: var(--danger, #d33);
+}
+.existing-summary { margin: var(--sp-1) 0 0; font-size: var(--font-xs); color: var(--muted); }
+.existing-goals {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}

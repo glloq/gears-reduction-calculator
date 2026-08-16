@@ -1,11 +1,13 @@
 // SearchSession.js - L'état d'un projet, et la seule route vers le moteur.
 //
-// La session porte quatre modèles et rien d'autre :
+// La session porte des modèles, et rien d'autre :
 //
+//   SearchIntentModel         ce qu'on demande au solveur de TROUVER
 //   RequirementModel          ce que l'utilisateur a et veut
 //   PreferenceModel           ce qui filtre, ce qui classe
 //   TechnologySelectionModel  comment il veut choisir les familles
 //   TechnicalSettingsModel    les réglages qui ne relèvent pas du besoin
+//   ExistingReducer           la machine dont il part, quand il en a une
 //
 //        → ConstraintCompiler → LegacySearchAdapter → SearchParams → moteur
 //
@@ -97,6 +99,10 @@
     return typeof value === 'number' ? Math.round(value * 10000) / 10000 : value;
   }
 
+  function round1(value) {
+    return typeof value === 'number' && isFinite(value) ? Math.round(value * 10) / 10 : value;
+  }
+
   /** « 16, 20 24 » vaut [16, 20, 24] : un inventaire se saisit comme on le dit. */
   function numberList(text) {
     return String(text || '').split(/[^0-9.]+/)
@@ -117,8 +123,34 @@
     this.intent = new R.SearchIntentModel(seed.intent || {});
     this.technologySelection = new R.TechnologySelectionModel(seed.technologySelection || {});
     this.technical = new R.TechnicalSettingsModel(seed.technical || {});
+    this.existing = new R.ExistingReducer(seed.existing || {});
     this._advice = null;
   }
+
+  /**
+   * Options d'ingénierie du besoin courant, pour analyser une chaîne décrite à
+   * la main. Le réducteur existant DOIT être mesuré avec les mêmes hypothèses
+   * que ses remplaçants, sinon la comparaison compare deux mondes.
+   */
+  SearchSession.prototype.engineeringOptions = function () {
+    var torque = this.requirement.inputTorqueRequirement().nominal();
+    return {
+      inputSpeedRpm: this.requirement.input.speed.nominal() || 1500,
+      inputTorqueNm: torque == null ? 10 : torque,
+      inputMaterial: this.technical.materials.input,
+      outputMaterial: this.technical.materials.output,
+      additiveDerating: this.technical.manufacturing.additiveDerating,
+      weights: this.preferences.weights(),
+      fatigue: this.technical.fatigue,
+      shaft: this.technical.shaft
+    };
+  };
+
+  /** Le réducteur existant, analysé — la référence de toute comparaison. */
+  SearchSession.prototype.baseline = function () {
+    if (!this.intent.improves() || !this.existing.isDescribed()) return null;
+    return this.existing.analyze(this.engineeringOptions());
+  };
 
   // ===== Conseiller, mémorisé par état =====
 
@@ -172,6 +204,12 @@
     var tolerance = this.intent.ratioTolerance();
     if (tolerance != null && !this.requirement.ratio.isKnown()) {
       request.ratioTolerancePercent = Math.max(request.ratioTolerancePercent, tolerance);
+    }
+    // Améliorer l'existant, c'est chercher à RAPPORT ÉGAL : le rapport n'est
+    // pas une exigence à saisir, il est déjà dans la machine qu'on décrit.
+    if (this.intent.improves() && request.ratio == null) {
+      var existingRatio = this.existing.ratio();
+      if (existingRatio) request.ratio = existingRatio;
     }
     return request;
   };
@@ -247,6 +285,23 @@
     };
   };
 
+  /**
+   * Tri du vivier imposé par la méthode, ou null pour le classement habituel.
+   * Une exploration comme une amélioration poursuivent une performance :
+   * « recommandé » répondrait à une autre question que celle qui a été posée.
+   */
+  SearchSession.prototype.poolSort = function () {
+    if (this.intent.explores()) {
+      var target = this.intent.objectiveDescriptor();
+      return target ? target.sort : null;
+    }
+    if (this.intent.improves()) {
+      var wanted = R.existingReducer.goal(this.existing.goal);
+      return wanted ? wanted.sort : null;
+    }
+    return null;
+  };
+
   SearchSession.prototype.toSearchParams = function (overrides) {
     var request = this.compile(overrides);
     var settings = this.technical.toAdapterSettings();
@@ -266,8 +321,12 @@
     var problem = requirement.inferProblem();
     var levels = [];
 
-    // Une exploration se passe de rapport visé : la bande en fournit un.
-    if (this.intent.explores()) problem = { mode: problem.mode || 'ratio', reason: problem.reason };
+    // Une exploration se passe de rapport visé : la bande en fournit un. Une
+    // amélioration le tire du réducteur décrit. Dans les deux cas la géométrie
+    // est calculable, et prétendre le contraire découragerait à tort.
+    if (this.intent.explores() || (this.intent.improves() && this.existing.ratio())) {
+      problem = { mode: problem.mode || 'ratio', reason: problem.reason };
+    }
 
     levels.push({ id: 'geometry', label: 'Géométrie et rapport', available: !!problem.mode,
       missing: problem.mode ? null : 'besoin incomplet' });
@@ -295,6 +354,25 @@
       notes.unshift({ level: 'ok', code: 'exploration',
         text: 'Espace exploré : rapports ' + round(span.min) + ' à ' + round(span.max) + ':1' +
           (span.stated ? '' : ' (plage par défaut, modifiable dans le besoin)') + '.' });
+    }
+    if (this.intent.improves()) {
+      notes = notes.filter(function (note) { return note.code !== 'no-problem'; });
+      var described = this.existing.describe();
+      if (!described) {
+        notes.unshift({ level: 'error', code: 'no-existing', text: 'Décrivez le réducteur que vous avez : au moins un étage.' });
+      } else {
+        this.existing.errors().forEach(function (entry) {
+          notes.push({ level: 'error', code: 'existing-stage', text: 'Étage ' + entry.stage + ' : ' + entry.text });
+        });
+        var reference = this.baseline();
+        notes.unshift({ level: reference ? 'ok' : 'warn', code: 'existing',
+          text: reference
+            ? 'Réducteur actuel : ' + described + ', Ø ' + Math.round(reference.dimensions.maxDiameter) +
+              ' mm, rendement ' + Math.round(reference.efficiency * 100) + ' %.'
+            : 'Réducteur actuel : ' + described + ' (non analysable en l’état).' });
+      }
+    }
+    if (this.intent.explores()) {
       if (this.intent.objective === 'torque' && !this.requirement.inputTorqueRequirement().isKnown()) {
         // Le couple de sortie est proportionnel au couple d'entrée : le
         // CLASSEMENT reste juste sans lui, seules les valeurs sont arbitraires.
@@ -315,8 +393,11 @@
 
   SearchSession.prototype.isReady = function () {
     // Une exploration n'a pas de rapport à déterminer : c'est tout son objet.
-    // Exiger un besoin « complet » lui interdirait de démarrer.
-    var need = this.intent.explores() ? true : this.requirement.isComplete();
+    // Exiger un besoin « complet » lui interdirait de démarrer. Une
+    // amélioration, elle, tire son rapport du réducteur décrit.
+    var need = this.intent.explores() ? true
+      : this.intent.improves() ? (!!this.existing.ratio() && !this.existing.errors().length)
+      : this.requirement.isComplete();
     return need && this.technologySelection.isComplete() && this.selectedTechnologies().length > 0;
   };
 
@@ -374,6 +455,17 @@
         'maximiser : ' + target.label.toLowerCase(),
         'rapports ' + round(span.min) + ' à ' + round(span.max) + ':1' + (span.stated ? '' : ' (par défaut)'),
         R.ExplorationPlanner.bands(span.min, span.max).length + ' bandes balayées'
+      ]);
+    }
+
+    if (this.intent.improves() && this.existing.isDescribed()) {
+      var reference = this.baseline();
+      var wanted = R.existingReducer.goal(this.existing.goal);
+      section('Réducteur actuel', [
+        this.existing.describe(),
+        reference ? 'Ø ' + Math.round(reference.dimensions.maxDiameter) + ' mm, rendement ' +
+          Math.round(reference.efficiency * 100) + ' %, ' + round1(reference.outputTorqueNm) + ' N·m' : null,
+        wanted ? 'objectif : ' + wanted.label.toLowerCase() : null
       ]);
     }
 
@@ -441,7 +533,8 @@
       requirement: this.requirement.toJSON(),
       preferences: this.preferences.toJSON(),
       technologySelection: this.technologySelection.toJSON(),
-      technical: this.technical.toJSON()
+      technical: this.technical.toJSON(),
+      existing: this.existing.toJSON()
     };
   };
 
@@ -455,6 +548,7 @@
     this.preferences = draft.preferences;
     this.technologySelection = draft.technologySelection;
     this.technical = draft.technical;
+    this.existing = draft.existing;
     this._advice = null;
     return this;
   };

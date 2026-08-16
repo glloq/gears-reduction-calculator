@@ -194,7 +194,8 @@ test('the first step asks two independent questions', () => {
   const Intent = require('../js/requirements/SearchIntentModel.js');
   // Ce qu'on cherche…
   assert.match(typeStep, /Que cherchez-vous/);
-  assert.deepEqual(Intent.MODES.map(m => m.id), ['best', 'target', 'constrained', 'parts', 'maximize']);
+  assert.deepEqual(Intent.MODES.map(m => m.id),
+    ['best', 'target', 'constrained', 'parts', 'maximize', 'improve']);
   // …et, séparément, comment choisir la technologie.
   assert.match(typeStep, /Comment choisir la technologie/);
   assert.deepEqual(typeStep.match(/policy: '(\w+)'/g).slice(0, 4),
@@ -208,11 +209,17 @@ test('the first step asks two independent questions', () => {
 test('only the modes the solver can honour are offered', () => {
   const Intent = require('../js/requirements/SearchIntentModel.js');
   // Les modes prévus mais irréalisables sont déclarés, jamais affichés :
-  // une carte sans effet serait pire que son absence.
-  assert.ok(Intent.PLANNED.length >= 1);
+  // une carte sans effet serait pire que son absence. La liste est vide
+  // aujourd'hui — chaque mode annoncé est réellement honoré.
   for (const planned of Intent.PLANNED) {
     assert.ok(!Intent.mode(planned.id), planned.id + ' ne doit pas être proposé');
     assert.ok(planned.needs, planned.id + ' doit dire ce qui lui manque');
+  }
+  // Chaque mode affiché doit être porté par du code, pas par une carte seule.
+  for (const mode of Intent.MODES) {
+    if (mode.explore) assert.match(typeStep, /intent\.explores\(\)/);
+    if (mode.improve) assert.match(typeStep, /intent\.improves\(\)/);
+    if (mode.parts) assert.match(modal, /startsFromParts\(\)/);
   }
 });
 

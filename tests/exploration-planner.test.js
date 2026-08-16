@@ -126,7 +126,7 @@ test('the session plans an exploration, and the app runs the bands one at a time
   assert.match(session, /SearchSession\.prototype\.explorationPlan = function/);
   assert.match(session, /SearchSession\.prototype\.explorationSpan = function/);
   // Une exploration n'a pas de rapport à déterminer : elle doit pouvoir partir.
-  assert.match(session, /intent\.explores\(\) \? true : this\.requirement\.isComplete\(\)/);
+  assert.match(session, /this\.intent\.explores\(\) \? true/);
   // Séquentiel : un worker à la fois, donc un « Arrêter » qui arrête vraiment.
   assert.match(app, /plan\.runs\.reduce/);
   assert.match(app, /if \(!isSearching\) return null;/);

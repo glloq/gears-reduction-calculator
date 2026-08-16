@@ -142,6 +142,10 @@
     (plan ? _explore(plan) : engine.rechercher(searchParams)).then(function (rawResults) {
       // Le moteur ne sait pas tout filtrer : la session applique ce qui reste.
       var resultats = session ? session.filterPool(rawResults) : rawResults;
+      // Améliorer l'existant : la référence entre dans le vivier, sinon
+      // « plus compact » n'aurait rien à quoi se comparer.
+      var reference = session ? session.baseline() : null;
+      if (reference) resultats = [reference].concat(resultats);
       progressBar.style.width = "100%";
       // Le moteur a trouvé, mais une contrainte qu'il ne sait pas exprimer a
       // tout écarté : le dire, plutôt que sonder et accuser autre chose.
@@ -167,7 +171,8 @@
           _resetButton();
         });
       }
-      explorer.setPool(resultats, searchParams, ui.lastStats(), null, plan ? { sort: plan.sort } : null);
+      explorer.setPool(resultats, searchParams, ui.lastStats(), null,
+        session ? { sort: session.poolSort() } : null);
       ui.logger.setStatus(resultats.length > 0
         ? resultats.length + ' solution(s) dans le vivier'
         : "Aucune solution trouvée"

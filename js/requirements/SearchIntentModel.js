@@ -67,6 +67,12 @@
       help: 'Pas de rapport imposé : quel est le maximum atteignable sous mes contraintes ?',
       focus: 'need', tolerance: null, explore: true,
       summary: 'Espace de conception'
+    },
+    {
+      id: 'improve', label: 'Améliorer l’existant', icon: '↻',
+      help: 'Je décris le réducteur que j’ai, et je cherche mieux à rapport égal.',
+      focus: 'type', tolerance: 2, improve: true,
+      summary: 'Depuis l’existant'
     }
   ];
 
@@ -88,10 +94,12 @@
    */
   var DEFAULT_SPAN = { min: 1, max: 200 };
 
-  /** Modes reconnus mais non encore réalisables : déclarés, jamais affichés. */
-  var PLANNED = [
-    { id: 'improveExisting', label: 'Améliorer un réducteur existant', needs: 'un comparateur de variantes' }
-  ];
+  /**
+   * Modes reconnus mais non encore réalisables : déclarés, jamais affichés.
+   * Une carte sans effet serait pire que son absence — la liste est vide
+   * aujourd'hui, et ce fichier est l'endroit où la rouvrir.
+   */
+  var PLANNED = [];
 
   function objective(id) {
     for (var i = 0; i < OBJECTIVES.length; i++) if (OBJECTIVES[i].id === id) return OBJECTIVES[i];
@@ -133,6 +141,9 @@
 
   /** Cette méthode balaye-t-elle un espace au lieu de viser un rapport ? */
   SearchIntentModel.prototype.explores = function () { return !!this.descriptor().explore; };
+
+  /** Cette méthode part-elle d'un réducteur déjà construit ? */
+  SearchIntentModel.prototype.improves = function () { return !!this.descriptor().improve; };
 
   SearchIntentModel.prototype.descriptor = function () { return mode(this.mode) || MODES[0]; };
 

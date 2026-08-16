@@ -74,6 +74,9 @@
   TypeStep.prototype.render = function () {
     this.host.textContent = '';
     this._renderIntent();
+    // Décrire ce qu'on a précède toute question sur ce qu'on veut : c'est la
+    // machine décrite qui fixe le rapport à conserver.
+    if (this.draft.intent.improves()) this._renderExisting();
     this._renderPolicy();
     // La disposition décrit le besoin, pas la technologie : elle vaut quelle
     // que soit la politique, et c'est elle qui nourrit le conseiller.
@@ -148,6 +151,144 @@
 
   function short(value) {
     return value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
+  }
+
+  /**
+   * §G : décrire le réducteur qu'on possède déjà. Les mêmes champs que
+   * l'éditeur d'étages, avant toute recherche — c'est ce qui manquait pour que
+   * « je veux plus compact » ait un point de départ mesurable.
+   */
+  TypeStep.prototype._renderExisting = function () {
+    var self = this, existing = this.draft.existing;
+    var Helpers = GearApp.requirements.existingReducer;
+    var section = document.createElement('section');
+    section.className = 'type-section';
+    section.innerHTML = '<h3>Votre réducteur actuel&nbsp;?</h3>';
+
+    var list = document.createElement('ol');
+    list.className = 'existing-stages';
+    list.id = 'existingStages';
+
+    existing.stages.forEach(function (stage, index) {
+      var item = document.createElement('li');
+      item.className = 'existing-stage';
+      item.dataset.stage = String(index);
+
+      var family = document.createElement('select');
+      family.className = 'existing-family';
+      family.setAttribute('aria-label', 'Type de l’étage existant ' + (index + 1));
+      GROUPS.forEach(function (group) {
+        group.families.forEach(function (id) {
+          if (id === 'rack') return;
+          var option = document.createElement('option');
+          option.value = id;
+          option.textContent = KNOWLEDGE[id].name;
+          if (id === (stage.type === 'epicyclic' ? 'planetary' : stage.type)) option.selected = true;
+          family.appendChild(option);
+        });
+      });
+      family.addEventListener('change', function () {
+        existing.setType(index, family.value);
+        self._changed();
+      });
+      item.appendChild(family);
+
+      Helpers.fieldsFor(stage.type).forEach(function (field) {
+        item.appendChild(numberField(field.label, field.unit, Helpers.get(stage, field.path), field, function (value) {
+          existing.setField(index, field.path, value);
+          self._changed();
+        }, 'existing_' + index + '_' + field.path.replace('.', '_')));
+      });
+      item.appendChild(numberField('Module', 'mm', stage.parameters && stage.parameters.module,
+        { min: 0.1, step: 0.05 }, function (value) {
+          existing.setField(index, 'parameters.module', value);
+          self._changed();
+        }, 'existing_' + index + '_module'));
+
+      var remove = button('existing-stage-remove', '×', function () {
+        existing.removeStage(index);
+        self._changed();
+      });
+      remove.setAttribute('aria-label', 'Retirer l’étage ' + (index + 1));
+      item.appendChild(remove);
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+
+    var add = button('btn-small', '+ Ajouter un étage', function () {
+      existing.addStage('spur', 1);
+      self._changed();
+    });
+    add.id = 'addExistingStageBtn';
+    section.appendChild(add);
+
+    // Les erreurs de saisie se disent là où on saisit, pas au moment du clic
+    // sur « Rechercher ».
+    var errors = existing.errors();
+    if (errors.length) {
+      var warn = document.createElement('ul');
+      warn.className = 'existing-errors';
+      warn.id = 'existingErrors';
+      errors.forEach(function (entry) {
+        var line = document.createElement('li');
+        line.textContent = 'Étage ' + entry.stage + ' : ' + entry.text;
+        warn.appendChild(line);
+      });
+      section.appendChild(warn);
+    }
+
+    var reference = this.draft.baseline();
+    var summary = document.createElement('p');
+    summary.className = 'existing-summary';
+    summary.id = 'existingSummary';
+    summary.textContent = reference
+      ? 'Rapport ' + (Math.round(reference.ratio * 100) / 100) + ':1, Ø ' +
+        Math.round(reference.dimensions.maxDiameter) + ' mm, rendement ' +
+        Math.round(reference.efficiency * 100) + ' %. Les solutions seront cherchées à ce rapport.'
+      : 'Décrivez au moins un étage valide pour mesurer votre réducteur.';
+    section.appendChild(summary);
+
+    var goals = document.createElement('div');
+    goals.className = 'existing-goals';
+    goals.id = 'existingGoals';
+    goals.innerHTML = '<span class="intent-objective-label">Ce que vous voulez gagner</span>';
+    Helpers.GOALS.forEach(function (entry) {
+      var active = existing.goal === entry.id;
+      var chip = button('intent-objective' + (active ? ' active' : ''), entry.label, function () {
+        existing.setGoal(entry.id);
+        self._changed();
+      });
+      chip.dataset.goal = entry.id;
+      chip.setAttribute('aria-pressed', String(active));
+      goals.appendChild(chip);
+    });
+    section.appendChild(goals);
+    this.host.appendChild(section);
+  };
+
+  function numberField(label, unit, value, spec, onCommit, id) {
+    var wrap = document.createElement('label');
+    wrap.className = 'existing-field';
+    wrap.appendChild(document.createTextNode(label));
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.id = id;
+    if (spec.min != null) input.min = spec.min;
+    if (spec.max != null) input.max = spec.max;
+    input.step = spec.step || 1;
+    input.value = value == null ? '' : String(value);
+    input.addEventListener('change', function () {
+      var parsed = parseFloat(input.value);
+      if (isFinite(parsed)) onCommit(parsed);
+    });
+    wrap.appendChild(input);
+    if (unit) {
+      var suffix = document.createElement('span');
+      suffix.className = 'parts-unit';
+      suffix.textContent = unit;
+      wrap.appendChild(suffix);
+    }
+    return wrap;
   }
 
   /** Seconde décision, indépendante : comment choisir la technologie ? */
