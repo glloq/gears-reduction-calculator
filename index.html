@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/config.css">
+  <link rel="stylesheet" href="css/search-modal.css">
   <link rel="stylesheet" href="css/workspace.css">
   <link rel="stylesheet" href="css/visualization.css">
 
@@ -40,27 +41,17 @@
   </noscript>
 
   <header class="app-header">
-    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Ouvrir la configuration" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
       <div><strong>Calculateur d'engrenages</strong><small>Recherche de trains de réduction</small></div>
     </div>
     <div class="header-actions">
-      <button class="btn-icon" id="themeBtn" title="Mode sombre/clair" aria-label="Changer le thème">Thème</button>
-      <button class="btn-icon" id="shareBtn" title="Copier un lien partageable de la configuration" aria-label="Partager">Partager</button>
-    </div>
-  </header>
-
-  <div class="app-body">
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
-    <!-- ===== Configuration (barre latérale modulaire) ===== -->
-    <aside class="sidebar" id="sidebar" aria-label="Configuration de la recherche">
-
-      <!-- Lancement rapide : presets + historique -->
-      <div class="quick-launch">
+      <!-- §18B : presets, historique et aide quittent le flux de configuration
+           pour un menu d'en-tête ; ils n'ont jamais été une étape du besoin. -->
+      <details class="header-menu" id="projectsMenu">
+        <summary class="btn-icon">Projets</summary>
+        <div class="header-menu-panel">
+          <div class="quick-launch">
         <div class="presets-row" id="presetsGrid" role="group" aria-label="Presets"></div>
         <details class="history-panel" id="historyPanel">
           <summary>Recherches récentes</summary>
@@ -68,107 +59,49 @@
         </details>
       </div>
 
-      <!-- ===== 1. BESOIN : une fiche, pas un mode de solveur (2C + 3C) ===== -->
-      <section class="config-step" id="step-besoin" aria-labelledby="besoin-title">
-        <h2 class="section-header" id="besoin-title">Votre besoin</h2>
-
-        <!-- Raccourcis fonctionnels : ils ne font que pré-remplir la fiche. -->
-        <div class="requirement-shortcuts" id="requirementShortcuts" role="group" aria-label="Points de départ"></div>
-
-        <!-- Chaque ligne porte son intention : = ≈ ≥ ≤ ou une plage. -->
-        <div class="requirement-sheet" id="requirementSheet"></div>
-
-        <div class="constraint-add">
-          <button type="button" class="btn-add-constraint" id="addQuantityBtn" aria-expanded="false" aria-controls="quantityMenu">
-            + Ajouter une donnée
-          </button>
-          <div class="constraint-menu" id="quantityMenu" role="menu" hidden></div>
+          <details class="panel help-section" id="panel-aide">
+        <summary><span class="panel-step">?</span><span class="panel-title">Aide &amp; raccourcis</span></summary>
+        <div class="panel-body help-content">
+          <ul>
+            <li><kbd>Ctrl</kbd>+<kbd>Entrée</kbd> : lancer la recherche</li>
+            <li><kbd>Échap</kbd> : arrêter la recherche</li>
+            <li><kbd>?</kbd> : ouvrir/fermer l'aide</li>
+          </ul>
+          <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, clic sur un étage = inspection, double-clic = édition.</p>
+          <p><strong>Mode expert :</strong> matériaux, fatigue, pondération multicritère et graphique de sécurité.</p>
         </div>
+      </details>
 
-        <output id="derivedRatio" class="derived-ratio"></output>
+        </div>
+      </details>
+      <button class="btn-icon" id="themeBtn" title="Mode sombre/clair" aria-label="Changer le thème">Thème</button>
+      <button class="btn-icon" id="shareBtn" title="Copier un lien partageable de la configuration" aria-label="Partager">Partager</button>
+    </div>
+  </header>
 
-        <details class="architecture-panel" id="architecturePanel">
-          <summary>Architecture imposée</summary>
-          <div id="architectureOptions" class="architecture-options">
-            <label><input type="checkbox" data-architecture="axisAngle" value="90"> Renvoi d’angle à 90°</label>
-            <label>Sortie coaxiale
-              <select data-architecture="coaxial">
-                <option value="any">indifférente</option>
-                <option value="required">exigée</option>
-                <option value="avoid">à éviter</option>
-              </select>
-            </label>
-            <label>Réversibilité
-              <select data-architecture="selfLocking">
-                <option value="any">indifférente</option>
-                <option value="required">irréversible (maintient la charge)</option>
-                <option value="forbidden">réversible (rétro-entraînable)</option>
-              </select>
-            </label>
-          </div>
-        </details>
+  <div class="app-body">
 
-        <!-- Miroirs des anciens champs. Ils ne sont plus une source : la
-             session les ÉCRIT depuis le modèle, et sait les relire pour
-             ressusciter une URL partagée ou un preset d'avant la refonte.
-             Ils disparaîtront quand le moteur consommera la requête compilée. -->
+    <!-- §17 : plus de barre latérale de configuration. Ne subsiste, hors flux,
+         que ce qui doit rester dans le DOM : les miroirs de compatibilité, les
+         panneaux techniques que le modal déplace chez lui à l'ouverture, et le
+         bouton de lancement que le modal déclenche. -->
+    <div class="legacy-host" id="legacyHost" hidden aria-hidden="true">
         <div class="legacy-mirrors" id="legacyMirrors" hidden aria-hidden="true">
           <select id="objective_mode" data-persist tabindex="-1">
             <option value="ratio">Rapport de réduction connu</option>
             <option value="need">Vitesse de sortie cible</option>
             <option value="rotationTranslation">Rotation → translation (crémaillère)</option>
           </select>
-          <input type="number" id="vitesse_entree" value="1500" tabindex="-1">
-          <input type="number" id="couple_entree" value="10" tabindex="-1">
-          <input type="number" id="rapport" value="12" tabindex="-1">
-          <input type="number" id="rpm_sortie_cible" data-persist value="125" tabindex="-1">
-          <input type="number" id="linear_travel_per_rev" data-persist value="100" tabindex="-1">
+          <input type="number" id="vitesse_entree" tabindex="-1">
+          <input type="number" id="couple_entree" tabindex="-1">
+          <input type="number" id="rapport" tabindex="-1">
+          <input type="number" id="rpm_sortie_cible" data-persist tabindex="-1">
+          <input type="number" id="linear_travel_per_rev" data-persist tabindex="-1">
           <input type="number" id="linear_speed_min" data-persist tabindex="-1">
           <input type="number" id="linear_speed_max" data-persist tabindex="-1">
           <input type="number" id="linear_force_min" data-persist tabindex="-1">
         </div>
 
-        <!-- Diagnostic vivant : ce que le modèle déduit, sans lancer le solveur. -->
-        <p class="requirement-diagnostic" id="requirementDiagnostic" aria-live="polite"></p>
-      </section>
-
-      <!-- ===== 2. CONTRAINTES : rien tant que l'utilisateur n'en ajoute pas ===== -->
-      <section class="config-step" id="step-contraintes" aria-labelledby="contraintes-title">
-        <h2 class="section-header" id="contraintes-title">Contraintes</h2>
-        <div class="constraint-chips" id="constraintChips" hidden aria-live="polite"></div>
-        <div class="constraint-add">
-          <button type="button" class="btn-add-constraint" id="addConstraintBtn" aria-expanded="false" aria-controls="constraintMenu">
-            + Ajouter une contrainte<span class="constraint-count" hidden></span>
-          </button>
-          <div class="constraint-menu" id="constraintMenu" role="menu" hidden></div>
-        </div>
-      </section>
-
-      <!-- ===== 3. PRIORITÉ : une principale, une secondaire (9B) ===== -->
-      <section class="config-step" id="step-priorite" aria-labelledby="priorite-title">
-        <h2 class="section-header" id="priorite-title">Priorité</h2>
-        <div class="priority-pair">
-          <label for="priority_primary">D’abord</label>
-          <select id="priority_primary"></select>
-          <label for="priority_secondary">Puis</label>
-          <select id="priority_secondary"></select>
-        </div>
-        <p class="field-help" id="priorityHelp"></p>
-      </section>
-
-      <!-- ===== 4. TECHNOLOGIE ===== -->
-      <section class="config-step" id="step-technologie" aria-labelledby="technologie-title">
-        <h2 class="section-header" id="technologie-title">Technologie</h2>
-        <div class="technology-summary" id="technologyMode" role="group" aria-label="Choix des technologies">
-          <button type="button" class="technology-mode active" data-technology-mode="auto" aria-pressed="true">Conseillées</button>
-          <button type="button" class="technology-mode" data-technology-mode="manual" aria-pressed="false">Choisir moi-même</button>
-        </div>
-        <p class="technology-hint" id="technologySummary" aria-live="polite"></p>
-        <div class="advisor-list" id="advisorList"></div>
-        <div class="advisor-gaps" id="advisorGaps" hidden aria-live="polite"></div>
-        <button type="button" class="advanced-toggle" id="technologyToggle" aria-expanded="false" aria-controls="technologyPanel">
-          Cases historiques (lecture seule)
-        </button>
         <div id="technologyPanel" hidden>
         <div class="transmission-filters segmented" role="group" aria-label="Filtrer les familles">
           <button type="button" class="active" data-filter="all">Toutes</button>
@@ -215,9 +148,6 @@
         </div>
         <div id="typeParamsContainer" class="type-params"></div>
         </div>
-      </section>
-
-      <!-- ===== 5. RÉGLAGES AVANCÉS : tout l'existant, replié ===== -->
       <details class="panel advanced-settings" id="panel-avance-racine">
         <summary><span class="panel-title">Réglages avancés</span><span class="panel-hint">tous les paramètres</span></summary>
         <div class="panel-body advanced-body">
@@ -444,31 +374,26 @@
         </div>
       </details>
 
-      <details class="panel help-section" id="panel-aide">
-        <summary><span class="panel-step">?</span><span class="panel-title">Aide &amp; raccourcis</span></summary>
-        <div class="panel-body help-content">
-          <ul>
-            <li><kbd>Ctrl</kbd>+<kbd>Entrée</kbd> : lancer la recherche</li>
-            <li><kbd>Échap</kbd> : arrêter la recherche</li>
-            <li><kbd>?</kbd> : ouvrir/fermer l'aide</li>
-          </ul>
-          <p><strong>Schéma :</strong> molette = zoom, clic-glisser = déplacer, clic sur un étage = inspection, double-clic = édition.</p>
-          <p><strong>Mode expert :</strong> matériaux, fatigue, pondération multicritère et graphique de sécurité.</p>
-        </div>
-      </details>
+    </div>
 
-      <!-- Barre d'action fixe -->
-      <div class="search-action-bar">
+    <div class="search-action-bar" hidden aria-hidden="true">
         <div id="configurationSummary" class="configuration-summary" aria-live="polite"></div>
         <div id="validationMessage" class="field-error" role="alert"></div>
         <button id="startStopBtn" class="btn-primary" aria-describedby="rapport-desc">Rechercher</button>
         <div class="shortcut-hint" id="rapport-desc">Ctrl+Entrée pour lancer, Échap pour arrêter</div>
         <div class="progress-container compact" aria-hidden="true"><div class="sticky-progress"></div></div>
       </div>
-    </aside>
 
     <!-- ===== Espace de travail ===== -->
     <main class="workspace" role="main">
+
+      <!-- §16 : le cahier des charges tient en une ligne ; « Modifier » rouvre
+           le modal sur un brouillon, sans toucher aux résultats affichés. -->
+      <div class="requirement-banner" id="requirementBanner">
+        <p class="requirement-banner-text" id="requirementBannerText" aria-live="polite"></p>
+        <button type="button" class="btn-small" id="editSearchBtn">Modifier</button>
+        <button type="button" class="btn-small" id="newSearchBtn">Nouvelle recherche</button>
+      </div>
 
       <section id="workspaceEmpty" class="workspace-empty empty-state">
         <div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -478,72 +403,10 @@
         <div id="workspaceEmptyActions" class="empty-state-actions" hidden></div>
       </section>
 
-      <!-- Visualisation héro : le graphique d'abord, pleine largeur -->
-      <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
-        <div class="viz-controls">
-          <div class="segmented view-switch">
-            <button class="view-mode active" data-view="teeth" title="Profils de denture en développante, animables — crémaillère comprise">Denture</button>
-            <button class="view-mode" data-view="geometry">Géométrie 2D</button>
-            <button class="view-mode" data-view="kinematic">Cinématique</button>
-          </div>
-          <span class="kinematic-projections">
-            <button class="btn-small active" data-projection="auto">Vue auto</button>
-            <button class="btn-small" data-projection="main">Vue principale</button>
-            <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
-            <button class="btn-small" id="kinematicReset">Réinitialiser</button>
-          </span>
-          <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer" aria-pressed="false">▶</button>
-          <details class="display-menu animation-menu" id="viewerAnimationMenu">
-            <summary aria-label="Options d’animation">1×</summary>
-            <div class="display-menu-panel">
-              <label class="viewer-speed-label" for="viewerSpeed">Vitesse d’animation</label>
-              <select id="viewerSpeed" class="viewer-speed" aria-label="Vitesse d’animation">
-                <option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
-              </select>
-              <button id="viewerReverse" class="btn-small" aria-pressed="false" title="Inverser le sens de l’animation">Inverser le sens</button>
-              <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
-            </div>
-          </details>
-          <details class="display-menu" id="viewerDisplayMenu">
-            <summary>Affichage</summary>
-            <div class="display-menu-panel">
-              <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
-              <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
-              <label data-views="teeth"><input type="checkbox" data-overlay="lineOfAction"> Ligne de contact</label>
-              <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
-              <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
-              <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
-              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
-              <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
-            </div>
-          </details>
-          <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
-          <details class="export-menu">
-            <summary>Exporter</summary>
-            <div>
-              <button data-export="exporterSVG">SVG</button>
-              <button data-export="exporterSVGTechnique">SVG technique</button>
-              <button data-export="exporterPNG">PNG</button>
-              <button data-export="exporterJSON">JSON</button>
-              <button data-export="exporterCSV">CSV</button>
-            </div>
-          </details>
-        </div>
-        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
-        <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, cliquer un étage pour l'inspecter</p>
-        <details class="legacy-canvas-section">
-          <summary>Vue linéaire simplifiée</summary>
-          <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
-        </details>
-      </section>
-
-      <div class="workspace-grid">
-
-        <!-- Volet solutions (maître) -->
+      <!-- §17 : l'espace de conception. Le viewer est au centre, les solutions
+           à gauche, l'inspecteur à droite. Il n'y a plus de configuration ici :
+           elle est dans le modal, résumée par le bandeau ci-dessus. -->
+      <div class="design-workspace">
         <section class="results-pane" id="result-container" aria-label="Solutions trouvées">
           <header class="results-header">
             <h2>Solutions</h2>
@@ -607,6 +470,68 @@
           </div>
         </section>
 
+      <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
+        <div class="viz-controls">
+          <div class="segmented view-switch">
+            <button class="view-mode active" data-view="teeth" title="Profils de denture en développante, animables — crémaillère comprise">Denture</button>
+            <button class="view-mode" data-view="geometry">Géométrie 2D</button>
+            <button class="view-mode" data-view="kinematic">Cinématique</button>
+          </div>
+          <span class="kinematic-projections">
+            <button class="btn-small active" data-projection="auto">Vue auto</button>
+            <button class="btn-small" data-projection="main">Vue principale</button>
+            <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
+            <button class="btn-small" id="kinematicReset">Réinitialiser</button>
+          </span>
+          <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer" aria-pressed="false">▶</button>
+          <details class="display-menu animation-menu" id="viewerAnimationMenu">
+            <summary aria-label="Options d’animation">1×</summary>
+            <div class="display-menu-panel">
+              <label class="viewer-speed-label" for="viewerSpeed">Vitesse d’animation</label>
+              <select id="viewerSpeed" class="viewer-speed" aria-label="Vitesse d’animation">
+                <option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+              </select>
+              <button id="viewerReverse" class="btn-small" aria-pressed="false" title="Inverser le sens de l’animation">Inverser le sens</button>
+              <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
+            </div>
+          </details>
+          <details class="display-menu" id="viewerDisplayMenu">
+            <summary>Affichage</summary>
+            <div class="display-menu-panel">
+              <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
+              <label data-views="teeth"><input type="checkbox" data-overlay="lineOfAction"> Ligne de contact</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
+              <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
+            </div>
+          </details>
+          <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
+          <details class="export-menu">
+            <summary>Exporter</summary>
+            <div>
+              <button data-export="exporterSVG">SVG</button>
+              <button data-export="exporterSVGTechnique">SVG technique</button>
+              <button data-export="exporterPNG">PNG</button>
+              <button data-export="exporterJSON">JSON</button>
+              <button data-export="exporterCSV">CSV</button>
+            </div>
+          </details>
+        </div>
+        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+        <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, cliquer un étage pour l'inspecter</p>
+        <details class="legacy-canvas-section">
+          <summary>Vue linéaire simplifiée</summary>
+          <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
+        </details>
+      </section>
+
         <!-- Volet détail de la solution sélectionnée -->
         <section class="detail-pane" aria-label="Détail de la solution sélectionnée">
           <div id="solutionCard" class="solution-summary" hidden aria-live="polite"></div>
@@ -663,8 +588,6 @@
         </section>
       </div>
 
-      <!-- Comparaison multi-sorties (pleine largeur) -->
-      <div id="comparisonPanel" class="comparison-panel" style="display:none;"></div>
     </main>
   </div>
 
@@ -725,9 +648,13 @@
   <script src="js/visualization/ViewerToolbar.js" defer></script>
 
   <!-- UI -->
+  <script src="js/requirements/TechnologySelectionModel.js" defer></script>
+  <script src="js/requirements/TechnicalSettingsModel.js" defer></script>
   <script src="js/ui/SearchSession.js" defer></script>
+  <script src="js/ui/search/TypeStep.js" defer></script>
+  <script src="js/ui/search/TypeParametersEditor.js" defer></script>
+  <script src="js/ui/search/SearchModal.js" defer></script>
   <script src="js/ui/RequirementSheet.js" defer></script>
-  <script src="js/ui/AdvisorPanel.js" defer></script>
   <script src="js/ui/ConstraintChips.js" defer></script>
   <script src="js/ui/Logger.js" defer></script>
   <script src="js/ui/ColumnPreferences.js" defer></script>

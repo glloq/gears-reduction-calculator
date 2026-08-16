@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { watchConsoleErrors } = require('./console-errors.js');
+const { search } = require('./flow.js');
 let errors = [];
 test.beforeEach(async ({ page }) => {
   errors = watchConsoleErrors(page);
@@ -8,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(() => expect(errors, 'browser errors').toEqual([]));
 
 test('clicking a stage in the hero opens the inspector and bridges to the editor', async ({ page }) => {
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await search(page);
   await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
   await expect(page.locator('#svgContainer .train-svg')).toBeVisible();
 

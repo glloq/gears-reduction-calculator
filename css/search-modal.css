@@ -1,0 +1,325 @@
+/* ===== Modal de recherche : l'éditeur principal (§2, §12, §13) =====
+   Trois colonnes sur desktop — étapes, contenu, résumé permanent — et un
+   assistant plein écran dès que la largeur ne les tient plus. */
+
+.search-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; }
+.search-modal[hidden] { display: none; }
+.search-modal-backdrop { position: absolute; inset: 0; background: rgba(10, 16, 28, .55); }
+
+.search-modal-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 94vw);
+  max-height: min(90vh, 900px);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.search-modal-header {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+.search-modal-header h2 { margin: 0; font-size: var(--font-lg); flex: 1; }
+.search-modal-close { border: 0; background: transparent; font-size: var(--font-lg); line-height: 1; color: var(--muted); padding: 0 6px; }
+.search-modal-close:hover { color: var(--ink); }
+
+/* `minmax(0, …)` sur la colonne centrale : une grille imposerait sinon la
+   largeur min-content de son contenu, et le modal déborderait. */
+.search-modal-body {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr) 15rem;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+.search-modal-steps {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--sp-3);
+  border-right: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.search-step {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 8px 10px;
+  border: 0; background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted); font-weight: 600; font-size: var(--font-sm);
+  text-align: left;
+}
+.search-step:hover { color: var(--accent); }
+.search-step.active { background: var(--accent-soft); color: var(--accent); }
+.search-step-index {
+  display: grid; place-items: center;
+  width: 1.4rem; height: 1.4rem;
+  border-radius: 50%;
+  background: var(--surface-3);
+  font-size: var(--font-xs);
+}
+.search-step.active .search-step-index { background: var(--accent); color: #fff; }
+
+.search-modal-content { padding: var(--sp-4); overflow-y: auto; }
+.search-pane { display: grid; gap: var(--sp-3); }
+.search-pane[hidden] { display: none; }
+.search-pane h3 { margin: 0; font-size: var(--font-md); }
+.search-pane h4 { margin: var(--sp-2) 0 0; font-size: var(--font-sm); color: var(--muted); }
+
+.search-modal-summary {
+  padding: var(--sp-3);
+  border-left: 1px solid var(--line);
+  background: var(--surface-2);
+  overflow-y: auto;
+}
+.search-modal-summary h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.search-summary-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.search-summary-list li { font-size: var(--font-xs); color: var(--ink); }
+.search-summary-state { margin: var(--sp-3) 0 0; font-size: var(--font-xs); font-weight: 600; }
+.search-summary-state.ready { color: var(--success); }
+.search-summary-state.blocked { color: var(--warning); }
+
+.search-modal-footer {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--line);
+}
+.search-modal-spacer { flex: 1; }
+
+/* ----- Étape 1 : comment choisir (§2) ----- */
+
+.type-entries { display: grid; gap: var(--sp-2); }
+.type-entry {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 0 var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  text-align: left;
+}
+.type-entry:hover { border-color: var(--accent); }
+.type-entry.active { border-color: var(--accent); background: var(--accent-soft); }
+.type-entry-icon { grid-row: 1 / 3; place-self: center; font-size: var(--font-lg); }
+.type-entry strong { font-size: var(--font-sm); }
+.type-entry small { color: var(--muted); font-size: var(--font-xs); }
+
+.type-section { display: grid; gap: var(--sp-2); }
+.type-section h3 { margin: 0; }
+
+.disposition-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--sp-2); }
+.disposition-card {
+  display: grid; gap: 2px;
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  text-align: left;
+}
+.disposition-card:hover { border-color: var(--accent); }
+.disposition-card.active { border-color: var(--accent); background: var(--accent-soft); }
+.disposition-card strong { font-size: var(--font-sm); }
+.disposition-card small { color: var(--muted); font-size: var(--font-xs); font-family: var(--font-mono, monospace); }
+
+.type-functions { display: grid; gap: var(--sp-1); }
+.type-functions label { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
+.type-functions select { flex: 0 1 14rem; }
+
+/* Résumé du conseil : quelques lignes, jamais le panneau complet (§3). */
+.type-advice {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.type-advice h4 { margin: 0 0 var(--sp-1); }
+.type-advice ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.advice-row { display: grid; grid-template-columns: 1.2rem 9rem minmax(0, 1fr); gap: var(--sp-1); font-size: var(--font-xs); }
+.advice-name { font-weight: 600; }
+.advice-reason { color: var(--muted); }
+.advice-recommended .advice-mark { color: var(--success); }
+.advice-excluded { opacity: .6; }
+.advice-excluded .advice-mark { color: var(--danger, #d33); }
+
+/* ----- Étape 1, parcours B : familles (§4) ----- */
+
+.family-policy { display: flex; gap: var(--sp-1); }
+.policy-option {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface-1);
+  font-size: var(--font-xs); font-weight: 600; color: var(--muted);
+}
+.policy-option.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.family-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: var(--sp-1); }
+.family-card {
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  font-size: var(--font-sm);
+}
+.family-card:hover { border-color: var(--accent); }
+.family-card.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+/* ----- Étape 1, parcours C : architecture par étage (§5) ----- */
+
+.architecture-stages { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--sp-1); }
+.architecture-stage {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) 2rem;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.architecture-stage-label { font-size: var(--font-xs); color: var(--muted); font-weight: 600; }
+.architecture-stage-remove { border: 0; background: transparent; color: var(--muted); font-size: var(--font-md); line-height: 1; }
+.architecture-stage-remove:hover { color: var(--danger, #d33); }
+
+/* ----- Étape 2 : niveau d'analyse disponible (§7) ----- */
+
+.analysis-levels {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.analysis-levels h4 { margin: 0 0 var(--sp-1); }
+.analysis-level { margin: 0; font-size: var(--font-xs); }
+.analysis-ok { color: var(--success); }
+.analysis-partial { color: var(--muted); }
+
+/* ----- Étape 3 : priorités et fabrication (§10, §11) ----- */
+
+.priority-chips, .priority-secondary { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.priority-chip {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--surface-1);
+  font-size: var(--font-xs); font-weight: 600; color: var(--muted);
+}
+.priority-chip:hover { border-color: var(--accent); color: var(--accent); }
+.priority-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.priority-chip-secondary.active { background: var(--accent-soft); color: var(--accent); }
+
+.btn-link { border: 0; background: transparent; color: var(--accent); font-size: var(--font-xs); padding: 0; text-align: left; }
+
+.fabrication-options { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.fabrication-option {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  font-size: var(--font-xs);
+}
+.fabrication-option.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+/* ----- Bandeau de besoin (§16) ----- */
+
+.requirement-banner {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+.requirement-banner-text { flex: 1; margin: 0; font-size: var(--font-sm); color: var(--ink); }
+
+body.modal-open { overflow: hidden; }
+
+/* ----- Assistant plein écran sous 900 px (§21 de la passe précédente, §13) ----- */
+
+@media (max-width: 900px) {
+  .search-modal-panel { width: 100vw; max-height: 100vh; height: 100vh; border-radius: 0; border: 0; }
+  .search-modal-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .search-modal-steps { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .search-step { flex: 1; justify-content: center; }
+  .search-modal-summary { border-left: 0; border-top: 1px solid var(--line); max-height: 30vh; }
+  .requirement-banner { flex-wrap: wrap; }
+}
+
+/* ----- §16 : la barre latérale n'est plus un formulaire -----
+   Le lancement se fait depuis le modal ; la barre d'action collante ferait
+   double emploi. `#startStopBtn` reste dans le DOM : c'est lui que le modal
+   déclenche, et l'ancien raccourci Ctrl+Entrée continue de l'atteindre. */
+.search-action-bar { display: none; }
+.sidebar { width: min(15rem, 40vw); }
+@media (max-width: 1000px) { .sidebar { width: min(var(--sidebar-width), 92vw); } }
+
+/* ----- §18B : menu Projets dans l'en-tête ----- */
+
+.header-menu { position: relative; }
+.header-menu > summary { list-style: none; cursor: pointer; }
+.header-menu > summary::-webkit-details-marker { display: none; }
+.header-menu-panel {
+  position: absolute;
+  right: 0; top: calc(100% + 6px);
+  z-index: 300;
+  width: min(22rem, 88vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.header-menu-panel .quick-launch { margin: 0 0 var(--sp-2); }
+.header-menu-panel .presets-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+
+/* ----- §17 : colonnes de l'espace de conception ----- */
+
+.design-workspace > .results-pane { position: sticky; top: 0; max-height: calc(100vh - var(--header-height) - 6rem); overflow-y: auto; }
+.design-workspace > .hero-viewer .svg-container { height: clamp(340px, 58vh, 680px); }
+
+@media (max-width: 1000px) {
+  .design-workspace > .results-pane { position: static; max-height: none; }
+}
+
+/* ----- §9 : critères recommandés avant le catalogue ----- */
+
+.constraint-menu-suggested { border-bottom: 1px solid var(--line); padding-bottom: var(--sp-2); margin-bottom: var(--sp-2); }
+.constraint-menu-suggested button { font-weight: 600; }
+.constraint-menu-all {
+  display: block; width: 100%;
+  border: 0; background: transparent;
+  color: var(--accent);
+  font-size: var(--font-xs);
+  text-align: left;
+  padding: 4px 0;
+}
+
+/* ----- §15 : paramètres propres aux familles explorées ----- */
+
+.type-parameters-host { display: grid; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.type-parameters {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: var(--sp-2);
+}
+.type-parameters > summary { font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.type-parameters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.type-parameter { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
+.type-parameter input[type="number"], .type-parameter select { flex: 0 1 6rem; }
+
+/* ----- §20 : service et environnement ----- */
+
+.service-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--sp-2); }
+.service-field { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; font-size: var(--font-xs); }
+.service-field input[type="number"], .service-field select { flex: 0 1 6rem; }

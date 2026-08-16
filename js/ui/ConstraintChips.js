@@ -29,7 +29,8 @@
   var DEFAULTS = {
     maxDiameter: 80, maxLength: 200, maxWidth: 80, efficiency: 90, outputTorque: 80,
     outputSpeed: 100, ratioError: 1, bendingSafety: 1.5, contactSafety: 1.2, stages: 3,
-    outputForce: 200, linearSpeed: 500
+    outputForce: 200, linearSpeed: 500, centerDistance: 100,
+    outputDirection: 1, powerLoss: 50, pitchLineVelocity: 10
   };
 
   function ConstraintChips(session, onChange) {
@@ -167,6 +168,42 @@
       this.menu.appendChild(empty);
       return;
     }
+
+    // §9 : d'abord les quelques critères qui comptent pour CE besoin, ensuite
+    // seulement le catalogue. L'utilisateur n'a pas à savoir lesquels des trente
+    // s'appliquent à une vis sans fin ou à une courroie.
+    var linear = this.session.requirement.inferProblem().mode === 'rotationTranslation';
+    var suggested = GearApp.requirements.preferences.suggest(this.session.selectedTechnologies(), linear, active);
+    if (suggested.length) {
+      var box = document.createElement('div');
+      box.className = 'constraint-menu-group constraint-menu-suggested';
+      box.id = 'constraintSuggestions';
+      var heading = document.createElement('h4');
+      heading.textContent = 'Critères recommandés';
+      box.appendChild(heading);
+      suggested.forEach(function (key) {
+        var meta = GearApp.requirements.preferences.criterion(key);
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('role', 'menuitem');
+        item.dataset.field = key;
+        item.dataset.suggested = '1';
+        item.textContent = '+ ' + meta.label + (meta.unit ? ' (' + meta.unit + ')' : '');
+        item.addEventListener('click', function () { self.add(key); });
+        box.appendChild(item);
+      });
+      this.menu.appendChild(box);
+
+      var all = document.createElement('button');
+      all.type = 'button';
+      all.className = 'constraint-menu-all';
+      all.id = 'showAllConstraints';
+      all.textContent = this._showAll ? 'Masquer le catalogue' : 'Toutes les contraintes…';
+      all.addEventListener('click', function () { self._showAll = !self._showAll; self.render(); });
+      this.menu.appendChild(all);
+      if (!this._showAll) return;
+    }
+
     CATEGORIES.forEach(function (category) {
       var entries = available.filter(function (meta) { return meta.category === category.id; });
       if (!entries.length) return;

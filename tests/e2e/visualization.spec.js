@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { watchConsoleErrors } = require('./console-errors.js');
+const { search } = require('./flow.js');
 
 // Étages de référence : un par famille de transmission, avec les paramètres
 // que le moteur sait dimensionner. Ils sont analysés dans la page pour ne pas
@@ -20,6 +21,10 @@ const STAGES = {
 async function mount(page, names) {
   await page.goto('/');
   await page.waitForFunction(() => window.GearApp && GearApp.visualization && GearApp.visualization.ViewerToolbar);
+  // Le modal de recherche s'ouvre tant qu'aucun besoin n'est défini ; ce harnais
+  // monte le visualiseur directement, il doit donc d'abord dégager la page.
+  const modal = page.locator('#searchModal');
+  if (await modal.isVisible()) await page.locator('#searchModalClose').click();
   return page.evaluate(({ stages, names }) => {
     const chosen = names.map(name => JSON.parse(JSON.stringify(stages[name])));
     // Le visualiseur héro n'est affiché qu'une fois une recherche aboutie ; on
@@ -56,7 +61,7 @@ const watchErrors = watchConsoleErrors;
 test('selection survives all three visualization views', async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await search(page);
   await expect(page.locator('.train-stage').first()).toBeVisible({ timeout: 20000 });
   // On clique une roue de l'étage, pas le centre de son cadre : sur un train
   // composé, les cadres d'étages se recouvrent.
@@ -72,7 +77,7 @@ test('selection survives all three visualization views', async ({ page }) => {
 
 test('animation speed and direction controls update shared viewer state', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await search(page);
   await expect(page.locator('.train-svg')).toBeVisible({ timeout: 20000 });
   // Les réglages d'animation vivent désormais dans un menu replié.
   await page.locator('#viewerAnimationMenu > summary').click();

@@ -17,7 +17,8 @@
 
   var TYPE_NAMES = {
     spur: 'Droit', helical: 'Hélicoïdal', internal: 'Intérieur', bevel: 'Conique',
-    epicyclic: 'Épicycloïdal', worm: 'Vis sans fin', belt: 'Courroie', chain: 'Chaîne', rack: 'Crémaillère'
+    epicyclic: 'Épicycloïdal', planetary: 'Épicycloïdal',
+    worm: 'Vis sans fin', belt: 'Courroie', chain: 'Chaîne', rack: 'Crémaillère'
   };
 
   function el(id) { return document.getElementById(id); }
@@ -93,76 +94,39 @@
     this.updateSummary();
   };
 
-  // ===== Parcours de configuration : le MODÈLE, puis son reflet =====
+  // ===== La configuration vit dans le modal (§16) =====
   //
-  // Workbench n'implémente plus le besoin : il assemble une `SearchSession`
-  // (modèles) et les vues qui l'éditent. Les contrôles historiques ne sont plus
-  // lus pendant la saisie — la session les écrit. C'est l'inversion demandée
-  // par le choix 20C.
+  // Workbench n'héberge plus d'éditeur : il tient la session, ouvre le modal
+  // sur un brouillon, et affiche le cahier des charges en une ligne.
   Workbench.prototype._bindConfigurationFlow = function () {
     var self = this;
     this.session = new GearApp.ui.SearchSession();
 
-    var refresh = function (structural) { self._refreshConfigurationFlow(structural); };
+    this.modal = new GearApp.ui.SearchModal({
+      session: this.session,
+      onSearch: function () {
+        self._refreshConfigurationFlow();
+        var start = el('startStopBtn');
+        if (start) start.click();
+      },
+      onClose: function () { self._refreshConfigurationFlow(); }
+    });
 
-    this.sheet = new GearApp.ui.RequirementSheet(this.session, refresh).bind();
-    this.advisor = new GearApp.ui.AdvisorPanel(this.session, refresh).bind();
+    var edit = el('editSearchBtn');
+    if (edit) edit.addEventListener('click', function () { self.modal.open(0); });
+    var fresh = el('newSearchBtn');
+    if (fresh) fresh.addEventListener('click', function () {
+      // §21 : une nouvelle recherche repart vide, sans valeur imposée en silence.
+      self.session.adopt(new GearApp.ui.SearchSession());
+      self.modal.open(0);
+    });
 
-    this.constraints = new GearApp.ui.ConstraintChips(this.session, refresh).bind();
-
-    this._bindPriorities(refresh);
-    this.session.syncToForm();
     this._refreshConfigurationFlow();
   };
 
-  /** Choix 9B : deux listes, plus huit curseurs. */
-  Workbench.prototype._bindPriorities = function (refresh) {
-    var self = this, axes = GearApp.requirements.preferences.AXES;
-    var primary = el('priority_primary'), secondary = el('priority_secondary');
-    if (!primary || !secondary) return;
-
-    function fill(select, allowNone) {
-      select.innerHTML = '';
-      if (allowNone) {
-        var none = document.createElement('option');
-        none.value = ''; none.textContent = '— rien en particulier —';
-        select.appendChild(none);
-      }
-      axes.forEach(function (axis) {
-        var option = document.createElement('option');
-        option.value = axis.id; option.textContent = axis.label; option.title = axis.help;
-        select.appendChild(option);
-      });
-    }
-    fill(primary, false);
-    fill(secondary, true);
-
-    function commit() {
-      self.session.preferences.primary = primary.value;
-      self.session.preferences.secondary = secondary.value || null;
-      self.session._advice = null;
-      refresh();
-    }
-    primary.addEventListener('change', commit);
-    secondary.addEventListener('change', commit);
-    this._renderPriorities = function () {
-      primary.value = self.session.preferences.primary;
-      secondary.value = self.session.preferences.secondary || '';
-      var help = el('priorityHelp');
-      if (help) {
-        var axis = GearApp.requirements.preferences.axis(self.session.preferences.primary);
-        help.textContent = axis ? axis.help : '';
-      }
-    };
-  };
-
-  /** Réaligne toutes les vues sur le modèle, puis le modèle sur ses miroirs. */
-  Workbench.prototype._refreshConfigurationFlow = function (structural) {
+  /** Réaligne les miroirs et le bandeau sur la session. */
+  Workbench.prototype._refreshConfigurationFlow = function () {
     if (!this.session) return;
-    if (this.sheet && structural !== false) this.sheet.render();
-    if (this.advisor) this.advisor.render();
-    if (this.constraints) this.constraints.render();
-    if (this._renderPriorities) this._renderPriorities();
     this.session.syncToForm();
     this.renderTypeParams();
     this.renderTypeTemplate();
@@ -172,13 +136,18 @@
 
   /**
    * Après une restauration (URL, preset, historique) les miroirs portent la
-   * vérité : la session les adopte et redevient la source. Aucun code de
-   * migration dédié — c'est le même chemin pour une URL d'hier et de demain.
+   * vérité : la session les adopte et redevient la source.
    */
   Workbench.prototype.adoptRestoredForm = function (restored) {
     if (!this.session) return;
     this.session.adoptForm(restored);
     this._refreshConfigurationFlow();
+  };
+
+  /** Le modal s'ouvre de lui-même quand il n'y a rien à chercher (§24.1). */
+  Workbench.prototype.openSearchModalIfEmpty = function () {
+    if (this.session && this.session.isEmpty() && this.modal) this.modal.open(0);
+    return this;
   };
 
   // ===== Objectif (rapport / vitesse / linéaire) =====
@@ -213,11 +182,6 @@
     document.body.classList.toggle('linear-objective', linear);
     this.renderTypeParams();
     this.renderTypeTemplate();
-    // Le jeu de contraintes applicables dépend de l'objectif : une contrainte
-    // linéaire n'a pas de sens en rotatif, et réciproquement.
-    if (this.constraints) this.constraints.render();
-    if (this.technologies) this.technologies.render();
-    if (this.requirements) this.requirements.render();
     this.updateSummary();
   };
 
@@ -516,54 +480,19 @@
 
   // ===== Résumé de configuration =====
 
-  Workbench.prototype._bindSummary = function () {
-    var self = this;
-    var form = el('sidebar');
-    if (!form) return;
-    form.addEventListener('input', function () { self.updateSummary(); });
-    form.addEventListener('change', function () { self.updateSummary(); });
-  };
+  // Le bandeau se met à jour quand la session change, pas quand un champ bouge :
+  // il n'y a plus de formulaire dans la page à écouter.
+  Workbench.prototype._bindSummary = function () { return this; };
 
-  /**
-   * Le récapitulatif collant : ce que la recherche va réellement chercher.
-   * Il se lit sur le MODÈLE, pas sur les miroirs — c'est la seule façon qu'il
-   * dise « 37,5 → 75:1 » au lieu d'une moyenne, et qu'il n'affiche pas une
-   * contrainte vide quand l'utilisateur n'en a posé aucune.
-   */
+  /** Le cahier des charges en une ligne, dans le bandeau (§16). */
   Workbench.prototype.updateSummary = function () {
-    var summary = el('configurationSummary');
-    if (!summary) return;
-    if (!this.session) { summary.innerHTML = ''; return; }
-
-    var requirement = this.session.requirement, preferences = this.session.preferences;
-    var problem = requirement.inferProblem();
-    var bits = [];
-
-    if (problem.mode === 'rotationTranslation') {
-      var travel = requirement.travelRequirement();
-      bits.push('<strong>' + (travel.isKnown() ? travel.describe() + '/tr' : 'course à définir') + '</strong>');
-      bits.push('<span>' + requirement.input.speed.describe() + ' tr/min entrée</span>');
-      if (requirement.output.force.isKnown()) bits.push('<span>Force ' + requirement.output.force.describe() + ' N</span>');
-      bits.push('<span>Pignon-crémaillère</span>');
-    } else {
-      var ratio = requirement.ratioRequirement();
-      bits.push('<strong>' + (ratio.isKnown() ? ratio.describe() : '—') + '</strong>');
-      if (requirement.output.torque.isKnown()) bits.push('<span>Couple ' + requirement.output.torque.describe() + ' N·m</span>');
-      var families = this.session.selectedTechnologies().map(function (id) {
-        var known = GearApp.requirements.TransmissionAdvisor.KNOWLEDGE[id];
-        return known ? known.name : id;
-      });
-      bits.push('<span>' + (families.join(' · ') || 'aucune technologie') + '</span>');
-    }
-
-    var constraints = preferences.constraints();
-    if (constraints.length) {
-      bits.push('<span>' + constraints.map(function (entry) {
-        return entry.meta.label + ' ' + entry.quantity.describe();
-      }).join(' · ') + '</span>');
-    }
-    bits.push('<span>' + preferences.describe() + '</span>');
-    summary.innerHTML = bits.join('');
+    var banner = el('requirementBannerText'), legacy = el('configurationSummary');
+    if (!this.session) return;
+    var text = this.session.isEmpty()
+      ? 'Aucune recherche définie.'
+      : this.session.summarise().join(' · ');
+    if (banner) banner.textContent = text;
+    if (legacy) legacy.textContent = text;
   };
   Workbench.prototype._bindResultsView = function () {
     var container = el('result-container'), cards = el('cardsViewBtn'), table = el('tableViewBtn');
