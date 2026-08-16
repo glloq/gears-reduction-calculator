@@ -84,7 +84,17 @@
       var outDir = dir * signedSign;
       var entry = { index: index, type: stage.type, attach: 'mesh', angleDeg: 0, centerDistance: null, wheels: [], links: [] };
 
-      if (stage.type === 'planetary') {
+      if (stage.type === 'rack') {
+        var rackD = finite(g.pitchDiameterInput, m * finite(stage.pinionTeeth, 20));
+        var rackLength = finite(g.travelPerRevolution, Math.PI * rackD);
+        var pinion = { role: 'input', kind: 'gear', cx: cursor.x, cy: cursor.y - rackD / 2, pitchD: rackD, outsideD: finite(g.maxDiameter, rackD + 2 * m), rootD: Math.max(m, rackD - 2.5 * m), teeth: finite(stage.pinionTeeth, 20), module: m, pressureAngle: finite(g.pressureAngleDeg, 20), speed: speed * dir };
+        var rack = { role: 'output', kind: 'rack', cx: cursor.x, cy: cursor.y, pitchD: 0, outsideD: 2 * m, rootD: m, teeth: Math.max(6, Math.round(rackLength / (Math.PI * m))), module: m, pressureAngle: finite(g.pressureAngleDeg, 20), speed: speed * dir, length: rackLength };
+        entry.attach = 'linear';
+        entry.wheels.push(pinion, rack);
+        entry.stageRadius = Math.max(rackD, rackLength) / 2;
+        placed.push(pinion);
+        maxX = Math.max(maxX, cursor.x + rackLength / 2);
+      } else if (stage.type === 'planetary') {
         // Étage coaxial complet centré au curseur, aux diamètres réels.
         var sunD = finite(g.sunDiameter, m * finite(stage.sunTeeth, 12));
         var ringD = finite(g.ringDiameter, m * finite(stage.ringTeeth, 48));

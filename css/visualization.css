@@ -1,0 +1,58 @@
+/* Common viewer */
+.viewer-overlay-badge { font: 600 11px/1.2 system-ui, sans-serif; pointer-events: none; }
+.viewer-speed-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.viewer-speed { min-height: 32px; padding: 0 .55rem; border: 1px solid var(--color-border, #cbd5e1); border-radius: 6px; background: var(--color-surface, #fff); color: inherit; }
+.display-menu { position: relative; }
+.display-menu > summary { cursor: pointer; list-style: none; padding: .4rem .65rem; border: 1px solid var(--color-border, #cbd5e1); border-radius: 6px; }
+.display-menu-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; gap: .45rem; min-width: 190px; padding: .75rem; border: 1px solid var(--color-border, #cbd5e1); border-radius: 8px; background: var(--color-surface, #fff); box-shadow: 0 10px 25px rgb(15 23 42 / .15); }
+.display-menu-panel label { display: flex; gap: .5rem; align-items: center; white-space: nowrap; }
+.svg-container.hide-pitch-circles .pitch-circle,
+.svg-container.hide-pitch-circles .pitch-diameter,
+.svg-container.hide-dimensions .dimension-layer,
+.svg-container.hide-dimensions .geometry-dimension,
+.svg-container.hide-axes .shaft-axis,
+.svg-container.hide-axes .construction-axis,
+.svg-container.hide-envelope .envelope-layer,
+.svg-container.hide-forces .force-layer,
+.svg-container.hide-forces .force-overlay,
+.svg-container.hide-rpm .shaft-rpm,
+.svg-container.hide-power-flow .power-flow,
+.svg-container.hide-spatial-axes .axis-indicator,
+.svg-container.hide-labels .train-label,
+.svg-container.hide-labels .stage-label { display: none; }
+/* Teeth */
+.helical-mark { stroke-dasharray: 4 3; transform: skewX(-18deg); }
+/* Geometry */
+.dimension-line { fill: none; stroke: var(--color-text-muted, #64748b); stroke-width: 1; }
+.construction-axis { stroke-dasharray: 10 3 2 3; }
+.geometry-envelope { fill: none; stroke: var(--color-text-muted, #64748b); stroke-dasharray: 7 5; opacity: .55; }
+.force-layer:empty, .pitch-layer:empty { display: none; }
+/* Kinematic */
+.kinematic-shaft { stroke-width: 4; }
+/* Dimensions */
+.pitch-circle { fill: none; stroke-dasharray: 5 4; }
+/* Forces */
+.force-vector { fill: none; stroke-width: 2; marker-end: url(#viewer-arrow); }
+/* Warnings */
+.mechanical-warning { color: var(--color-warning, #d97706); }
+/* Selection */
+.train-stage.selected, .kinematic-stage.selected, .geometry-stage.selected { filter: drop-shadow(0 0 4px var(--color-primary, #2563eb)); }
+/* Animation */
+.is-animated .power-flow { stroke-dasharray: 8 8; animation: viewer-flow .8s linear infinite; }
+@keyframes viewer-flow { to { stroke-dashoffset: -16; } }
+/* Dark theme */
+[data-theme="dark"] .dimension-line { stroke: #94a3b8; }
+/* Responsive */
+@media (max-width: 700px) { .stage-inspector { max-width: calc(100vw - 24px); } }
+
+/* Forces */
+.force-vector line { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.force-vector text { fill: var(--accent); font: 700 8px system-ui, sans-serif; paint-order: stroke; stroke: var(--surface-1); stroke-width: 2px; }
+.force-fr line { stroke: var(--success); }
+.force-fa line { stroke: var(--warning); }
+.train-stage:not(.selected) .force-vector { display: none; }
+
+/* Warnings */
+.warning-overlay circle { fill: var(--warning); stroke: var(--surface-1); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.warning-overlay text { fill: var(--surface-1); font: 700 8px system-ui, sans-serif; pointer-events: none; }
+.warning-overlay .warning-danger circle { fill: var(--danger); }

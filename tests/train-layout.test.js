@@ -122,3 +122,12 @@ test('worm places the wheel perpendicular below the screw', () => {
   assert.ok(wheel.cy > worm.cy, 'wheel below the worm');
   assert.ok(Math.abs(wheel.cy - worm.cy - s.geometry.centerDistance) < 1e-6);
 });
+
+test('rack is available in the teeth layout with real pinion and travel geometry', () => {
+  const stage = { type: 'rack', pinionTeeth: 20, parameters: { module: 2 }, geometry: { pitchDiameterInput: 40, maxDiameter: 44, travelPerRevolution: 40 * Math.PI } };
+  const model = Layout.layout([stage], []);
+  assert.equal(model.stages[0].attach, 'linear');
+  assert.equal(model.stages[0].wheels[0].kind, 'gear');
+  assert.equal(model.stages[0].wheels[1].kind, 'rack');
+  assert.equal(model.stages[0].wheels[1].length, 40 * Math.PI);
+});

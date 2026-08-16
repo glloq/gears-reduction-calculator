@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/workspace.css">
+  <link rel="stylesheet" href="css/visualization.css">
 
   <!-- Dépendances CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css">
@@ -399,11 +400,32 @@
             <button class="view-mode" data-view="kinematic">Cinématique</button>
           </div>
           <span class="kinematic-projections">
-            <button class="btn-small active" data-projection="main">Vue principale</button>
+            <button class="btn-small active" data-projection="auto">Vue auto</button>
+            <button class="btn-small" data-projection="main">Vue principale</button>
             <button class="btn-small" data-projection="orthogonal">Vue orthogonale</button>
             <button class="btn-small" id="kinematicReset">Réinitialiser</button>
           </span>
-          <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer">Animer</button>
+          <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer" aria-pressed="false">▶</button>
+          <label class="viewer-speed-label" for="viewerSpeed">Vitesse</label>
+          <select id="viewerSpeed" class="viewer-speed" aria-label="Vitesse d’animation">
+            <option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+          </select>
+          <button id="viewerReverse" class="btn-small" aria-pressed="false" title="Inverser l’animation">Inverser</button>
+          <details class="display-menu" id="viewerDisplayMenu">
+            <summary>Affichage</summary>
+            <div class="display-menu-panel">
+              <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
+              <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
+              <label data-views="teeth kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
+            </div>
+          </details>
           <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
           <details class="export-menu">
             <summary>Exporter</summary>
@@ -562,6 +584,20 @@
   <script src="js/visualization/kinematic/KinematicLayoutEngine.js" defer></script>
   <script src="js/visualization/kinematic/primitives/KinematicPrimitives.js" defer></script>
   <script src="js/visualization/kinematic/KinematicRenderer.js" defer></script>
+  <script src="js/visualization/core/KinematicsEngine.js" defer></script>
+  <script src="js/visualization/core/SceneBuilder.js" defer></script>
+  <script src="js/visualization/core/AnimationController.js" defer></script>
+  <script src="js/visualization/core/ViewportController.js" defer></script>
+  <script src="js/visualization/core/SvgExport.js" defer></script>
+  <script src="js/visualization/core/GeometryUtils.js" defer></script>
+  <script src="js/visualization/geometry/GeometryLayout.js" defer></script>
+  <script src="js/visualization/geometry/GeometryPrimitives.js" defer></script>
+  <script src="js/visualization/geometry/DimensionRenderer.js" defer></script>
+  <script src="js/visualization/teeth/ToothProfile.js" defer></script>
+  <script src="js/visualization/teeth/ToothProfileCache.js" defer></script>
+  <script src="js/visualization/StageInspector.js" defer></script>
+  <script src="js/visualization/overlays/ForceOverlay.js" defer></script>
+  <script src="js/visualization/overlays/WarningOverlay.js" defer></script>
   <script src="js/visualization/TrainLayout.js" defer></script>
   <script src="js/visualization/TrainRenderer.js" defer></script>
   <script src="js/visualization/GeometryRenderer.js" defer></script>
