@@ -395,7 +395,7 @@
       <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
         <div class="viz-controls">
           <div class="segmented view-switch">
-            <button class="view-mode active rotary-only" data-view="teeth" title="Profils de denture en développante, animables">Denture</button>
+            <button class="view-mode active" data-view="teeth" title="Profils de denture en développante, animables — crémaillère comprise">Denture</button>
             <button class="view-mode" data-view="geometry">Géométrie 2D</button>
             <button class="view-mode" data-view="kinematic">Cinématique</button>
           </div>
@@ -416,14 +416,16 @@
             <div class="display-menu-panel">
               <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
               <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
+              <label data-views="teeth"><input type="checkbox" data-overlay="lineOfAction"> Ligne de contact</label>
               <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
               <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
               <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
               <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
               <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports</label>
               <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
               <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
-              <label data-views="teeth kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
+              <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
             </div>
           </details>
           <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
@@ -431,6 +433,7 @@
             <summary>Exporter</summary>
             <div>
               <button data-export="exporterSVG">SVG</button>
+              <button data-export="exporterSVGTechnique">SVG technique</button>
               <button data-export="exporterPNG">PNG</button>
               <button data-export="exporterJSON">JSON</button>
               <button data-export="exporterCSV">CSV</button>
@@ -595,6 +598,8 @@
   <script src="js/visualization/geometry/DimensionRenderer.js" defer></script>
   <script src="js/visualization/teeth/ToothProfile.js" defer></script>
   <script src="js/visualization/teeth/ToothProfileCache.js" defer></script>
+  <script src="js/visualization/teeth/TeethPrimitives.js" defer></script>
+  <script src="js/visualization/teeth/TeethOverlay.js" defer></script>
   <script src="js/visualization/StageInspector.js" defer></script>
   <script src="js/visualization/overlays/ForceOverlay.js" defer></script>
   <script src="js/visualization/overlays/WarningOverlay.js" defer></script>

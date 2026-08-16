@@ -1,8 +1,123 @@
-(function (root, factory) { var api = factory(); if (typeof module === 'object' && module.exports) module.exports = api; else root.GearGeometryPrimitives = api; })(typeof self !== 'undefined' ? self : this, function () {
-  'use strict'; var NS = 'http://www.w3.org/2000/svg';
-  function node(tag, attrs, text) { var element = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach(function (key) { element.setAttribute(key, attrs[key]); }); if (text != null) element.textContent = text; return element; }
-  function circle(group, x, y, diameter, className, label) { var value = Number(diameter) || 0, element = node('circle', { cx: x, cy: y, r: Math.max(4, value / 2), class: className, 'data-diameter-mm': value }); element.appendChild(node('title', {}, label + ' — Ø primitif ' + value.toFixed(2) + ' mm')); group.appendChild(element); return element; }
-  function axis(group, x1, y1, x2, y2) { return group.appendChild(node('line', { x1: x1, y1: y1, x2: x2, y2: y2, class: 'shaft-axis construction-axis' })); }
-  function rack(group, x, y, length, moduleValue) { var pitch = Math.PI * moduleValue, points = [], start = x - length / 2; for (var px = start; px <= start + length; px += pitch / 2) points.push(px + ',' + y, (px + pitch / 4) + ',' + (y - 7)); return group.appendChild(node('polyline', { points: points.join(' '), class: 'rack-profile' })); }
-  return { node: node, circle: circle, axis: axis, rack: rack };
+/* Primitives de la vue « Géométrie 2D ».
+ *
+ * Conventions de trait (portées par les classes CSS, pas par des styles inline) :
+ *   trait continu fort  → géométrie physique (tête, jante, crémaillère)
+ *   trait fin           → cercle primitif
+ *   pointillé           → cercle de base
+ *   tiret-point         → axes
+ *   trait fin + flèches → cotation
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.GearGeometryPrimitives = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function node(tag, attrs, text) {
+    var element = document.createElementNS(NS, tag);
+    Object.keys(attrs || {}).forEach(function (key) { element.setAttribute(key, attrs[key]); });
+    if (text != null) element.textContent = text;
+    return element;
+  }
+  function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
+  function fmt(value, digits) { return Number.isFinite(value) ? value.toFixed(digits == null ? 2 : digits) : '—'; }
+
+  /**
+   * Étiquette ancrée en coordonnées monde mais DESSINÉE À TAILLE D'ÉCRAN.
+   *
+   * Le dessin étant en millimètres, un texte dimensionné en unités monde tombe
+   * sous 2 px de fonte pour un réducteur de 150 mm : les navigateurs y perdent
+   * le crénage et le texte devient illisible. On écrit donc à une taille de
+   * fonte normale dans un groupe mis à l'échelle.
+   */
+  function label(group, x, y, content, className, options) {
+    options = options || {};
+    var scale = finite(options.scale, 1);
+    var host = node('g', { class: 'viz-label', transform: 'translate(' + finite(x, 0).toFixed(2) + ' ' + finite(y, 0).toFixed(2) + ') scale(' + scale.toFixed(4) + ')' });
+    var text = node('text', { x: 0, y: 0, class: className || 'geometry-dimension',
+      'text-anchor': options.anchor || 'middle' }, content);
+    // La taille est posée en style inline : elle doit primer sur les tailles
+    // relatives (em) des classes, qui se rapportent au repère monde.
+    text.style.fontSize = finite(options.fontSize, 11).toFixed(2) + 'px';
+    if (options.dy) text.setAttribute('dy', options.dy);
+    host.appendChild(text);
+    group.appendChild(host);
+    return host;
+  }
+
+  /** Cercle primitif coté : c'est le repère de dimensionnement principal. */
+  function circle(group, x, y, diameter, className, label) {
+    var value = Number(diameter) || 0;
+    var element = node('circle', { cx: x, cy: y, r: Math.max(4, value / 2), class: className, 'data-diameter-mm': value });
+    element.appendChild(node('title', {}, label + ' — Ø primitif ' + fmt(value) + ' mm'));
+    group.appendChild(element);
+    return element;
+  }
+
+  /** Diamètre secondaire (tête, pied, base) : couche « pitch » activable. */
+  function outline(group, x, y, diameter, className, label) {
+    if (!Number.isFinite(diameter) || diameter <= 0) return null;
+    var element = node('circle', { cx: x, cy: y, r: diameter / 2, class: className, 'data-diameter-mm': diameter });
+    if (label) element.appendChild(node('title', {}, label + ' ' + fmt(diameter) + ' mm'));
+    group.appendChild(element);
+    return element;
+  }
+
+  function axis(group, x1, y1, x2, y2) {
+    return group.appendChild(node('line', { x1: x1, y1: y1, x2: x2, y2: y2, class: 'shaft-axis construction-axis' }));
+  }
+
+  /** Crémaillère au pas réel π·m, sur toute la course calculée. */
+  function rack(group, x, y, length, moduleValue) {
+    var m = Math.max(0.1, finite(moduleValue, 1));
+    var pitch = Math.PI * m;
+    var start = x - length / 2;
+    var points = [];
+    for (var px = start; px <= start + length; px += pitch) {
+      points.push(px.toFixed(2) + ',' + (y + 1.25 * m).toFixed(2));
+      points.push((px + pitch / 4).toFixed(2) + ',' + (y - m).toFixed(2));
+      points.push((px + 3 * pitch / 4).toFixed(2) + ',' + (y - m).toFixed(2));
+      points.push((px + pitch).toFixed(2) + ',' + (y + 1.25 * m).toFixed(2));
+    }
+    return group.appendChild(node('polyline', { points: points.join(' '), class: 'rack-profile' }));
+  }
+
+  /** Silhouette conique : cône primitif au demi-angle réel. */
+  function cone(group, x, y, pitchDiameter, coneAngleDeg, faceWidth, className) {
+    var back = finite(pitchDiameter, 20) / 2;
+    var delta = finite(coneAngleDeg, 45) * Math.PI / 180;
+    var face = Math.max(4, finite(faceWidth, back / 2));
+    var depth = Math.max(3, face * Math.cos(delta));
+    var front = Math.max(1, back - face * Math.sin(delta));
+    return group.appendChild(node('path', {
+      class: className || 'geometry-member cone-member',
+      d: 'M ' + x + ' ' + (y - back).toFixed(2) + ' L ' + (x + depth).toFixed(2) + ' ' + (y - front).toFixed(2) +
+        ' L ' + (x + depth).toFixed(2) + ' ' + (y + front).toFixed(2) + ' L ' + x + ' ' + (y + back).toFixed(2) + ' Z'
+    }));
+  }
+
+  /** Vis sans fin : corps cylindrique et axe, vus de côté. */
+  function worm(group, x, y, pitchDiameter, moduleValue, className) {
+    var r = Math.max(2, finite(pitchDiameter, 10) / 2);
+    var m = Math.max(0.1, finite(moduleValue, 1));
+    var length = Math.max(4 * r, 20 * m);
+    group.appendChild(node('rect', { class: className || 'geometry-member worm-member',
+      x: (x - length / 2).toFixed(2), y: (y - r).toFixed(2), width: length.toFixed(2), height: (2 * r).toFixed(2), rx: r.toFixed(2) }));
+    return group.appendChild(node('line', { class: 'shaft-axis construction-axis',
+      x1: (x - length / 2 - 3 * m).toFixed(2), y1: y, x2: (x + length / 2 + 3 * m).toFixed(2), y2: y }));
+  }
+
+  /** Bras du porte-satellites : rend le membre C lisible sans l'animer. */
+  function carrier(group, x, y, orbit, count) {
+    var d = '';
+    for (var i = 0; i < count; i++) {
+      var a = 2 * Math.PI * i / count;
+      d += ' M ' + x + ' ' + y + ' L ' + (x + Math.cos(a) * orbit).toFixed(2) + ' ' + (y + Math.sin(a) * orbit).toFixed(2);
+    }
+    return group.appendChild(node('path', { class: 'geometry-member carrier-member', d: d.trim() }));
+  }
+
+  return { node: node, label: label, circle: circle, outline: outline, axis: axis, rack: rack, cone: cone, worm: worm, carrier: carrier, format: fmt };
 });

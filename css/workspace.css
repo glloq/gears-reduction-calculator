@@ -30,8 +30,10 @@
   padding: var(--sp-4);
 }
 
-.hero-viewer .svg-container { min-height: clamp(340px, 46vh, 600px); }
-.hero-viewer .train-svg, .hero-viewer .geometry-svg, .hero-viewer .kinematic-svg { min-height: clamp(340px, 46vh, 600px); }
+/* Hauteur STABLE du visualiseur : sans hauteur définie, un <svg> se
+   dimensionne sur le rapport de son viewBox et la page sauterait selon que le
+   réducteur dessiné est large (courroie) ou haut (vis sans fin). */
+.hero-viewer .svg-container { height: clamp(340px, 52vh, 620px); }
 
 .results-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .results-header h2 { margin: 0; }
@@ -242,104 +244,6 @@
 }
 .export-menu button { border: 0; background: transparent; text-align: left; }
 .export-menu button:hover { background: var(--accent-soft); }
-
-/* Géométrie 2D : les millimètres calculés sont les unités SVG. */
-.geometry-svg { width: 100%; height: 100%; min-height: 420px; }
-.geometry-member { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 2; }
-.geometry-member.output-member { stroke: var(--success); }
-.internal-ring { fill: none; stroke-width: 4; }
-.planet { fill: var(--surface-2); }
-.pitch-diameter { stroke: var(--muted); stroke-width: .8; stroke-dasharray: 5 4; }
-.belt-span, .chain-span { fill: none; stroke: var(--ink); stroke-width: 4; }
-.chain-span { stroke-dasharray: 8 5; }
-.rack-profile { fill: none; stroke: var(--accent); stroke-width: 3; }
-.shaft-axis { stroke: var(--ink); stroke-width: 3; }
-.geometry-dimension, .member-role { fill: var(--muted); font-size: 13px; }
-.stage-label { fill: var(--muted); font: 600 13px sans-serif; }
-.geometry-svg.is-animated .input-member {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: geometry-spin 4s linear infinite;
-}
-@keyframes geometry-spin { to { transform: rotate(360deg); } }
-
-/* Vue denture réaliste (TrainRenderer) — 100 % jetons, thème sombre gratuit */
-.train-svg { width: 100%; height: 100%; min-height: 420px; cursor: grab; touch-action: none; display: block; }
-.train-svg:active { cursor: grabbing; }
-.tooth-profile { fill: color-mix(in srgb, var(--accent) 14%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; stroke-linejoin: round; }
-.train-wheel.output-member .tooth-profile { fill: color-mix(in srgb, var(--success) 14%, var(--surface-1)); }
-.train-wheel.sun .tooth-profile { fill: color-mix(in srgb, var(--accent) 22%, var(--surface-1)); }
-.train-wheel.planet .tooth-profile { fill: color-mix(in srgb, var(--warning) 12%, var(--surface-1)); }
-.train-wheel.ring .tooth-profile { fill: color-mix(in srgb, var(--muted) 14%, var(--surface-1)); }
-.pitch-circle { fill: none; stroke: var(--muted); stroke-width: .5; stroke-dasharray: 4 3; }
-.gear-hub { fill: var(--surface-1); stroke: var(--ink); stroke-width: .5; }
-.hub-cross, .shaft-link, .stage-axis, .dim-leader, .label-leader { stroke: var(--muted); stroke-width: .5; fill: none; }
-.dim-leader, .label-leader { stroke-dasharray: 2 2; opacity: .7; }
-.worm-thread { stroke: var(--ink); stroke-width: .5; fill: none; }
-.belt-line { stroke: var(--ink); stroke-width: 1.4; fill: none; }
-.chain-line { stroke: var(--ink); stroke-width: 1.4; fill: none; stroke-dasharray: 3 2.2; }
-.tooth-count { fill: var(--ink); font-weight: 600; pointer-events: none; }
-.train-label { fill: var(--muted); }
-.train-dim line { stroke: var(--muted); stroke-width: .5; }
-.train-dim text { fill: var(--muted); }
-.io-chip text { font-weight: 700; }
-.io-chip.in text { fill: var(--success); }
-.io-chip.out text { fill: var(--danger); }
-.io-arrow { stroke: var(--muted); stroke-width: 1; fill: none; }
-
-.train-stage { cursor: pointer; }
-/* Chromium dessine un anneau de focus natif sur les <g tabindex> : le halo
-   de sélection (pitch-circle accentué) le remplace. */
-.train-stage:focus, .train-stage:focus-visible { outline: none; }
-.train-stage:hover .tooth-profile { stroke-width: 1; }
-.train-stage.selected .tooth-profile { stroke: var(--accent); stroke-width: 1.4; }
-.train-stage.selected .pitch-circle { stroke: var(--accent); stroke-dasharray: none; stroke-width: 1; }
-
-/* Carte d'inspection d'étage (coin du conteneur) */
-.svg-container { position: relative; }
-.stage-inspector {
-  position: absolute;
-  top: var(--sp-3);
-  right: var(--sp-3);
-  z-index: 5;
-  max-width: 250px;
-  padding: var(--sp-3);
-  background: var(--surface-1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  font-size: var(--font-sm);
-}
-.stage-inspector header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
-.stage-inspector header .btn-small { padding: 0 6px; min-height: 22px; }
-.inspector-grid { display: grid; gap: 3px; margin-bottom: var(--sp-2); }
-.inspector-grid div { display: flex; justify-content: space-between; gap: var(--sp-2); }
-.inspector-grid span { color: var(--muted); font-size: var(--font-xs); }
-.stage-inspector .btn-primary { width: 100%; }
-
-/* Ligne sélectionnée du tableau d'analyse (synchronisée avec le schéma) */
-.stages-table tr.selected td { background: var(--accent-soft); }
-
-/* Schéma cinématique */
-.kinematic-svg { width: 100%; min-height: 420px; cursor: grab; touch-action: none; }
-.kinematic-svg:active { cursor: grabbing; }
-.kinematic-stage { color: var(--ink); cursor: pointer; transition: opacity .15s, filter .15s; }
-.kinematic-stage:hover, .kinematic-stage.selected { color: var(--accent); filter: drop-shadow(0 0 5px currentColor); }
-.kinematic-stage .gear-symbol, .kinematic-stage .internal-ring, .kinematic-stage .pulley,
-.kinematic-stage .worm-wheel, .kinematic-stage .sun, .kinematic-stage .ring, .kinematic-stage .planet {
-  fill: var(--surface-1); stroke: currentColor; stroke-width: 3;
-}
-.kinematic-stage .inner { stroke-dasharray: 4 3; }
-.kinematic-stage .symbol-line, .kinematic-stage .helix-mark, .kinematic-stage .worm-thread,
-.kinematic-stage .rack-line, .kinematic-stage .rack-tooth { stroke: currentColor; stroke-width: 3; fill: none; }
-.kinematic-stage .belt-span { stroke: #64748b; stroke-width: 4; }
-.kinematic-stage .chain-span { stroke: #a16207; stroke-width: 4; stroke-dasharray: 5 5; }
-.kinematic-stage .bevel-symbol, .kinematic-stage .carrier { fill: none; stroke: currentColor; stroke-width: 3; }
-.kinematic-stage .stage-label, .kinematic-svg .role-label { fill: currentColor; font: 600 13px sans-serif; }
-.kinematic-svg .role-label { text-anchor: middle; }
-.kinematic-svg .input-role { fill: #16a34a; }
-.kinematic-svg .output-role { fill: #dc2626; }
-.kinematic-svg .fixed-role { fill: #ca8a04; }
 
 /* ----- Comparaison de solutions épinglées ----- */
 

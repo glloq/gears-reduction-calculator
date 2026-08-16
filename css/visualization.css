@@ -1,58 +1,266 @@
-/* Common viewer */
+/* ===== Feuille de style unique des trois vues du schéma =====
+   Denture · Géométrie 2D · Cinématique.
+   Tout est exprimé en jetons de design : le thème sombre est gratuit, et les
+   exports SVG résolvent les mêmes valeurs côté JavaScript.
+
+   Conventions de trait de la vue Géométrie :
+     trait continu fort  → géométrie physique
+     trait fin           → cercle primitif
+     pointillé           → cercle de base
+     tiret-point         → axes
+     trait fin + flèches → cotation                                        */
+
+/* ===================== Common viewer ===================== */
+
+.train-svg, .geometry-svg, .kinematic-svg {
+  width: 100%; height: 100%;
+  display: block; cursor: grab; touch-action: none;
+}
+.train-svg:active, .geometry-svg:active, .kinematic-svg:active { cursor: grabbing; }
+
 .viewer-overlay-badge { font: 600 11px/1.2 system-ui, sans-serif; pointer-events: none; }
 .viewer-speed-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.viewer-speed { min-height: 32px; padding: 0 .55rem; border: 1px solid var(--color-border, #cbd5e1); border-radius: 6px; background: var(--color-surface, #fff); color: inherit; }
+.viewer-speed {
+  min-height: 32px; padding: 0 .55rem;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-1); color: inherit;
+}
 .display-menu { position: relative; }
-.display-menu > summary { cursor: pointer; list-style: none; padding: .4rem .65rem; border: 1px solid var(--color-border, #cbd5e1); border-radius: 6px; }
-.display-menu-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; gap: .45rem; min-width: 190px; padding: .75rem; border: 1px solid var(--color-border, #cbd5e1); border-radius: 8px; background: var(--color-surface, #fff); box-shadow: 0 10px 25px rgb(15 23 42 / .15); }
+.display-menu > summary {
+  cursor: pointer; list-style: none;
+  padding: 5px 12px; font-size: var(--font-sm);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.display-menu-panel {
+  position: absolute; z-index: 20; top: calc(100% + 6px); right: 0;
+  display: grid; gap: .45rem; min-width: 200px; padding: .75rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-1); box-shadow: var(--shadow);
+}
 .display-menu-panel label { display: flex; gap: .5rem; align-items: center; white-space: nowrap; }
+
+/* Menu « Affichage » : un seul interrupteur par couche, pour les trois vues. */
 .svg-container.hide-pitch-circles .pitch-circle,
 .svg-container.hide-pitch-circles .pitch-diameter,
+.svg-container.hide-line-of-action .mesh-overlay,
 .svg-container.hide-dimensions .dimension-layer,
+.svg-container.hide-dimensions .train-dim,
 .svg-container.hide-dimensions .geometry-dimension,
 .svg-container.hide-axes .shaft-axis,
 .svg-container.hide-axes .construction-axis,
+.svg-container.hide-axes .stage-axis,
 .svg-container.hide-envelope .envelope-layer,
 .svg-container.hide-forces .force-layer,
-.svg-container.hide-forces .force-overlay,
+.svg-container.hide-forces .force-vector,
 .svg-container.hide-rpm .shaft-rpm,
+.svg-container.hide-ratios .stage-ratio,
 .svg-container.hide-power-flow .power-flow,
+.svg-container.hide-power-flow .power-pulse,
 .svg-container.hide-spatial-axes .axis-indicator,
 .svg-container.hide-labels .train-label,
+.svg-container.hide-labels .label-leader,
+.svg-container.hide-labels .tooth-count,
 .svg-container.hide-labels .stage-label { display: none; }
-/* Teeth */
-.helical-mark { stroke-dasharray: 4 3; transform: skewX(-18deg); }
-/* Geometry */
-.dimension-line { fill: none; stroke: var(--color-text-muted, #64748b); stroke-width: 1; }
-.construction-axis { stroke-dasharray: 10 3 2 3; }
-.geometry-envelope { fill: none; stroke: var(--color-text-muted, #64748b); stroke-dasharray: 7 5; opacity: .55; }
-.force-layer:empty, .pitch-layer:empty { display: none; }
-/* Kinematic */
-.kinematic-shaft { stroke-width: 4; }
-/* Dimensions */
-.pitch-circle { fill: none; stroke-dasharray: 5 4; }
-/* Forces */
-.force-vector { fill: none; stroke-width: 2; marker-end: url(#viewer-arrow); }
-/* Warnings */
-.mechanical-warning { color: var(--color-warning, #d97706); }
-/* Selection */
-.train-stage.selected, .kinematic-stage.selected, .geometry-stage.selected { filter: drop-shadow(0 0 4px var(--color-primary, #2563eb)); }
-/* Animation */
-.is-animated .power-flow { stroke-dasharray: 8 8; animation: viewer-flow .8s linear infinite; }
-@keyframes viewer-flow { to { stroke-dashoffset: -16; } }
-/* Dark theme */
-[data-theme="dark"] .dimension-line { stroke: #94a3b8; }
-/* Responsive */
-@media (max-width: 700px) { .stage-inspector { max-width: calc(100vw - 24px); } }
 
-/* Forces */
+/* ===================== Teeth ===================== */
+
+.tooth-profile { fill: color-mix(in srgb, var(--accent) 14%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; stroke-linejoin: round; }
+.tooth-profile.silhouette { opacity: .85; }
+.train-wheel.output-member .tooth-profile { fill: color-mix(in srgb, var(--success) 14%, var(--surface-1)); }
+.train-wheel.sun .tooth-profile { fill: color-mix(in srgb, var(--accent) 22%, var(--surface-1)); }
+.train-wheel.planet .tooth-profile { fill: color-mix(in srgb, var(--warning) 12%, var(--surface-1)); }
+.train-wheel.ring .tooth-profile { fill: color-mix(in srgb, var(--muted) 14%, var(--surface-1)); }
+.gear-hub { fill: var(--surface-1); stroke: var(--ink); stroke-width: .5; }
+.hub-cross, .shaft-link, .stage-axis, .dim-leader, .label-leader { stroke: var(--muted); stroke-width: .5; fill: none; }
+.dim-leader, .label-leader { stroke-dasharray: 2 2; opacity: .7; }
+.ring-rim { fill: none; stroke: var(--muted); stroke-width: .4; opacity: .7; }
+
+/* Hélicoïdal : stries à l'angle d'hélice réel et repère de sens. */
+.helix-stripe { fill: none; stroke: var(--ink); stroke-width: .35; opacity: .6; }
+.helix-hand { fill: none; stroke: var(--accent); stroke-width: .7; }
+.helix-label, .worm-label { fill: var(--muted); font-weight: 600; font-size: .8em; font-family: system-ui, sans-serif; }
+.helical-mark { stroke-dasharray: 4 3; }
+
+/* Vis sans fin et conique. */
+.worm-body { fill: color-mix(in srgb, var(--muted) 10%, var(--surface-1)); }
+.worm-thread { stroke: var(--ink); stroke-width: .5; fill: none; }
+.cone-body { fill: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); }
+.cone-tip, .cone-teeth { fill: none; stroke: var(--ink); stroke-width: .4; opacity: .8; }
+.cone-apex { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 6 2 1 2; }
+.cone-apex-point { fill: var(--muted); }
+
+/* Porte-satellites : les bras rendent le membre C lisible. */
+.carrier-arms path { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+.carrier-hub { fill: var(--surface-1); stroke: var(--muted); stroke-width: .5; }
+
+/* Courroie et chaîne : chemin géométrique + éléments défilants. */
+.belt-line { stroke: var(--ink); stroke-width: 1.4; fill: none; }
+.chain-line { stroke: var(--ink); stroke-width: 1.4; fill: none; stroke-dasharray: 3 2.2; }
+.belt-tooth { fill: var(--ink); opacity: .7; }
+.chain-link { fill: var(--ink); opacity: .7; }
+
+.rack-teeth { fill: color-mix(in srgb, var(--success) 12%, var(--surface-1)); stroke: var(--ink); stroke-width: .5; }
+.tooth-count { fill: var(--ink); font-weight: 600; pointer-events: none; }
+.train-label { fill: var(--muted); }
+.io-chip text { font-weight: 700; }
+.io-chip.in text { fill: var(--success); }
+.io-chip.out text { fill: var(--danger); }
+.io-arrow { stroke: var(--muted); stroke-width: 1; fill: none; }
+
+.train-stage { cursor: pointer; }
+/* Chromium dessine un anneau de focus natif sur les <g tabindex> : le halo
+   de sélection (pitch-circle accentué) le remplace. */
+.train-stage:focus, .train-stage:focus-visible { outline: none; }
+.train-stage:hover .tooth-profile { stroke-width: 1; }
+
+/* ===================== Geometry ===================== */
+
+/* Les millimètres calculés sont les unités SVG. */
+.geometry-member { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.geometry-member.output-member { stroke: var(--success); }
+.geometry-member.internal-ring { fill: none; stroke-width: 3; }
+.geometry-member.planet { fill: var(--surface-2); }
+.cone-member, .worm-member, .carrier-member { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.carrier-member { stroke: var(--muted); stroke-width: 1.2; }
+.construction-circle { fill: none; stroke: var(--muted); stroke-width: .9; vector-effect: non-scaling-stroke; }
+.base-circle { stroke-dasharray: 2 3; }
+.root-circle { stroke-dasharray: 6 3; }
+.tip-circle { stroke-dasharray: none; opacity: .8; }
+.pitch-diameter { stroke: var(--muted); stroke-width: .8; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.belt-span, .chain-span { fill: none; stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.chain-span { stroke-dasharray: 8 5; }
+.tangency-point { fill: var(--accent); stroke: none; }
+.rack-profile { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.shaft-axis { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.construction-axis { stroke-dasharray: 10 3 2 3; }
+.geometry-envelope { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 7 5; opacity: .55; vector-effect: non-scaling-stroke; }
+.index-mark { stroke: var(--accent); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.geometry-stage { cursor: pointer; }
+.geometry-stage:focus, .geometry-stage:focus-visible { outline: none; }
+.force-layer:empty, .pitch-layer:empty { display: none; }
+
+/* ===================== Kinematic ===================== */
+
+.kinematic-shaft { stroke: var(--ink); stroke-width: 4; stroke-linecap: round; }
+.shaft-bearing { fill: var(--surface-1); stroke: var(--ink); stroke-width: 1.5; }
+.kinematic-shaft-node.coaxial .kinematic-shaft { stroke-dasharray: 9 4; }
+.spin-mark { fill: none; stroke: var(--accent); stroke-width: 1.4; }
+.shaft-label { fill: var(--muted); font-weight: 600; font-family: system-ui, sans-serif; }
+.relation-badge { fill: var(--surface-1); stroke: var(--muted); stroke-width: 1; }
+.relation-glyph { fill: var(--muted); font-weight: 700; font-family: system-ui, sans-serif; pointer-events: none; }
+.axis-indicator .axis-arrow { stroke: var(--muted); stroke-width: 1.2; }
+.axis-indicator .axis-name { fill: var(--muted); font-weight: 600; font-size: .8em; font-family: system-ui, sans-serif; }
+.power-flow { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 7 7; }
+.power-pulse { fill: var(--accent); }
+.linear-arrow { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+
+.kinematic-stage { color: var(--ink); cursor: pointer; transition: opacity .15s, filter .15s; }
+.kinematic-stage:focus, .kinematic-stage:focus-visible { outline: none; }
+.kinematic-stage:hover, .kinematic-stage.selected { color: var(--accent); filter: drop-shadow(0 0 5px currentColor); }
+.kinematic-stage .gear-symbol, .kinematic-stage .internal-ring, .kinematic-stage .pulley,
+.kinematic-stage .worm-wheel, .kinematic-stage .sun, .kinematic-stage .ring, .kinematic-stage .planet {
+  fill: var(--surface-1); stroke: currentColor; stroke-width: 3;
+}
+.kinematic-stage .inner { stroke-dasharray: 4 3; }
+.kinematic-stage .symbol-line, .kinematic-stage .helix-mark, .kinematic-stage .worm-thread,
+.kinematic-stage .rack-line, .kinematic-stage .rack-tooth { stroke: currentColor; stroke-width: 3; fill: none; }
+.kinematic-stage .belt-span { stroke: var(--muted); stroke-width: 4; }
+.kinematic-stage .chain-span { stroke: var(--warning); stroke-width: 4; stroke-dasharray: 5 5; }
+.kinematic-stage .bevel-symbol, .kinematic-stage .carrier { fill: none; stroke: currentColor; stroke-width: 3; }
+.kinematic-stage .stage-label, .kinematic-svg .role-label { fill: currentColor; font-weight: 600; font-family: system-ui, sans-serif; }
+.kinematic-stage .stage-ratio { fill: var(--muted); font-size: .92em; font-family: system-ui, sans-serif; }
+.kinematic-svg .role-label { text-anchor: middle; font-weight: 700; }
+.kinematic-svg .input-role { fill: var(--success); }
+.kinematic-svg .output-role { fill: var(--danger); }
+.kinematic-svg .fixed-role { fill: var(--warning); }
+.kinematic-stage .member-label { fill: currentColor; font-weight: 600; font-family: system-ui, sans-serif; }
+
+/* ===================== Dimensions ===================== */
+
+.pitch-circle { fill: none; stroke: var(--muted); stroke-width: .5; stroke-dasharray: 4 3; }
+.base-circle { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 1.5 2; }
+.root-circle, .tip-circle { fill: none; stroke: var(--muted); stroke-width: .35; opacity: .7; }
+.line-of-action { fill: none; stroke: var(--danger); stroke-width: .5; stroke-dasharray: 3 2; }
+.contact-point { fill: var(--danger); }
+.dimension-line, .dimension-witness { fill: none; stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.dimension-witness { stroke-dasharray: 3 2; opacity: .6; }
+.dimension-arrow { fill: var(--muted); stroke: none; }
+.geometry-dimension, .member-role { fill: var(--muted); font-family: system-ui, sans-serif; }
+.outside-diameter { opacity: .8; }
+.stage-label { fill: var(--muted); font-weight: 600; font-size: 1.15em; font-family: system-ui, sans-serif; }
+.train-dim line { stroke: var(--muted); stroke-width: .5; }
+.train-dim text { fill: var(--muted); }
+
+/* ===================== Forces ===================== */
+
+.force-vector { fill: none; stroke-width: 2; }
 .force-vector line { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .force-vector text { fill: var(--accent); font: 700 8px system-ui, sans-serif; paint-order: stroke; stroke: var(--surface-1); stroke-width: 2px; }
 .force-fr line { stroke: var(--success); }
 .force-fa line { stroke: var(--warning); }
+/* Les efforts n'encombrent le dessin que sur l'étage inspecté. */
 .train-stage:not(.selected) .force-vector { display: none; }
 
-/* Warnings */
+/* ===================== Warnings ===================== */
+
 .warning-overlay circle { fill: var(--warning); stroke: var(--surface-1); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .warning-overlay text { fill: var(--surface-1); font: 700 8px system-ui, sans-serif; pointer-events: none; }
 .warning-overlay .warning-danger circle { fill: var(--danger); }
+.mechanical-warning { color: var(--warning); }
+
+/* ===================== Selection ===================== */
+
+.train-stage.selected .tooth-profile { stroke: var(--accent); stroke-width: 1.4; }
+.train-stage.selected .pitch-circle { stroke: var(--accent); stroke-dasharray: none; stroke-width: 1; }
+.geometry-stage.selected .geometry-member { stroke-width: 3.5; }
+.geometry-stage.selected .stage-label { fill: var(--accent); }
+.train-stage.selected, .kinematic-stage.selected, .geometry-stage.selected { filter: drop-shadow(0 0 4px var(--accent)); }
+
+/* Carte d'inspection d'étage (coin du conteneur), partagée par les trois vues */
+.svg-container { position: relative; }
+.stage-inspector {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: 5;
+  max-width: 250px;
+  padding: var(--sp-3);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: var(--font-sm);
+}
+.stage-inspector header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.stage-inspector header .btn-small { padding: 0 6px; min-height: 22px; }
+.inspector-grid { display: grid; gap: 3px; margin-bottom: var(--sp-2); }
+.inspector-grid div { display: flex; justify-content: space-between; gap: var(--sp-2); }
+.inspector-grid span { color: var(--muted); font-size: var(--font-xs); }
+.stage-inspector .btn-primary { width: 100%; }
+
+/* Ligne sélectionnée du tableau d'analyse (synchronisée avec le schéma) */
+.stages-table tr.selected td { background: var(--accent-soft); }
+
+/* ===================== Animation ===================== */
+
+.is-animated .power-flow { animation: viewer-flow .8s linear infinite; }
+.is-animated .belt-line, .is-animated .chain-line { transition: none; }
+@keyframes viewer-flow { to { stroke-dashoffset: -28; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .is-animated .power-flow { animation: none; }
+}
+
+/* ===================== Dark theme ===================== */
+
+body.dark-theme .worm-body { fill: color-mix(in srgb, var(--muted) 22%, var(--surface-1)); }
+body.dark-theme .belt-tooth, body.dark-theme .chain-link { opacity: .85; }
+body.dark-theme .geometry-envelope { opacity: .7; }
+
+/* ===================== Responsive ===================== */
+
+@media (max-width: 700px) {
+  .stage-inspector { max-width: calc(100vw - 24px); }
+  .train-svg, .geometry-svg, .kinematic-svg { min-height: 300px; }
+  .display-menu-panel { right: auto; left: 0; }
+}

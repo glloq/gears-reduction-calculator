@@ -1,22 +1,24 @@
-// TrainRenderer.js - Vue « Denture réaliste » : profils en développante aux
-// cotes réelles (stage.geometry), thémable (100 % classes CSS + jetons),
-// zoom ancré au pointeur, animation par rotor, sélection d'étage.
+// TrainRenderer.js - Vue « Denture réaliste ».
+//
+// Le renderer est un ORCHESTRATEUR : il ne calcule ni rapport, ni sens, ni
+// profil de dent. Il assemble ce que produisent
+//   SceneBuilder / KinematicsEngine → vitesses et membres,
+//   TrainLayout                     → positions monde en millimètres réels,
+//   TeethPrimitives / TeethOverlay  → géométrie des dents et tracés de construction,
+//   ViewportController              → zoom/pan partagé avec les autres vues,
+//   AnimationController             → horloge d'animation partagée.
 //
 // Contrat ViewerToolbar : render(solution), toggleAnimation(), resetView(),
 // exportSVG(), exportPNG(cb) + dispatch CustomEvent 'visualization:renderer'.
-//
-// Points d'extension pour l'édition graphique future :
-// - chaque roue porte data-stage / data-role, chaque étage data-stage ;
-// - API publique selectStage(index), getStageElement(index) ;
-// - toutes les interactions passent par _bindStageInteractions() ;
-// - évènements DOM émis sur le conteneur : 'viewer:stage-selected {index}'
-//   et 'viewer:stage-edit {index}'.
+// Évènements DOM émis sur le conteneur : 'viewer:stage-selected {index}' et
+// 'viewer:stage-edit {index}'.
 (function (GearApp) {
   'use strict';
   if (typeof document === 'undefined' || !GearApp) return;
 
   var NS = 'http://www.w3.org/2000/svg';
   var FALLBACK_VIEWBOX = '0 0 800 400';
+  var LEVELS = { SILHOUETTE: 0, SIMPLIFIED: 1, INVOLUTE: 2, TECHNICAL: 3 };
 
   function n(tag, attrs, text) {
     var el = document.createElementNS(NS, tag);
@@ -24,6 +26,8 @@
     if (text != null) el.textContent = text;
     return el;
   }
+  function materialize(descriptor) { return n(descriptor.tag, descriptor.attrs, descriptor.text); }
+  function appendAll(host, descriptors) { (descriptors || []).forEach(function (d) { host.appendChild(materialize(d)); }); }
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
   function rad(deg) { return deg * Math.PI / 180; }
   function fmt(value, digits) { return Number.isFinite(value) ? value.toFixed(digits == null ? 2 : digits) : '—'; }
@@ -32,15 +36,16 @@
     this.container = typeof container === 'string' ? document.getElementById(container) : container;
     this.svg = null;
     this.solution = null;
-    this._rotors = [];
-    this._spans = [];
+    this.scene = null;
+    this._wheels = [];      // { wheel, group, rotor, orbit, lod }
+    this._flexible = [];    // { link, path, markers }
+    this._linear = [];      // { wheel, group }
     this._animating = false;
-    this._raf = null;
-    this._lastTs = 0;
+    this._angle = 0;
     this._lastUid = undefined;
     this._savedViewBox = null;
-    this._dragged = false;
     this._selected = -1;
+    this._autoDetails = true;
     var self = this;
     this.animation = new GearAnimationController({ onUpdate: function (angle) { self.setAnimationAngle(angle); } });
   }
@@ -52,13 +57,17 @@
     var keepView = solution && this.solution && solution.uid !== undefined && solution.uid === this._lastUid;
     this.solution = solution;
     this._lastUid = solution ? solution.uid : undefined;
-    this._rotors = [];
-    this._spans = [];
+    this._wheels = [];
+    this._flexible = [];
+    this._linear = [];
+    this._meshOverlays = [];
     this._selected = -1;
+    if (this.viewport) this.viewport.detach();
     this.scene = GearSceneBuilder.build(solution);
     this.animation.setScene(this.scene);
 
-    var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || []);
+    var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || [], { kinematics: this.scene.kinematics });
+    this.model = model;
     var svg = n('svg', { class: 'train-svg', role: 'img', 'aria-label': 'Denture réaliste — ' + (solution.stages || []).length + ' étage(s)' });
     var viewport = n('g', { class: 'train-viewport' });
     svg.appendChild(viewport);
@@ -73,9 +82,15 @@
     this.container.appendChild(svg);
     this.svg = svg;
 
+    // Les corps de roues sont peints AVANT le cadrage : _fit mesure la boîte
+    // englobante réelle, et un premier rendu au niveau intermédiaire évite de
+    // cadrer sur un dessin encore vide.
+    this._wheels.forEach(function (record) { self._paintWheel(record, LEVELS.INVOLUTE); });
     this._fit(keepView);
-    this._bindPanZoom();
+    this._bindViewport();
     this._bindStageInteractions();
+    this._refreshDetail(true);
+    this.setAnimationAngle(0);
     if (this._animating) { this._animating = false; this.toggleAnimation(); }
 
     this.container.dispatchEvent(new CustomEvent('visualization:renderer', { detail: { renderer: this } }));
@@ -99,16 +114,29 @@
 
     var links = n('g', { class: 'stage-links' });
     group.appendChild(links);
-    entry.links.forEach(function (link) { self._drawLink(links, link); });
+    entry.links.forEach(function (link) { self._drawLink(links, link, entry); });
+
+    if (entry.carrier) this._drawCarrier(group, entry);
 
     entry.wheels.forEach(function (wheel) {
       group.appendChild(self._buildWheel(wheel, entry));
     });
 
+    // Tracés de construction de l'engrènement (niveau technique seulement).
+    var meshOverlay = n('g', { class: 'mesh-overlay' });
+    group.appendChild(meshOverlay);
+    this._meshOverlays.push({ entry: entry, host: meshOverlay, lod: -1 });
+
     var anchor = entry.wheels[0] || { cx: 0, cy: 0, outsideD: 20 };
     GearForceOverlay.render(n, group, mech.forces, { x: anchor.cx, y: anchor.cy });
+    // Les badges d'alerte se posent AU-DESSUS de l'étage, jamais sur les
+    // dentures : ils signalent sans masquer ce qu'ils commentent.
+    var top = entry.wheels.reduce(function (best, wheel) {
+      return Math.min(best, finite(wheel.cy, 0) - finite(wheel.outsideD, 20) / 2);
+    }, Infinity);
+    var middle = entry.wheels.reduce(function (sum, wheel) { return sum + finite(wheel.cx, 0); }, 0) / (entry.wheels.length || 1);
     GearWarningOverlay.render(n, group, GearWarningOverlay.derive(stage, mech), index,
-      { x: anchor.cx + finite(anchor.outsideD, 20) / 2 + 8, y: anchor.cy - finite(anchor.outsideD, 20) / 2 });
+      { x: middle, y: Number.isFinite(top) ? top : anchor.cy });
 
     // Décor : libellé d'étage (couloirs anti-collision posés dans _placeLabels)
     // et cote d'entraxe.
@@ -130,114 +158,135 @@
 
   TrainRenderer.prototype._buildWheel = function (wheel, entry) {
     var roleClass = wheel.role === 'input' ? 'input-member' : wheel.role === 'output' ? 'output-member' : wheel.role;
-    var g = n('g', { class: 'train-wheel ' + roleClass, 'data-role': wheel.role, transform: 'translate(' + finite(wheel.cx, 0).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')' });
+    // Un satellite reçoit deux transformations gigognes : orbite (autour du
+    // porte-satellites) puis rotation propre.
+    var orbit = null;
+    var host = n('g', { class: 'train-wheel ' + roleClass, 'data-role': wheel.role });
+    if (Number.isFinite(wheel.orbit) && wheel.orbit > 0) {
+      orbit = n('g', { class: 'planet-orbit' });
+      orbit.appendChild(n('g', { class: 'planet-seat', transform: 'translate(' + finite(wheel.cx, 0).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')' }));
+      host.appendChild(orbit);
+    } else {
+      // Un cône est posé SUR SON AXE : sans cette rotation, deux roues coniques
+      // à 90° seraient dessinées parallèles, ce qui ne veut rien dire.
+      var axis = Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg
+        ? ' rotate(' + wheel.axisAngleDeg.toFixed(2) + ')' : '';
+      host.setAttribute('transform', 'translate(' + finite(wheel.cx, 0).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')' + axis);
+    }
+    var seat = orbit ? orbit.firstChild : host;
     var rotor = n('g', { class: 'rotor' });
-    g.appendChild(rotor);
-
-    var pitchR = finite(wheel.pitchD, 20) / 2;
-    var tipR = finite(wheel.outsideD, wheel.pitchD + 2) / 2;
-    var rootR = Math.max(1, finite(wheel.rootD, wheel.pitchD - 2.5) / 2);
-    var m = finite(wheel.module, 1);
-
-    if (wheel.kind === 'gear') {
-      rotor.appendChild(n('path', { class: 'tooth-profile', d: GearToothProfileCache.get({ type: entry.type, teeth: wheel.teeth, module: m, pressureAngle: wheel.pressureAngle, pitchRadius: pitchR, tipRadius: tipR, rootRadius: rootR }) }));
-      rotor.appendChild(n('circle', { class: 'pitch-circle', r: pitchR.toFixed(2) }));
-      var hubR = Math.max(1.2, Math.min(rootR * 0.35, 6 * m));
-      rotor.appendChild(n('circle', { class: 'gear-hub', r: hubR.toFixed(2) }));
-      rotor.appendChild(n('path', { class: 'hub-cross', d: 'M ' + (-hubR) + ' 0 H ' + hubR + ' M 0 ' + (-hubR) + ' V ' + hubR }));
-    } else if (wheel.kind === 'internal-ring') {
-      // Anneau à denture intérieure : jante externe + trou denté (evenodd).
-      // Le contour du trou reste à (pas + creux) et plonge vers le centre
-      // jusqu'à (pas − saillie) : dents pointées vers l'intérieur.
-      var ringOuter = tipR;
-      var teethPath = GearToothProfile.toothedRingPath(wheel.teeth, pitchR - m, pitchR + 1.25 * m, 0.45);
-      rotor.appendChild(n('path', {
-        class: 'tooth-profile ring-profile', 'fill-rule': 'evenodd',
-        d: 'M ' + ringOuter + ' 0 A ' + ringOuter + ' ' + ringOuter + ' 0 1 0 ' + (-ringOuter) + ' 0 A ' + ringOuter + ' ' + ringOuter + ' 0 1 0 ' + ringOuter + ' 0 Z ' + teethPath
-      }));
-      rotor.appendChild(n('circle', { class: 'pitch-circle', r: pitchR.toFixed(2) }));
-    } else if (wheel.kind === 'pulley' || wheel.kind === 'sprocket') {
-      rotor.appendChild(n('path', { class: 'tooth-profile', d: GearToothProfile.toothedRingPath(wheel.teeth, tipR, rootR, wheel.kind === 'sprocket' ? 0.22 : 0.45) }));
-      rotor.appendChild(n('circle', { class: 'pitch-circle', r: pitchR.toFixed(2) }));
-      var hub2 = Math.max(1.2, Math.min(rootR * 0.3, 5 * m));
-      rotor.appendChild(n('circle', { class: 'gear-hub', r: hub2.toFixed(2) }));
-    } else if (wheel.kind === 'worm') {
-      // Vis : capsule le long de l'axe X + filets inclinés à l'angle d'avance.
-      var len = Math.max(pitchR * 4, 24);
-      var r = Math.max(2, pitchR);
-      rotor.appendChild(n('rect', { class: 'tooth-profile worm-body', x: (-len / 2).toFixed(2), y: (-r).toFixed(2), width: len.toFixed(2), height: (2 * r).toFixed(2), rx: r.toFixed(2) }));
-      var lead = rad(finite(wheel.leadAngle, 20));
-      var step = Math.max(3, 2 * m);
-      var threads = 'M 0 0';
-      for (var x = -len / 2 + step; x < len / 2 - step / 2; x += step) {
-        var dx = Math.tan(lead) * r;
-        threads += ' M ' + (x - dx / 2).toFixed(2) + ' ' + r.toFixed(2) + ' L ' + (x + dx / 2).toFixed(2) + ' ' + (-r).toFixed(2);
-      }
-      rotor.appendChild(n('path', { class: 'worm-thread', d: threads }));
-      rotor.appendChild(n('path', { class: 'stage-axis', d: 'M ' + (-len / 2 - 3 * m) + ' 0 H ' + (len / 2 + 3 * m) }));
-    } else if (wheel.kind === 'cone') {
-      // Silhouette conique simple, base = diamètre primitif.
-      var w = Math.max(4, 5 * m);
-      rotor.appendChild(n('path', {
-        class: 'tooth-profile cone-body',
-        d: 'M 0 ' + (-pitchR).toFixed(2) + ' L ' + w + ' ' + (-pitchR * 0.72).toFixed(2) + ' L ' + w + ' ' + (pitchR * 0.72).toFixed(2) + ' L 0 ' + pitchR.toFixed(2) + ' Z'
-      }));
-      rotor.appendChild(n('path', { class: 'pitch-circle', d: 'M 0 ' + (-pitchR) + ' V ' + pitchR }));
-    } else if (wheel.kind === 'rack') {
-      var rackLength = finite(wheel.length, 100), toothPitch = Math.max(2, Math.PI * m), rackPath = 'M ' + (-rackLength / 2).toFixed(2) + ' ' + (2 * m).toFixed(2);
-      for (var rx = -rackLength / 2; rx <= rackLength / 2; rx += toothPitch) {
-        rackPath += ' L ' + rx.toFixed(2) + ' 0 L ' + Math.min(rackLength / 2, rx + toothPitch / 2).toFixed(2) + ' ' + (-2 * m).toFixed(2);
-      }
-      rackPath += ' L ' + (rackLength / 2).toFixed(2) + ' ' + (2 * m).toFixed(2) + ' Z';
-      rotor.appendChild(n('path', { class: 'tooth-profile rack-teeth', d: rackPath }));
+    seat.appendChild(rotor);
+    // Les repères et étiquettes compensent l'inclinaison de l'axe : un « Z=40 »
+    // couché sur le flanc d'un cône serait illisible.
+    var construction = n('g', { class: 'construction' });
+    if (Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg) {
+      construction.setAttribute('transform', 'rotate(' + (-wheel.axisAngleDeg).toFixed(2) + ')');
     }
+    seat.appendChild(construction);
 
-    // Z=n au-dessus du moyeu (hors rotor : ne tourne pas), omis si trop petit.
-    // Décalé du centre pour rester lisible sur les arbres composés (deux roues
-    // concentriques) et ne pas heurter la croix du moyeu.
-    if (wheel.teeth > 0 && rootR > 9 && wheel.kind !== 'worm' && wheel.kind !== 'internal-ring') {
-      g.appendChild(n('text', { class: 'tooth-count', 'text-anchor': 'middle', y: (-rootR * 0.5).toFixed(1), 'font-size': Math.max(3.2, Math.min(rootR * 0.3, 10)).toFixed(1) }, 'Z=' + wheel.teeth));
-    }
-    if (wheel.teeth > 0 && wheel.kind === 'internal-ring') {
-      g.appendChild(n('text', { class: 'tooth-count', 'text-anchor': 'middle', y: (-(pitchR + 2.4 * m)).toFixed(1), 'font-size': Math.max(3.2, Math.min(4 * m, 10)).toFixed(1) }, 'Z=' + wheel.teeth));
-    }
     var roleNames = { input: 'Entrée', output: 'Sortie', sun: 'Solaire', ring: 'Couronne', planet: 'Satellite' };
-    g.appendChild(n('title', {}, (roleNames[wheel.role] || wheel.role) +
+    seat.appendChild(n('title', {}, (roleNames[wheel.role] || wheel.role) +
       (wheel.teeth ? ' — Z=' + wheel.teeth : '') +
       '\nØ primitif ' + fmt(wheel.pitchD, 2) + ' mm' +
-      (wheel.kind === 'gear' ? '\nØ tête ' + fmt(wheel.outsideD, 2) + ' mm · Ø pied ' + fmt(wheel.rootD, 2) + ' mm' : '')));
+      (wheel.kind === 'gear' ? '\nØ tête ' + fmt(wheel.outsideD, 2) + ' mm · Ø pied ' + fmt(wheel.rootD, 2) + ' mm' : '') +
+      '\nVitesse relative ' + fmt(wheel.speed, 3) + '×'));
 
-    this._rotors.push({ el: rotor, speed: finite(wheel.speed, 0), angle: 0 });
-    return g;
+    var record = { wheel: wheel, entry: entry, group: host, seat: seat, rotor: rotor, construction: construction, orbit: orbit, lod: -1 };
+    if (wheel.kind === 'rack') this._linear.push(record);
+    this._wheels.push(record);
+    return host;
   };
 
-  TrainRenderer.prototype._drawLink = function (host, link) {
+  /** (Re)construit le corps d'une roue pour un niveau de détail donné. */
+  TrainRenderer.prototype._paintWheel = function (record, lod, force) {
+    if (record.lod === lod && !force) return;
+    record.lod = lod;
+    record.rotor.textContent = '';
+    record.construction.textContent = '';
+    var built = GearTeethPrimitives.build(record.wheel, { lod: lod });
+    appendAll(record.rotor, built.rotor);
+    appendAll(record.construction, GearTeethOverlay.circles(record.wheel, lod));
+    appendAll(record.construction, built.fixed);
+    // Les textes portés par la roue sont plafonnés à la taille d'écran commune :
+    // ils restent proportionnés à la roue, sans jamais devenir illisibles.
+    if (Number.isFinite(this._fontSize)) {
+      var cap = this._fontSize;
+      Array.prototype.forEach.call(record.construction.querySelectorAll('text'), function (text) {
+        var own = Number(text.getAttribute('font-size'));
+        text.setAttribute('font-size', Math.min(own || cap, cap).toFixed(3));
+      });
+    }
+    record.seat.setAttribute('data-lod', lod);
+  };
+
+  /** Porte-satellites : bras reliant le centre à chaque satellite. */
+  TrainRenderer.prototype._drawCarrier = function (group, entry) {
+    var carrier = entry.carrier;
+    var host = n('g', { class: 'planet-carrier' });
+    var d = '';
+    for (var i = 0; i < carrier.count; i++) {
+      var a = 2 * Math.PI * i / carrier.count;
+      d += ' M 0 0 L ' + (Math.cos(a) * carrier.orbit).toFixed(2) + ' ' + (Math.sin(a) * carrier.orbit).toFixed(2);
+    }
+    var arms = n('g', { class: 'carrier-arms', transform: 'translate(' + carrier.cx.toFixed(2) + ' ' + carrier.cy.toFixed(2) + ')' });
+    arms.appendChild(n('path', { d: d.trim() }));
+    arms.appendChild(n('circle', { class: 'carrier-hub', r: Math.max(1.5, carrier.orbit * 0.12).toFixed(2) }));
+    host.appendChild(arms);
+    group.appendChild(host);
+    entry.carrierElement = arms;
+    return host;
+  };
+
+  TrainRenderer.prototype._drawLink = function (host, link, entry) {
     if (link.kind === 'belt-span' || link.kind === 'chain-span') {
       var cls = link.kind === 'belt-span' ? 'belt-line' : 'chain-line';
-      var d;
-      if (link.crossed) {
-        d = 'M ' + (link.x1) + ' ' + (link.y1 - link.r1) + ' L ' + link.x2 + ' ' + (link.y2 + link.r2) +
-          ' M ' + link.x1 + ' ' + (link.y1 + link.r1) + ' L ' + link.x2 + ' ' + (link.y2 - link.r2);
-      } else {
+      var d = link.outline;
+      if (!d) {
+        // Géométrie dégénérée : on garde deux brins finis plutôt qu'un NaN.
         d = 'M ' + link.x1 + ' ' + (link.y1 - link.r1) + ' L ' + link.x2 + ' ' + (link.y2 - link.r2) +
           ' M ' + link.x1 + ' ' + (link.y1 + link.r1) + ' L ' + link.x2 + ' ' + (link.y2 + link.r2);
       }
       var span = n('path', { class: cls, d: d });
       host.appendChild(span);
-      this._spans.push({ el: span });
+      var markers = n('g', { class: link.kind === 'belt-span' ? 'belt-markers' : 'chain-markers' });
+      host.appendChild(markers);
+      this._flexible.push({ link: link, entry: entry, path: span, markers: markers, built: 0 });
     } else if (link.kind === 'shaft-break') {
       // Continuité d'arbre : trait + double barre oblique.
       var midX = (link.x1 + link.x2) / 2;
       host.appendChild(n('path', { class: 'shaft-link', d: 'M ' + link.x1 + ' ' + link.y1 + ' H ' + link.x2 }));
       host.appendChild(n('path', { class: 'shaft-link', d: 'M ' + (midX - 3) + ' ' + (link.y1 + 5) + ' l 6 -10 M ' + (midX + 3) + ' ' + (link.y1 + 5) + ' l 6 -10' }));
     } else if (link.kind === 'bevel-axes') {
+      // Les deux axes se coupent au sommet commun des cônes : on les trace en
+      // entier, avec le point d'intersection matérialisé.
       var span2 = finite(link.span, 40);
-      host.appendChild(n('path', { class: 'stage-axis', d: 'M ' + (link.x - span2) + ' ' + link.y + ' H ' + (link.x + span2 * 0.4) }));
-      var a = rad(finite(link.shaftAngleDeg, 90) - 90);
-      host.appendChild(n('path', {
-        class: 'stage-axis',
-        d: 'M ' + link.x + ' ' + link.y + ' L ' + (link.x + Math.cos(a) * span2) + ' ' + (link.y + Math.sin(a) * span2 + span2 * 0.5)
-      }));
+      var out = rad(180 - finite(link.shaftAngleDeg, 90));
+      host.appendChild(n('path', { class: 'stage-axis', d: 'M ' + (link.x - span2).toFixed(2) + ' ' + link.y.toFixed(2) + ' H ' + (link.x + span2 * 0.25).toFixed(2) }));
+      host.appendChild(n('path', { class: 'stage-axis',
+        d: 'M ' + (link.x - Math.cos(out) * span2 * 0.25).toFixed(2) + ' ' + (link.y - Math.sin(out) * span2 * 0.25).toFixed(2) +
+          ' L ' + (link.x + Math.cos(out) * span2).toFixed(2) + ' ' + (link.y + Math.sin(out) * span2).toFixed(2) }));
+      host.appendChild(n('circle', { class: 'cone-apex-point', cx: link.x.toFixed(2), cy: link.y.toFixed(2), r: 1.2 }));
+    }
+  };
+
+  /** Marqueurs de courroie/chaîne : un élément par pas réel, plafonné. */
+  TrainRenderer.prototype._buildMarkers = function (record, lod) {
+    var link = record.link;
+    if (record.built === lod) return;
+    record.built = lod;
+    record.markers.textContent = '';
+    record.marks = [];
+    if (lod <= LEVELS.SILHOUETTE || !link.tangents || !(link.spanLength > 0)) return;
+    var pitch = Math.max(1.5, finite(link.pitch, 4));
+    var count = Math.min(lod === LEVELS.SIMPLIFIED ? 24 : 60, Math.max(4, Math.round(2 * link.spanLength / pitch)));
+    var chain = link.kind === 'chain-span';
+    for (var i = 0; i < count; i++) {
+      var mark = chain
+        ? n('circle', { class: 'chain-link', r: Math.max(0.6, pitch * 0.18).toFixed(2) })
+        : n('rect', { class: 'belt-tooth', x: (-pitch * 0.18).toFixed(2), y: (-pitch * 0.22).toFixed(2),
+          width: (pitch * 0.36).toFixed(2), height: (pitch * 0.44).toFixed(2) });
+      record.markers.appendChild(mark);
+      record.marks.push({ el: mark, s: 2 * link.spanLength * i / count });
     }
   };
 
@@ -248,10 +297,14 @@
     g.appendChild(n('line', { x1: a.cx, y1: a.cy, x2: a.cx, y2: below, class: 'dim-leader' }));
     g.appendChild(n('line', { x1: b.cx, y1: b.cy, x2: b.cx, y2: below, class: 'dim-leader' }));
     g.appendChild(n('line', { x1: a.cx, y1: below, x2: b.cx, y2: below }));
+    var text = 'c = ' + fmt(entry.centerDistance, 2) + ' mm';
+    if (Number.isFinite(entry.links[0] && entry.links[0].wrapAngle1Deg)) {
+      text += ' · enroulement ' + fmt(entry.links[0].wrapAngle1Deg, 0) + '°/' + fmt(entry.links[0].wrapAngle2Deg, 0) + '°';
+    }
     g.appendChild(n('text', {
       x: (a.cx + b.cx) / 2, y: below + Math.max(4, 2 * a.module),
       'text-anchor': 'middle', 'font-size': Math.max(3.5, Math.min(4 * a.module, 10))
-    }, 'c = ' + fmt(entry.centerDistance, 2) + ' mm'));
+    }, text));
     host.appendChild(g);
   };
 
@@ -289,12 +342,18 @@
       return;
     }
 
+    // Le dessin est en millimètres réels : les textes et badges sont
+    // dimensionnés en unités monde correspondant à une taille d'écran fixe.
+    var unit = GearViewportController.screenUnit(svg, bbox.width);
+    var fontSize = 11 * unit;
+    this._fontSize = fontSize;
+    svg.querySelector('.train-viewport').setAttribute('font-size', fontSize.toFixed(3));
+    GearViewportController.applyScreenScale(svg, unit);
+
     // Couloirs d'étiquettes : pairs au-dessus du dessin, impairs en dessous,
     // poussée horizontale si chevauchement dans un couloir.
     var labels = Array.from(svg.querySelectorAll('.train-label'));
-    var fontSize = Math.max(4, Math.min(bbox.width * 0.018, 12));
     var lanes = { top: -Infinity, bottom: -Infinity };
-    var self = this;
     labels.forEach(function (label, i) {
       var stageGroup = label.closest('.train-stage');
       var stageBox; try { stageBox = stageGroup.getBBox(); } catch (e) { stageBox = bbox; }
@@ -318,9 +377,14 @@
       label.parentNode.insertBefore(leader, label);
     });
 
-    // Tailles des puces ENTRÉE/SORTIE proportionnées au dessin.
-    Array.from(svg.querySelectorAll('.io-chip text')).forEach(function (t) { t.setAttribute('font-size', (fontSize * 0.9).toFixed(1)); });
-    Array.from(svg.querySelectorAll('.train-dim text')).forEach(function (t) { t.setAttribute('font-size', Math.max(3.5, fontSize * 0.8).toFixed(1)); });
+    // Puces ENTRÉE/SORTIE et cotes : même unité écran que les étiquettes.
+    Array.from(svg.querySelectorAll('.io-chip text')).forEach(function (t) { t.setAttribute('font-size', (fontSize * 0.95).toFixed(3)); });
+    Array.from(svg.querySelectorAll('.train-dim text')).forEach(function (t) { t.setAttribute('font-size', (fontSize * 0.85).toFixed(3)); });
+    Array.from(svg.querySelectorAll('.tooth-count')).forEach(function (t) {
+      // Z=n suit la roue : plafonné pour ne jamais déborder du moyeu.
+      var own = Number(t.getAttribute('font-size'));
+      t.setAttribute('font-size', Math.min(own || fontSize, fontSize).toFixed(3));
+    });
 
     try { bbox = svg.getBBox(); } catch (e) { /* garde */ }
     var pad = Math.max(12, Math.max(bbox.width, bbox.height) * 0.05);
@@ -331,67 +395,78 @@
     if (!keepView) this._savedViewBox = null;
   };
 
-  // ===== Zoom ancré + pan (pointer events) =====
+  // ===== Viewport partagé =====
 
-  TrainRenderer.prototype._viewBox = function () {
-    return this.svg.getAttribute('viewBox').split(/\s+/).map(Number);
-  };
-
-  TrainRenderer.prototype._setViewBox = function (vb) {
-    var value = vb.map(function (v) { return v.toFixed(2); }).join(' ');
-    this.svg.setAttribute('viewBox', value);
-    this._savedViewBox = value;
-  };
-
-  TrainRenderer.prototype._bindPanZoom = function () {
-    var self = this, svg = this.svg;
-    var fit = svg.dataset.initialViewBox.split(/\s+/).map(Number);
-
-    svg.addEventListener('wheel', function (event) {
-      event.preventDefault();
-      var vb = self._viewBox();
-      var rect = svg.getBoundingClientRect();
-      var px = vb[0] + (event.clientX - rect.left) / rect.width * vb[2];
-      var py = vb[1] + (event.clientY - rect.top) / rect.height * vb[3];
-      var k = event.deltaY < 0 ? 1 / 1.2 : 1.2;
-      var w = Math.min(Math.max(vb[2] * k, fit[2] / 10), fit[2] * 3);
-      var h = vb[3] * (w / vb[2]);
-      self._setViewBox([px - (px - vb[0]) * (w / vb[2]), py - (py - vb[1]) * (h / vb[3]), w, h]);
-    }, { passive: false });
-
-    // La capture de pointeur ne démarre qu'au-delà du seuil de glissement :
-    // capturer dès le pointerdown retargetterait le click vers le svg et les
-    // groupes d'étages ne recevraient jamais la sélection.
-    var start = null;
-    svg.addEventListener('pointerdown', function (event) {
-      start = { x: event.clientX, y: event.clientY, vb: self._viewBox(), id: event.pointerId, captured: false };
-      self._dragged = false;
-    });
-    svg.addEventListener('pointermove', function (event) {
-      if (!start) return;
-      var dx = event.clientX - start.x, dy = event.clientY - start.y;
-      if (!start.captured) {
-        if (Math.abs(dx) + Math.abs(dy) <= 4) return; // simple clic : ne pas voler l'évènement
-        start.captured = true;
-        self._dragged = true;
-        try { svg.setPointerCapture(start.id); } catch (e) { /* garde */ }
+  TrainRenderer.prototype._bindViewport = function () {
+    var self = this;
+    this.viewport = new GearViewportController(this.svg, {
+      onChange: function (state) {
+        self._savedViewBox = state.viewBox.map(function (v) { return v.toFixed(2); }).join(' ');
+        self._scheduleDetail();
       }
-      var rect = svg.getBoundingClientRect();
-      var vb = start.vb;
-      self._setViewBox([vb[0] - dx * vb[2] / rect.width, vb[1] - dy * vb[3] / rect.height, vb[2], vb[3]]);
     });
-    function up() { start = null; }
-    svg.addEventListener('pointerup', up);
-    svg.addEventListener('pointercancel', up);
+    if (this._savedViewBox) this.viewport.setState({ viewBox: this._savedViewBox.split(/\s+/).map(Number) });
+    this.viewport.attach();
+    // Le niveau de détail dépend de la taille RÉELLE à l'écran : il doit être
+    // réévalué quand le conteneur est redimensionné — ou simplement quand il
+    // devient visible, le premier rendu pouvant avoir lieu à largeur nulle.
+    if (typeof ResizeObserver === 'function') {
+      if (this._resizeObserver) this._resizeObserver.disconnect();
+      var observer = new ResizeObserver(function () { self._scheduleDetail(); });
+      observer.observe(this.container);
+      this._resizeObserver = observer;
+    }
   };
 
   TrainRenderer.prototype.resetView = function () {
     if (!this.svg) return;
-    this.svg.setAttribute('viewBox', this.svg.dataset.initialViewBox || FALLBACK_VIEWBOX);
     this._savedViewBox = null;
+    if (this.viewport) this.viewport.reset(); else this.svg.setAttribute('viewBox', this.svg.dataset.initialViewBox || FALLBACK_VIEWBOX);
+    this._refreshDetail();
   };
 
-  // ===== Animation (delta-time, rotors seuls) =====
+  // ===== Niveau de détail piloté par la taille à l'écran =====
+
+  TrainRenderer.prototype.setAutoDetails = function (enabled) {
+    this._autoDetails = enabled !== false;
+    this._refreshDetail(true);
+  };
+
+  TrainRenderer.prototype._scheduleDetail = function () {
+    var self = this;
+    if (this._detailPending || typeof requestAnimationFrame !== 'function') return;
+    this._detailPending = requestAnimationFrame(function () { self._detailPending = null; self._refreshDetail(); });
+  };
+
+  TrainRenderer.prototype._refreshDetail = function (force) {
+    if (!this.svg || !this.svg.isConnected) return;
+    var ppu = this.viewport ? this.viewport.pixelsPerUnit() : 1;
+    var self = this;
+    this._wheels.forEach(function (record) {
+      var lod = GearTeethPrimitives.levelFor(record.wheel, ppu);
+      // « Détails automatiques » désactivé : on plafonne à la développante nue.
+      if (!self._autoDetails) lod = Math.min(lod, LEVELS.INVOLUTE);
+      if (force || lod !== record.lod) self._paintWheel(record, lod, force);
+    });
+    this._flexible.forEach(function (record) {
+      var reference = record.entry.wheels[1] || record.entry.wheels[0];
+      var lod = GearTeethPrimitives.levelFor(reference, ppu);
+      if (!self._autoDetails) lod = Math.min(lod, LEVELS.INVOLUTE);
+      self._buildMarkers(record, lod);
+    });
+    (this._meshOverlays || []).forEach(function (record) {
+      var reference = record.entry.wheels[0];
+      var lod = GearTeethPrimitives.levelFor(reference, ppu);
+      if (!self._autoDetails) lod = Math.min(lod, LEVELS.INVOLUTE);
+      if (!force && lod === record.lod) return;
+      record.lod = lod;
+      record.host.textContent = '';
+      appendAll(record.host, GearTeethOverlay.mesh(record.entry, lod));
+    });
+    this.setAnimationAngle(this._angle);
+  };
+
+  // ===== Animation (toutes les familles de transmission) =====
 
   TrainRenderer.prototype.toggleAnimation = function () {
     this.animation.toggle();
@@ -399,17 +474,77 @@
     if (this.svg) this.svg.classList.toggle('is-animated', this._animating);
   };
 
+  /**
+   * setAnimationAngle(inputAngle) — inputAngle en degrés d'arbre d'entrée.
+   * Chaque membre applique sa vitesse RELATIVE issue du moteur cinématique :
+   * rotation propre, orbite de satellite, translation de crémaillère et
+   * défilement de courroie/chaîne sont donc rigoureusement cohérents.
+   */
   TrainRenderer.prototype.setAnimationAngle = function (inputAngle) {
     if (!this.svg || !this.svg.isConnected) return;
-    this._rotors.forEach(function (rotor) {
-      rotor.angle = inputAngle * rotor.speed;
-      rotor.el.setAttribute('transform', 'rotate(' + rotor.angle.toFixed(2) + ')');
+    this._angle = finite(inputAngle, 0);
+    var angle = this._angle;
+    var radians = angle * Math.PI / 180;
+
+    this._wheels.forEach(function (record) {
+      var wheel = record.wheel;
+      if (record.orbit) {
+        // Satellite : orbite du porte-satellites puis rotation propre.
+        var orbitAngle = finite(wheel.orbitSpeed, 0) * angle;
+        record.orbit.setAttribute('transform',
+          'rotate(' + orbitAngle.toFixed(2) + ' ' + finite(wheel.orbitCenterX, 0).toFixed(2) + ' ' + finite(wheel.orbitCenterY, 0).toFixed(2) + ')');
+        // La rotation propre est comptée dans le repère fixe : on retire
+        // l'entraînement de l'orbite déjà appliqué par le groupe parent.
+        record.rotor.setAttribute('transform', 'rotate(' + ((finite(wheel.speed, 0) - finite(wheel.orbitSpeed, 0)) * angle).toFixed(2) + ')');
+        return;
+      }
+      if (wheel.kind === 'rack') {
+        record.group.setAttribute('transform',
+          'translate(' + (finite(wheel.cx, 0) + finite(wheel.mmPerRadian, 0) * radians * Math.sign(finite(wheel.pinionSpeed, 1) || 1)).toFixed(2) +
+          ' ' + finite(wheel.cy, 0).toFixed(2) + ')');
+        return;
+      }
+      if (wheel.kind === 'cone') {
+        // Un cône vu de côté ne montre pas sa rotation : le faire tourner dans
+        // le plan du dessin serait un contresens. Le mouvement est porté par les
+        // vues Géométrie et Cinématique.
+        return;
+      }
+      if (wheel.kind === 'worm') {
+        // Le filet avance axialement d'un pas par tour : c'est ce défilement qui
+        // donne la sensation d'entraînement de la roue.
+        var lead = Math.max(1e-6, Math.PI * finite(wheel.module, 1) * Math.max(1, finite(wheel.teeth, 1)));
+        var travel = (finite(wheel.speed, 0) * angle / 360) * lead;
+        record.rotor.setAttribute('transform', 'translate(' + (travel % lead).toFixed(2) + ' 0)');
+        return;
+      }
+      record.rotor.setAttribute('transform', 'rotate(' + (finite(wheel.speed, 0) * angle).toFixed(2) + ')');
     });
-    this._spans.forEach(function (span) { span.el.setAttribute('stroke-dashoffset', (-inputAngle * 0.25).toFixed(1)); });
+
+    (this.model && this.model.stages || []).forEach(function (entry) {
+      if (entry.carrierElement && entry.carrier) {
+        entry.carrierElement.setAttribute('transform',
+          'translate(' + entry.carrier.cx.toFixed(2) + ' ' + entry.carrier.cy.toFixed(2) + ') rotate(' + (finite(entry.carrier.speed, 0) * angle).toFixed(2) + ')');
+      }
+    });
+
+    this._flexible.forEach(function (record) {
+      var link = record.link;
+      var driving = record.entry.wheels[0];
+      var offset = finite(driving.pitchD, 0) / 2 * finite(driving.speed, 0) * radians;
+      if (record.marks && link.tangents) {
+        record.marks.forEach(function (mark) {
+          var point = GearGeometryUtils.pointAlong(link, mark.s + offset);
+          if (point) mark.el.setAttribute('transform', 'translate(' + point.x.toFixed(2) + ' ' + point.y.toFixed(2) + ')');
+        });
+      }
+      record.path.setAttribute('stroke-dashoffset', (-offset).toFixed(1));
+    });
   };
 
   TrainRenderer.prototype.setAnimationSpeed = function (speed) { this.animation.setSpeed(speed); };
   TrainRenderer.prototype.setAnimationDirection = function (direction) { this.animation.setDirection(direction); };
+  TrainRenderer.prototype.setAnimationMode = function (mode) { this.animation.setMode(mode); };
 
   TrainRenderer.prototype._stopAnimation = function () {
     this.animation.pause();
@@ -424,7 +559,7 @@
     Array.from(this.svg.querySelectorAll('.train-stage')).forEach(function (group) {
       var index = Number(group.dataset.stage);
       group.addEventListener('click', function (event) {
-        if (self._dragged) { self._dragged = false; return; }
+        if (self.viewport && self.viewport.dragged) { self.viewport.dragged = false; return; }
         event.stopPropagation();
         self.selectStage(index);
       });
@@ -451,6 +586,13 @@
     if (!silent) this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: index } }));
   };
 
+  /** Cadrage sur un étage : utilisé par la sélection croisée entre vues. */
+  TrainRenderer.prototype.focusStage = function (index) {
+    var element = this.getStageElement(index);
+    if (!element || !this.viewport) return;
+    try { this.viewport.focus(element.getBBox()); } catch (e) { /* garde : élément non mesurable */ }
+  };
+
   TrainRenderer.prototype._requestEdit = function (index) {
     this.container.dispatchEvent(new CustomEvent('viewer:stage-edit', { detail: { index: index } }));
   };
@@ -461,47 +603,49 @@
     var cs = getComputedStyle(document.body);
     function v(name, fallback) { var value = cs.getPropertyValue(name).trim(); return value || fallback; }
     var ink = v('--ink', '#182335'), muted = v('--muted', '#5d6b81'), accent = v('--accent', '#2563eb'),
-      success = v('--success', '#0c7f5c'), surface = v('--surface-1', '#ffffff'), line = v('--line', '#dbe2ec'),
-      danger = v('--danger', '#b3261e');
+      success = v('--success', '#0c7f5c'), surface = v('--surface-1', '#ffffff'),
+      danger = v('--danger', '#b3261e'), warning = v('--warning', '#b26a00');
     return '.tooth-profile{fill:' + accent + '22;stroke:' + ink + ';stroke-width:.6;stroke-linejoin:round}' +
       '.train-wheel.output-member .tooth-profile{fill:' + success + '22}' +
       '.pitch-circle{fill:none;stroke:' + muted + ';stroke-width:.5;stroke-dasharray:4 3}' +
+      '.base-circle{fill:none;stroke:' + muted + ';stroke-width:.4;stroke-dasharray:1.5 2}' +
+      '.root-circle,.tip-circle,.ring-rim{fill:none;stroke:' + muted + ';stroke-width:.35;opacity:.7}' +
       '.gear-hub{fill:' + surface + ';stroke:' + ink + ';stroke-width:.5}' +
-      '.hub-cross,.shaft-link,.stage-axis,.dim-leader,.label-leader{stroke:' + muted + ';stroke-width:.5;fill:none}' +
-      '.worm-thread{stroke:' + ink + ';stroke-width:.5;fill:none}' +
+      '.hub-cross,.shaft-link,.stage-axis,.dim-leader,.label-leader,.cone-apex{stroke:' + muted + ';stroke-width:.5;fill:none}' +
+      '.cone-apex{stroke-dasharray:6 2 1 2}' +
+      '.cone-apex-point{fill:' + muted + '}' +
+      '.worm-thread,.cone-tip,.cone-teeth{stroke:' + ink + ';stroke-width:.5;fill:none}' +
+      '.helix-stripe{stroke:' + ink + ';stroke-width:.35;fill:none;opacity:.65}' +
+      '.helix-hand{stroke:' + accent + ';stroke-width:.7;fill:none}' +
+      '.helix-label,.worm-label{fill:' + muted + ';font:600 3px system-ui,sans-serif}' +
+      '.carrier-arms path{stroke:' + muted + ';stroke-width:1.2;fill:none}' +
+      '.carrier-hub{fill:' + surface + ';stroke:' + muted + ';stroke-width:.5}' +
       '.belt-line{stroke:' + ink + ';stroke-width:1.4;fill:none}' +
       '.chain-line{stroke:' + ink + ';stroke-width:1.4;fill:none;stroke-dasharray:3 2.2}' +
+      '.belt-tooth{fill:' + ink + ';opacity:.75}' +
+      '.chain-link{fill:' + ink + ';opacity:.75}' +
+      '.line-of-action{stroke:' + danger + ';stroke-width:.5;stroke-dasharray:3 2;fill:none}' +
+      '.contact-point{fill:' + danger + '}' +
       '.train-dim line{stroke:' + muted + ';stroke-width:.5}' +
       '.train-dim text,.train-label{fill:' + muted + ';font-family:system-ui,sans-serif}' +
       '.tooth-count{fill:' + ink + ';font-weight:600;font-family:system-ui,sans-serif}' +
       '.io-chip text{font-weight:700;font-family:system-ui,sans-serif}' +
       '.io-chip.in text{fill:' + success + '}.io-chip.out text{fill:' + danger + '}' +
       '.io-arrow{stroke:' + muted + ';fill:none}' +
+      '.warning-overlay circle{fill:' + warning + '}.warning-overlay text{fill:' + surface + ';font:700 8px system-ui,sans-serif}' +
+      '.force-vector line{stroke:' + accent + ';stroke-width:1.5;fill:none}' +
+      '.force-vector text{fill:' + accent + ';font:700 8px system-ui,sans-serif}' +
       'svg{background:' + surface + '}';
   };
 
-  TrainRenderer.prototype.exportSVG = function () {
+  TrainRenderer.prototype.exportSVG = function (options) {
     if (!this.svg) return '';
-    return GearSvgExport.serialize(this.svg, { styleText: this._resolvedStyle() });
+    return GearSvgExport.serialize(this.svg, Object.assign({ styleText: this._resolvedStyle() }, options || {}));
   };
 
   TrainRenderer.prototype.exportPNG = function (callback) {
     if (!this.svg) { callback(null); return; }
-    var background = getComputedStyle(document.body).getPropertyValue('--surface-1').trim() || '#ffffff';
-    var blob = new Blob([this.exportSVG()], { type: 'image/svg+xml' });
-    var url = URL.createObjectURL(blob);
-    var image = new Image();
-    image.onload = function () {
-      var canvas = document.createElement('canvas');
-      canvas.width = 1600; canvas.height = 800;
-      var context = canvas.getContext('2d');
-      context.fillStyle = background;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      canvas.toBlob(callback, 'image/png');
-    };
-    image.src = url;
+    GearSvgExport.toPNG(this.svg, { styleText: this._resolvedStyle(), width: 1600, height: 800 }, callback);
   };
 
   GearApp.visualization.TrainRenderer = TrainRenderer;
