@@ -1,0 +1,303 @@
+/* ===== Parcours de configuration et composants réutilisables =====
+   besoin → contraintes → priorité → technologie → réglages avancés.
+
+   Tout est exprimé en jetons de design (css/theme.css) : le thème sombre suit
+   sans règle dédiée. Aucun style inline dans le JavaScript.                  */
+
+/* ===================== Étapes de configuration ===================== */
+
+.config-step {
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+}
+.section-header {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.requirement-io { display: grid; gap: var(--sp-3); }
+.requirement-block { display: grid; gap: var(--sp-1); }
+.requirement-title {
+  margin: 0;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+
+/* ===================== Cartes d'objectif ===================== */
+
+.objective-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.objective-card {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-3);
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.objective-card strong { font-size: var(--font-sm); font-weight: 600; }
+.objective-card small { color: var(--muted); font-size: var(--font-xs); }
+.objective-card:hover { border-color: var(--accent); }
+.objective-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.objective-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ===================== Contraintes ===================== */
+
+.constraint-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.constraint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+}
+.constraint-chip-label { font-weight: 600; white-space: nowrap; }
+.constraint-chip-open {
+  border: 0; background: transparent; color: inherit;
+  font: inherit; font-weight: 600; cursor: pointer; padding: 0;
+}
+.constraint-chip-open:hover { text-decoration: underline; }
+.constraint-chip-input {
+  width: 5.5ch;
+  min-height: 22px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  /* Les flèches natives volent 20 px de large dans un chip de 22 px de haut. */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.constraint-chip-input::-webkit-outer-spin-button,
+.constraint-chip-input::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.constraint-chip-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.constraint-chip-unit { color: var(--muted); }
+.constraint-chip-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0;
+  border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted);
+  font-size: 15px; line-height: 1; cursor: pointer;
+}
+.constraint-chip-remove:hover { background: var(--danger); color: var(--surface-1); }
+.constraint-chip-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.constraint-add { position: relative; }
+.btn-add-constraint {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+.btn-add-constraint:hover { border-color: var(--accent); color: var(--accent); }
+.btn-add-constraint:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.constraint-count {
+  min-width: 18px; padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+.constraint-menu {
+  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
+  max-height: 320px; overflow-y: auto;
+  display: grid; gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-1); box-shadow: var(--shadow);
+}
+.constraint-menu-group { display: grid; gap: 2px; }
+.constraint-menu-group h4 {
+  margin: 0 0 2px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted);
+}
+.constraint-menu-item {
+  padding: 5px 8px;
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--ink);
+  font-size: var(--font-sm); text-align: left; cursor: pointer;
+}
+.constraint-menu-item:hover { background: var(--accent-soft); color: var(--accent); }
+.constraint-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.constraint-menu-empty { margin: 0; color: var(--muted); font-size: var(--font-sm); }
+
+/* ===================== Priorités ===================== */
+
+.priority-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.priority-chip {
+  padding: 5px 12px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface-1); color: var(--muted);
+  font-size: var(--font-sm); cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.priority-chip:hover { border-color: var(--accent); color: var(--accent); }
+.priority-chip.active {
+  border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 600;
+}
+.priority-chip.custom { cursor: default; border-style: dashed; }
+.priority-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ===================== Technologie ===================== */
+
+.technology-summary { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.technology-mode {
+  padding: 5px 12px;
+  border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: var(--font-sm); font-weight: 600; cursor: pointer;
+}
+.technology-mode.active { background: var(--accent); color: #fff; }
+.technology-hint { color: var(--muted); font-size: var(--font-xs); }
+
+.advanced-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 0;
+  border: 0; background: transparent;
+  color: var(--accent); font-size: var(--font-sm); cursor: pointer;
+}
+.advanced-toggle::before { content: '▸'; transition: transform .15s; }
+.advanced-toggle[aria-expanded="true"]::before { transform: rotate(90deg); }
+.advanced-toggle:hover { text-decoration: underline; }
+.advanced-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ===================== Réglages avancés ===================== */
+
+.advanced-settings { margin: var(--sp-3) var(--sp-4) var(--sp-4); }
+.advanced-settings > summary {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  cursor: pointer; list-style: none;
+  font-size: var(--font-sm);
+}
+.advanced-settings > summary::-webkit-details-marker { display: none; }
+.advanced-settings > summary::before { content: '▸'; color: var(--muted); transition: transform .15s; }
+.advanced-settings[open] > summary::before { transform: rotate(90deg); }
+.advanced-settings > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.advanced-settings .panel-title { font-weight: 600; }
+.advanced-settings .panel-hint { margin-left: auto; color: var(--muted); font-size: var(--font-xs); }
+.advanced-body { padding: var(--sp-2) 0 0; }
+/* Les panneaux historiques deviennent des sous-sections de l'avancé. */
+.advanced-body .panel { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.advanced-body .panel:first-child { border-top: 0; }
+
+/* ===================== Cartes de solutions ===================== */
+
+.solution-card {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.solution-card:hover { border-color: var(--accent); }
+.solution-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.solution-card.recommended { border-color: var(--success); }
+.solution-card.recommended.selected { box-shadow: 0 0 0 1px var(--success); }
+.solution-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.solution-card-head { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.solution-card-head .tile-pin { margin-left: auto; }
+.solution-architecture {
+  margin: 0;
+  font-size: var(--font-md); font-weight: 600; color: var(--ink);
+}
+.solution-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: var(--sp-2);
+}
+.metric { display: grid; gap: 1px; }
+.metric small { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.metric strong { font-variant-numeric: tabular-nums; }
+.metric-primary strong { font-size: var(--font-lg); font-weight: 600; color: var(--ink); }
+.metric-secondary strong { font-size: var(--font-sm); font-weight: 500; color: var(--muted); }
+.solution-why { margin: 0; color: var(--muted); font-size: var(--font-xs); font-style: italic; }
+.solution-card-actions { display: flex; gap: var(--sp-2); }
+.solution-view { flex: 1; }
+
+.recommendation-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-3); color: var(--muted);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.recommendation-badge.recommended { background: var(--success); color: #fff; }
+.recommendation-badge.compact { background: var(--accent-soft); color: var(--accent); }
+.recommendation-badge.efficient { background: var(--accent-soft); color: var(--accent); }
+.recommendation-badge.simple { background: var(--surface-3); color: var(--ink); }
+.recommendation-badge.robust { background: var(--surface-3); color: var(--ink); }
+.recommendation-badge.variant { background: var(--warning); color: var(--surface-1); }
+
+/* ===================== États vides ===================== */
+
+.empty-state {
+  display: grid; gap: var(--sp-3); justify-items: center;
+  padding: var(--sp-5) var(--sp-4);
+  text-align: center;
+}
+.empty-state h3 { margin: 0; font-size: var(--font-lg); color: var(--ink); }
+.empty-state p { margin: 0; color: var(--muted); font-size: var(--font-sm); max-width: 46ch; }
+.empty-state-blockers { display: grid; gap: 2px; justify-items: center; }
+.empty-state-blockers li { list-style: none; color: var(--danger); font-size: var(--font-sm); }
+.empty-state-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: center; }
+
+/* ===================== Adaptatif ===================== */
+
+@media (max-width: 900px) {
+  .objective-cards { grid-template-columns: 1fr; }
+  .constraint-menu { position: fixed; left: var(--sp-3); right: var(--sp-3); top: auto; }
+}
+
+/* ===================== Inspecteur d'étage ===================== */
+.inspector-group {
+  margin: var(--sp-2) 0 2px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted);
+}
+.inspector-group:first-child { margin-top: 0; }
+
+/* ===================== Affinage des résultats ===================== */
+.refine-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.refine-title { font-weight: 600; font-size: var(--font-sm); }
+.refine-sort-label { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-xs); color: var(--muted); }

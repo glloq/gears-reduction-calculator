@@ -197,7 +197,7 @@
       : '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">'+solution.ratio.toFixed(4)+'</span></div><div class="card-item"><span class="card-label">RPM sortie</span><span class="card-value">'+solution.outputSpeedRpm.toFixed(1)+' rpm</span></div><div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">'+solution.outputTorqueNm.toFixed(1)+' N·m</span></div>';
     var title = index >= 0 ? 'Solution du vivier n° ' + (index + 1) : 'Solution épinglée / variante';
     card.innerHTML =
-      '<div class="solution-card-title"><div><span class="card-label">Résultat sélectionné</span><h2>' + title + '</h2></div><span class="type-badge">Classement : ' + modeLabel + '</span></div>' +
+      '<div class="solution-summary-title"><div><span class="card-label">Résultat sélectionné</span><h2>' + title + '</h2></div><span class="type-badge">Classement : ' + modeLabel + '</span></div>' +
       outputs +
       '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (solution.efficiency * 100).toFixed(1) + '%</span></div>' +
       '<div class="card-item"><span class="card-label">Architecture</span><span class="card-value">' + types + '</span></div>' +

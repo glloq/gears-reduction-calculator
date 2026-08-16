@@ -163,6 +163,10 @@
         var renderer = self.renderer(), speed = Number(event.target.value);
         self.animationSpeed = speed;
         if (renderer.setAnimationSpeed) renderer.setAnimationSpeed(speed);
+        // Le résumé du menu porte la vitesse : une seule commande visible en
+        // permanence, sans perdre l'information.
+        var summary = document.querySelector('#viewerAnimationMenu > summary');
+        if (summary) summary.textContent = event.target.options[event.target.selectedIndex].textContent;
         self.container.dispatchEvent(new CustomEvent('viewer:animation-changed', { detail: { speed: speed } }));
       }
       if (event.target.matches('[data-overlay]')) self.setOverlay(event.target.dataset.overlay, event.target.checked);

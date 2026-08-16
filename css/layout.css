@@ -76,10 +76,13 @@
 .hero-viewer { display: none; margin-bottom: var(--sp-4); }
 body.has-results .hero-viewer { display: block; }
 
-/* Grille maître/détail : liste des solutions + détail sélectionné */
+/* Grille maître/détail : liste des solutions + détail sélectionné.
+   Le `minmax(0, …)` est indispensable : sans lui une colonne de grille ne peut
+   pas descendre sous la largeur min-content de son contenu, et une simple barre
+   d'onglets non sécable élargirait toute la page au lieu de défiler chez elle. */
 .workspace-grid {
   display: none;
-  grid-template-columns: minmax(320px, 5fr) 7fr;
+  grid-template-columns: minmax(320px, 5fr) minmax(0, 7fr);
   gap: var(--sp-4);
   align-items: start;
 }
@@ -89,7 +92,7 @@ body.has-results .workspace-empty { display: none; }
 /* ----- Adaptatif ----- */
 
 @media (max-width: 1280px) {
-  .workspace-grid { grid-template-columns: 1fr; }
+  .workspace-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 1000px) {
