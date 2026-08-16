@@ -94,7 +94,13 @@
 
 /* ----- Étape 1 : comment choisir (§2) ----- */
 
-.type-entries { display: grid; gap: var(--sp-2); }
+/* Trois points de départ tiennent côte à côte : empilés, ils donnaient une
+   colonne à faire défiler avant même d'avoir rien décidé. */
+.type-entries {
+  display: grid;
+  gap: var(--sp-2);
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
 .type-entry {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr);
@@ -249,7 +255,12 @@ body.modal-open { overflow: hidden; }
   .search-modal-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   .search-modal-steps { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
   .search-step { flex: 1; justify-content: center; }
-  .search-modal-summary { border-left: 0; border-top: 1px solid var(--line); max-height: 30vh; }
+  /* §27 : le résumé se replie en une barre d'une ligne, dépliable d'une tape. */
+  .search-modal-summary { border-left: 0; border-top: 1px solid var(--line); max-height: 40vh; }
+  .search-modal-summary .summary-bar { display: block; }
+  .search-modal-summary > *:not(.summary-bar) { display: none; }
+  .search-modal-summary.summary-open { overflow-y: auto; }
+  .search-modal-summary.summary-open > * { display: block; }
   .requirement-banner { flex-wrap: wrap; }
 }
 
@@ -433,3 +444,82 @@ body.modal-open { overflow: hidden; }
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
   margin-top: var(--sp-2);
 }
+
+/* ----- §20 : les réglages techniques, sans l'ancien formulaire ----- */
+
+.technical-settings { display: grid; gap: var(--sp-3); }
+.technical-group > h4 {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--font-xs); font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.technical-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--sp-2); }
+.technical-field { display: flex; align-items: center; gap: var(--sp-1); margin: 0; font-size: var(--font-xs); }
+.technical-field > span:first-child { flex: 1; color: var(--muted); }
+.technical-field input, .technical-field select { flex: 0 1 6rem; }
+
+/* ----- §7, §8 : un réglage laissé sur « Automatique » tient sur une ligne ----- */
+
+.setting-section { padding: 0; }
+.setting-row {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.setting-label { font-size: var(--font-sm); font-weight: 600; flex: 0 0 7rem; }
+.setting-value { flex: 1; min-width: 0; font-size: var(--font-xs); color: var(--muted); }
+.setting-toggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-1); color: var(--accent);
+  font-size: var(--font-xs); padding: 3px 10px;
+}
+.setting-toggle:hover { border-color: var(--accent); }
+.setting-body { display: grid; gap: var(--sp-3); margin-top: var(--sp-2); }
+
+/* §24 : une étape dit si elle retient encore la recherche. */
+.search-step.step-blocked .search-step-index { background: var(--warn, #c47f00); color: #fff; }
+.search-step.step-blocked .search-step-index::after { content: ' !'; }
+.search-step.step-done:not(.active) .search-step-index::after { content: ' ✓'; }
+
+/* ----- §12 à §16 : cinq réglages secondaires, cinq lignes ----- */
+
+.option-rows { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.option-row { background: var(--surface-1); }
+.option-row-head {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  padding: var(--sp-2); border: 0; background: var(--surface-1);
+  font-size: var(--font-sm); text-align: left; cursor: pointer;
+}
+.option-row-head:hover { background: var(--surface-2); }
+.option-row-label { flex: 0 0 11rem; font-weight: 500; }
+.option-row-value { flex: 1; min-width: 0; font-size: var(--font-xs); color: var(--muted); }
+.option-row-mark { flex: 0 0 auto; color: var(--muted); }
+.option-row-body { padding: 0 var(--sp-2) var(--sp-2); background: var(--surface-2); }
+
+/* §16 : ce qui partira au moteur, à côté du bouton qui le lance. */
+.search-modal-context {
+  font-size: var(--font-xs); color: var(--muted);
+  margin-right: var(--sp-2); text-align: right;
+}
+
+/* §11 : un seul étage du réducteur existant déplié à la fois. */
+.existing-stage-folded { padding: 0; }
+.existing-stage-summary {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  padding: var(--sp-2); border: 0; background: transparent;
+  font-size: var(--font-xs); text-align: left; cursor: pointer;
+}
+.existing-stage-summary > span:first-of-type { flex: 1; color: var(--muted); }
+.existing-stage-edit { color: var(--accent); }
+
+/* §27 : barre de résumé, mobile uniquement. */
+.summary-bar {
+  display: none; width: 100%; text-align: left;
+  padding: var(--sp-2); border: 0; background: var(--surface-2);
+  font-size: var(--font-xs); color: var(--muted); cursor: pointer;
+}
+
+/* §22 : le détail du résumé attend qu'on le demande. */
+.search-summary-toggle { font-size: var(--font-xs); padding: 0; margin-top: var(--sp-1); }

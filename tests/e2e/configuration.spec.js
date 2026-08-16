@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { watchConsoleErrors } = require('./console-errors.js');
-const { search, openModal, setQuantity } = require('./flow.js');
+const { search, openModal, setQuantity, openSetting, openOption } = require('./flow.js');
 
 const watchErrors = watchConsoleErrors;
 
@@ -15,8 +15,17 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   // §17 : plus de barre latérale de configuration, ni de tiroir mobile.
   await expect(page.locator('#sidebar')).toHaveCount(0);
   await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
-  // Deux décisions indépendantes : la méthode, puis la politique technologique.
-  await expect(page.locator('#intentCards .type-entry')).toHaveCount(6);
+  // Trois points de départ, pas six : le reste se déduit de la saisie.
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(3);
+  // §7, §8 : technologie et disposition ne prennent plus qu'une ligne chacune
+  // tant qu'on ne les touche pas. Le premier écran ne montre donc ni les
+  // quatre politiques ni les six dispositions.
+  await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(0);
+  await expect(page.locator('.disposition-card')).toHaveCount(0);
+  await expect(page.locator('.setting-row')).toHaveCount(2);
+  await expect(page.locator('[data-setting="technology"] .setting-value')).toContainText('familles explorées');
+  // Et elles restent atteignables en un clic.
+  await page.locator('.setting-toggle[data-setting="technology"]').click();
   await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(4);
   expect(errors).toEqual([]);
 });
@@ -61,13 +70,16 @@ test('a confirmed edit replaces the search in one go', async ({ page }) => {
 
 test('the advised path asks for a geometry, never for a tooth profile', async ({ page }) => {
   await page.goto('/');
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy="auto"]').click();
+  await openSetting(page, 'disposition');
   await expect(page.locator('.disposition-card')).toHaveCount(6);
   await expect(page.locator('.disposition-card[data-disposition="angle"]')).toBeVisible();
 
   await setQuantity(page, 'ratio', 20);
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'disposition');
   await page.locator('.disposition-card[data-disposition="coaxial"]').click();
+  await openSetting(page, 'technology');
   // Le conseil est un résumé de quelques lignes, pas le panneau complet.
   await expect(page.locator('#typeAdvice .advice-row').first()).toContainText('Train épicycloïdal');
   expect(await page.locator('#typeAdvice .advice-row').count()).toBeLessThanOrEqual(7);
@@ -76,11 +88,14 @@ test('the advised path asks for a geometry, never for a tooth profile', async ({
 test('a required 90° turn changes the advice, and a back-drivable one rules out the worm', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 40);
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'disposition');
   await page.locator('.disposition-card[data-disposition="angle"]').click();
+  await openSetting(page, 'technology');
   await expect(page.locator('#typeAdvice')).toContainText('Engrenage conique');
 
+  await openSetting(page, 'disposition');
   await page.locator('[data-architecture="selfLocking"]').selectOption('forbidden');
+  await openSetting(page, 'technology');
   const worm = page.locator('#typeAdvice .advice-row[data-family="worm"]');
   if (await worm.count()) await expect(worm).toHaveClass(/advice-excluded/);
 });
@@ -90,7 +105,7 @@ test('a required 90° turn changes the advice, and a back-drivable one rules out
 test('a family can be preferred without closing the door on better ones', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="planetary"]').click();
   await expect(page.locator('#technologyPolicy [data-policy="restrict"]')).toHaveClass(/active/);
@@ -104,7 +119,7 @@ test('a family can be preferred without closing the door on better ones', async 
   expect(imposed.every(text => /Épicycloïdal/.test(text))).toBe(true);
 
   await page.locator('#editSearchBtn').click();
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy="prefer"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
@@ -118,7 +133,7 @@ test('a family can be preferred without closing the door on better ones', async 
 test('an imposed architecture fixes the families stage by stage', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 20);
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"template\"]').click();
   await expect(page.locator('.architecture-stage')).toHaveCount(2);
 
@@ -164,8 +179,13 @@ test('the secondary priority stays hidden until it is asked for', async ({ page 
   await page.goto('/');
   await page.locator('[data-step="criteria"]').click();
   await expect(page.locator('#prioritySecondary')).toBeHidden();
+  await expect(page.locator('#secondaryPriorityToggle')).toBeVisible();
   await page.locator('#secondaryPriorityToggle').click();
   await expect(page.locator('#prioritySecondary')).toBeVisible();
+  // Et le bouton reste là pour refermer : il se cachait après usage, ce qui
+  // rendait une secondaire ouverte par erreur impossible à retirer.
+  await expect(page.locator('#secondaryPriorityToggle')).toBeVisible();
+  await expect(page.locator('#secondaryPriorityToggle')).toContainText('Retirer');
   await page.locator('.priority-chip-primary[data-axis="compact"]').click();
   await page.locator('.priority-chip-secondary[data-axis="quiet"]').click();
   // Le résumé est désormais structuré : l'ordre se lit, il n'est plus une phrase.
@@ -177,20 +197,41 @@ test('the secondary priority stays hidden until it is asked for', async ({ page 
 test('the manufacturing process feeds the advice', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 5);
-  await page.locator('[data-step="criteria"]').click();
+  await openOption(page, 'fabrication');
   await page.locator('.fabrication-option[data-process="printing3d"]').click();
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await expect(page.locator('#typeAdvice')).toContainText('impression 3D');
 });
 
 // ===== §13 : les réglages techniques restent atteignables =====
 
-test('the technical panels moved into the modal, none of them lost', async ({ page }) => {
+test('the old form is gone from view, and nothing it carried is lost (§20)', async ({ page }) => {
   await page.goto('/');
-  await page.locator('[data-step="criteria"]').click();
-  await page.locator('#modalAdvanced > summary').click();
-  await expect(page.locator('#modalAdvancedBody #panel-avance-racine')).toHaveCount(1);
-  await expect(page.locator('#modalAdvancedBody #technologyPanel')).toHaveCount(1);
+  await openOption(page, 'technical');
+  // Les panneaux numérotés ne remontent plus dans le modal : ils y posaient
+  // une deuxième fois les questions que le modal pose déjà.
+  await expect(page.locator('#searchModal #panel-avance-racine')).toHaveCount(0);
+  await expect(page.locator('#searchModal #technologyPanel')).toHaveCount(0);
+  await expect(page.locator('#legacyHost #panel-avance-racine')).toHaveCount(1);
+  await expect(page.locator('#panel-avance-racine')).toBeHidden();
+
+  // Ce qu'ils portaient seuls a maintenant un éditeur propre, sur le modèle.
+  await expect(page.locator('#tech_materials_input')).toBeVisible();
+  await expect(page.locator('#tech_shaft_supportDistanceMm')).toBeVisible();
+  await expect(page.locator('#tech_module_mode')).toBeVisible();
+  await page.locator('#tech_materials_input').selectOption('bronze');
+  await page.locator('#tech_shaft_supportDistanceMm').fill('80');
+  await page.locator('#tech_shaft_supportDistanceMm').blur();
+  // §18 : le brouillon ne touche pas encore aux miroirs — c'est la recherche
+  // ADOPTÉE qui les écrit, sinon une édition abandonnée les laisserait faux.
+  expect(await page.inputValue('#input_material')).toBe('C45');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+  // Une fois adoptée, l'URL partagée et la comparaison portent bien le choix.
+  expect(await page.inputValue('#input_material')).toBe('bronze');
+  expect(await page.inputValue('#support_distance')).toBe('80');
+
   // Chaque identifiant historique existe encore exactement une fois.
   for (const id of ['module', 'max_iterations', 'input_material', 'weight_size']) {
     expect(await page.locator(`#${id}`).count()).toBe(1);
@@ -304,7 +345,7 @@ test('a nameplate power gives the torque, and unlocks the mechanical analysis', 
 test('the criteria menu suggests what matters here, catalogue one click away', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 40);
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="belt"]').click();
 
@@ -328,19 +369,18 @@ test('the criteria menu suggests what matters here, catalogue one click away', a
 test('only the explored families expose their own parameters', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="worm"]').click();
 
-  await page.locator('[data-step="criteria"]').click();
-  await page.locator('#modalAdvanced > summary').click();
+  await openOption(page, 'technical');
   await expect(page.locator('.type-parameters[data-family="worm"]')).toHaveCount(1);
   await expect(page.locator('.type-parameters[data-family="helical"]')).toHaveCount(0);
   await page.locator('.type-parameters[data-family="worm"] summary').click();
   await expect(page.locator('#tpm_worm_leadAngle')).toBeVisible();
 
   // Changer de famille change les paramètres offerts, sans réglage à retrouver.
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('.family-card[data-family="worm"]').click();
   await page.locator('.family-card[data-family="helical"]').click();
   await page.locator('[data-step="criteria"]').click();
@@ -351,8 +391,7 @@ test('only the explored families expose their own parameters', async ({ page }) 
 test('a parameter set in the modal drives the search and the historic mirror', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
-  await page.locator('[data-step="criteria"]').click();
-  await page.locator('#modalAdvanced > summary').click();
+  await openOption(page, 'technical');
   const spur = page.locator('.type-parameters[data-family="spur"]');
   await spur.locator('summary').click();
   await spur.locator('#tpm_spur_faceWidth').fill('18');
@@ -371,7 +410,7 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   await setQuantity(page, 'input.speed', 1500);
   await setQuantity(page, 'ratio', 9);
   // Uniquement des couples droits : chacun inverse le sens de sortie.
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('.family-card[data-family="spur"]').click();
   await page.locator('#searchModalSubmit').click();
@@ -379,10 +418,11 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
 
   // Deux étages droits rendent le sens identique : la contrainte les garde.
   await page.locator('#editSearchBtn').click();
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"auto\"]').click();
+  await openSetting(page, 'disposition');
   await page.locator('[data-architecture="direction"]').selectOption('same');
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
@@ -390,10 +430,11 @@ test('a demanded output direction really filters the pool', async ({ page }) => 
   // Exiger l'inverse ne laisse rien, et le diagnostic nomme le vrai coupable
   // au lieu d'accuser une contrainte de dimension.
   await page.locator('#editSearchBtn').click();
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"auto\"]').click();
+  await openSetting(page, 'disposition');
   await page.locator('[data-architecture="direction"]').selectOption('reverse');
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy=\"restrict\"]').click();
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('#workspaceEmptyHint')).toContainText('sens de sortie', { timeout: 30000 });
@@ -405,6 +446,7 @@ test('the service cycle stays folded until it is asked for', async ({ page }) =>
   await setQuantity(page, 'ratio', 12);
   await page.locator('[data-step="criteria"]').click();
   await expect(page.locator('#svc_hoursPerDay')).toHaveCount(0);
+  await openOption(page, 'service');
   await expect(page.locator('.analysis-level[data-level="fatigue"]')).toContainText('cycle de service');
 
   await page.locator('#svc_enabled').check();
@@ -418,9 +460,10 @@ test('a shaft distance to span brings belts and chains forward', async ({ page }
   await setQuantity(page, 'input.speed', 1500);
   await setQuantity(page, 'ratio', 9);
   await page.locator('[data-step="criteria"]').click();
+  await openOption(page, 'service');
   await page.locator('#shaftDistance').fill('300');
   await page.locator('#shaftDistance').blur();
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await expect(page.locator('#typeAdvice .advice-row').first()).toContainText(/Courroie|Chaîne/);
   await expect(page.locator('#typeAdvice')).toContainText('distance entre arbres');
 });
@@ -430,7 +473,7 @@ test('a shaft distance to span brings belts and chains forward', async ({ page }
 test('a stage accepts several families at once', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 25);
-  await page.locator('[data-step="type"]').click();
+  await openSetting(page, 'technology');
   await page.locator('#technologyPolicy [data-policy="template"]').click();
   const stage = page.locator('.architecture-stage[data-stage="0"]');
   // « Auto » est l'état de départ ; deux familles peuvent coexister sur un cran.
@@ -451,12 +494,16 @@ test('search depth is named, and the numbers stay underneath', async ({ page }) 
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
   await page.locator('[data-step="criteria"]').click();
+  await openOption(page, 'depth');
   await expect(page.locator('.depth-option')).toHaveCount(4);
   await expect(page.locator('.depth-option.active')).toHaveText('Standard');
 
   await page.locator('.depth-option[data-depth="exhaustive"]').click();
   await expect(page.locator('.depth-option.active')).toHaveText('Exhaustive');
-  await expect(page.locator('#searchModalSummary')).toContainText('Exhaustive');
+  // §16 : la profondeur se lit là où on lance la recherche, pas dans une
+  // section à elle. La ligne d'option la rappelle, le pied de page aussi.
+  await expect(page.locator('.option-row-head[data-option="depth"]')).toContainText('Exhaustive');
+  await expect(page.locator('#searchModalContext')).toContainText('Exhaustive');
   // Le nombre suit, mais n'est pas ce qu'on a demandé à l'utilisateur.
   await page.locator('#searchModalSubmit').click();
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
@@ -466,11 +513,8 @@ test('search depth is named, and the numbers stay underneath', async ({ page }) 
 test('existing parts are reachable as a starting point', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);
-  await page.locator('[data-step="type"]').click();
-  await page.locator('#intentCards [data-intent="parts"]').click();
   await page.locator('[data-step="criteria"]').click();
-  // La méthode « pièces existantes » ouvre le bloc d'emblée.
-  await expect(page.locator('#partsPanel')).toHaveAttribute('open', /.*/);
+  await openOption(page, 'parts');
   await page.locator('#part_module_fixed').fill('1.5');
   await page.locator('#part_module_fixed').blur();
   await page.locator('#part_gearing_drivingFixed').fill('16');
@@ -491,7 +535,10 @@ test('the side summary is structured, and repeats no unit', async ({ page }) => 
   const titles = await page.locator('.search-summary-section h4').allTextContents();
   expect(titles).toContain('Méthode');
   expect(titles).toContain('Entrée');
-  expect(titles).toContain('Analyse');
+  // §23 : les niveaux d'analyse ne sont plus répétés en texte pauvre ici — ils
+  // vivent une seule fois, en clair, dans le même résumé.
+  expect(titles).not.toContain('Analyse');
+  await expect(page.locator('#searchModalSummary .analysis-level')).not.toHaveCount(0);
   // Le couple déduit est annoncé comme calculé, une seule fois son unité.
   await expect(page.locator('.search-summary-section[data-section="Entrée"]')).toContainText('calculés');
   const entree = await page.locator('.search-summary-section[data-section="Entrée"]').textContent();
@@ -545,10 +592,8 @@ test('an exploration answers « how much can I get » instead of « find me 12:1
 test('a real parts inventory is combined, and nothing outside it is proposed', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 3);
-  await page.locator('[data-step="type"]').click();
-  await page.locator('#intentCards [data-intent="parts"]').click();
   await page.locator('[data-step="criteria"]').click();
-  await expect(page.locator('#partsPanel')).toHaveAttribute('open', /.*/);
+  await openOption(page, 'parts');
 
   // « J'ai des roues de 16, 20, 48 et 60 dents, en module 1,5. »
   await page.locator('#inventory_gearing_teethInventory').fill('16, 20, 48, 60');
@@ -589,6 +634,9 @@ test('an existing reducer becomes the reference, and better is found at its rati
   await page.locator('#existing_0_output_teeth').fill('60');
   await page.locator('#existing_0_output_teeth').blur();
   await page.locator('#addExistingStageBtn').click();
+  // §11 : ajouter un étage ouvre celui-là et replie le précédent en résumé.
+  await expect(page.locator('.existing-stage-summary[data-stage="0"]')).toContainText('20 → 60');
+  await expect(page.locator('#existing_0_input_teeth')).toHaveCount(0);
   await page.locator('#existing_1_input_teeth').fill('15');
   await page.locator('#existing_1_input_teeth').blur();
   await page.locator('#existing_1_output_teeth').fill('45');
@@ -625,4 +673,18 @@ test('an existing reducer becomes the reference, and better is found at its rati
   expect(verdict.sameRatio).toBe(true);
   expect(verdict.better).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test('a setting that opened itself can still be closed again (§7)', async ({ page }) => {
+  await page.goto('/');
+  await openSetting(page, 'technology');
+  await page.locator('#technologyPolicy [data-policy="restrict"]').click();
+  // Personnalisée, la section s'ouvre d'elle-même à chaque rendu…
+  await expect(page.locator('[data-setting-body="technology"]')).toBeVisible();
+  // …et doit malgré tout pouvoir être repliée : un bouton « Replier » sans
+  // effet serait le même piège que l'ancienne priorité secondaire.
+  await page.locator('.setting-toggle[data-setting="technology"]').click();
+  await expect(page.locator('[data-setting-body="technology"]')).toHaveCount(0);
+  // La ligne continue d'annoncer ce qui a été choisi.
+  await expect(page.locator('[data-setting="technology"] .setting-value')).toContainText('imposé');
 });
