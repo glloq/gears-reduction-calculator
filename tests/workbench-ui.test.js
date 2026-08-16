@@ -110,7 +110,7 @@ test('objective modes use contextual groups and expose a live derived ratio', ()
   assert.match(html, /objective-fields objective-linear/);
   assert.match(ui, /objective-' \+ context/);
   assert.match(ui, /Rapport cible dérivé/);
-  assert.match(html, /solveur linéaire traite directement un pignon \+ crémaillère/);
+  assert.match(html, /solveur linéaire traite un pignon \+ crémaillère/);
 });
 
 test('successful searches automatically select solution zero', () => {

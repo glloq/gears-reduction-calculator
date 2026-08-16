@@ -45,6 +45,7 @@
     var hint = el('workspaceEmptyHint');
     this._emptyHintDefault = hint ? hint.textContent : '';
 
+    this._bindConfigurationFlow();
     this._bindObjective();
     this._bindTypes();
     this._bindTypeTemplate();
@@ -83,6 +84,7 @@
 
   // À appeler après restauration URL/localStorage : les contrôles ont pu changer.
   Workbench.prototype.refreshAfterRestore = function () {
+    this._restored = true;
     this._rotaryTypes = null;
     this.renderTypeParams();
     this.updateContext();
@@ -91,7 +93,55 @@
     this._refreshManufacturingMode();
     this._refreshWeights();
     this._refreshOptimizationCopy();
+    this._refreshConfigurationFlow();
     this.updateSummary();
+  };
+
+  // ===== Parcours de configuration : besoin → contraintes → priorité =====
+  //
+  // Workbench n'implémente pas ces composants : il les assemble. Chacun pilote
+  // les contrôles historiques, qui restent lus par SearchParams.
+  Workbench.prototype._bindConfigurationFlow = function () {
+    var self = this;
+
+    this.constraints = new GearConstraintManager.Manager({
+      host: el('constraintChips'),
+      menu: el('constraintMenu'),
+      trigger: el('addConstraintBtn'),
+      onChange: function () { self.updateSummary(); }
+    }).bind();
+
+    this.priorities = new GearPrioritySelector.Selector({
+      host: el('priorityChips'),
+      help: el('priorityHelp'),
+      onChange: function () { self.updateSummary(); }
+    }).bind();
+
+    this.technologies = new GearTechnologySelector.Selector({
+      panel: el('technologyPanel'),
+      toggle: el('technologyToggle'),
+      autoButton: el('technologyAutoBtn'),
+      hint: el('technologyHint'),
+      onChange: function () { self.renderTypeParams(); self.renderTypeTemplate(); self.updateSummary(); }
+    }).bind();
+
+    this.requirements = new GearRequirementForm.Form({
+      cards: el('objectiveCards'),
+      constraints: this.constraints,
+      onChange: function () { self.updateContext(); }
+    }).bind();
+
+    // Au premier chargement sans configuration restaurée, l'utilisateur doit
+    // pouvoir chercher sans rien ouvrir : technologies automatiques d'emblée.
+    if (!this._restored && this.technologies.selected().length <= 1) this.technologies.setAutomatic();
+  };
+
+  /** Réaligne le parcours après une restauration URL/localStorage/preset. */
+  Workbench.prototype._refreshConfigurationFlow = function () {
+    if (this.constraints) this.constraints.render();
+    if (this.priorities) this.priorities.render();
+    if (this.technologies) this.technologies.render();
+    if (this.requirements) this.requirements.render();
   };
 
   // ===== Objectif (rapport / vitesse / linéaire) =====
@@ -163,6 +213,11 @@
     document.body.classList.toggle('linear-objective', linear);
     this.renderTypeParams();
     this.renderTypeTemplate();
+    // Le jeu de contraintes applicables dépend de l'objectif : une contrainte
+    // linéaire n'a pas de sens en rotatif, et réciproquement.
+    if (this.constraints) this.constraints.render();
+    if (this.technologies) this.technologies.render();
+    if (this.requirements) this.requirements.render();
     this.updateSummary();
   };
 
@@ -589,48 +644,67 @@
       document.body.classList.remove('has-results');
     }
 
-    var hint = el('workspaceEmptyHint');
-    if (hint) {
-      var reason = info && info.stats && info.stats.reason;
-      hint.textContent = this.solutions.length > 0 ? this._emptyHintDefault
-        : reason === 'NO_CANDIDATES' ? 'Aucun candidat d’étage généré : élargissez les plages de dents ou activez d’autres types de transmission.'
-        : reason === 'NO_MODULES' ? 'Aucun module à tester : renseignez un module fixe valide ou une plage de modules automatique.'
-        : 'Aucune solution trouvée. Élargissez la tolérance, les plages de dents ou les types de transmission.';
-    }
+    this._renderEmptyState(info);
 
     var host = el('solutionCards');
     if (!host) return;
     host.innerHTML = '';
     var self = this;
 
+    // Badges calculés sur le VIVIER COMPLET, pas sur la vue filtrée : « la plus
+    // compacte » doit désigner la même solution quels que soient les filtres.
+    var annotation = GearResultRecommendations.annotate(info && info.pool ? info.pool : this.solutions);
+    var poolIndexOf = info && info.pool ? function (position) { return self._indices[position]; }
+      : function (position) { return position; };
+
     // Toutes les tuiles de la vue sont rendues : le compteur de la barre
     // d'affinage correspond exactement à ce qui est affiché.
     this.solutions.forEach(function (s, position) {
       var index = self._indices[position];
+      var badges = annotation.byIndex[poolIndexOf(position)] || [];
       var tile = document.createElement('article');
-      tile.className = 'solution-tile' + (index === self.selected ? ' selected' : '');
+      tile.className = 'solution-card' + (index === self.selected ? ' selected' : '') +
+        (badges.indexOf('recommended') >= 0 ? ' recommended' : '');
       tile.tabIndex = 0;
       tile.dataset.index = index;
-      tile.setAttribute('aria-label', 'Sélectionner la solution ' + (position + 1));
-      var sf = minSafety(s, 'bending'), sh = minSafety(s, 'contact');
+      tile.setAttribute('aria-label', 'Solution ' + (position + 1) +
+        (badges.length ? ' — ' + badges.map(function (id) { return GearResultRecommendations.badge(id).label; }).join(', ') : ''));
+
       var linear = s.mode === 'rotationTranslation';
-      var kpis = linear
-        ? '<span>Course<strong>' + finite(s.travelPerRevolutionMm, 2) + ' mm/tr</strong></span>' +
-          '<span>Vitesse<strong>' + finite(s.outputLinearSpeedMmMin, 0) + ' mm/min</strong></span>' +
-          '<span>Force<strong>' + finite(s.outputForceN, 1) + ' N</strong></span>' +
-          '<span>Rendement<strong>' + finite(s.efficiency * 100, 1) + ' %</strong></span>' +
-          '<span>Diamètre pignon<strong>' + finite(s.dimensions && s.dimensions.maxDiameter, 1) + ' mm</strong></span>' +
-          '<span>Module<strong>' + finite(s.stats && s.stats.selectedModule, 2) + ' mm</strong></span>'
-        : '<span>Rapport<strong>' + finite(s.ratio, 3) + ':1</strong></span>' +
-          '<span>Rendement<strong>' + finite(s.efficiency * 100, 1) + ' %</strong></span>' +
-          '<span>Dimensions<strong>' + finite(s.dimensions && s.dimensions.maxDiameter, 0) + ' mm</strong></span>' +
-          '<span>SF / SH<strong>' + finite(sf, 2) + ' / ' + finite(sh, 2) + '</strong></span>';
-      var origin = s.origin === 'variante' ? '<em class="tile-origin">Variante</em>' : '';
-      tile.innerHTML = '<header><b>#' + (position + 1) + '</b>' + origin +
-        '<span title="Score pondéré : plus bas = mieux">coût ' + finite(s.score && s.score.value, 3) + '</span>' +
-        '<button class="tile-pin" title="Épingler pour comparer" aria-pressed="false">☆</button></header>' +
-        '<h3>' + s.stages.map(function (x) { return x.type; }).join(' → ') + '</h3>' +
-        '<div class="tile-kpis">' + kpis + '</div>';
+      // Cartes volontairement courtes : de quoi DÉCIDER. SF/SH, efforts et
+      // diamètres détaillés restent dans l'inspection.
+      var metrics = linear
+        ? [['Course', finite(s.travelPerRevolutionMm, 2) + ' mm/tr', true],
+           ['Vitesse', finite(s.outputLinearSpeedMmMin, 0) + ' mm/min', false],
+           ['Force', finite(s.outputForceN, 1) + ' N', false],
+           ['Rendement', finite(s.efficiency * 100, 1) + ' %', false],
+           ['Ø pignon', finite(s.dimensions && s.dimensions.maxDiameter, 1) + ' mm', false]]
+        : [['Rapport', finite(s.ratio, 2) + ' : 1', true],
+           ['Sortie', finite(s.outputSpeedRpm, 1) + ' rpm', true],
+           ['Rendement', finite(s.efficiency * 100, 1) + ' %', false],
+           ['Couple', finite(s.outputTorqueNm, 1) + ' N·m', false],
+           ['Ø max', finite(s.dimensions && s.dimensions.maxDiameter, 0) + ' mm', false],
+           ['Étages', String((s.stages || []).length), false]];
+
+      var badgeMarkup = badges.map(function (id) {
+        var entry = GearResultRecommendations.badge(id);
+        return '<span class="recommendation-badge ' + id + '">' + (id === 'recommended' ? '★ ' : '') + entry.label + '</span>';
+      }).join('');
+      var origin = s.origin === 'variante' ? '<span class="recommendation-badge variant">Variante</span>' : '';
+      var architecture = (s.stages || []).map(function (x) { return TYPE_NAMES[x.type] || x.type; }).join(' → ');
+      var why = GearResultRecommendations.explain(s, badges);
+
+      tile.innerHTML =
+        '<header class="solution-card-head">' + badgeMarkup + origin +
+          '<button class="tile-pin" title="Épingler pour comparer" aria-pressed="false">☆</button></header>' +
+        '<h3 class="solution-architecture">' + architecture + '</h3>' +
+        '<div class="solution-metrics">' + metrics.map(function (metric) {
+          return '<span class="metric' + (metric[2] ? ' metric-primary' : ' metric-secondary') + '">' +
+            '<small>' + metric[0] + '</small><strong>' + metric[1] + '</strong></span>';
+        }).join('') + '</div>' +
+        (why ? '<p class="solution-why">' + why + '</p>' : '') +
+        '<footer class="solution-card-actions"><button type="button" class="btn-small solution-view">Voir</button></footer>';
+
       function select() {
         self.selected = index;
         self.bus.emit('solution:selected', { index: index, solution: s });
@@ -655,11 +729,84 @@
     this._markSelected();
   };
 
+  /**
+   * État vide actionnable : « 0 résultat » n'aide personne. On nomme les
+   * contraintes les plus susceptibles de bloquer et on propose de les lever.
+   * La structure est prête à recevoir un vrai diagnostic « near-miss » du
+   * moteur : il suffira de remplir `info.stats.blockers`.
+   */
+  Workbench.prototype._renderEmptyState = function (info) {
+    var title = el('workspaceEmptyTitle');
+    var hint = el('workspaceEmptyHint');
+    var blockers = el('workspaceEmptyBlockers');
+    var actions = el('workspaceEmptyActions');
+    var searched = !!(info && info.stats);
+    var self = this;
+
+    if (this.solutions.length > 0 || !searched) {
+      if (title) title.textContent = 'Décrivez la transmission que vous recherchez';
+      if (hint) hint.textContent = this._emptyHintDefault;
+      if (blockers) { blockers.hidden = true; blockers.textContent = ''; }
+      if (actions) { actions.hidden = true; actions.textContent = ''; }
+      return;
+    }
+
+    var reason = info.stats.reason;
+    if (title) title.textContent = 'Aucune architecture ne respecte toutes les contraintes';
+    if (hint) {
+      hint.textContent = reason === 'NO_CANDIDATES'
+        ? 'Aucun candidat d’étage n’a pu être généré : les plages de dents ou les technologies autorisées sont trop étroites.'
+        : reason === 'NO_MODULES'
+          ? 'Aucun module à tester : renseignez un module fixe valide ou une plage de modules automatique.'
+          : 'La recherche a exploré le domaine autorisé sans trouver de solution valide.';
+    }
+
+    // Les contraintes explicitement posées sont les suspects les plus probables.
+    var suspects = (info.stats.blockers || (this.constraints ? this.constraints.active() : [])).slice(0, 4);
+    if (blockers) {
+      blockers.textContent = '';
+      suspects.forEach(function (constraint) {
+        var item = document.createElement('li');
+        item.textContent = constraint.text || constraint.name;
+        blockers.appendChild(item);
+      });
+      blockers.hidden = !suspects.length;
+    }
+    if (actions) {
+      actions.textContent = '';
+      suspects.forEach(function (constraint) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn-small';
+        button.textContent = 'Lever « ' + (constraint.text || constraint.name) + ' »';
+        button.addEventListener('click', function () {
+          if (self.constraints) self.constraints.remove(constraint.field);
+        });
+        actions.appendChild(button);
+      });
+      // Toujours une porte de sortie, même sans contrainte explicite.
+      if (!suspects.length) {
+        var relax = document.createElement('button');
+        relax.type = 'button';
+        relax.className = 'btn-small';
+        relax.textContent = 'Autoriser un étage de plus';
+        relax.addEventListener('click', function () {
+          var stages = el('etages');
+          if (!stages) return;
+          stages.value = String(Math.min(8, (parseInt(stages.value, 10) || 4) + 1));
+          stages.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        actions.appendChild(relax);
+      }
+      actions.hidden = !actions.children.length;
+    }
+  };
+
   // Le surlignage se fait par index de vivier (data-index), jamais par
   // position DOM : le tableau trié/paginé gère sa propre sélection.
   Workbench.prototype._markSelected = function () {
     var self = this;
-    document.querySelectorAll('.solution-tile').forEach(function (tile) {
+    document.querySelectorAll('.solution-card').forEach(function (tile) {
       tile.classList.toggle('selected', tile.dataset.index === String(self.selected));
     });
   };

@@ -10,7 +10,7 @@ test.afterEach(() => expect(errors, 'browser errors').toEqual([]));
 
 test('clicking a stage in the hero opens the inspector and bridges to the editor', async ({ page }) => {
   await page.getByRole('button', { name: 'Rechercher' }).click();
-  await expect(page.locator('.solution-tile')).not.toHaveCount(0, { timeout: 20000 });
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
   await expect(page.locator('#svgContainer .train-svg')).toBeVisible();
 
   // Cibler le moyeu du premier engrenage : les trains composés superposent

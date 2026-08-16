@@ -23,7 +23,7 @@
 
 /* ----- Volet solutions (maître) ----- */
 
-.results-pane, .detail-pane > .detail-panel, .solution-card, .comparison-panel, .hero-viewer {
+.results-pane, .detail-pane > .detail-panel, .solution-summary, .comparison-panel, .hero-viewer {
   background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -86,27 +86,6 @@
 
 .solution-cards { display: grid; gap: var(--sp-2); margin-top: var(--sp-3); }
 
-.solution-tile {
-  padding: var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: border-color .15s, box-shadow .15s;
-}
-.solution-tile:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
-.solution-tile.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.solution-tile header { display: flex; justify-content: space-between; font-size: var(--font-xs); color: var(--muted); }
-.solution-tile h3 { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--font-sm); }
-.tile-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: var(--sp-1) var(--sp-2); }
-.tile-kpis span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.tile-kpis strong { display: block; font-size: var(--font-sm); color: var(--ink); text-transform: none; letter-spacing: 0; }
-
-/* Bascule cartes / tableau */
 .results-table-mode .solution-cards { display: none; }
 #result-container:not(.results-table-mode) .results-body { display: none; }
 
@@ -143,15 +122,18 @@
 
 /* ----- Volet détail ----- */
 
-.detail-pane { display: grid; gap: var(--sp-3); }
+/* `minmax(0, 1fr)` et non `auto` : une colonne implicite se dimensionne sur le
+   min-content de ses éléments, si bien qu'une barre d'onglets ou un tableau
+   élargirait le volet — et donc la page entière — au lieu de défiler chez lui. */
+.detail-pane { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
 
-.solution-card {
+.solution-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: var(--sp-2);
 }
-.solution-card-title { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-.solution-card-title h2 { margin: 0; font-size: var(--font-lg); }
+.solution-summary-title { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.solution-summary-title h2 { margin: 0; font-size: var(--font-lg); }
 .card-item { padding: var(--sp-2) var(--sp-3); background: var(--surface-2); border-radius: var(--radius-sm); }
 .card-label { display: block; font-size: var(--font-xs); color: var(--muted); }
 .card-value { display: block; margin-top: 2px; font-size: var(--font-md); font-weight: 700; }

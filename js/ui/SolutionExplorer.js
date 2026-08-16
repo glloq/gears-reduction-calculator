@@ -43,8 +43,38 @@
     this._debounce = null;
   }
 
+  // Catalogue des filtres : mêmes chips que les contraintes de recherche, mais
+  // appliqués au vivier déjà calculé — jamais de nouvelle recherche.
+  var FILTERS = [
+    { category: 'precision', field: 'refine_error_max', label: 'Écart ≤', name: 'écart maximum', unit: '%', suggest: 1, step: 0.01 },
+    { category: 'performance', field: 'refine_efficiency_min', label: 'Rendement ≥', name: 'rendement minimum', unit: '%', suggest: 90 },
+    { category: 'performance', field: 'refine_sf_min', label: 'SF ≥', name: 'facteur de sécurité en flexion minimum', unit: '', suggest: 1.5, step: 0.1 },
+    { category: 'performance', field: 'refine_sh_min', label: 'SH ≥', name: 'facteur de sécurité au contact minimum', unit: '', suggest: 1.2, step: 0.1 },
+    { category: 'dimensions', field: 'refine_diameter_max', label: 'Ø ≤', name: 'diamètre maximum', unit: 'mm', suggest: 80 },
+    { category: 'dimensions', field: 'refine_length_max', label: 'Longueur ≤', name: 'longueur maximum', unit: 'mm', suggest: 150 },
+    { category: 'architecture', field: 'refine_stages_max', label: 'Étages ≤', name: "nombre maximum d'étages", unit: '', suggest: 2 }
+  ];
+  var FILTER_CATEGORIES = [
+    { id: 'precision', label: 'Précision' },
+    { id: 'performance', label: 'Performance' },
+    { id: 'dimensions', label: 'Dimensions' },
+    { id: 'architecture', label: 'Architecture' }
+  ];
+
   SolutionExplorer.prototype.bind = function () {
     var self = this;
+    // Les filtres deviennent des chips : seuls les critères réellement posés
+    // occupent de la place.
+    this.filters = new GearConstraintManager.Manager({
+      host: el('refineChips'),
+      menu: el('refineMenu'),
+      trigger: el('addFilterBtn'),
+      catalog: FILTERS,
+      categories: FILTER_CATEGORIES,
+      sidebar: 'refineBar',
+      onChange: function () { self._schedulePublish(); }
+    }).bind();
+
     NUMERIC_FIELDS.forEach(function (id) {
       var input = el(id);
       if (!input) return;
@@ -143,6 +173,7 @@
     var sort = el('refine_sort');
     if (sort) sort.value = 'score';
     this._disabledTypes = {};
+    if (this.filters) this.filters.render();
   };
 
   SolutionExplorer.prototype._criteria = function () {
@@ -194,7 +225,7 @@
 
     // keepResults : un affinage qui vide la vue ne doit pas masquer l'espace
     // de travail (la barre de filtres doit rester accessible).
-    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, keepResults: this._pool.length > 0 });
+    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, keepResults: this._pool.length > 0 });
     if (this.resultsTable) this.resultsTable.display(solutions, this._params, indices);
 
     var count = el('refineCount');

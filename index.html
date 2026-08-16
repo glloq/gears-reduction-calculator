@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/config.css">
   <link rel="stylesheet" href="css/workspace.css">
   <link rel="stylesheet" href="css/visualization.css">
 
@@ -64,40 +65,156 @@
         </details>
       </div>
 
+      <!-- ===== 1. BESOIN : la seule chose que l'utilisateur doit savoir ===== -->
+      <section class="config-step" id="step-besoin" aria-labelledby="besoin-title">
+        <h2 class="section-header" id="besoin-title">Que voulez-vous obtenir&nbsp;?</h2>
+
+        <!-- Les cartes pilotent ce select, qui reste l'état lu par SearchParams
+             (et donc par les URLs partagées et les presets existants). -->
+        <select id="objective_mode" data-persist hidden aria-hidden="true" tabindex="-1">
+          <option value="ratio">Rapport de réduction connu</option>
+          <option value="need">Vitesse de sortie cible</option>
+          <option value="rotationTranslation">Rotation → translation (crémaillère)</option>
+        </select>
+
+        <div class="objective-cards" id="objectiveCards" role="radiogroup" aria-label="Type de recherche">
+          <button type="button" class="objective-card" data-objective="ratio" role="radio" aria-checked="true">
+            <strong>Rapport</strong><small>i = 12:1</small>
+          </button>
+          <button type="button" class="objective-card" data-objective="need" role="radio" aria-checked="false">
+            <strong>Vitesse de sortie</strong><small>1500 → 125 rpm</small>
+          </button>
+          <button type="button" class="objective-card" data-objective="needTorque" role="radio" aria-checked="false">
+            <strong>Vitesse + couple</strong><small>125 rpm · ≥ 80 N·m</small>
+          </button>
+          <button type="button" class="objective-card" data-objective="rotationTranslation" role="radio" aria-checked="false">
+            <strong>Rotation → translation</strong><small>mm par tour</small>
+          </button>
+        </div>
+
+        <div class="requirement-io">
+          <div class="requirement-block">
+            <h3 class="requirement-title">Entrée</h3>
+            <div class="field-grid">
+              <div><label for="vitesse_entree">Vitesse (tr/min)</label><input type="number" id="vitesse_entree" value="1500" step="10" min="1"></div>
+              <div><label for="couple_entree">Couple (N·m)</label><input type="number" id="couple_entree" value="10" step="0.1" min="0.01"></div>
+            </div>
+          </div>
+
+          <div class="requirement-block">
+            <h3 class="requirement-title">Sortie souhaitée</h3>
+
+            <div class="objective-fields objective-ratio active">
+              <label for="rapport">Rapport cible (tours entrée pour un tour sortie)</label>
+              <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
+            </div>
+
+            <div class="objective-fields objective-need">
+              <label for="rpm_sortie_cible">Vitesse de sortie cible (tr/min)</label>
+              <input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
+              <output id="derivedRatio" class="derived-ratio"></output>
+            </div>
+
+            <div class="objective-fields objective-linear">
+              <label for="linear_travel_per_rev">Course par tour (mm/tr)</label>
+              <input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
+              <div class="field-grid">
+                <div><label for="linear_speed_min">Vitesse min (mm/min)</label><input id="linear_speed_min" data-persist type="number" min="0"></div>
+                <div><label for="linear_speed_max">Vitesse max (mm/min)</label><input id="linear_speed_max" data-persist type="number" min="0"></div>
+              </div>
+              <label for="linear_force_min">Force de sortie minimum (N)</label>
+              <input id="linear_force_min" data-persist type="number" min="0">
+              <p class="field-help">Le solveur linéaire traite un pignon + crémaillère, sans étage de réduction.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 2. CONTRAINTES : rien tant que l'utilisateur n'en ajoute pas ===== -->
+      <section class="config-step" id="step-contraintes" aria-labelledby="contraintes-title">
+        <h2 class="section-header" id="contraintes-title">Contraintes</h2>
+        <div class="constraint-chips" id="constraintChips" hidden aria-live="polite"></div>
+        <div class="constraint-add">
+          <button type="button" class="btn-add-constraint" id="addConstraintBtn" aria-expanded="false" aria-controls="constraintMenu">
+            + Ajouter une contrainte<span class="constraint-count" hidden></span>
+          </button>
+          <div class="constraint-menu" id="constraintMenu" role="menu" hidden></div>
+        </div>
+      </section>
+
+      <!-- ===== 3. PRIORITÉ ===== -->
+      <section class="config-step" id="step-priorite" aria-labelledby="priorite-title">
+        <h2 class="section-header" id="priorite-title">Priorité</h2>
+        <div class="priority-chips" id="priorityChips" role="radiogroup" aria-label="Priorité de recherche"></div>
+        <p class="field-help" id="priorityHelp"></p>
+      </section>
+
+      <!-- ===== 4. TECHNOLOGIE ===== -->
+      <section class="config-step" id="step-technologie" aria-labelledby="technologie-title">
+        <h2 class="section-header" id="technologie-title">Technologie</h2>
+        <div class="technology-summary">
+          <button type="button" class="technology-mode" id="technologyAutoBtn" aria-pressed="true">Automatique</button>
+          <span class="technology-hint" id="technologyHint">Le calculateur comparera les technologies compatibles.</span>
+        </div>
+        <button type="button" class="advanced-toggle" id="technologyToggle" aria-expanded="false" aria-controls="technologyPanel">
+          Modifier les technologies autorisées
+        </button>
+        <div id="technologyPanel" hidden>
+        <div class="transmission-filters segmented" role="group" aria-label="Filtrer les familles">
+          <button type="button" class="active" data-filter="all">Toutes</button>
+          <button type="button" data-filter="gear">Engrenages</button>
+          <button type="button" data-filter="flexible">Flexibles</button>
+        </div>
+        <div class="types-grid" role="group" aria-label="Types de transmission">
+          <label class="type-option" data-group="gear" title="Engrenage cylindrique à denture droite. Axes parallèles.">
+            <input type="checkbox" class="type-checkbox" value="spur" id="type-spur" checked>
+            <span class="type-label">Droit<small>axes parallèles</small></span>
+          </label>
+          <label class="type-option" data-group="gear" title="Denture en hélice. Plus silencieux. Axes parallèles.">
+            <input type="checkbox" class="type-checkbox" value="helical" id="type-helical">
+            <span class="type-label">Hélicoïdal<small>silencieux</small></span>
+          </label>
+          <label class="type-option" data-group="gear" title="Pignon à l'intérieur d'une couronne. Compact.">
+            <input type="checkbox" class="type-checkbox" value="internal" id="type-internal">
+            <span class="type-label">Intérieur<small>compact</small></span>
+          </label>
+          <label class="type-option" data-group="gear" title="Axes à 90°. Changement de direction.">
+            <input type="checkbox" class="type-checkbox" value="bevel" id="type-bevel">
+            <span class="type-label">Conique<small>axes à 90°</small></span>
+          </label>
+          <label class="type-option" data-group="gear" title="Train planétaire. Très haut rapport, compact, coaxial.">
+            <input type="checkbox" class="type-checkbox" value="epicyclic" id="type-epicyclic">
+            <span class="type-label">Épicycloïdal<small>coaxial</small></span>
+          </label>
+          <label class="type-option" data-group="gear" title="Vis sans fin. Très haut rapport, irréversible. Axes à 90°.">
+            <input type="checkbox" class="type-checkbox" value="worm" id="type-worm">
+            <span class="type-label">Vis sans fin<small>haut rapport</small></span>
+          </label>
+          <label class="type-option" data-group="flexible" title="Transmission par courroie crantée entre poulies.">
+            <input type="checkbox" class="type-checkbox" value="belt" id="type-belt">
+            <span class="type-label">Courroie<small>entraxe libre</small></span>
+          </label>
+          <label class="type-option" data-group="flexible" title="Transmission par chaîne. Robuste.">
+            <input type="checkbox" class="type-checkbox" value="chain" id="type-chain">
+            <span class="type-label">Chaîne<small>robuste</small></span>
+          </label>
+          <label class="type-option" data-group="linear" id="rack-type-option" title="Pignon-crémaillère. Mode Rotation → translation uniquement.">
+            <input type="checkbox" class="type-checkbox" value="rack" id="type-rack" disabled>
+            <span class="type-label">Crémaillère<small>translation</small></span>
+          </label>
+        </div>
+        <div id="typeParamsContainer" class="type-params"></div>
+        </div>
+      </section>
+
+      <!-- ===== 5. RÉGLAGES AVANCÉS : tout l'existant, replié ===== -->
+      <details class="panel advanced-settings" id="panel-avance-racine">
+        <summary><span class="panel-title">Réglages avancés</span><span class="panel-hint">tous les paramètres</span></summary>
+        <div class="panel-body advanced-body">
       <!-- Module 1 : Objectif -->
       <details class="panel" open id="panel-objectif">
         <summary><span class="panel-step">1</span><span class="panel-title">Objectif</span></summary>
         <div class="panel-body">
-          <label for="objective_mode">Type de recherche</label>
-          <select id="objective_mode" data-persist>
-            <option value="ratio">Rapport de réduction connu</option>
-            <option value="need">Vitesse de sortie cible</option>
-            <option value="rotationTranslation">Rotation → translation (crémaillère)</option>
-          </select>
-
-          <div class="objective-fields objective-ratio active">
-            <label for="rapport">Rapport cible (tours entrée pour un tour sortie)</label>
-            <input type="number" id="rapport" value="12" step="0.1" min="0.1" aria-describedby="rapport-desc">
-          </div>
-
-          <div class="objective-fields objective-need">
-            <label for="rpm_sortie_cible">Vitesse de sortie cible (tr/min)</label>
-            <input id="rpm_sortie_cible" data-persist type="number" value="125" min="0.1">
-            <output id="derivedRatio" class="derived-ratio"></output>
-            <p class="field-help">Rapport dérivé de la vitesse d'entrée définie dans le module Mécanique.</p>
-          </div>
-
-          <div class="objective-fields objective-linear">
-            <label for="linear_travel_per_rev">Course par tour (mm/tr)</label>
-            <input id="linear_travel_per_rev" data-persist type="number" min="0.1" step="0.1" value="100">
-            <div class="field-grid">
-              <div><label for="linear_speed_min">Vitesse min (mm/min)</label><input id="linear_speed_min" data-persist type="number" min="0"></div>
-              <div><label for="linear_speed_max">Vitesse max (mm/min)</label><input id="linear_speed_max" data-persist type="number" min="0"></div>
-            </div>
-            <label for="linear_force_min">Force de sortie minimum (N)</label>
-            <input id="linear_force_min" data-persist type="number" min="0">
-            <p class="field-help">Le solveur linéaire traite directement un pignon + crémaillère (sans étages de réduction).</p>
-          </div>
 
           <div class="rotary-only">
             <label for="precision">Tolérance sur le rapport (%)</label>
@@ -108,52 +225,8 @@
 
       <!-- Module 2 : Transmissions -->
       <details class="panel" open id="panel-transmissions">
-        <summary><span class="panel-step">2</span><span class="panel-title">Transmissions</span><span class="panel-hint" id="typesCount"></span></summary>
+        <summary><span class="panel-step">2</span><span class="panel-title">Architecture imposée</span><span class="panel-hint" id="typesCount"></span></summary>
         <div class="panel-body">
-          <div class="transmission-filters segmented" role="group" aria-label="Filtrer les familles">
-            <button type="button" class="active" data-filter="all">Toutes</button>
-            <button type="button" data-filter="gear">Engrenages</button>
-            <button type="button" data-filter="flexible">Flexibles</button>
-          </div>
-          <div class="types-grid" role="group" aria-label="Types de transmission">
-            <label class="type-option" data-group="gear" title="Engrenage cylindrique à denture droite. Axes parallèles.">
-              <input type="checkbox" class="type-checkbox" value="spur" id="type-spur" checked>
-              <span class="type-label">Droit<small>axes parallèles</small></span>
-            </label>
-            <label class="type-option" data-group="gear" title="Denture en hélice. Plus silencieux. Axes parallèles.">
-              <input type="checkbox" class="type-checkbox" value="helical" id="type-helical">
-              <span class="type-label">Hélicoïdal<small>silencieux</small></span>
-            </label>
-            <label class="type-option" data-group="gear" title="Pignon à l'intérieur d'une couronne. Compact.">
-              <input type="checkbox" class="type-checkbox" value="internal" id="type-internal">
-              <span class="type-label">Intérieur<small>compact</small></span>
-            </label>
-            <label class="type-option" data-group="gear" title="Axes à 90°. Changement de direction.">
-              <input type="checkbox" class="type-checkbox" value="bevel" id="type-bevel">
-              <span class="type-label">Conique<small>axes à 90°</small></span>
-            </label>
-            <label class="type-option" data-group="gear" title="Train planétaire. Très haut rapport, compact, coaxial.">
-              <input type="checkbox" class="type-checkbox" value="epicyclic" id="type-epicyclic">
-              <span class="type-label">Épicycloïdal<small>coaxial</small></span>
-            </label>
-            <label class="type-option" data-group="gear" title="Vis sans fin. Très haut rapport, irréversible. Axes à 90°.">
-              <input type="checkbox" class="type-checkbox" value="worm" id="type-worm">
-              <span class="type-label">Vis sans fin<small>haut rapport</small></span>
-            </label>
-            <label class="type-option" data-group="flexible" title="Transmission par courroie crantée entre poulies.">
-              <input type="checkbox" class="type-checkbox" value="belt" id="type-belt">
-              <span class="type-label">Courroie<small>entraxe libre</small></span>
-            </label>
-            <label class="type-option" data-group="flexible" title="Transmission par chaîne. Robuste.">
-              <input type="checkbox" class="type-checkbox" value="chain" id="type-chain">
-              <span class="type-label">Chaîne<small>robuste</small></span>
-            </label>
-            <label class="type-option" data-group="linear" id="rack-type-option" title="Pignon-crémaillère. Mode Rotation → translation uniquement.">
-              <input type="checkbox" class="type-checkbox" value="rack" id="type-rack" disabled>
-              <span class="type-label">Crémaillère<small>translation</small></span>
-            </label>
-          </div>
-          <div id="typeParamsContainer" class="type-params"></div>
 
           <details class="type-template rotary-only" id="typeTemplateSection">
             <summary>Architecture imposée<span class="panel-hint">optionnel</span></summary>
@@ -228,10 +301,6 @@
             <div><label for="module_max">Module auto max</label><input id="module_max" data-persist type="number" step="0.1"></div>
           </div>
 
-          <div class="field-grid">
-            <div><label for="vitesse_entree">Vitesse d'entrée (tr/min)</label><input type="number" id="vitesse_entree" value="1500" step="10" min="1"></div>
-            <div><label for="couple_entree">Couple d'entrée (N·m)</label><input type="number" id="couple_entree" value="10" step="0.1" min="0.01"></div>
-          </div>
         </div>
       </details>
 
@@ -348,14 +417,16 @@
         <summary><span class="panel-step">E</span><span class="panel-title">Pondération multicritère</span><span class="panel-hint">expert</span></summary>
         <div class="panel-body">
           <p class="field-help">Utilisée par l'optimisation globale. Les poids sont normalisés automatiquement.</p>
-          <label class="range-label">Précision <input id="weight_ratio" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Précision <input id="weight_ratio" data-persist type="range" min="0" max="10" value="6"></label>
           <label class="range-label">Compacité <input id="weight_size" data-persist type="range" min="0" max="10" value="5"></label>
           <label class="range-label">Rendement <input id="weight_efficiency" data-persist type="range" min="0" max="10" value="5"></label>
           <label class="range-label">Résistance <input id="weight_stress" data-persist type="range" min="0" max="10" value="5"></label>
-          <label class="range-label">Nombre d'étages <input id="weight_stages" data-persist type="range" min="0" max="10" value="5"></label>
-          <label class="range-label">Bruit <input id="weight_noise" data-persist type="range" min="0" max="10" value="5"></label>
+          <label class="range-label">Nombre d'étages <input id="weight_stages" data-persist type="range" min="0" max="10" value="6"></label>
+          <label class="range-label">Bruit <input id="weight_noise" data-persist type="range" min="0" max="10" value="4"></label>
           <label class="range-label">Fabrication <input id="weight_manufacturing" data-persist type="range" min="0" max="10" value="5"></label>
           <label class="range-label">Coût relatif <input id="weight_cost" data-persist type="range" min="0" max="10" value="5"></label>
+        </div>
+      </details>
         </div>
       </details>
 
@@ -385,10 +456,12 @@
     <!-- ===== Espace de travail ===== -->
     <main class="workspace" role="main">
 
-      <section id="workspaceEmpty" class="workspace-empty">
+      <section id="workspaceEmpty" class="workspace-empty empty-state">
         <div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div>
-        <h2>Concevez votre transmission</h2>
-        <p id="workspaceEmptyHint">Configurez votre besoin dans le panneau de gauche puis lancez une recherche. Les architectures les mieux classées apparaîtront ici.</p>
+        <h2 id="workspaceEmptyTitle">Décrivez la transmission que vous recherchez</h2>
+        <p id="workspaceEmptyHint">Indiquez ce que vous voulez obtenir dans le panneau de gauche, puis lancez la recherche. Les architectures les mieux classées apparaîtront ici.</p>
+        <ul id="workspaceEmptyBlockers" class="empty-state-blockers" hidden></ul>
+        <div id="workspaceEmptyActions" class="empty-state-actions" hidden></div>
       </section>
 
       <!-- Visualisation héro : le graphique d'abord, pleine largeur -->
@@ -406,12 +479,17 @@
             <button class="btn-small" id="kinematicReset">Réinitialiser</button>
           </span>
           <button id="viewerAnimate" class="btn-small" title="Animer les engrenages" aria-label="Animer" aria-pressed="false">▶</button>
-          <label class="viewer-speed-label" for="viewerSpeed">Vitesse</label>
-          <select id="viewerSpeed" class="viewer-speed" aria-label="Vitesse d’animation">
-            <option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
-          </select>
-          <button id="viewerReverse" class="btn-small" aria-pressed="false" title="Inverser l’animation">Inverser</button>
-          <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
+          <details class="display-menu animation-menu" id="viewerAnimationMenu">
+            <summary aria-label="Options d’animation">1×</summary>
+            <div class="display-menu-panel">
+              <label class="viewer-speed-label" for="viewerSpeed">Vitesse d’animation</label>
+              <select id="viewerSpeed" class="viewer-speed" aria-label="Vitesse d’animation">
+                <option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+              </select>
+              <button id="viewerReverse" class="btn-small" aria-pressed="false" title="Inverser le sens de l’animation">Inverser le sens</button>
+              <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
+            </div>
+          </details>
           <details class="display-menu" id="viewerDisplayMenu">
             <summary>Affichage</summary>
             <div class="display-menu-panel">
@@ -470,7 +548,29 @@
 
           <!-- Barre d'affinage : filtre le vivier côté client, sans relancer -->
           <div id="refineBar" class="refine-bar" hidden>
-            <div class="refine-fields">
+            <!-- Les champs restent la source lue par SolutionExplorer ; le
+                 menu « + Ajouter un filtre » les révèle un par un sous forme de
+                 chips, au lieu de les afficher tous en permanence. -->
+            <div class="refine-head">
+              <span class="refine-title">Affiner les résultats</span>
+              <label class="sub refine-sort-label">Trier par<select id="refine_sort">
+                <option value="score">Recommandé</option>
+                <option value="error">Précision</option>
+                <option value="efficiency">Rendement</option>
+                <option value="compactness">Encombrement</option>
+                <option value="sf">Robustesse</option>
+                <option value="stages">Simplicité</option>
+              </select></label>
+              <button id="refineResetBtn" class="btn-small" type="button" title="Réinitialiser les filtres">Réinitialiser</button>
+            </div>
+            <div id="refineChips" class="constraint-chips" hidden aria-live="polite"></div>
+            <div class="constraint-add">
+              <button type="button" class="btn-add-constraint" id="addFilterBtn" aria-expanded="false" aria-controls="refineMenu">
+                + Ajouter un filtre<span class="constraint-count" hidden></span>
+              </button>
+              <div class="constraint-menu" id="refineMenu" role="menu" hidden></div>
+            </div>
+            <div class="refine-fields" hidden>
               <label class="sub">Écart ≤ %<input id="refine_error_max" type="number" min="0" step="0.01" placeholder="—"></label>
               <label class="sub refine-rotary">Rendement ≥ %<input id="refine_efficiency_min" type="number" min="0" max="100" step="1" placeholder="—"></label>
               <label class="sub refine-rotary" title="Les solutions sans facteur évalué (courroie, chaîne…) sont exclues quand ce critère est actif">SF ≥<input id="refine_sf_min" type="number" min="0" step="0.1" placeholder="—"></label>
@@ -478,15 +578,6 @@
               <label class="sub">Ø ≤ mm<input id="refine_diameter_max" type="number" min="0" placeholder="—"></label>
               <label class="sub">Long. ≤ mm<input id="refine_length_max" type="number" min="0" placeholder="—"></label>
               <label class="sub refine-rotary">Étages ≤<input id="refine_stages_max" type="number" min="1" max="8" placeholder="—"></label>
-              <label class="sub">Tri<select id="refine_sort">
-                <option value="score">Score (coût, plus bas = mieux)</option>
-                <option value="error">Écart minimal</option>
-                <option value="efficiency">Meilleur rendement</option>
-                <option value="compactness">Plus compact</option>
-                <option value="sf">Meilleure sécurité SF</option>
-                <option value="stages">Moins d'étages</option>
-              </select></label>
-              <button id="refineResetBtn" class="btn-small" type="button" title="Réinitialiser les filtres">Réinitialiser</button>
             </div>
             <div id="refineTypeChips" class="refine-chips refine-rotary" role="group" aria-label="Types présents dans les solutions"></div>
             <p id="refineCount" class="refine-count" aria-live="polite"></p>
@@ -504,7 +595,7 @@
 
         <!-- Volet détail de la solution sélectionnée -->
         <section class="detail-pane" aria-label="Détail de la solution sélectionnée">
-          <div id="solutionCard" class="solution-card" hidden aria-live="polite"></div>
+          <div id="solutionCard" class="solution-summary" hidden aria-live="polite"></div>
 
           <nav class="detail-tabs" role="tablist" aria-label="Détail de la solution">
             <button role="tab" data-detail="analyse" class="active" aria-selected="true">Analyse</button>
@@ -622,6 +713,11 @@
   <script src="js/ui/SolutionExplorer.js" defer></script>
   <script src="js/ui/StageEditor.js" defer></script>
   <script src="js/ui/ComparePanel.js" defer></script>
+  <script src="js/ui/ConstraintManager.js" defer></script>
+  <script src="js/ui/PrioritySelector.js" defer></script>
+  <script src="js/ui/TechnologySelector.js" defer></script>
+  <script src="js/ui/RequirementForm.js" defer></script>
+  <script src="js/ui/ResultRecommendations.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>
 
   <!-- Point d'entrée (doit être chargé en dernier) -->

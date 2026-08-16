@@ -82,6 +82,8 @@ test('animation speed and direction controls update shared viewer state', async 
   await page.goto('/');
   await page.getByRole('button', { name: 'Rechercher' }).click();
   await expect(page.locator('.train-svg')).toBeVisible({ timeout: 20000 });
+  // Les réglages d'animation vivent désormais dans un menu replié.
+  await page.locator('#viewerAnimationMenu > summary').click();
   await page.locator('#viewerSpeed').selectOption('2');
   await page.locator('#viewerReverse').click();
   await page.getByRole('button', { name: 'Animer' }).click();
@@ -280,6 +282,7 @@ test('the animation cadence follows the mode, the poses never do', async ({ page
   expect(cadence.pedagogical).toBeGreaterThan(0);
   expect(cadence.relative).toBeGreaterThan(0);
   // Le bouton de la barre bascule réellement le mode partagé.
+  await page.locator('#viewerAnimationMenu > summary').click();
   await page.locator('#viewerMode').click();
   await expect(page.locator('#viewerMode')).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => window.__viewer.renderer().animation.mode)).toBe('relative');

@@ -10,7 +10,7 @@ test.afterEach(() => expect(errors, 'browser errors').toEqual([]));
 
 test('stage editor recomputes live and saves a variant into the pool', async ({ page }) => {
   await page.getByRole('button', { name: 'Rechercher' }).click();
-  await expect(page.locator('.solution-tile')).not.toHaveCount(0, { timeout: 20000 });
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
   await page.locator('[data-detail="editeur"]').click();
   await expect(page.locator('.editor-stage').first()).toBeVisible();
 
