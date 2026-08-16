@@ -264,3 +264,10 @@ body.dark-theme .geometry-envelope { opacity: .7; }
   .train-svg, .geometry-svg, .kinematic-svg { min-height: 300px; }
   .display-menu-panel { right: auto; left: 0; }
 }
+
+/* ===================== Géométrie reconstruite ===================== */
+/* Une cote que le moteur n'a pas calculée est tracée en pointillé et préfixée
+   « ~ » : sur une vue de dimensionnement, une valeur reconstruite ne doit
+   jamais se lire comme une cote garantie. */
+.geometry-stage.schematic .geometry-member { stroke-dasharray: 6 3; }
+.geometry-dimension.schematic, .diameter-dimension.schematic text { opacity: .75; font-style: italic; }

@@ -1,17 +1,15 @@
 // TrainLayout.js - Placement pur de la vue « Denture réaliste ».
-// Consomme les étages structurés (stage.geometry calculée par le moteur) et
-// produit des positions monde en millimètres réels : aucune géométrie
-// inventée, aucun DOM. UMD : testable sous Node (tests/train-layout.test.js).
 //
-// Les vitesses ne sont PAS recalculées ici : elles viennent de KinematicsEngine,
-// source unique partagée par les trois vues. TrainLayout ne fait que du placement.
+// TrainLayout ne fait QUE du placement. Il ne lit pas `stage.geometry` et ne
+// calcule aucun rapport : il consomme la SCÈNE (SceneBuilder), qui porte la
+// géométrie de chaque membre et sa vitesse relative. Produit des positions
+// monde en millimètres réels, sans DOM. UMD : testable sous Node.
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
-  var api = factory(common ? require('../transmissions/TransmissionRegistry.js') : root.GearTransmissionRegistry,
-    common ? require('./core/KinematicsEngine.js') : root.GearKinematicsEngine,
+  var api = factory(common ? require('./core/SceneBuilder.js') : root.GearSceneBuilder,
     common ? require('./core/GeometryUtils.js') : root.GearGeometryUtils);
   if (common) module.exports = api; else root.GearTrainLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (Registry, Kinematics, GeometryUtils) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, GeometryUtils) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -21,43 +19,45 @@
   // horizontal d'abord, puis zigzag alterné pour éviter les collisions.
   var MESH_ANGLES = [0, 35, -35, 65, -65, 90, -90];
 
-  function wheelModel(stage, side) {
-    var g = stage.geometry || {};
-    var p = stage.parameters || {};
-    var m = finite(p.module, 1);
-    var isInput = side === 'input';
-    var pitch = finite(isInput ? g.pitchDiameterInput : g.pitchDiameterOutput, 20);
-    var outside = finite(isInput ? g.outsideDiameterInput : g.outsideDiameterOutput, pitch + 2 * m);
-    var roots = finite(isInput ? g.rootDiameterInput : g.rootDiameterOutput, pitch - 2.5 * m);
-    var teeth = stage.type === 'worm'
-      ? (isInput ? stage.wormStarts : stage.wheelTeeth)
-      : (stage[side] && stage[side].teeth);
-    var model = {
-      role: side, kind: 'gear',
-      pitchD: pitch, outsideD: outside, rootD: Math.max(roots, pitch * 0.3),
-      baseD: finite(isInput ? g.baseDiameterInput : g.baseDiameterOutput, pitch * Math.cos(rad(finite(g.pressureAngleDeg, 20)))),
-      teeth: finite(teeth, 0), module: m,
+  /**
+   * Roue de rendu construite à partir d'un MEMBRE DE LA SCÈNE. Les cotes
+   * absentes restent absentes : `schematic` dit si le tracé repose sur des
+   * valeurs reconstruites, pour que la vue puisse le signaler.
+   */
+  function wheelFromMember(entry, overrides) {
+    var g = entry ? entry.geometry : {};
+    var m = finite(g.module, 1);
+    var pitch = finite(g.pitchDiameter, 20);
+    return Object.assign({
+      memberId: entry ? entry.id : null,
+      role: entry ? entry.role : 'input',
+      kind: entry ? entry.kind : 'gear',
+      pitchD: pitch,
+      outsideD: finite(g.outsideDiameter, pitch + 2 * m),
+      rootD: Math.max(finite(g.rootDiameter, pitch - 2.5 * m), pitch * 0.3),
+      baseD: finite(g.baseDiameter, pitch * Math.cos(rad(finite(g.pressureAngleDeg, 20)))),
+      teeth: finite(g.teeth, 0),
+      module: m,
       pressureAngle: finite(g.pressureAngleDeg, 20),
-      profileShift: finite(isInput ? p.profileShiftInput : p.profileShiftOutput, 0),
+      profileShift: finite(g.profileShift, 0),
       faceWidth: finite(g.width, 10 * m),
-      cx: 0, cy: 0, speed: 0, phase: 0
-    };
-    // L'hélice n'est portée que par les dentures hélicoïdales : c'est elle qui
-    // distingue visuellement l'étage d'un engrenage droit.
-    if (stage.type === 'helical') {
-      model.helixAngle = finite(p.helixAngle, 20);
-      model.helixHand = isInput ? (p.helixHand || 'right') : (p.helixHand === 'left' ? 'right' : 'left');
-    }
-    return model;
+      helixAngle: Number.isFinite(g.helixAngleDeg) ? g.helixAngleDeg : undefined,
+      leadAngle: Number.isFinite(g.leadAngleDeg) ? g.leadAngleDeg : undefined,
+      coneAngleDeg: Number.isFinite(g.coneAngleDeg) ? g.coneAngleDeg : undefined,
+      schematic: !!(entry && entry.schematic),
+      speed: entry && Number.isFinite(entry.mechanical.relativeSpeed) ? entry.mechanical.relativeSpeed : 0,
+      cx: 0, cy: 0, phase: 0
+    }, overrides || {});
   }
 
-  // Rayon utile de la première roue d'un étage (pour poser après une rupture).
-  function inputRadius(stage) {
-    var g = stage.geometry || {};
-    var m = finite(stage.parameters && stage.parameters.module, 1);
-    if (stage.type === 'planetary') return finite(g.ringDiameter, 60) / 2 + m;
-    if (stage.type === 'worm') return finite(g.pitchDiameterInput, 10) / 2 + m;
-    return finite(g.outsideDiameterInput, finite(g.pitchDiameterInput, 20) + 2 * m) / 2;
+  /** Rayon d'encombrement du premier membre d'un étage (pose après rupture). */
+  function inputRadius(scene, index) {
+    var members = scene.stageMembers(index);
+    return members.reduce(function (max, entry) {
+      var g = entry.geometry;
+      var d = Math.max(finite(g.outsideDiameter, 0), finite(g.pitchDiameter, 0), finite(g.rootDiameter, 0));
+      return Math.max(max, d / 2);
+    }, 10);
   }
 
   function collides(cx, cy, r, placed, clearance) {
@@ -68,16 +68,9 @@
     });
   }
 
-  // Vitesses relatives : l'arbre d'entrée vaut 1, tout le reste en découle.
-  function speeds(stages, injected) {
-    if (injected && injected.members) return injected;
-    try { return Kinematics.build({ inputRpm: 1, stages: stages }); }
-    catch (e) { return { members: {}, linear: {}, flexible: {}, inputOmega: 1 }; }
-  }
-  function omega(state, id, fallback) {
-    var scale = finite(state.inputOmega, 1) || 1;
-    var member = (state.members || {})[id];
-    return member ? member.omega / scale : finite(fallback, 0);
+  function sceneFor(stages, options) {
+    if (options.scene && options.scene.member) return options.scene;
+    return SceneBuilder.build({ inputRpm: 1, stages: stages });
   }
 
   /**
@@ -86,15 +79,14 @@
    *   wheels: toutes les roues à plat (collisions/fit),
    *   io: { input: wheel, output: wheel }
    * }
-   * options.kinematics permet d'injecter l'état cinématique déjà construit par
-   * la scène, pour éviter de le reconstruire.
+   * `options.scene` injecte la scène déjà construite par le renderer.
    * Toutes les coordonnées sont finies (les NaN dans les attributs SVG
    * produisent des erreurs console, fatales pour les e2e).
    */
   function layout(stages, mechanical, options) {
     stages = stages || [];
     options = options || {};
-    var kinematics = speeds(stages, options.kinematics);
+    var scene = sceneFor(stages, options);
     var placed = [];
     var out = [];
     var cursor = { x: 0, y: 0 };
@@ -102,156 +94,122 @@
     var maxX = 0;
 
     stages.forEach(function (stage, index) {
-      var g = stage.geometry || {};
-      var p = stage.parameters || {};
-      var m = finite(p.module, 1);
       var prefix = 's' + index + '-';
-      var inSpeed = omega(kinematics, prefix + 'input', 1);
-      var outSpeed = omega(kinematics, prefix + 'output', 0);
+      var connection = scene.connections[index] || {};
+      var byRole = {};
+      scene.stageMembers(index).forEach(function (entry) { byRole[entry.role] = entry; });
+      var m = finite((byRole.input || byRole.S || {}).geometry && (byRole.input || byRole.S).geometry.module, 1);
+      var inSpeed = (byRole.input || byRole.S || { mechanical: {} }).mechanical.relativeSpeed;
+      var outSpeed = (byRole.output || byRole.C || { mechanical: {} }).mechanical.relativeSpeed;
       var entry = { index: index, type: stage.type, attach: 'mesh', angleDeg: 0, centerDistance: null,
-        inputSpeed: inSpeed, outputSpeed: outSpeed, wheels: [], links: [] };
+        inputSpeed: finite(inSpeed, 1), outputSpeed: finite(outSpeed, 0),
+        schematic: scene.stageMembers(index).some(function (e) { return e.schematic; }),
+        wheels: [], links: [] };
 
       if (stage.type === 'rack') {
-        var rackD = finite(g.pitchDiameterInput, m * finite(stage.pinionTeeth, 20));
-        var rackLength = finite(g.travelPerRevolution, Math.PI * rackD);
-        var pinion = { role: 'input', kind: 'gear', cx: cursor.x, cy: cursor.y - rackD / 2, pitchD: rackD,
-          outsideD: finite(g.maxDiameter, rackD + 2 * m), rootD: Math.max(m, rackD - 2.5 * m),
-          baseD: rackD * Math.cos(rad(finite(g.pressureAngleDeg, 20))),
-          teeth: finite(stage.pinionTeeth, 20), module: m, pressureAngle: finite(g.pressureAngleDeg, 20),
-          faceWidth: finite(g.width, 10 * m), speed: inSpeed };
-        var rack = { role: 'output', kind: 'rack', cx: cursor.x, cy: cursor.y, pitchD: 0, outsideD: 4 * m, rootD: m,
-          teeth: Math.max(6, Math.round(rackLength / (Math.PI * m))), module: m,
-          pressureAngle: finite(g.pressureAngleDeg, 20), speed: 0, length: rackLength,
+        var pinion = wheelFromMember(byRole.input, { cx: cursor.x, cy: cursor.y });
+        pinion.cy = cursor.y - pinion.pitchD / 2;
+        var travel = finite(byRole.rack && byRole.rack.geometry.travelPerRevolution, Math.PI * pinion.pitchD);
+        var rack = wheelFromMember(byRole.rack, {
+          cx: cursor.x, cy: cursor.y, pitchD: 0, outsideD: 4 * m, rootD: m, module: m,
+          teeth: Math.max(6, Math.round(travel / (Math.PI * m))), length: travel,
           // Le pignon entraîne la crémaillère : mm parcourus par radian d'entrée.
-          mmPerRadian: rackD / 2, pinionSpeed: inSpeed, travelPerRevolution: rackLength, linearId: prefix + 'rack',
+          mmPerRadian: finite(byRole.rack && byRole.rack.mechanical.mmPerRadian, pinion.pitchD / 2),
+          pinionSpeed: pinion.speed, linearId: prefix + 'rack',
           // La puce SORTIE s'écarte de toute la demi-course, pas du seul profil.
-          chipR: rackLength / 2 };
+          chipR: travel / 2 });
         entry.attach = 'linear';
         entry.wheels.push(pinion, rack);
-        entry.stageRadius = Math.max(rackD, rackLength) / 2;
+        entry.stageRadius = Math.max(pinion.pitchD, travel) / 2;
         placed.push(pinion);
-        maxX = Math.max(maxX, cursor.x + rackLength / 2);
-        cursor = { x: cursor.x + rackLength / 2, y: pinion.cy };
-      } else if (stage.type === 'planetary') {
+        maxX = Math.max(maxX, cursor.x + travel / 2);
+        cursor = { x: cursor.x + travel / 2, y: pinion.cy };
+      } else if (stage.type === 'planetary' || stage.type === 'epicyclic') {
         // Étage coaxial complet centré au curseur, aux diamètres réels.
-        var sunD = finite(g.sunDiameter, m * finite(stage.sunTeeth, 12));
-        var ringD = finite(g.ringDiameter, m * finite(stage.ringTeeth, 48));
-        var planetD = finite(g.planetDiameter, (ringD - sunD) / 2);
-        var count = Math.max(2, Math.round(finite(stage.planetCount, 3)));
-        var orbit = (sunD + planetD) / 2;
-        var wS = omega(kinematics, prefix + 'S', inSpeed);
-        var wR = omega(kinematics, prefix + 'R', 0);
-        var wC = omega(kinematics, prefix + 'C', outSpeed);
-        var wP = omega(kinematics, prefix + 'P', 0);
-        var zp = Math.max(1, finite(stage.planetTeeth, (finite(stage.ringTeeth, 48) - finite(stage.sunTeeth, 12)) / 2));
-
+        var count = Math.max(2, Math.round(finite(byRole.P && byRole.P.count, 3)));
+        var orbit = finite(byRole.P && byRole.P.orbitRadius, 0);
         entry.attach = 'coaxial';
-        var sun = { role: 'sun', kind: 'gear', cx: cursor.x, cy: cursor.y, pitchD: sunD, outsideD: sunD + 2 * m,
-          rootD: Math.max(sunD - 2.5 * m, sunD * 0.4), baseD: sunD * Math.cos(rad(20)),
-          teeth: finite(stage.sunTeeth, 0), module: m, pressureAngle: 20, faceWidth: finite(g.width, 10 * m),
-          speed: wS, orbit: 0, chipR: ringD / 2 + 3 * m };
-        var ring = { role: 'ring', kind: 'internal-ring', cx: cursor.x, cy: cursor.y, pitchD: ringD,
-          outsideD: ringD + 6 * m, rootD: ringD - 2 * m, baseD: ringD * Math.cos(rad(20)),
-          teeth: finite(stage.ringTeeth, 0), module: m, pressureAngle: 20, faceWidth: finite(g.width, 10 * m),
-          speed: wR, chipR: ringD / 2 + 3 * m };
+
+        // Les rôles de rendu restent parlants (sun/ring/planet) : ce sont eux
+        // que portent les classes CSS et la sélection.
+        var sun = wheelFromMember(byRole.S, { role: 'sun', cx: cursor.x, cy: cursor.y });
+        var ring = wheelFromMember(byRole.R, { role: 'ring', cx: cursor.x, cy: cursor.y });
+        // La couronne enveloppe l'étage : sa jante fixe l'encombrement.
+        ring.outsideD = Math.max(ring.pitchD + 6 * m, finite(byRole.R && byRole.R.geometry.rootDiameter, 0) + 2 * m);
+        sun.chipR = ring.chipR = ring.outsideD / 2 + m;
         entry.wheels.push(sun, ring);
         for (var pi = 0; pi < count; pi++) {
           var a = 2 * Math.PI * pi / count;
-          entry.wheels.push({
-            role: 'planet', kind: 'gear',
+          entry.wheels.push(wheelFromMember(byRole.P, {
+            role: 'planet',
             cx: cursor.x + Math.cos(a) * orbit, cy: cursor.y + Math.sin(a) * orbit,
-            pitchD: planetD, outsideD: planetD + 2 * m, rootD: Math.max(planetD - 2.5 * m, planetD * 0.4),
-            baseD: planetD * Math.cos(rad(20)),
-            teeth: zp, module: m, pressureAngle: 20, faceWidth: finite(g.width, 10 * m), speed: wP,
-            orbit: orbit, orbitCenterX: cursor.x, orbitCenterY: cursor.y, orbitSpeed: wC, phase: a
-          });
+            orbit: orbit, orbitCenterX: cursor.x, orbitCenterY: cursor.y,
+            orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
+          }));
         }
         entry.members = { input: stage.inputMember || 'S', output: stage.outputMember || 'C', fixed: stage.fixed || 'R' };
-        entry.carrierSpeed = wC;
-        entry.carrier = { cx: cursor.x, cy: cursor.y, orbit: orbit, count: count, speed: wC };
+        entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
+        entry.carrier = { memberId: prefix + 'C', cx: cursor.x, cy: cursor.y, orbit: orbit, count: count,
+          speed: entry.carrierSpeed };
         entry.stageRadius = ring.outsideD / 2;
         placed.push(ring);
         maxX = Math.max(maxX, cursor.x + ring.outsideD / 2);
 
-        // Sortie coaxiale : rupture d'axe avant l'étage suivant.
         if (index < stages.length - 1) {
-          var nextR = inputRadius(stages[index + 1]);
+          var nextR = inputRadius(scene, index + 1);
           var gap = Math.max(20, 6 * m);
-          var startX = cursor.x + ring.outsideD / 2;
-          var nextX = maxX + gap + nextR;
-          entry.links.push({ kind: 'shaft-break', x1: startX, y1: cursor.y, x2: nextX - nextR, y2: cursor.y });
-          cursor = { x: nextX, y: cursor.y };
+          entry.links.push({ kind: 'shaft-break', x1: cursor.x + ring.outsideD / 2, y1: cursor.y,
+            x2: maxX + gap, y2: cursor.y });
+          cursor = { x: maxX + gap + nextR, y: cursor.y };
         }
       } else if (stage.type === 'bevel') {
         // Deux cônes primitifs aux angles réels, dont les axes se croisent en un
         // POINT unique : c'est ce sommet commun qui rend le montage lisible.
-        var sigma = finite(g.shaftAngleDeg, 90);
-        var d1 = finite(g.pitchDiameterInput, 20), d2 = finite(g.pitchDiameterOutput, 40);
-        var delta1 = finite(g.pitchConeAngleInput, 45), delta2 = finite(g.pitchConeAngleOutput, 45);
+        var sigma = finite(connection.shaftAngleDeg, 90);
+        var input = wheelFromMember(byRole.input, { cx: cursor.x, cy: cursor.y, axisAngleDeg: 0 });
+        var output = wheelFromMember(byRole.output);
+        var delta1 = finite(input.coneAngleDeg, 45), delta2 = finite(output.coneAngleDeg, 45);
         // Distance de la grande face au sommet, le long de chaque axe.
-        var back1 = (d1 / 2) / Math.max(1e-6, Math.tan(rad(delta1)));
-        var back2 = (d2 / 2) / Math.max(1e-6, Math.tan(rad(delta2)));
+        var back1 = (input.pitchD / 2) / Math.max(1e-6, Math.tan(rad(delta1)));
+        var back2 = (output.pitchD / 2) / Math.max(1e-6, Math.tan(rad(delta2)));
         var apexX = cursor.x + back1, apexY = cursor.y;
-
-        var input = wheelModel(stage, 'input');
-        input.kind = 'cone'; input.cx = cursor.x; input.cy = cursor.y; input.speed = inSpeed;
-        input.coneAngleDeg = delta1;
-        input.axisAngleDeg = 0;                       // se rétrécit vers le sommet
-        input.outsideD = finite(g.outerDiameterInput, d1 + 2 * m);
-
-        // Axe de sortie : σ mesuré depuis l'axe d'entrée, dans le plan du dessin.
         var outAxis = rad(180 - sigma);
-        var output = wheelModel(stage, 'output');
-        output.kind = 'cone';
-        output.coneAngleDeg = delta2;
-        output.outsideD = finite(g.outerDiameterOutput, d2 + 2 * m);
         output.cx = apexX + Math.cos(outAxis) * back2;
         output.cy = apexY + Math.sin(outAxis) * back2;
         output.axisAngleDeg = (outAxis * 180 / Math.PI) + 180;   // pointe vers le sommet
-        output.speed = outSpeed;
 
         entry.attach = 'break';
         entry.angleDeg = sigma;
         entry.apex = { x: apexX, y: apexY };
         entry.wheels.push(input, output);
         entry.links.push({ kind: 'bevel-axes', x: apexX, y: apexY, shaftAngleDeg: sigma,
-          span: Math.max(back1, back2) + Math.max(d1, d2) / 2 });
+          span: Math.max(back1, back2) + Math.max(input.pitchD, output.pitchD) / 2 });
         placed.push(input, output);
         maxX = Math.max(maxX, output.cx + output.outsideD / 2, cursor.x + input.outsideD / 2);
         if (index < stages.length - 1) {
-          var nextR2 = inputRadius(stages[index + 1]);
+          var nextR2 = inputRadius(scene, index + 1);
           var gap2 = Math.max(20, 6 * m);
-          var nextX2 = maxX + gap2 + nextR2;
-          entry.links.push({ kind: 'shaft-break', x1: maxX, y1: output.cy, x2: nextX2 - nextR2, y2: output.cy });
-          cursor = { x: nextX2, y: output.cy };
+          entry.links.push({ kind: 'shaft-break', x1: maxX, y1: output.cy, x2: maxX + gap2, y2: output.cy });
+          cursor = { x: maxX + gap2 + nextR2, y: output.cy };
         } else {
           cursor = { x: output.cx, y: output.cy };
         }
       } else {
         // Paires : droit/hélicoïdal (externe), interne, vis sans fin,
-        // courroie/chaîne — entraxe RÉEL de la géométrie calculée.
+        // courroie/chaîne — entraxe RÉEL porté par la connexion de la scène.
         var isBeltLike = stage.type === 'belt' || stage.type === 'chain';
         var isInternal = stage.type === 'internal';
         var isWorm = stage.type === 'worm';
-        var c = finite(g.correctedCenterDistance, finite(g.centerDistance, 40));
+        var c = finite(connection.centerDistance, 40);
         entry.centerDistance = c;
+        entry.exactCenterDistance = !!connection.exactCenterDistance;
 
-        var wIn = wheelModel(stage, 'input');
-        var wOut = wheelModel(stage, 'output');
+        var wIn = wheelFromMember(byRole.input, { cx: cursor.x, cy: cursor.y });
+        var wOut = wheelFromMember(byRole.output);
         if (isBeltLike) {
-          wIn.kind = wOut.kind = stage.type === 'belt' ? 'pulley' : 'sprocket';
           wIn.outsideD = wIn.pitchD + m; wOut.outsideD = wOut.pitchD + m;
           wIn.rootD = wIn.pitchD - m; wOut.rootD = wOut.pitchD - m;
         }
-        if (isInternal) wOut.kind = 'internal-ring';
-        if (isWorm) {
-          wIn.kind = 'worm';
-          wIn.leadAngle = finite(p.leadAngle, 20);
-          wIn.teeth = finite(stage.wormStarts, 1);
-        }
-
-        wIn.cx = cursor.x; wIn.cy = cursor.y;
-        wIn.speed = inSpeed;
 
         var angle = 0;
         if (isWorm) {
@@ -271,10 +229,9 @@
         entry.angleDeg = angle;
         wOut.cx = cursor.x + Math.cos(rad(angle)) * c;
         wOut.cy = cursor.y + Math.sin(rad(angle)) * c;
-        wOut.speed = outSpeed;
 
         entry.wheels.push(wIn, wOut);
-        if (isBeltLike) entry.links.push(flexibleLink(stage, wIn, wOut, kinematics.flexible && kinematics.flexible[prefix + 'drive']));
+        if (isBeltLike) entry.links.push(flexibleLink(connection, wIn, wOut, prefix + 'drive'));
         placed.push(wIn, wOut);
         maxX = Math.max(maxX, wIn.cx + wIn.outsideD / 2, wOut.cx + wOut.outsideD / 2);
         cursor = { x: wOut.cx, y: wOut.cy };
@@ -289,7 +246,8 @@
     return {
       stages: out,
       wheels: wheels,
-      kinematics: kinematics,
+      scene: scene,
+      kinematics: scene.kinematics,
       io: {
         input: first ? first.wheels[0] : null,
         // Pour un planétaire, wheels[1] est la couronne (repère visuel de sortie).
@@ -303,16 +261,19 @@
    * d'enroulement réels. En cas de géométrie dégénérée on retombe sur les deux
    * segments sommet-à-sommet, qui restent finis.
    */
-  function flexibleLink(stage, wIn, wOut, drive) {
-    var link = { kind: stage.type === 'belt' ? 'belt-span' : 'chain-span',
-      crossed: !!(stage.parameters && stage.parameters.crossed),
+  function flexibleLink(connection, wIn, wOut, driveId) {
+    var link = { kind: connection.type === 'belt' ? 'belt-span' : 'chain-span',
+      crossed: !!connection.crossed,
       x1: wIn.cx, y1: wIn.cy, r1: wIn.pitchD / 2,
       x2: wOut.cx, y2: wOut.cy, r2: wOut.pitchD / 2,
-      pitch: finite(stage.parameters && stage.parameters.pitch, Math.PI * finite(wIn.module, 1)),
-      elements: finite(stage.geometry && (stage.geometry.beltTeeth || stage.geometry.links), 0),
-      driveId: drive && drive.id };
+      pitch: finite(connection.pitch, Math.PI * finite(wIn.module, 1)),
+      elements: finite(connection.elements, 0),
+      driveId: driveId };
     try {
       var path = GeometryUtils.flexiblePath({ x: link.x1, y: link.y1 }, { x: link.x2, y: link.y2 }, link.r1, link.r2, link.crossed);
+      // Le chemin complet est conservé : c'est lui, et non les seuls brins
+      // droits, qui porte l'abscisse curviligne des éléments animés.
+      link.path = path;
       link.tangents = path.tangents;
       link.spanLength = path.spanLength;
       link.wrapAngle1Deg = path.wrapAngle1 * 180 / Math.PI;
@@ -325,5 +286,5 @@
     return link;
   }
 
-  return { layout: layout, inputRadius: inputRadius, wheelModel: wheelModel, MESH_ANGLES: MESH_ANGLES };
+  return { layout: layout, inputRadius: inputRadius, wheelFromMember: wheelFromMember, MESH_ANGLES: MESH_ANGLES };
 });

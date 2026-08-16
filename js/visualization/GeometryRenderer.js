@@ -49,22 +49,27 @@
       var slider = p.node('g', { class: 'linear-slider' });
       host.appendChild(slider);
       p.rack(slider, member.cx, member.cy, length, moduleValue);
-      this._linear.push({ el: slider, mmPerRadian: finite(geometry.pitchDiameterInput, 2 * moduleValue) / 2,
-        speed: this._speed(item.index, 'input') });
+      this._linear.push({ el: slider, linearId: member.linearId || ('s' + item.index + '-rack') });
       return host;
     }
+    // Vis, cônes et porte-satellites tournent aussi : ils reçoivent le même
+    // repère d'indexation que les roues, sinon la vue Géométrie raconterait une
+    // cinématique incomplète.
     if (member.kind === 'worm') {
       p.worm(host, member.cx, member.cy, member.pitchDiameter, finite(item.stage.parameters && item.stage.parameters.module, 1));
+      this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
       return host;
     }
     if (member.kind === 'cone') {
       p.cone(host, member.cx, member.cy, member.pitchDiameter, member.coneAngleDeg,
         member.width, 'geometry-member cone-member ' + (member.role === 'input' ? 'input-member' : 'output-member'));
+      this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
       return host;
     }
     if (member.kind === 'carrier') {
       p.carrier(host, member.cx, member.cy, finite(member.pitchDiameter, 20) / 2,
         Math.max(2, Math.round(finite(item.stage.planetCount, 3))));
+      this._indexMark(host, item, member, finite(member.pitchDiameter, 20) / 2);
       return host;
     }
 
@@ -78,24 +83,24 @@
     p.outline(construction, member.cx, member.cy, member.rootDiameter, 'construction-circle root-circle', 'Ø pied');
     p.outline(construction, member.cx, member.cy, member.baseDiameter, 'construction-circle base-circle', 'Ø de base');
 
-    // Repère d'indexation animé.
-    var radius = Math.max(4, finite(member.pitchDiameter, 12) / 2);
-    var rotor = p.node('g', { class: 'index-rotor', transform: 'translate(' + member.cx.toFixed(2) + ' ' + member.cy.toFixed(2) + ')' });
-    rotor.appendChild(p.node('line', { class: 'index-mark', x1: 0, y1: 0, x2: radius.toFixed(2), y2: 0 }));
-    host.appendChild(rotor);
-    this._rotors.push({ el: rotor, cx: member.cx, cy: member.cy,
-      speed: this._speed(item.index, member.role),
-      orbitSpeed: member.role === 'planet' ? this._speed(item.index, 'carrier') : null,
-      orbitX: item.x, orbitY: item.y });
+    this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
     return host;
   };
 
-  /** Vitesse relative d'un rôle, lue dans l'état cinématique de la scène. */
-  GeometryRenderer.prototype._speed = function (stageIndex, role) {
-    var state = this.scene && this.scene.kinematics;
-    if (!state) return 0;
-    var ids = { input: 'input', output: 'output', sun: 'S', ring: 'R', planet: 'P', carrier: 'C' };
-    return GearKinematicsEngine.relative(state, 's' + stageIndex + '-' + (ids[role] || role));
+  /**
+   * Repère d'indexation animé, adressé par l'IDENTIFIANT DE MEMBRE : c'est la
+   * pose du moteur cinématique qui lui donnera son angle, pas un calcul local.
+   */
+  GeometryRenderer.prototype._indexMark = function (host, item, member, radius) {
+    var p = GearGeometryPrimitives;
+    var r = Math.max(4, finite(radius, 6));
+    var rotor = p.node('g', { class: 'index-rotor', 'data-member': member.memberId || '',
+      transform: 'translate(' + member.cx.toFixed(2) + ' ' + member.cy.toFixed(2) + ')' });
+    rotor.appendChild(p.node('line', { class: 'index-mark', x1: 0, y1: 0, x2: r.toFixed(2), y2: 0 }));
+    host.appendChild(rotor);
+    this._rotors.push({ el: rotor, cx: member.cx, cy: member.cy, memberId: member.memberId,
+      orbits: member.role === 'planet', orbitX: item.x, orbitY: item.y });
+    return rotor;
   };
 
   /** Brin flexible exact : tangentes calculées, jamais un segment approché. */
@@ -124,7 +129,8 @@
 
   GeometryRenderer.prototype._stageGroup = function (layer, item, interactive) {
     var p = GearGeometryPrimitives;
-    var group = p.node('g', { class: 'geometry-stage ' + item.type, 'data-stage': item.index });
+    var group = p.node('g', { class: 'geometry-stage ' + item.type + (item.schematic ? ' schematic' : ''),
+      'data-stage': item.index, 'data-schematic': String(!!item.schematic) });
     if (interactive) {
       var self = this;
       group.setAttribute('tabindex', '0');
@@ -151,7 +157,7 @@
   GeometryRenderer.prototype.render = function (solution) {
     this.solution = solution;
     this.scene = GearSceneBuilder.build(solution);
-    this.layout = GearGeometryLayout.build(solution);
+    this.layout = GearGeometryLayout.build(solution, { scene: this.scene });
     this._rotors = [];
     this._linear = [];
     if (this.viewport) this.viewport.detach();
@@ -215,18 +221,25 @@
   };
 
   GeometryRenderer.prototype.setAnimationAngle = function (inputAngle) {
-    if (!this.svg || !this.svg.isConnected) return;
+    if (!this.svg || !this.svg.isConnected || !this.scene) return;
     this._angle = finite(inputAngle, 0);
-    var angle = this._angle, radians = angle * Math.PI / 180;
+    this.applyPose(GearKinematicsEngine.pose(this.scene.kinematics, this._angle));
+  };
+
+  /** applyPose(pose) — mêmes angles, mêmes translations que la vue Denture. */
+  GeometryRenderer.prototype.applyPose = function (pose) {
+    if (!this.svg || !pose) return;
+    var members = pose.members || {}, linear = pose.linear || {};
     this._rotors.forEach(function (rotor) {
-      var transform = 'translate(' + rotor.cx.toFixed(2) + ' ' + rotor.cy.toFixed(2) + ') rotate(' + (rotor.speed * angle).toFixed(2) + ')';
-      if (Number.isFinite(rotor.orbitSpeed)) {
-        transform = 'rotate(' + (rotor.orbitSpeed * angle).toFixed(2) + ' ' + rotor.orbitX.toFixed(2) + ' ' + rotor.orbitY.toFixed(2) + ') ' + transform;
+      var posed = members[rotor.memberId] || {};
+      var transform = 'translate(' + rotor.cx.toFixed(2) + ' ' + rotor.cy.toFixed(2) + ') rotate(' + finite(posed.angle, 0).toFixed(2) + ')';
+      if (rotor.orbits && Number.isFinite(posed.orbitAngle)) {
+        transform = 'rotate(' + posed.orbitAngle.toFixed(2) + ' ' + rotor.orbitX.toFixed(2) + ' ' + rotor.orbitY.toFixed(2) + ') ' + transform;
       }
       rotor.el.setAttribute('transform', transform);
     });
     this._linear.forEach(function (entry) {
-      entry.el.setAttribute('transform', 'translate(' + (entry.mmPerRadian * entry.speed * radians).toFixed(2) + ' 0)');
+      entry.el.setAttribute('transform', 'translate(' + finite((linear[entry.linearId] || {}).position, 0).toFixed(2) + ' 0)');
     });
   };
 

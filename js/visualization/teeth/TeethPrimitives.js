@@ -60,7 +60,8 @@
       ? Profile.toothedRingPath(teeth, r.tip, r.root, 0.5)
       : Cache.get({ type: wheel.helixAngle ? 'helical' : 'spur', teeth: teeth, module: r.module,
         pressureAngle: finite(wheel.pressureAngle, 20), helixAngle: finite(wheel.helixAngle, 0),
-        profileShift: finite(wheel.profileShift, 0), pitchRadius: r.pitch, tipRadius: r.tip, rootRadius: r.root });
+        profileShift: finite(wheel.profileShift, 0), pitchRadius: r.pitch, tipRadius: r.tip, rootRadius: r.root,
+        internal: false });
     var shapes = [node('path', { class: 'tooth-profile', d: d || '' })];
     var hub = Math.max(1.2, Math.min(r.root * 0.35, 6 * r.module));
     shapes.push(node('circle', { class: 'gear-hub', r: fixed(hub) }));
@@ -105,15 +106,26 @@
   function internalRingBody(wheel, lod) {
     var r = radii(wheel);
     var teeth = Math.max(6, Math.round(finite(wheel.teeth, 24)));
-    var rim = Math.max(r.tip, r.pitch + 3 * r.module);
+    // Tête et pied d'une denture INTÉRIEURE : la tête plonge vers le centre,
+    // le pied s'écarte vers la jante. C'est l'inverse d'une denture extérieure.
+    var tip = Math.min(r.tip, r.pitch - r.module);
+    var root = Math.max(r.root, r.pitch + 1.25 * r.module);
+    var rim = Math.max(r.pitch + 3 * r.module, root + r.module);
     if (lod <= LEVELS.SILHOUETTE) {
       return [node('path', { class: 'tooth-profile ring-profile', 'fill-rule': 'evenodd',
-        d: circlePath(rim) + ' ' + circlePath(r.pitch - r.module) })];
+        d: circlePath(rim) + ' ' + circlePath(tip) })];
     }
-    var duty = lod === LEVELS.SIMPLIFIED ? 0.6 : 0.45;
+    // Au niveau simplifié la denture reste trapézoïdale ; au-delà c'est la
+    // vraie développante intérieure, générée par le même moteur que les
+    // dentures extérieures.
+    var inner = lod === LEVELS.SIMPLIFIED
+      ? Profile.toothedRingPath(teeth, tip, root, 0.6)
+      : Cache.get({ type: 'internal', teeth: teeth, module: r.module,
+        pressureAngle: finite(wheel.pressureAngle, 20), profileShift: finite(wheel.profileShift, 0),
+        pitchRadius: r.pitch, tipRadius: tip, rootRadius: root, internal: true });
     return [node('path', { class: 'tooth-profile ring-profile', 'fill-rule': 'evenodd',
-      d: circlePath(rim) + ' ' + Profile.toothedRingPath(teeth, r.pitch - r.module, r.pitch + 1.25 * r.module, duty) }),
-      node('circle', { class: 'ring-rim', r: fixed(r.pitch + 1.6 * r.module) })];
+      d: circlePath(rim) + ' ' + inner }),
+      node('circle', { class: 'ring-rim', r: fixed(root + r.module * 0.35) })];
   }
 
   function circlePath(radius) {

@@ -33,6 +33,7 @@
       : Math.PI + 2 * Math.asin(Math.max(-1, Math.min(1, (r1 - r2) / distance)));
     var wrap2 = crossed ? wrap1 : 2 * Math.PI - wrap1;
     return { distance: distance, crossed: !!crossed, tangents: tangents, spanLength: span,
+      centre1: { x: c1.x, y: c1.y }, centre2: { x: c2.x, y: c2.y }, radius1: r1, radius2: r2,
       wrapAngle1: wrap1, wrapAngle2: wrap2, length: 2 * span + r1 * wrap1 + r2 * wrap2 };
   }
 
@@ -54,17 +55,65 @@
       arc(r1, t[0].from, path.crossed ? 0 : 1) + ' Z';
   }
 
-  /** Position d'un point à l'abscisse curviligne `s` le long des deux brins. */
-  function pointAlong(path, s) {
-    var t = path.tangents, total = 2 * path.spanLength;
-    if (!t || !(total > 0)) return null;
-    var u = ((s % total) + total) % total;
-    var strand = u < path.spanLength ? t[0] : t[1];
-    var local = (u < path.spanLength ? u : u - path.spanLength) / path.spanLength;
-    var from = u < path.spanLength ? strand.from : strand.to;
-    var to = u < path.spanLength ? strand.to : strand.from;
-    return { x: from.x + (to.x - from.x) * local, y: from.y + (to.y - from.y) * local };
+  /**
+   * Découpage cinématique du circuit fermé, dans l'ordre du défilement :
+   *   brin 1 → arc sur la poulie 2 → brin 2 → arc sur la poulie 1.
+   * C'est ce découpage — et non les seuls brins droits — qui donne l'abscisse
+   * curviligne réelle : un maillon de chaîne contourne les pignons, il ne
+   * « saute » pas d'un brin à l'autre.
+   */
+  function segments(path) {
+    if (path._segments) return path._segments;
+    var t = path.tangents;
+    if (!t || t.length !== 2 || !(path.spanLength > 0)) return null;
+    function angleOf(centre, point) { return Math.atan2(point.y - centre.y, point.x - centre.x); }
+    // Sens de parcours : celui qui mène du brin 1 au brin 2 en tournant du côté
+    // enroulé, donc en couvrant exactement l'angle d'enroulement calculé.
+    function arc(centre, radius, from, to, wrap) {
+      var start = angleOf(centre, from), end = angleOf(centre, to);
+      var delta = end - start;
+      while (delta <= 0) delta += 2 * Math.PI;
+      var direction = 1;
+      if (Math.abs(delta - wrap) > Math.abs((delta - 2 * Math.PI) + wrap)) { delta = delta - 2 * Math.PI; direction = -1; }
+      return { kind: 'arc', centre: centre, radius: radius, start: start, delta: delta,
+        length: Math.abs(delta) * radius, direction: direction };
+    }
+    function line(from, to) {
+      return { kind: 'line', from: from, to: to, length: Math.hypot(to.x - from.x, to.y - from.y) };
+    }
+    var list = [
+      line(t[0].from, t[0].to),
+      arc(path.centre2, path.radius2, t[0].to, t[1].to, path.wrapAngle2),
+      line(t[1].to, t[1].from),
+      arc(path.centre1, path.radius1, t[1].from, t[0].from, path.wrapAngle1)
+    ];
+    var total = list.reduce(function (sum, segment) { return sum + segment.length; }, 0);
+    path._segments = { list: list, total: total };
+    return path._segments;
   }
 
-  return { flexiblePath: flexiblePath, flexibleOutline: flexibleOutline, pointAlong: pointAlong };
+  /**
+   * Position d'un point à l'abscisse curviligne `s` le long du circuit COMPLET,
+   * arcs d'enroulement compris. `s = path.length` ramène au point de départ.
+   */
+  function pointAlong(path, s) {
+    var parts = segments(path);
+    if (!parts || !(parts.total > 0)) return null;
+    var u = ((s % parts.total) + parts.total) % parts.total;
+    for (var i = 0; i < parts.list.length; i++) {
+      var segment = parts.list[i];
+      if (u > segment.length && i < parts.list.length - 1) { u -= segment.length; continue; }
+      var local = segment.length > 0 ? Math.min(1, u / segment.length) : 0;
+      if (segment.kind === 'line') {
+        return { x: segment.from.x + (segment.to.x - segment.from.x) * local,
+          y: segment.from.y + (segment.to.y - segment.from.y) * local };
+      }
+      var angle = segment.start + segment.delta * local;
+      return { x: segment.centre.x + segment.radius * Math.cos(angle),
+        y: segment.centre.y + segment.radius * Math.sin(angle) };
+    }
+    return null;
+  }
+
+  return { flexiblePath: flexiblePath, flexibleOutline: flexibleOutline, pointAlong: pointAlong, segments: segments };
 });

@@ -31,6 +31,9 @@
     this.animationDirection = 1;
     this.animationPlaying = false;
     this.animationAngle = 0;
+    // Cadence : 'pedagogical' (lisible, constante) ou 'relative' (proportionnelle
+    // au régime réel d'entrée). Les poses sont identiques dans les deux cas.
+    this.animationMode = 'pedagogical';
     this.overlays = Object.assign({}, DEFAULT_OVERLAYS);
     this.geometry = new GearApp.visualization.GeometryRenderer(container);
     this.kinematic = GearApp.visualization.kinematicRenderer;
@@ -52,8 +55,10 @@
 
   ViewerToolbar.prototype.render = function (solution) {
     this.solution = solution;
-    this.inspector.setSolution(solution);
     var rendered = this.renderer().render(solution);
+    // L'inspecteur lit la scène de la vue courante : mêmes vitesses, même
+    // instant, quelle que soit la vue affichée.
+    this.inspector.setSolution(solution, rendered && rendered.scene);
     this._applyState(rendered);
     return rendered;
   };
@@ -64,6 +69,7 @@
     if (rendered.setAnimationSpeed) rendered.setAnimationSpeed(this.animationSpeed);
     if (rendered.setAnimationDirection) rendered.setAnimationDirection(this.animationDirection);
     if (rendered.setAutoDetails) rendered.setAutoDetails(this.overlays.autoDetails);
+    if (rendered.setAnimationMode) rendered.setAnimationMode(this.animationMode);
     // L'animation reprend au même angle : les trois vues racontent la même
     // cinématique, au même instant.
     if (rendered.setAnimationAngle) rendered.setAnimationAngle(this.animationAngle);
@@ -142,6 +148,13 @@
         if (renderer.setAnimationDirection) renderer.setAnimationDirection(self.animationDirection);
         event.target.setAttribute('aria-pressed', String(self.animationDirection === -1));
         self.container.dispatchEvent(new CustomEvent('viewer:animation-changed', { detail: { direction: self.animationDirection } }));
+      }
+      if (event.target.id === 'viewerMode') {
+        self.animationMode = self.animationMode === 'relative' ? 'pedagogical' : 'relative';
+        if (renderer.setAnimationMode) renderer.setAnimationMode(self.animationMode);
+        event.target.setAttribute('aria-pressed', String(self.animationMode === 'relative'));
+        event.target.textContent = self.animationMode === 'relative' ? 'Cadence réelle' : 'Cadence pédagogique';
+        self.container.dispatchEvent(new CustomEvent('viewer:animation-changed', { detail: { mode: self.animationMode } }));
       }
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();
     });

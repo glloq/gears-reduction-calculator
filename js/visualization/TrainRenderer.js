@@ -66,7 +66,7 @@
     this.scene = GearSceneBuilder.build(solution);
     this.animation.setScene(this.scene);
 
-    var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || [], { kinematics: this.scene.kinematics });
+    var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || [], { scene: this.scene });
     this.model = model;
     var svg = n('svg', { class: 'train-svg', role: 'img', 'aria-label': 'Denture réaliste — ' + (solution.stages || []).length + ' étage(s)' });
     var viewport = n('g', { class: 'train-viewport' });
@@ -191,7 +191,18 @@
       (wheel.kind === 'gear' ? '\nØ tête ' + fmt(wheel.outsideD, 2) + ' mm · Ø pied ' + fmt(wheel.rootD, 2) + ' mm' : '') +
       '\nVitesse relative ' + fmt(wheel.speed, 3) + '×'));
 
-    var record = { wheel: wheel, entry: entry, group: host, seat: seat, rotor: rotor, construction: construction, orbit: orbit, lod: -1 };
+    // Un cône ne peut pas tourner dans le plan du dessin, mais son mouvement
+    // doit rester visible : un repère de phase tourne sur sa grande face.
+    var phase = null;
+    if (wheel.kind === 'cone') {
+      var back = finite(wheel.pitchD, 20) / 2;
+      phase = n('g', { class: 'cone-phase' });
+      phase.appendChild(n('circle', { class: 'phase-dot', cx: (back * 0.55).toFixed(2), cy: '0',
+        r: Math.max(0.5, finite(wheel.module, 1) * 0.55).toFixed(2) }));
+      seat.appendChild(phase);
+    }
+
+    var record = { wheel: wheel, entry: entry, group: host, seat: seat, rotor: rotor, construction: construction, orbit: orbit, phase: phase, lod: -1 };
     if (wheel.kind === 'rack') this._linear.push(record);
     this._wheels.push(record);
     return host;
@@ -269,16 +280,20 @@
     }
   };
 
-  /** Marqueurs de courroie/chaîne : un élément par pas réel, plafonné. */
+  /**
+   * Marqueurs de courroie/chaîne : un élément par pas réel, répartis sur la
+   * LONGUEUR DÉVELOPPÉE — brins droits ET arcs d'enroulement. Un maillon
+   * contourne les poulies, il ne saute pas d'un brin à l'autre.
+   */
   TrainRenderer.prototype._buildMarkers = function (record, lod) {
     var link = record.link;
     if (record.built === lod) return;
     record.built = lod;
     record.markers.textContent = '';
     record.marks = [];
-    if (lod <= LEVELS.SILHOUETTE || !link.tangents || !(link.spanLength > 0)) return;
+    if (lod <= LEVELS.SILHOUETTE || !link.path || !(link.length > 0)) return;
     var pitch = Math.max(1.5, finite(link.pitch, 4));
-    var count = Math.min(lod === LEVELS.SIMPLIFIED ? 24 : 60, Math.max(4, Math.round(2 * link.spanLength / pitch)));
+    var count = Math.min(lod === LEVELS.SIMPLIFIED ? 32 : 90, Math.max(6, Math.round(link.length / pitch)));
     var chain = link.kind === 'chain-span';
     for (var i = 0; i < count; i++) {
       var mark = chain
@@ -286,7 +301,7 @@
         : n('rect', { class: 'belt-tooth', x: (-pitch * 0.18).toFixed(2), y: (-pitch * 0.22).toFixed(2),
           width: (pitch * 0.36).toFixed(2), height: (pitch * 0.44).toFixed(2) });
       record.markers.appendChild(mark);
-      record.marks.push({ el: mark, s: 2 * link.spanLength * i / count });
+      record.marks.push({ el: mark, s: link.length * i / count });
     }
   };
 
@@ -476,65 +491,76 @@
 
   /**
    * setAnimationAngle(inputAngle) — inputAngle en degrés d'arbre d'entrée.
-   * Chaque membre applique sa vitesse RELATIVE issue du moteur cinématique :
-   * rotation propre, orbite de satellite, translation de crémaillère et
-   * défilement de courroie/chaîne sont donc rigoureusement cohérents.
+   * Le renderer ne calcule RIEN : il demande la pose au moteur cinématique et
+   * se contente de l'appliquer. C'est la garantie que les trois vues montrent
+   * exactement la même cinématique, au même instant.
    */
   TrainRenderer.prototype.setAnimationAngle = function (inputAngle) {
-    if (!this.svg || !this.svg.isConnected) return;
+    if (!this.svg || !this.svg.isConnected || !this.scene) return;
     this._angle = finite(inputAngle, 0);
-    var angle = this._angle;
-    var radians = angle * Math.PI / 180;
+    this.applyPose(GearKinematicsEngine.pose(this.scene.kinematics, this._angle));
+  };
+
+  /** applyPose(pose) — seul point qui touche aux transformations animées. */
+  TrainRenderer.prototype.applyPose = function (pose) {
+    if (!this.svg || !pose) return;
+    var members = pose.members || {}, linear = pose.linear || {}, flexible = pose.flexible || {};
+    function angleOf(id) { var m = members[id]; return m && Number.isFinite(m.angle) ? m.angle : 0; }
 
     this._wheels.forEach(function (record) {
       var wheel = record.wheel;
+      var posed = members[wheel.memberId] || {};
+      var own = finite(posed.angle, 0);
       if (record.orbit) {
-        // Satellite : orbite du porte-satellites puis rotation propre.
-        var orbitAngle = finite(wheel.orbitSpeed, 0) * angle;
+        // Satellite : orbite du porte-satellites, puis rotation propre. La pose
+        // porte les deux angles ; le renderer ne fait que les composer.
+        var orbit = finite(posed.orbitAngle, 0);
         record.orbit.setAttribute('transform',
-          'rotate(' + orbitAngle.toFixed(2) + ' ' + finite(wheel.orbitCenterX, 0).toFixed(2) + ' ' + finite(wheel.orbitCenterY, 0).toFixed(2) + ')');
+          'rotate(' + orbit.toFixed(2) + ' ' + finite(wheel.orbitCenterX, 0).toFixed(2) + ' ' + finite(wheel.orbitCenterY, 0).toFixed(2) + ')');
         // La rotation propre est comptée dans le repère fixe : on retire
         // l'entraînement de l'orbite déjà appliqué par le groupe parent.
-        record.rotor.setAttribute('transform', 'rotate(' + ((finite(wheel.speed, 0) - finite(wheel.orbitSpeed, 0)) * angle).toFixed(2) + ')');
+        record.rotor.setAttribute('transform', 'rotate(' + (own - orbit).toFixed(2) + ')');
         return;
       }
       if (wheel.kind === 'rack') {
+        // La translation vient de la pose, en millimètres réels.
+        var travel = finite((linear[wheel.linearId] || {}).position, 0);
         record.group.setAttribute('transform',
-          'translate(' + (finite(wheel.cx, 0) + finite(wheel.mmPerRadian, 0) * radians * Math.sign(finite(wheel.pinionSpeed, 1) || 1)).toFixed(2) +
-          ' ' + finite(wheel.cy, 0).toFixed(2) + ')');
+          'translate(' + (finite(wheel.cx, 0) + travel).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')');
         return;
       }
       if (wheel.kind === 'cone') {
-        // Un cône vu de côté ne montre pas sa rotation : le faire tourner dans
-        // le plan du dessin serait un contresens. Le mouvement est porté par les
-        // vues Géométrie et Cinématique.
+        // Faire pivoter une silhouette conique dans le plan du dessin serait un
+        // contresens : c'est un repère de phase, posé sur la grande face, qui
+        // porte le mouvement.
+        if (record.phase) record.phase.setAttribute('transform', 'rotate(' + (own % 360).toFixed(2) + ')');
         return;
       }
       if (wheel.kind === 'worm') {
         // Le filet avance axialement d'un pas par tour : c'est ce défilement qui
         // donne la sensation d'entraînement de la roue.
         var lead = Math.max(1e-6, Math.PI * finite(wheel.module, 1) * Math.max(1, finite(wheel.teeth, 1)));
-        var travel = (finite(wheel.speed, 0) * angle / 360) * lead;
-        record.rotor.setAttribute('transform', 'translate(' + (travel % lead).toFixed(2) + ' 0)');
+        record.rotor.setAttribute('transform', 'translate(' + ((own / 360 * lead) % lead).toFixed(2) + ' 0)');
         return;
       }
-      record.rotor.setAttribute('transform', 'rotate(' + (finite(wheel.speed, 0) * angle).toFixed(2) + ')');
+      record.rotor.setAttribute('transform', 'rotate(' + own.toFixed(2) + ')');
     });
 
     (this.model && this.model.stages || []).forEach(function (entry) {
       if (entry.carrierElement && entry.carrier) {
         entry.carrierElement.setAttribute('transform',
-          'translate(' + entry.carrier.cx.toFixed(2) + ' ' + entry.carrier.cy.toFixed(2) + ') rotate(' + (finite(entry.carrier.speed, 0) * angle).toFixed(2) + ')');
+          'translate(' + entry.carrier.cx.toFixed(2) + ' ' + entry.carrier.cy.toFixed(2) + ') rotate(' + angleOf(entry.carrier.memberId).toFixed(2) + ')');
       }
     });
 
     this._flexible.forEach(function (record) {
       var link = record.link;
-      var driving = record.entry.wheels[0];
-      var offset = finite(driving.pitchD, 0) / 2 * finite(driving.speed, 0) * radians;
-      if (record.marks && link.tangents) {
+      // Défilement en millimètres réels issu de la pose : aucun produit
+      // rayon × vitesse n'est refait ici.
+      var offset = finite((flexible[link.driveId] || {}).offset, 0);
+      if (record.marks && link.path) {
         record.marks.forEach(function (mark) {
-          var point = GearGeometryUtils.pointAlong(link, mark.s + offset);
+          var point = GearGeometryUtils.pointAlong(link.path, mark.s + offset);
           if (point) mark.el.setAttribute('transform', 'translate(' + point.x.toFixed(2) + ' ' + point.y.toFixed(2) + ')');
         });
       }
