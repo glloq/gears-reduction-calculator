@@ -388,3 +388,9 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 /* Les tracés de construction ne se justifient qu'au dernier palier. */
 .svg-container:not(.zoom-technical) .base-circle,
 .svg-container:not(.zoom-technical) .root-circle { display: none; }
+
+/* §28 : le point de vue. Il ne pilote que le dessin spatial ; ailleurs il se
+   désactive plutôt que de disparaître, pour qu'on sache qu'il existe. */
+.viewer-projection-label { font-size: var(--font-sm); color: var(--muted); align-self: center; }
+.viewer-projection-label.is-disabled { opacity: .5; }
+#viewerProjection:disabled { opacity: .55; cursor: not-allowed; }

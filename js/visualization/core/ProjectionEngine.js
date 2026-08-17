@@ -43,12 +43,16 @@
    * L'écran a son Y vers le bas : `v` porte donc l'opposé de la verticale
    * monde, sans quoi tout serait dessiné à l'envers.
    */
+  // Les libellés disent ce que la vue MONTRE, et non un numéro de face. Le
+  // regard de `front` est perpendiculaire à l'arbre d'entrée : cette vue en
+  // donne la longueur, pas l'engrènement — ce que son ancien nom, « Entrée »
+  // avec pour aide « suivant les axes », affirmait exactement à l'envers.
   var VIEWS = [
-    { id: 'front', label: 'Entrée', help: 'De face, suivant les axes : c’est la vue de l’engrènement.',
+    { id: 'front', label: 'De face', help: 'Le regard coupe les arbres : on y lit leur longueur et l’empilement axial.',
       u: [1, 0, 0], v: [0, -1, 0], w: [0, 0, 1] },
-    { id: 'top', label: 'Dessus', help: 'Vue de dessus : les décalages en profondeur deviennent visibles.',
+    { id: 'top', label: 'De dessus', help: 'Même chose vue du dessus : les décalages en profondeur deviennent visibles.',
       u: [1, 0, 0], v: [0, 0, 1], w: [0, 1, 0] },
-    { id: 'side', label: 'Côté', help: 'Vue de côté : la longueur des arbres et l’empilement axial.',
+    { id: 'side', label: 'En bout', help: 'Le regard suit l’arbre d’entrée : c’est la vue des dentures et des entraxes.',
       u: [0, 0, -1], v: [0, -1, 0], w: [1, 0, 0] },
     { id: 'iso', label: 'Iso', help: 'Projection axonométrique : les changements d’axe se lisent d’un coup.',
       u: [ISO, 0, -ISO], v: [-ISO_V, -2 * ISO_V, -ISO_V], w: unit([1, -1, 1]) }

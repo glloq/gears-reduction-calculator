@@ -82,6 +82,11 @@
     // Aucun préréglage actif au départ : l'état d'usine n'en est pas un, et
     // allumer un bouton qui ne décrit pas l'écran serait un mensonge de plus.
     this.preset = null;
+    // §28 : d'où l'on regarde. Vide = automatique, c'est-à-dire la projection
+    // qui montre le plus de denture. Le choix vaut pour toute la session : un
+    // point de vue qui se réinitialiserait à chaque solution obligerait à le
+    // reposer sans cesse pendant qu'on compare deux réducteurs.
+    this.projection = '';
     // §8 : un cadrage par vue, valable pour la solution en cours seulement.
     this.camera = {};
     this._cameraOwner = null;
@@ -117,6 +122,7 @@
     this._renderFidelity(rendered);
     this._syncZoomTier();
     this._syncFraming();
+    this._syncProjection();
     return rendered;
   };
 
@@ -185,6 +191,58 @@
    * laisser cliquables et sans effet serait la même faute que les cartes sans
    * effet déjà retirées ailleurs : ils se désactivent, en disant pourquoi.
    */
+  /**
+   * §28 : d'où l'on regarde le mécanisme.
+   *
+   * Changer de point de vue ne déplace aucune pièce — c'est l'invariant du
+   * modèle spatial —, mais cela change entièrement le dessin : le cadrage
+   * mémorisé pour cette vue ne s'y applique plus, et le conserver ramènerait
+   * sur un coin de l'ancien dessin.
+   */
+  ViewerToolbar.prototype.setProjection = function (id) {
+    this.projection = id || '';
+    this.teeth.projection = this.projection || null;
+    if (this.camera) delete this.camera.teeth;
+    if (this.solution && this.currentView === 'teeth') this.render(this.solution);
+    this._syncProjection();
+    this.container.dispatchEvent(new CustomEvent('viewer:projection-changed',
+      { detail: { projection: this.projection || 'auto' } }));
+    return this;
+  };
+
+  /**
+   * La liste des points de vue vient du moteur de projection : une seconde
+   * table ici finirait par ne plus lui correspondre. Le contrôle se désactive
+   * hors du dessin spatial plutôt que de disparaître — la Cinématique est un
+   * schéma, elle n'a pas de point de vue à offrir, et le dire vaut mieux que
+   * de laisser croire qu'on a mal cliqué.
+   */
+  ViewerToolbar.prototype._syncProjection = function () {
+    var select = document.getElementById('viewerProjection');
+    if (!select) return this;
+    if (select.options.length <= 1 && typeof GearProjectionEngine !== 'undefined') {
+      GearProjectionEngine.VIEWS.forEach(function (view) {
+        var option = document.createElement('option');
+        option.value = view.id;
+        option.textContent = view.label;
+        option.title = view.help;
+        select.appendChild(option);
+      });
+    }
+    select.value = this.projection || '';
+    var spatial = this.currentView === 'teeth';
+    select.disabled = !spatial;
+    var chosen = this.projection && typeof GearProjectionEngine !== 'undefined'
+      ? GearProjectionEngine.view(this.projection) : null;
+    select.title = !spatial
+      ? 'Seule la Denture est un dessin spatial : les autres vues n’ont pas de point de vue à choisir'
+      : chosen ? chosen.help
+        : 'Automatique : la projection qui montre le plus de denture';
+    var label = document.querySelector('.viewer-projection-label');
+    if (label) label.classList.toggle('is-disabled', !spatial);
+    return this;
+  };
+
   ViewerToolbar.prototype._syncFraming = function () {
     var focus = document.getElementById('viewerFocus');
     if (focus) {
@@ -367,6 +425,7 @@
       }
       heading.hidden = !visible;
     });
+    this._syncProjection();
     if (this.solution) this.render(this.solution);
     this.container.dispatchEvent(new CustomEvent('viewer:view-changed', { detail: { view: name } }));
   };
@@ -470,6 +529,7 @@
       if (event.target.id === 'viewerActualSize' && renderer.viewport) renderer.viewport.actualSize();
     });
     controls.addEventListener('change', function (event) {
+      if (event.target.id === 'viewerProjection') { self.setProjection(event.target.value); return; }
       if (event.target.id === 'viewerSpeed') {
         var renderer = self.renderer(), speed = Number(event.target.value);
         self.animationSpeed = speed;

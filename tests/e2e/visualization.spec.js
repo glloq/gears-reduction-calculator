@@ -1323,3 +1323,51 @@ test('a chain that changes axis is drawn as one, not as a row of front views', a
 
   expect(errors).toEqual([]);
 });
+
+test('the point of view is a control, not a decoration (§28)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'worm', 'spur']);
+  await showView(page, 'teeth');
+
+  const select = page.locator('#viewerProjection');
+  await expect(select).toBeEnabled();
+  await expect(select).toHaveValue('');
+  // La liste vient du moteur de projection : rien n'est réécrit dans l'UI.
+  const offered = await select.locator('option').evaluateAll(list => list.map(o => o.value));
+  const known = await page.evaluate(() => GearProjectionEngine.VIEWS.map(v => v.id));
+  expect(offered).toEqual([''].concat(known));
+
+  const shot = () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const model = window.__viewer.renderer().model;
+    return { announced: svg.dataset.view,
+      drawing: model.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'),
+      world: model.spatial.members.map(m => m.id + ':' + m.position.join(',')).join('|') };
+  });
+
+  const automatic = await shot();
+  const drawings = new Set([automatic.drawing]);
+  for (const id of known) {
+    await select.selectOption(id);
+    const seen = await shot();
+    // Ce que la commande promet : le dessin change, la mécanique non.
+    expect(seen.announced, id).toBe(id);
+    expect(seen.world, id + ' : aucune pièce ne bouge').toBe(automatic.world);
+    drawings.add(seen.drawing);
+  }
+  expect(drawings.size, 'chaque point de vue doit donner un dessin distinct').toBeGreaterThan(1);
+
+  // Retour à l'automatique : on retrouve exactement le dessin de départ.
+  await select.selectOption('');
+  expect((await shot()).drawing).toBe(automatic.drawing);
+
+  // La Cinématique est un schéma : elle n'a pas de point de vue à offrir, et
+  // le dit au lieu de laisser croire qu'on a mal cliqué.
+  await showView(page, 'kinematic');
+  await expect(select).toBeDisabled();
+  await expect(select).toHaveAttribute('title', /pas de point de vue/);
+  await showView(page, 'teeth');
+  await expect(select).toBeEnabled();
+
+  expect(errors).toEqual([]);
+});

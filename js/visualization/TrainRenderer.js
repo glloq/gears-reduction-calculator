@@ -616,10 +616,18 @@
         return;
       }
       if (wheel.kind === 'rack') {
-        // La translation vient de la pose, en millimètres réels.
+        // La translation vient de la pose, en millimètres réels, et se fait le
+        // long de la GLISSIÈRE. Elle se faisait suivant l'axe horizontal de
+        // l'écran, et cette transformation écrasait au passage l'orientation
+        // du profil : une crémaillère verticale glissait donc de travers, à
+        // plat, au travers de son pignon.
         var travel = finite((linear[wheel.linearId] || {}).position, 0);
+        var slide = wheel.slideAlong || [1, 0];
+        var turn = Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg
+          ? ' rotate(' + wheel.axisAngleDeg.toFixed(2) + ')' : '';
         record.group.setAttribute('transform',
-          'translate(' + (finite(wheel.cx, 0) + travel).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')');
+          'translate(' + (finite(wheel.cx, 0) + slide[0] * travel).toFixed(2) + ' ' +
+          (finite(wheel.cy, 0) + slide[1] * travel).toFixed(2) + ')' + turn);
         return;
       }
       if (wheel.kind === 'cone') {
