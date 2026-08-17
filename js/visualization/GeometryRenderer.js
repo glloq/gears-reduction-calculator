@@ -245,7 +245,7 @@
 
       var mech = (solution.mechanical || [])[item.index] || {};
       GearForceOverlay.render(p.node, layers.force, mech.forces, { x: item.x, y: item.y });
-      GearWarningOverlay.render(p.node, labels, GearWarningOverlay.derive(item.stage, mech), item.index,
+      GearWarningOverlay.render(p.node, labels, solution.warnings, item.index,
         { x: item.x + item.diameter / 2 + fontSize, y: item.y - item.diameter / 2 });
       p.label(labels, item.x - item.diameter / 2, self.layout.margin * 0.7,
         'Étage ' + (item.index + 1) + ' · ' + GearTransmissionRegistry.familyName(item.type, 'short'), 'stage-label', { scale: unit, anchor: 'start', fontSize: 13 });

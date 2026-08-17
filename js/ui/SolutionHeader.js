@@ -123,6 +123,19 @@
     return this;
   };
 
+  /**
+   * Plus aucune solution à décrire. Sans cela, un filtre qui n'en laisse
+   * passer aucune laissait l'identité, les puces d'étage et la chaîne
+   * cinématique de la PRÉCÉDENTE à l'écran, sous un message annonçant qu'il
+   * n'en reste aucune.
+   */
+  SolutionHeader.prototype.clear = function () {
+    this.solution = null;
+    this.index = -1;
+    this.stage = -1;
+    return this.render();
+  };
+
   SolutionHeader.prototype.render = function () {
     if (!this.identity || !this.stagesHost) return this;
     var solution = this.solution;
@@ -131,7 +144,11 @@
     var absent = !solution;
     this.identity.hidden = absent;
     this.stagesHost.hidden = absent;
-    if (absent) return this;
+    if (absent) {
+      // La chaîne cinématique décrit la même solution : elle disparaît avec.
+      if (this.chainHost) { this.chainHost.textContent = ''; this.chainHost.hidden = true; }
+      return this;
+    }
 
     var badge = this._badge();
     if (badge) this.identity.appendChild(node('span', 'identity-badge', badge));

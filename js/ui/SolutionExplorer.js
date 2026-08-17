@@ -189,8 +189,14 @@
       target: Number.isFinite(wp.rapportCible) ? wp.rapportCible : null,
       linear: wp.objectiveMode === 'rotationTranslation',
       engineeringOptions: {
-        inputSpeedRpm: wp.vitesseEntree || 1500,
-        inputTorqueNm: wp.coupleEntree || 10,
+        // Le régime de service n'est PAS inventé ici. Il l'était : « étudier un
+        // réducteur existant » sans vitesse ni couple donnait une analyse
+        // honnêtement muette — puis modifier un étage rappelait ce contexte, et
+        // 1500 rpm / 10 N·m réapparaissaient en silence, avec des efforts et
+        // des facteurs de sécurité tirés d'un régime que personne n'avait
+        // choisi. Une valeur absente reste absente.
+        inputSpeedRpm: Number.isFinite(wp.vitesseEntree) ? wp.vitesseEntree : null,
+        inputTorqueNm: Number.isFinite(wp.coupleEntree) ? wp.coupleEntree : null,
         inputMaterial: wp.inputMaterial || 'C45',
         outputMaterial: wp.outputMaterial || 'C45',
         additiveDerating: wp.additiveDerating || 1,

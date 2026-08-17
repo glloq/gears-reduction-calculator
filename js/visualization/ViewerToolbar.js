@@ -108,6 +108,35 @@
   };
 
   /**
+   * Plus rien à montrer. Le viewer gardait le dernier dessin quand un filtre
+   * ne laissait passer aucune solution : l'écran annonçait « 0 / 50 » au-dessus
+   * d'un mécanisme qui n'existait plus dans la liste, et l'inspecteur en
+   * détaillait toujours les étages.
+   */
+  ViewerToolbar.prototype.clear = function () {
+    this.solution = null;
+    this.selectedStage = -1;
+    this.inspector.setSolution(null, null);
+    this.inspector.hide();
+    // Le HUD suit le dessin : il n'a plus de cible.
+    if (this.hud) this.hud.hide();
+    ['teeth', 'geometry', 'kinematic'].forEach(function (name) {
+      var renderer = this[name];
+      if (renderer) { renderer.solution = null; renderer.svg = null; }
+    }, this);
+    if (this.container) this.container.innerHTML = '';
+    this._ensureHudPanel();
+    this._renderFidelity(null);
+    this._syncFraming();
+    return this;
+  };
+
+  /** Le panneau du HUD vit dans le conteneur : le vider le décroche. */
+  ViewerToolbar.prototype._ensureHudPanel = function () {
+    if (this.hud && this.hud._ensurePanel) this.hud._ensurePanel();
+  };
+
+  /**
    * §7 : les trois cadrages disent ce qu'ils peuvent faire, à l'instant présent.
    *
    * « Cadrer l'étage » sans étage sélectionné, et « 1:1 » sur un schéma
@@ -156,6 +185,9 @@
   ViewerToolbar.prototype._renderFidelity = function (rendered) {
     var host = document.getElementById('viewerFidelity');
     if (!host) return;
+    // Rien de dessiné, rien à qualifier : une phrase sur la fidélité d'un
+    // dessin absent parlerait du précédent.
+    if (!rendered) { host.textContent = ''; host.title = ''; host.hidden = true; host.classList.remove('has-derived'); return; }
     var text = FIDELITY[this.currentView] || '';
     var scene = rendered && rendered.scene;
     // Une cote reconstruite faute de mieux ne doit pas être lue comme une cote

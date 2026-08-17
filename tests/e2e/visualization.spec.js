@@ -847,3 +847,142 @@ test('the inspector is docked beside the drawing, never over it (§6)', async ({
   await expect(page.locator('#viewerFocus')).toBeDisabled();
   expect(errors).toEqual([]);
 });
+
+test('a filter that excludes everything leaves no solution on screen', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await search(page);
+  await page.locator('.solution-card').first().click();
+  await page.locator('#svgContainer svg').waitFor({ timeout: 20000 });
+  await page.locator('#svgContainer .train-stage .train-wheel').first().click();
+  await expect(page.locator('#stageInspector')).toBeVisible();
+
+  const shown = () => page.evaluate(() => ({
+    svg: document.querySelectorAll('#svgContainer svg').length,
+    identity: !document.getElementById('solutionIdentity').hidden,
+    stageNav: !document.getElementById('stageNav').hidden,
+    inspector: !document.getElementById('stageInspector').hidden,
+    fidelity: !document.getElementById('viewerFidelity').hidden,
+    // Régions `aria-live` : vidées, pas seulement masquées.
+    cardText: (document.getElementById('solutionCard').textContent || '').trim().length,
+    analysisText: (document.getElementById('mechanicalPanel').textContent || '').trim().length
+  }));
+  const before = await shown();
+  expect(before.svg).toBe(1);
+  expect(before.identity).toBe(true);
+  expect(before.cardText).toBeGreaterThan(0);
+
+  // Un diamètre d'un millimètre : aucune solution ne peut passer. Les filtres
+  // passent par le menu, comme pour un utilisateur.
+  await page.locator('#addFilterBtn').click();
+  await page.locator('#refineMenu [data-field="refine_diameter_max"]').click();
+  await page.locator('.constraint-chip[data-constraint="refine_diameter_max"] .constraint-chip-input').fill('1');
+  await expect(page.locator('.solution-card')).toHaveCount(0);
+  await expect(page.locator('#svgContainer svg')).toHaveCount(0);
+
+  const after = await shown();
+  expect(after, 'plus aucune trace de la solution disparue').toEqual({
+    svg: 0, identity: false, stageNav: false, inspector: false, fidelity: false,
+    cardText: 0, analysisText: 0
+  });
+
+  // Et le filtre levé la ramène : effacer n'est pas casser.
+  await page.locator('#refineResetBtn').click();
+  await expect(page.locator('.solution-card')).not.toHaveCount(0);
+  await expect(page.locator('#svgContainer svg')).toHaveCount(1);
+  await expect(page.locator('#solutionIdentity')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('the card never ticks what it has not checked (§ conformité)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await search(page);
+  await page.locator('.solution-card').first().click();
+  await expect(page.locator('#solutionCard')).toBeVisible();
+
+  const badges = () => page.evaluate(() => Array.from(document.querySelectorAll('#solutionCard .status-badge'))
+    .map(b => ({ key: b.dataset.compliance || null, state: (b.className.match(/state-(\w+)/) || [])[1],
+      text: b.textContent.trim(), title: b.title })));
+  const list = await badges();
+  expect(list.length).toBeGreaterThan(3);
+
+  list.forEach(badge => {
+    // Une coche verte suppose un contrôle : celles qui portent « non évalué »
+    // ou « aucune limite » doivent être sourdes.
+    if (/non évalué|non vérifié|Aucune/i.test(badge.text + ' ' + badge.title)) {
+      expect(badge.state, badge.text).toBe('unknown');
+      expect(badge.text.startsWith('✓'), badge.text).toBe(false);
+    }
+    // Aucun code interne à l'écran.
+    expect(badge.text).not.toMatch(/[A-Z]{3,}_[A-Z_]{3,}/);
+    expect(badge.text).not.toMatch(/NaN|undefined|null/);
+  });
+
+  // Un facteur de sécurité sous sa limite ne peut jamais porter de coche —
+  // c'était exactement « ✓ SF 0.82 ». On force ici une chaîne sous-dimensionnée
+  // plutôt que d'espérer que le solveur en renvoie une : sans cela le test
+  // passe sans avoir rien vérifié.
+  const weak = await page.evaluate(() => {
+    const under = GearEngineering.analyzeSolution([
+      { type: 'spur', input: { teeth: 14 }, output: { teeth: 42 },
+        parameters: { module: 0.6, pressureAngle: 20, faceWidth: 4 } }
+    ], 3, { inputSpeedRpm: 3000, inputTorqueNm: 120 });
+    GearApp._workbench && null;
+    GearApp.eventBus.emit('solution:selected', { index: 0, solution: under });
+    const limits = GearSolutionCompliance.LIMITS;
+    return { sf: under.mechanical[0].bending.safetyFactor, limit: limits.bendingSafety };
+  });
+  expect(weak.sf, 'la chaîne de contrôle doit être réellement sous-dimensionnée').toBeLessThan(weak.limit);
+
+  const safety = await page.evaluate(() => {
+    const limits = GearSolutionCompliance.LIMITS;
+    return Array.from(document.querySelectorAll('#solutionCard .status-badge'))
+      .filter(b => /SF |SH /.test(b.textContent))
+      .map(b => ({ text: b.textContent.trim(),
+        value: parseFloat((b.textContent.match(/(\d+\.\d+)/) || [])[1]),
+        ticked: b.textContent.trim().startsWith('✓'),
+        state: (b.className.match(/state-(\w+)/) || [])[1],
+        limit: /SF /.test(b.textContent) ? limits.bendingSafety : limits.contactSafety }));
+  });
+  const numeric = safety.filter(entry => Number.isFinite(entry.value));
+  expect(numeric.length, 'la carte doit afficher les facteurs chiffrés').toBeGreaterThan(0);
+  numeric.forEach(entry => {
+    if (entry.value < entry.limit) {
+      expect(entry.ticked, entry.text + ' est sous la limite et ne peut pas être coché').toBe(false);
+      expect(entry.state, entry.text).toBe('danger');
+    }
+  });
+  expect(errors).toEqual([]);
+});
+
+test('the drawing and the analysis report exactly the same warnings', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Un pignon de 12 dents au second étage : la sous-coupe concerne CET étage.
+  await mount(page, ['spur', 'spur']);
+  await page.evaluate(() => {
+    const stages = [
+      { type: 'spur', input: { teeth: 24 }, output: { teeth: 48 }, parameters: { module: 2, pressureAngle: 20, faceWidth: 20 } },
+      { type: 'spur', input: { teeth: 12 }, output: { teeth: 48 }, parameters: { module: 1, pressureAngle: 20, faceWidth: 6 } }
+    ];
+    window.__solution = GearEngineering.analyzeSolution(stages, 8, { inputSpeedRpm: 3000, inputTorqueNm: 40 });
+    window.__viewer.render(window.__solution);
+  });
+  await showView(page, 'teeth');
+
+  const drawn = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .mechanical-warning'))
+    .map(node => ({ code: node.dataset.warning, stage: Number(node.dataset.stage) })));
+  const emitted = await page.evaluate(() => window.__solution.warnings
+    .map(w => ({ code: w.code, stage: w.stageIndex })));
+
+  expect(drawn.length, 'le dessin doit porter des alertes').toBeGreaterThan(0);
+  // Tout badge dessiné correspond à une alerte émise par le moteur, sur son
+  // étage. Le viewer les recalculait auparavant, avec sa propre copie des seuils.
+  drawn.forEach(badge => {
+    expect(emitted, JSON.stringify(badge)).toContainEqual({ code: badge.code, stage: badge.stage });
+  });
+  // Et une alerte de chaîne ne se pose sur aucun étage.
+  const chainWide = emitted.filter(w => w.stage === null).map(w => w.code);
+  chainWide.forEach(code => expect(drawn.map(b => b.code)).not.toContain(code));
+  expect(errors).toEqual([]);
+});
