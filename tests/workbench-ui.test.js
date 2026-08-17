@@ -173,7 +173,10 @@ test('updateContext only rules on relevance, the session owns the choices', () =
     getElementById: id => elements[id] || null,
     querySelectorAll: () => boxes
   };
-  const sandbox = { GearApp: { ui: {} }, document, Event: function Event(type) { this.type = type; }, window: {}, requestAnimationFrame: () => {} };
+  // §19 : le plan de travail nomme les familles depuis le registre — il n'a
+  // plus de table locale, donc le bac à sable doit le lui fournir.
+  const sandbox = { GearApp: { ui: {} }, GearTransmissionRegistry: require('../js/transmissions/TransmissionRegistry.js'),
+    document, Event: function Event(type) { this.type = type; }, window: {}, requestAnimationFrame: () => {} };
   vm.runInNewContext(ui, sandbox);
   const workbench = new sandbox.GearApp.ui.Workbench({});
   workbench.updateSummary = function () {};

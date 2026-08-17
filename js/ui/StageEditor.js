@@ -145,11 +145,8 @@
 
   var H = (typeof self !== 'undefined' ? self : window).GearStageEditorHelpers;
 
-  var TYPE_LABELS = {
-    spur: 'Droit', helical: 'Hélicoïdal', internal: 'Intérieur', bevel: 'Conique',
-    planetary: 'Épicycloïdal', worm: 'Vis sans fin', belt: 'Courroie', chain: 'Chaîne'
-  };
-  var MEMBER_LABELS = { S: 'Solaire', R: 'Couronne', C: 'Porte-satellites' };
+  // §19 : le nom d'une famille vient du registre, pas d'une table locale.
+  var familyName = GearTransmissionRegistry.familyName;
   var MANUFACTURING_FAILURES = {
     MODULE_TOO_SMALL: 'Module sous la limite du procédé',
     TOO_FEW_TEETH: 'Dents sous la limite du procédé',
@@ -293,7 +290,7 @@
       if (def.id === 'rack') return;
       var option = document.createElement('option');
       option.value = def.id;
-      option.textContent = TYPE_LABELS[def.id] || def.name;
+      option.textContent = familyName(def.id, 'short');
       typeSelect.appendChild(option);
     });
     var addBtn = document.createElement('button');
@@ -345,7 +342,7 @@
     row.dataset.stage = index;
 
     var header = document.createElement('header');
-    header.innerHTML = '<span class="type-badge ' + registry + '">' + (index + 1) + ' · ' + (TYPE_LABELS[registry] || registry) + '</span>';
+    header.innerHTML = '<span class="type-badge ' + registry + '">' + (index + 1) + ' · ' + familyName(registry, 'short') + '</span>';
     var tools = document.createElement('span');
     tools.className = 'editor-stage-tools';
     [['▲', 'Monter', -1], ['▼', 'Descendre', 1]].forEach(function (item) {
@@ -439,7 +436,7 @@
     if (registry === 'planetary') {
       ['inputMember', 'outputMember', 'fixed'].forEach(function (key) {
         var labels = { inputMember: 'Organe entrée', outputMember: 'Organe sortie', fixed: 'Organe fixe' };
-        selectField(labels[key], stage[key], ['S', 'R', 'C'], ['S — ' + MEMBER_LABELS.S, 'R — ' + MEMBER_LABELS.R, 'C — ' + MEMBER_LABELS.C], function (value) { stage[key] = value; });
+        selectField(labels[key], stage[key], ['S', 'R', 'C'], ['S', 'R', 'C'].map(GearTransmissionRegistry.memberLabel), function (value) { stage[key] = value; });
       });
     }
 

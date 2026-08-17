@@ -132,8 +132,8 @@
 
     var input = layout.nodes[0] && layout.nodes[0].input;
     var output = layout.nodes.length && layout.nodes[layout.nodes.length - 1].output;
-    if (input) overlay.appendChild(KinematicPrimitives.element('text', { x: input.x, y: input.y + 84, class: 'role-label input-role' }, 'INPUT'));
-    if (output) overlay.appendChild(KinematicPrimitives.element('text', { x: output.x, y: output.y + 84, class: 'role-label output-role' }, 'OUTPUT'));
+    if (input) overlay.appendChild(KinematicPrimitives.element('text', { x: input.x, y: input.y + 84, class: 'role-label input-role' }, 'Entrée'));
+    if (output) overlay.appendChild(KinematicPrimitives.element('text', { x: output.x, y: output.y + 84, class: 'role-label output-role' }, 'Sortie'));
     viewport.appendChild(KinematicPrimitives.axisIndicator(layout.width - 62, layout.height - 62, layout.projection));
 
     svg.appendChild(viewport);
@@ -156,7 +156,7 @@
     g.setAttribute('data-relation', node.relation);
     g.setAttribute('tabindex', '0');
     g.setAttribute('role', 'button');
-    g.setAttribute('aria-label', 'Étage ' + (node.index + 1) + ' ' + type);
+    g.setAttribute('aria-label', 'Étage ' + (node.index + 1) + ' ' + GearTransmissionRegistry.familyName(type));
     KinematicPrimitives.draw(type, g, node);
 
     // Cartouche de l'étage : au-dessus du symbole, pas au sommet du cadre, pour
@@ -166,7 +166,7 @@
     var top = Math.min(node.input.y, node.output.y) - 78;
     g.appendChild(KinematicPrimitives.relationBadge(type, middle, top - 4));
     g.appendChild(KinematicPrimitives.element('text', { x: middle + 16, y: top,
-      'text-anchor': 'start', class: 'stage-label' }, 'Étage ' + (node.index + 1) + ' · ' + type));
+      'text-anchor': 'start', class: 'stage-label' }, 'Étage ' + (node.index + 1) + ' · ' + GearTransmissionRegistry.familyName(type, 'short')));
     // Le rapport est un texte distinct : le menu « Affichage » peut le masquer
     // sans faire disparaître l'identification de l'étage.
     if (mechanical && Number.isFinite(mechanical.ratio)) {
@@ -174,13 +174,25 @@
         'text-anchor': 'start', class: 'stage-ratio' }, 'i = ' + fmt(mechanical.ratio, 3)));
     }
 
-    // Rôles S/R/C d'un planétaire : les trois marquages, pas seulement FIXED.
+    // §9, §10, §31 : les trois organes d'un planétaire, nommés. La vue lisait
+    // `node.stage.inputMember` — une quatrième déduction de la topologie, à
+    // côté de celles des deux autres vues — et écrivait « INPUT S », qui ne
+    // dit ni de quel organe il s'agit ni ce qu'il fait. La scène répond.
     if (type === 'planetary' || type === 'epicyclic') {
-      [['INPUT', node.stage.inputMember || 'S', 'input-role'],
-        ['OUTPUT', node.stage.outputMember || 'C', 'output-role'],
-        ['FIXED', node.stage.fixed || 'R', 'fixed-role']].forEach(function (role, index) {
+      ['input', 'output', 'fixed'].forEach(function (functional, index) {
+        var member = self.scene && self.scene.functionalMember ? self.scene.functionalMember(node.index, functional) : null;
+        if (!member) return;
         g.appendChild(KinematicPrimitives.element('text', { x: node.input.x, y: node.input.y + 78 + index * 16,
-          'text-anchor': 'middle', class: 'role-label ' + role[2] }, role[0] + ' ' + role[1]));
+          'text-anchor': 'middle', class: 'role-label ' + functional + '-role' },
+        member.localizedRole + ' · ' + member.memberName + ' (' + member.role + ')'));
+        // §18 : le blocage se DESSINE. Sur un schéma cinématique le bâti est un
+        // trait hachuré ; sans lui, seule l'étiquette disait quel organe est
+        // immobile — et l'étiquette disparaît dès qu'on masque les libellés.
+        if (functional === 'fixed') {
+          GearGroundSymbol.line(node.input.x - 26, node.input.y + 58, node.input.x + 26, node.input.y + 58,
+            { length: 7, spacing: 7, side: -1 })
+            .forEach(function (shape) { g.appendChild(KinematicPrimitives.element(shape.tag, shape.attrs)); });
+        }
       });
     }
 
@@ -269,7 +281,8 @@
     var cs = getComputedStyle(document.body);
     function v(name, fallback) { var value = cs.getPropertyValue(name).trim(); return value || fallback; }
     var ink = v('--ink', '#182335'), muted = v('--muted', '#5d6b81'), accent = v('--accent', '#2563eb'),
-      success = v('--success', '#0c7f5c'), danger = v('--danger', '#b3261e'), surface = v('--surface-1', '#ffffff');
+      success = v('--success', '#0c7f5c'), danger = v('--danger', '#b3261e'), surface = v('--surface-1', '#ffffff'),
+      warning = v('--warning', '#b06d00');
     return '.kinematic-shaft{stroke:' + ink + ';stroke-width:4;stroke-linecap:round}' +
       '.shaft-bearing{fill:' + surface + ';stroke:' + ink + ';stroke-width:1.5}' +
       '.gear-symbol,.pulley,.worm-wheel,.internal-ring,.sun,.ring,.planet,.bevel-symbol{fill:none;stroke:' + ink + ';stroke-width:1.5}' +
@@ -281,6 +294,9 @@
       '.shaft-label,.stage-label,.member-label,.stage-ratio{fill:' + muted + ';font:600 11px system-ui,sans-serif}' +
       '.role-label{font:700 10px system-ui,sans-serif;fill:' + muted + '}' +
       '.input-role{fill:' + success + '}.output-role{fill:' + danger + '}' +
+      '.fixed-role{fill:' + warning + '}' +
+      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8;vector-effect:non-scaling-stroke}' +
+      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75;vector-effect:non-scaling-stroke}' +
       '.relation-badge{fill:' + surface + ';stroke:' + muted + ';stroke-width:1}' +
       '.relation-glyph{fill:' + muted + ';font:700 11px system-ui,sans-serif}' +
       'svg{background:' + surface + '}';

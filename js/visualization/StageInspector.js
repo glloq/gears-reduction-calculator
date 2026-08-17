@@ -18,22 +18,80 @@
     var geometry = stage.geometry || mech.geometry || {}, teeth = [];
     try { teeth = registry && registry.getToothCounts ? registry.getToothCounts(stage) : []; } catch (e) { teeth = []; }
     var inputRpm = null, outputRpm = null;
-    if (scene && scene.member) {
-      var driving = scene.member('s' + index + '-input') || scene.member('s' + index + '-S');
-      var driven = scene.member('s' + index + '-output') || scene.member('s' + index + '-C');
-      if (driving && finite(driving.mechanical.rpm)) inputRpm = driving.mechanical.rpm;
-      if (driven && finite(driven.mechanical.rpm)) outputRpm = driven.mechanical.rpm;
+    // §8 : l'inspecteur cherchait « s2-input, sinon s2-S » — c'est-à-dire qu'il
+    // tenait le solaire pour l'entrée et le porte-satellites pour la sortie,
+    // quelle que soit la topologie réelle. La scène connaît les fonctions ;
+    // on les lui demande, et le repli par position ne sert qu'aux scènes
+    // anciennes qui ne les portent pas encore.
+    var driving = null, driven = null, held = null;
+    if (scene && scene.functionalMember) {
+      driving = scene.functionalMember(index, 'input');
+      driven = scene.functionalMember(index, 'output');
+      held = scene.functionalMember(index, 'fixed');
     }
+    if (scene && scene.member) {
+      driving = driving || scene.member('s' + index + '-input');
+      driven = driven || scene.member('s' + index + '-output');
+    }
+    if (driving && finite(driving.mechanical.rpm)) inputRpm = driving.mechanical.rpm;
+    if (driven && finite(driven.mechanical.rpm)) outputRpm = driven.mechanical.rpm;
     if (!finite(inputRpm)) {
       inputRpm = index === 0 ? solution.inputSpeedRpm : null;
       if (!finite(inputRpm) && finite(solution.inputSpeedRpm)) inputRpm = solution.inputSpeedRpm / (solution.mechanical || []).slice(0, index).reduce(function (r, m) { return r * (Math.abs(m.ratio) || 1); }, 1);
     }
     if (!finite(outputRpm)) outputRpm = finite(inputRpm) && finite(mech.ratio) ? inputRpm / Math.abs(mech.ratio) : null;
-    return { index: index, type: stage.type, teeth: teeth.filter(function (v) { return finite(v) && v > 0; }), ratio: mech.ratio,
+    // §8, §21 : la topologie fonctionnelle d'un planétaire EST son
+    // information principale — « 20 → 30 → 80 » ne dit pas qui mène.
+    var topology = null;
+    if (stage.type === 'planetary' || stage.type === 'epicyclic') {
+      topology = { input: driving || null, output: driven || null, fixed: held || null,
+        sunTeeth: stage.sunTeeth, planetTeeth: stage.planetTeeth, ringTeeth: stage.ringTeeth,
+        planetCount: Math.max(2, Math.round(finite(stage.planetCount) ? stage.planetCount : 3)) };
+      // §20 : le rapport de base et les conditions de montage sont calculés
+      // par le registre — l'inspecteur affiche, il ne refait pas la mécanique.
+      try {
+        if (registry && registry.planetaryDetails) topology.details = registry.planetaryDetails(stage);
+      } catch (ignore) { topology.details = null; }
+    }
+    return { index: index, type: stage.type, topology: topology,
+      teeth: teeth.filter(function (v) { return finite(v) && v > 0; }), ratio: mech.ratio,
       efficiency: mech.efficiency, centerDistance: geometry.centerDistance, module: stage.parameters && stage.parameters.module,
       inputRpm: inputRpm, outputRpm: outputRpm, inputTorque: mech.inputTorqueNm, outputTorque: mech.outputTorqueNm || mech.torqueNm,
       bendingSafety: mech.bending && mech.bending.safetyFactor, contactSafety: mech.contact && mech.contact.safetyFactor };
   }
+  /** Nom lisible d'une famille : le registre fait foi, jamais `stage.type`. */
+  function familyName(type, registry) {
+    try {
+      if (registry && registry.familyName) return registry.familyName(type);
+    } catch (ignore) { /* registre absent : on retombe sur l'identifiant */ }
+    return type;
+  }
+
+  /** « Solaire (S) · 1500 rpm ↺ » — organe, code, et ce qu'il fait. */
+  function memberLine(entry) {
+    if (!entry) return null;
+    var code = entry.role ? ' (' + entry.role + ')' : '';
+    var name = (entry.memberName || entry.role || '') + code;
+    var rpm = entry.mechanical && entry.mechanical.rpm;
+    if (!finite(rpm)) return name;
+    if (Math.abs(rpm) < 1e-6) return name + ' · immobile';
+    return name + ' · ' + Math.abs(rpm).toFixed(0) + ' rpm ' + (rpm < 0 ? '↻' : '↺');
+  }
+
+  /** Vitesse d'un organe VUE DU PORTE-SATELLITES : c'est le repère de Willis. */
+  function relativeLine(details, code) {
+    var relative = details && details.relativeToCarrier;
+    if (!relative || !finite(relative[code])) return null;
+    return (relative[code] >= 0 ? '+' : '') + relative[code].toFixed(3) + ' × ω entrée';
+  }
+
+  /** « 30 ✓ » ou « 30,5 ✗ entier attendu » — la condition et son verdict. */
+  function conditionLine(condition, requirement) {
+    if (!condition || !finite(condition.value)) return null;
+    var value = Number.isInteger(condition.value) ? String(condition.value) : condition.value.toFixed(2);
+    return value + (condition.satisfied ? ' ✓' : ' ✗ ' + requirement);
+  }
+
   function Inspector(container, options) { this.container = container; this.options = options || {}; this.solution = null; this.element = null; }
   Inspector.prototype.setSolution = function (solution, scene) { this.solution = solution; this.scene = scene || null; return this; };
   Inspector.prototype._element = function () {
@@ -49,17 +107,46 @@
   Inspector.prototype.show = function (index) {
     var data = model(this.solution, index, this.options.registry, this.scene); if (!data) return;
     var card = this._element(), self = this; card.textContent = '';
-    var header = document.createElement('header'), title = document.createElement('span'); title.className = 'type-badge ' + data.type; title.textContent = (index + 1) + ' · ' + data.type;
+    // §19 : les identifiants anglais restent dans le code, jamais à l'écran.
+    var header = document.createElement('header'), title = document.createElement('span');
+    title.className = 'type-badge ' + data.type;
+    title.textContent = (index + 1) + ' · ' + familyName(data.type, this.options.registry);
     var close = document.createElement('button'); close.type = 'button'; close.className = 'btn-small'; close.setAttribute('aria-label', 'Fermer'); close.textContent = '✕'; header.appendChild(title); header.appendChild(close); card.appendChild(header);
     // Groupes thématiques plutôt qu'une liste plate : on lit d'abord ce que
     // fait l'étage, ensuite comment il est taillé. Un groupe sans donnée
     // fiable n'est pas affiché du tout.
     var grid = document.createElement('div'); grid.className = 'inspector-grid';
+    var topology = data.topology;
     var GROUPS = [
       { title: null, rows: [
-        ['Dents', data.teeth.join(' → ') || null],
+        // Pour un planétaire, la denture seule ne dit rien : c'est la
+        // topologie qui définit le mécanisme.
+        ['Dents', topology ? null : (data.teeth.join(' → ') || null)],
         ['Rapport', format(data.ratio, 3, ' : 1')]
       ] },
+      topology ? { title: 'Architecture', rows: [
+        ['Entrée', memberLine(topology.input)],
+        ['Fixe', memberLine(topology.fixed)],
+        ['Sortie', memberLine(topology.output)]
+      ] } : null,
+      topology ? { title: 'Denture', rows: [
+        ['Solaire', finite(topology.sunTeeth) ? topology.sunTeeth + ' dents' : null],
+        ['Satellites', finite(topology.planetTeeth) ? topology.planetTeeth + ' dents × ' + topology.planetCount : null],
+        ['Couronne', finite(topology.ringTeeth) ? topology.ringTeeth + ' dents' : null]
+      ] } : null,
+      // §20 : deux trains aux mêmes dentures donnent des rapports opposés
+      // selon l'organe bloqué. Ce qui explique le rapport, c'est Willis et le
+      // rapport de base — pas la liste des dents.
+      topology && topology.details ? { title: 'Cinématique', rows: [
+        ['Relation', '(ωS − ωC) / (ωR − ωC) = r₀'],
+        ['Rapport de base r₀', format(topology.details.basicRatio, 3)],
+        ['Solaire / porte-sat.', relativeLine(topology.details, 'S')],
+        ['Couronne / porte-sat.', relativeLine(topology.details, 'R')]
+      ] } : null,
+      topology && topology.details ? { title: 'Montage', rows: [
+        ['Coaxialité (Zr − Zs)/2', conditionLine(topology.details.coaxial, 'entier attendu')],
+        ['Équirépartition (Zs + Zr)/n', conditionLine(topology.details.assembly, 'entier attendu')]
+      ] } : null,
       { title: 'Entrée', rows: [
         ['Vitesse', finite(data.inputRpm) ? format(Math.abs(data.inputRpm), 0, ' rpm') : null],
         ['Couple', format(data.inputTorque, 1, ' N·m')]
@@ -80,7 +167,7 @@
         ['SH contact', format(data.contactSafety, 2)]
       ] }
     ];
-    GROUPS.forEach(function (group) {
+    GROUPS.filter(Boolean).forEach(function (group) {
       var rows = group.rows.filter(function (row) { return row[1] != null && row[1] !== ''; });
       if (!rows.length) return;
       if (group.title) {

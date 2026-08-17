@@ -75,6 +75,78 @@
       generateCandidates: function (o) { return pairCandidates(id, o, constraints); } };
   }
   var types = {};
+
+  /**
+   * §19 : le nom d'une famille, une fois pour toutes. Cinq dictionnaires
+   * parallèles vivaient dans l'interface — explorateur, éditeur d'étage, plan
+   * de travail, conseiller, adaptateur historique — et divergeaient : le même
+   * train s'appelait « Épicycloïdal » ici, « planetary » là, « epicyclic »
+   * ailleurs, selon celui qui l'affichait. Le registre nomme, l'interface lit.
+   *
+   * Deux formes, parce que les deux servent réellement : la forme longue dans
+   * un titre ou une fiche, la courte dans une puce ou un badge d'étage.
+   */
+  var FAMILY_NAMES = {
+    spur: ['Engrenage droit', 'Droit'], helical: ['Engrenage hélicoïdal', 'Hélicoïdal'],
+    internal: ['Engrenage intérieur', 'Intérieur'], bevel: ['Engrenage conique', 'Conique'],
+    planetary: ['Train épicycloïdal', 'Épicycloïdal'], epicyclic: ['Train épicycloïdal', 'Épicycloïdal'],
+    worm: ['Vis sans fin', 'Vis sans fin'], belt: ['Courroie', 'Courroie'],
+    chain: ['Chaîne', 'Chaîne'], rack: ['Pignon-crémaillère', 'Crémaillère']
+  };
+
+  /**
+   * §9, §10 : les organes portent un nom, pas un code. « S », « R », « C »
+   * sont la notation d'un schéma cinématique, pas un vocabulaire d'interface :
+   * un sélecteur qui propose « S / R / C » n'apprend rien à qui ne connaît pas
+   * déjà les trains épicycloïdaux. Le nom passe donc devant, et le code reste
+   * entre parenthèses pour relier l'écran au schéma.
+   *
+   * `input`/`output` nomment la POSITION dans un couple ordinaire — menant et
+   * mené — et non la fonction dans la chaîne, qui est dite ailleurs.
+   */
+  var MEMBER_NAMES = { S: 'Solaire', R: 'Couronne', P: 'Satellite', C: 'Porte-satellites',
+    input: 'Menant', output: 'Mené', rack: 'Crémaillère', pinion: 'Pignon' };
+
+  function memberName(code) { return MEMBER_NAMES[code] || String(code == null ? '' : code); }
+
+  /** « Solaire (S) ». */
+  function memberLabel(code) { return memberName(code) + ' (' + code + ')'; }
+
+  /** Libellés d'un sélecteur d'organe, engendrés — jamais retapés. */
+  function memberOptionLabels(codes) {
+    var out = {};
+    codes.forEach(function (code) { out[code] = memberLabel(code); });
+    return out;
+  }
+
+  /** @param {'long'|'short'} [form] longue par défaut. */
+  function familyName(id, form) {
+    var entry = FAMILY_NAMES[id];
+    if (entry) return form === 'short' ? entry[1] : entry[0];
+    return types[id] ? types[id].name : String(id == null ? '' : id);
+  }
+
+  /**
+   * §4, §5 : les trois organes d'un planétaire — solaire, couronne,
+   * porte-satellites — occupent chacun une fonction, et une seule. Les six
+   * permutations sont toutes réalisables, et donnent des rapports, des sens et
+   * des plages très différents ; c'est pourquoi la recherche automatique doit
+   * pouvoir les essayer toutes plutôt que la seule S → C, couronne fixe.
+   */
+  var PLANETARY_TOPOLOGIES = [
+    { inputMember: 'S', fixed: 'R', outputMember: 'C' },
+    { inputMember: 'S', fixed: 'C', outputMember: 'R' },
+    { inputMember: 'R', fixed: 'S', outputMember: 'C' },
+    { inputMember: 'R', fixed: 'C', outputMember: 'S' },
+    { inputMember: 'C', fixed: 'S', outputMember: 'R' },
+    { inputMember: 'C', fixed: 'R', outputMember: 'S' }
+  ];
+
+  /** Les trois organes sont-ils bien distincts ? */
+  function distinctMembers(s) {
+    var input = s.inputMember || 'S', output = s.outputMember || 'C', fixed = s.fixed || 'R';
+    return input !== output && input !== fixed && output !== fixed;
+  }
   var CAPABILITIES={
     spur:['evaluated','evaluated','evaluated',true],helical:['evaluated','evaluated','evaluated',true],internal:['evaluated','evaluated','evaluated',true],
     bevel:['evaluated','partial','partial',true],worm:['evaluated','unsupported','unsupported',true],planetary:['partial','partial','partial',true],
@@ -105,12 +177,105 @@
     else speeds.R = ((1 + k) * speeds.C - speeds.S) / k;
     return { speeds: speeds, ratio: inputSpeed / speeds[output] };
   }
+  /**
+   * §20, §21 : ce qu'il faut savoir d'un train épicycloïdal au-delà de
+   * « 20 → 80 ». Un planétaire n'est pas décrit par ses dentures : son rapport
+   * vient de la relation de Willis, et deux trains aux mêmes dentures donnent
+   * des rapports opposés selon l'organe bloqué. L'inspecteur et l'analyse
+   * mécanique lisent donc CES grandeurs-là, calculées ici une seule fois.
+   *
+   * Le rapport de BASE est celui qu'aurait le train porte-satellites bloqué :
+   * c'est l'invariant géométrique du mécanisme, indépendant de la topologie
+   * choisie, et c'est lui qu'on retrouve d'un bout à l'autre de Willis.
+   */
+  function planetaryDetails(s) {
+    if (!s) return null;
+    var zs = s.sunTeeth, zr = s.ringTeeth;
+    var n = Math.max(2, Math.round(Number.isFinite(s.planetCount) ? s.planetCount : 3));
+    var zp = (zr - zs) / 2;
+    var speeds = null;
+    try { speeds = planetarySpeeds(s, 1).speeds; } catch (ignore) { speeds = null; }
+    var relative = speeds ? { S: speeds.S - speeds.C, R: speeds.R - speeds.C, C: 0 } : null;
+    return {
+      members: { input: s.inputMember || 'S', output: s.outputMember || 'C', fixed: s.fixed || 'R' },
+      sunTeeth: zs, ringTeeth: zr, planetTeeth: zp, planetCount: n,
+      basicRatio: Number.isFinite(zs) && zs !== 0 ? -zr / zs : null,
+      // Deux conditions de montage, distinctes : la coaxialité impose un
+      // satellite entier, l'équirépartition impose que les n satellites
+      // tombent tous en face d'une dent.
+      coaxial: { value: zp, satisfied: Number.isInteger(zp) && zp > 0 },
+      assembly: { value: (zs + zr) / n, satisfied: Number.isInteger((zs + zr) / n) },
+      speeds: speeds, relativeToCarrier: relative
+    };
+  }
+
+  /**
+   * §30 : l'effort dans un engrènement de planétaire, quel que soit l'organe
+   * menant.
+   *
+   * Le calcul rapportait TOUJOURS le couple d'entrée au diamètre du solaire.
+   * Juste quand le solaire mène ; faux sinon, et de beaucoup : une couronne à
+   * 70 dents menant un solaire à 20 donnait un effort surestimé d'un facteur
+   * 3,5, donc des facteurs de sécurité qui n'avaient plus de sens.
+   *
+   * Le couple d'entrée s'applique sur le membre MENANT, à son rayon :
+   *   solaire ou couronne → Ft = 2000·T / (d · n)
+   *   porte-satellites    → sa denture est le cercle des centres de satellites,
+   *                         et chaque satellite reçoit du porte-satellites une
+   *                         force qui se PARTAGE entre ses deux engrènements ;
+   *                         d'où le diamètre équivalent (ds + dr).
+   * Les trois expressions donnent bien le même effort de denture pour un même
+   * train, ce qui est le contrôle de cohérence naturel.
+   */
+  function planetaryForces(s, torqueNm) {
+    var p = s.parameters || {}, m = p.module || 1;
+    var ds = m * s.sunTeeth, dr = m * s.ringTeeth;
+    var n = Math.max(1, Math.round(Number.isFinite(s.planetCount) ? s.planetCount : 3));
+    var input = s.inputMember || 'S';
+    var equivalent = input === 'R' ? dr : input === 'C' ? ds + dr : ds;
+    if (!(equivalent > 0)) return { tangentialN: null, radialN: null, axialN: 0 };
+    var ft = 2000 * torqueNm / equivalent / n;
+    return { tangentialN: ft, radialN: ft * Math.tan(radians(p.pressureAngle || 20)), axialN: 0,
+      // Ce que l'effort décrit : un engrènement, pas l'étage entier.
+      referenceMember: input, planetCount: n, referenceDiameter: equivalent };
+  }
+
   register({ id: 'planetary', aliases: ['epicyclic'], name: 'Train épicycloïdal', constraints: { minInput: 12, maxInput: 60, minOutput: 30, maxOutput: 200, maxRatio: 12 }, parameterDefinitions: {},
-    validateConfiguration: function (s) { var zp = (s.ringTeeth - s.sunTeeth) / 2, n = s.planetCount || 3; return zp > 0 && Number.isInteger(zp) && Number.isInteger((s.sunTeeth + s.ringTeeth) / n); },
+    validateConfiguration: function (s) {
+      // §4 : entrée, sortie et organe fixe sont TROIS organes distincts. Sans
+      // ce contrôle, une saisie « entrée = solaire, sortie = solaire » partait
+      // au solveur et n'échouait qu'au calcul des vitesses, très loin de la
+      // cause. Le moteur ne fait jamais confiance à l'interface.
+      if (!distinctMembers(s)) return false;
+      var zp = (s.ringTeeth - s.sunTeeth) / 2, n = s.planetCount || 3;
+      return zp > 0 && Number.isInteger(zp) && Number.isInteger((s.sunTeeth + s.ringTeeth) / n);
+    },
     calculateRatio: function (s) { return planetarySpeeds(s, 1).ratio; }, calculateSpeeds: planetarySpeeds,
     calculateGeometry: function (s) { var m = s.parameters.module || 1,ds=m*s.sunTeeth,dr=m*s.ringTeeth;return geometryContract(s,{ sunDiameter:ds, ringDiameter:dr, planetDiameter: m * (s.ringTeeth - s.sunTeeth) / 2,pitchDiameterInput:s.inputMember==='R'?dr:ds,pitchDiameterOutput:s.outputMember==='R'?dr:(s.outputMember==='S'?ds:dr), maxDiameter: m * (s.ringTeeth + 2), width: s.parameters.faceWidth || 10 * m, centerDistance: 0,axisRelation:'coaxial' }); },
-    calculateEfficiency: function () { return 0.97; }, calculateForces: function (s, t) { var d = s.parameters.module * s.sunTeeth, n = s.planetCount || 3, ft = 2000 * t / d / n; return { tangentialN: ft, radialN: ft * Math.tan(radians(s.parameters.pressureAngle || 20)), axialN: 0 }; }, rotationDirection: function (s) { return Math.sign(this.calculateRatio(s)); },
-    generateCandidates: function (o) { var out = [], p = o.typeParameters.planetary || o.typeParameters.epicyclic || {}; for (var zs = Math.max(12, o.inputMin); zs <= Math.min(60, o.inputMax); zs++) for (var zr = Math.max(30, o.outputMin); zr <= Math.min(200, o.outputMax); zr++) { var s = { type: 'planetary', sunTeeth: zs, ringTeeth: zr, planetTeeth: (zr-zs)/2, planetCount: p.planetCount || 3, inputMember: p.inputMember || 'S', outputMember: p.outputMember || 'C', fixed: p.fixed || 'R', parameters: p }; if (this.validateConfiguration(s)) out.push(s); } return out; } });
+    calculateEfficiency: function () { return 0.97; }, calculateForces: planetaryForces, rotationDirection: function (s) { return Math.sign(this.calculateRatio(s)); },
+    generateCandidates: function (o) {
+      var out = [], p = o.typeParameters.planetary || o.typeParameters.epicyclic || {};
+      // §5 : la recherche n'essayait qu'UNE topologie — solaire menant,
+      // couronne fixe — alors que les six permutations sont réalisables et
+      // donnent des rapports, des sens et des plages entièrement différents.
+      // Chercher « le meilleur réducteur » en ignorant cinq d'entre elles
+      // revenait à ne pas chercher.
+      var topologies = p.topologyMode === 'fixed'
+        ? [{ inputMember: p.inputMember || 'S', outputMember: p.outputMember || 'C', fixed: p.fixed || 'R' }]
+        : PLANETARY_TOPOLOGIES;
+      for (var zs = Math.max(12, o.inputMin); zs <= Math.min(60, o.inputMax); zs++) {
+        for (var zr = Math.max(30, o.outputMin); zr <= Math.min(200, o.outputMax); zr++) {
+          for (var t = 0; t < topologies.length; t++) {
+            var s = { type: 'planetary', sunTeeth: zs, ringTeeth: zr, planetTeeth: (zr - zs) / 2,
+              planetCount: p.planetCount || 3,
+              inputMember: topologies[t].inputMember, outputMember: topologies[t].outputMember,
+              fixed: topologies[t].fixed, parameters: p };
+            if (this.validateConfiguration(s)) out.push(s);
+          }
+        }
+      }
+      return out;
+    } });
   function beltLength(d1,d2,c,crossed){return 2*c+Math.PI*(d1+d2)/2+Math.pow(crossed?d1+d2:d2-d1,2)/(4*c);}
   function solveBeltCenter(d1,d2,length,crossed,guess){var c=guess;for(var i=0;i<12;i++){var f=beltLength(d1,d2,c,crossed)-length,h=.001,df=(beltLength(d1,d2,c+h,crossed)-beltLength(d1,d2,c-h,crossed))/(2*h);c-=f/df;}return c;}
   function beltGeometry(s) { var d1 = s.input.teeth * s.parameters.pitch / Math.PI, d2 = s.output.teeth * s.parameters.pitch / Math.PI, c = s.parameters.centerDistance,crossed=!!s.parameters.crossed, theoretical=beltLength(d1,d2,c,crossed),teeth=Math.max(1,Math.round(theoretical/s.parameters.pitch)),actual=teeth*s.parameters.pitch,corrected=solveBeltCenter(d1,d2,actual,crossed,c),arg=(crossed?d1+d2:Math.abs(d2-d1))/(2*corrected),wrap=crossed?180+2*Math.asin(Math.min(1,arg))*180/Math.PI:180-2*Math.asin(Math.min(1,arg))*180/Math.PI; return geometryContract(s,{ pitchDiameterInput:d1,pitchDiameterOutput:d2,centerDistance:corrected,theoreticalCenterDistance:c,theoreticalLength:theoretical,selectedBeltTeeth:teeth,actualLength:actual,correctedCenterDistance:corrected,length:actual,beltTeeth:teeth,wrapAngleDeg:wrap,maxDiameter:Math.max(d1,d2),width:s.parameters.width||10 }); }
@@ -126,11 +291,14 @@
     internal:{pressureAngle:{label:'Angle de pression (°)',type:'number',default:20,min:14.5,max:25,step:.5},profileShiftInput:{label:'Déport pignon x1',type:'number',default:0,min:-1,max:1,step:.05},profileShiftOutput:{label:'Déport couronne x2',type:'number',default:0,min:-1,max:1,step:.05}},
     bevel:{shaftAngle:{label:'Angle entre axes (°)',type:'number',default:90,min:10,max:170,step:5},faceWidth:{label:'Largeur (mm)',type:'number',default:10,min:1,step:.5}},
     worm:{wormStartsMin:{label:'Filets minimum',type:'number',default:1,min:1,max:6,step:1},wormStartsMax:{label:'Filets maximum',type:'number',default:6,min:1,max:6,step:1},leadAngle:{label:"Angle d'avance (°)",type:'number',default:20,min:5,max:45,step:1}},
-    planetary:{planetCount:{label:'Nombre de satellites',type:'number',default:3,min:2,max:6,step:1},inputMember:{label:'Organe entrée',type:'select',default:'S',options:['S','R','C']},outputMember:{label:'Organe sortie',type:'select',default:'C',options:['C','S','R']},fixed:{label:'Organe fixe',type:'select',default:'R',options:['R','S','C']}},
+    // §26, §27, §28 : « automatique » est la valeur par défaut et le reste
+    // pour qui ne veut pas connaître S/R/C. Choisir « imposée » distingue une
+    // topologie VOULUE d'une topologie simplement retenue par le moteur.
+    planetary:{topologyMode:{label:'Configuration',type:'select',default:'auto',options:['auto','fixed'],optionLabels:{auto:'Automatique',fixed:'Imposée'}},planetCount:{label:'Nombre de satellites',type:'number',default:3,min:2,max:6,step:1},inputMember:{label:'Organe d’entrée',type:'select',default:'S',options:['S','R','C'],optionLabels:memberOptionLabels(['S','R','C']),dependsOn:{topologyMode:'fixed'}},fixed:{label:'Organe fixe',type:'select',default:'R',options:['R','S','C'],optionLabels:memberOptionLabels(['S','R','C']),dependsOn:{topologyMode:'fixed'}},outputMember:{label:'Organe de sortie',type:'select',default:'C',options:['C','S','R'],optionLabels:memberOptionLabels(['S','R','C']),dependsOn:{topologyMode:'fixed'}}},
     belt:{profile:{label:'Profil',type:'select',default:'GT2',options:['GT2','GT3','HTD-3M','HTD-5M','HTD-8M','T5','T10']},centerDistance:{label:'Entraxe (mm)',type:'number',default:100,min:1,step:1},crossed:{label:'Courroie croisée',type:'checkbox',default:false}},
     chain:{pitch:{label:'Pas (mm)',type:'number',default:12.7,min:1,step:.1},centerDistance:{label:'Entraxe (mm)',type:'number',default:200,min:1,step:1}},
     rack:{faceWidth:{label:'Largeur pignon/crémaillère (mm)',type:'number',default:10,min:1,step:.5}}
   };
   var beltPitches={GT2:2,GT3:3,'HTD-3M':3,'HTD-5M':5,'HTD-8M':8,T5:5,T10:10};
-  return { register: register, get: function(id){return types[id];}, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
+  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, planetaryDetails: planetaryDetails, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
 });

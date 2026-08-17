@@ -93,6 +93,16 @@
 .carrier-arms path { fill: none; stroke: var(--muted); stroke-width: 1.2; }
 .carrier-hub { fill: var(--surface-1); stroke: var(--muted); stroke-width: .5; }
 
+/* Fidélité de la vue (§22, §23) : discret, mais toujours présent. */
+.viewer-fidelity { margin: .25rem 0 0; font-size: .78rem; color: var(--muted); }
+.viewer-fidelity.has-derived { color: var(--warning); }
+
+/* Bâti (§18) : l'organe bloqué porte les hachures normalisées. Le trait reste
+   fin et sourd — c'est un fait de montage, pas une alerte —, et non mis à
+   l'échelle du zoom pour que le peigne garde sa densité de lecture. */
+.ground-boundary { fill: none; stroke: var(--warning); stroke-width: .6; opacity: .8; vector-effect: non-scaling-stroke; }
+.ground-hatch { stroke: var(--warning); stroke-width: .5; opacity: .75; vector-effect: non-scaling-stroke; }
+
 /* Courroie et chaîne : chemin géométrique + éléments défilants. */
 .belt-line { stroke: var(--ink); stroke-width: 1.4; fill: none; }
 .chain-line { stroke: var(--ink); stroke-width: 1.4; fill: none; stroke-dasharray: 3 2.2; }
@@ -121,6 +131,8 @@
 .geometry-member.internal-ring { fill: none; stroke-width: 3; }
 .geometry-member.planet { fill: var(--surface-2); }
 .cone-member, .worm-member, .carrier-member { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+/* §15 : les filets de la vis, seuls animés — le corps et l'axe ne bougent pas. */
+.geometry-svg .worm-thread { stroke: var(--accent); stroke-width: .8; fill: none; opacity: .8; vector-effect: non-scaling-stroke; }
 .carrier-member { stroke: var(--muted); stroke-width: 1.2; }
 .construction-circle { fill: none; stroke: var(--muted); stroke-width: .9; vector-effect: non-scaling-stroke; }
 .base-circle { stroke-dasharray: 2 3; }

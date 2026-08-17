@@ -78,10 +78,38 @@ test('a bevel gear exposes its pitch cone and the intersection of the axes', () 
   assert.ok(built.rotor.some(s => s.attrs.class === 'cone-apex-point'), 'point d\'intersection des axes');
 });
 
-test('a worm shows a continuous thread and its lead angle', () => {
+test('a worm keeps its body still and groups the threads that move', () => {
   const built = Primitives.build(wheel({ kind: 'worm', teeth: 3, pitchD: 20, leadAngle: 18 }), { lod: LEVELS.TECHNICAL });
-  assert.ok(built.rotor.filter(s => s.attrs.class === 'worm-thread').length >= 2);
+  // §11 : corps et axe ne sont PAS dans le groupe animé — c'est tout l'objet
+  // de la séparation, la vis tournait en se déplaçant le long de son arbre.
+  const phase = built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-phase');
+  assert.ok(phase, 'les filets doivent former un groupe à part');
+  assert.ok(phase.children.length >= 2);
+  assert.ok(phase.children.every(s => s.attrs.class === 'worm-thread'));
+  assert.ok(built.rotor.some(s => s.attrs && s.attrs.class && s.attrs.class.includes('worm-body')));
+  assert.ok(built.rotor.some(s => s.attrs && s.attrs.class === 'stage-axis'));
   assert.ok(built.rotor.some(s => s.text && s.text.includes('γ 18°')));
+});
+
+test('the thread pattern overruns the body so the animation loops without a jump', () => {
+  const w = wheel({ kind: 'worm', teeth: 1, pitchD: 20, module: 2, leadAngle: 18 });
+  const geometry = Primitives.wormGeometry(w);
+  const built = Primitives.build(w, { lod: LEVELS.INVOLUTE });
+  const phase = built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-phase');
+  const xs = phase.children.flatMap(p => p.attrs.d.match(/-?\d+(\.\d+)?(?= )/g).map(Number));
+  // §13 : sans débord, un filet disparaîtrait à une extrémité avant que le
+  // suivant n'entre par l'autre, et la boucle sauterait à chaque tour.
+  assert.ok(Math.min(...xs) < -geometry.length / 2, 'motif débordant à gauche');
+  assert.ok(Math.max(...xs) > geometry.length / 2, 'motif débordant à droite');
+});
+
+test('the number of starts changes the pattern, not just the visual pitch', () => {
+  const one = Primitives.build(wheel({ kind: 'worm', teeth: 1, pitchD: 20, module: 2 }), { lod: LEVELS.INVOLUTE });
+  const four = Primitives.build(wheel({ kind: 'worm', teeth: 4, pitchD: 20, module: 2 }), { lod: LEVELS.INVOLUTE });
+  const count = built => built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-phase').children.length;
+  // §14 : quatre filets déphasés, pas un pas dessiné quatre fois plus grand.
+  assert.ok(count(four) > count(one), 'une vis à 4 filets montre plus de traits');
+  assert.equal(Primitives.wormGeometry(wheel({ kind: 'worm', teeth: 4, module: 2, pitchD: 20 })).starts, 4);
 });
 
 test('a rack is drawn at the real circular pitch over the whole travel', () => {

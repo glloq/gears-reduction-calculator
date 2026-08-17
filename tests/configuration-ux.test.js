@@ -79,7 +79,13 @@ test('a new search imposes no value the user never chose', () => {
   // ressusciterait au premier chargement.
   const mirrors = html.slice(html.indexOf('id="legacyMirrors"'), html.indexOf('id="technologyPanel"'));
   assert.doesNotMatch(mirrors, /value="\d/, 'aucune valeur d’usine dans les miroirs');
-  assert.match(app, /openSearchModalIfEmpty/);
+  // §1 : ouvrir l'application, c'est vouloir chercher. Le modal ne dépend plus
+  // de l'apparente vacuité de la session — une vieille configuration rangée
+  // suffisait à la remplir, donc à sauter le point d'entrée sans rien demander.
+  assert.match(app, /workbench\.openInitialSearchModal\(source\)/);
+  assert.match(workbench, /Workbench\.prototype\.openInitialSearchModal = function/);
+  assert.match(workbench, /if \(source === 'sharedUrl'\) return this;/);
+  assert.doesNotMatch(workbench, /openSearchModalIfEmpty/);
 });
 
 // ===== §18 : brouillon =====
@@ -602,4 +608,33 @@ test('the side summary reports what will actually be searched', () => {
   assert.match(session, /if \(kept\.length\) sections\.push/);
   // Et l'unité n'est jamais répétée derrière `describe()`.
   assert.doesNotMatch(session, /describe\(\) \+ ' rpm'/);
+});
+
+// ===== §29 : une seule mémoire, sous un schéma nommé =====
+
+test('the flat format is only ever read, never written any more', () => {
+  const app = fs.readFileSync('js/app.js', 'utf8');
+  const params = fs.readFileSync('js/models/SearchParams.js', 'utf8');
+  // Deux mémoires de la même recherche, dont une jamais relue : la seconde
+  // était périmée dès la première recherche.
+  assert.match(app, /SessionStore\.dropLegacy\(\)/);
+  assert.match(app, /SessionStore\.save\(session\)/);
+  // Il reste LU, pour convertir une configuration d'avant la refonte.
+  assert.match(params, /localStorage\.getItem\(LEGACY_KEY\)/);
+  // Cinq champs « pro » étaient sauvegardés alors que leurs contrôles
+  // n'existent plus dans la page : on enregistrait et on relisait du vide.
+  assert.doesNotMatch(params, /PRO_FIELDS/);
+  const html = fs.readFileSync('index.html', 'utf8');
+  ['angle_pression', 'coeff_frottement', 'largeur_dent', 'limite_elastique', 'qualite_iso']
+    .forEach(id => assert.doesNotMatch(html, new RegExp('id="' + id + '"'), id + ' est revenu'));
+});
+
+test('every field the flat format still writes exists in the page', () => {
+  const params = fs.readFileSync('js/models/SearchParams.js', 'utf8');
+  const html = fs.readFileSync('index.html', 'utf8');
+  const save = params.slice(params.indexOf('SearchParams.prototype.save'), params.indexOf('var SIMPLE_FIELDS'));
+  const ids = [...save.matchAll(/getElementById\("([a-z_0-9]+)"\)/g)].map(m => m[1]);
+  assert.ok(ids.length >= 8, 'lecture du bloc de sauvegarde attendue');
+  // Sans ce garde-fou, des miroirs morts s'accumulent sans que rien ne le dise.
+  ids.forEach(id => assert.match(html, new RegExp('id="' + id + '"'), id + ' sauvegardé mais absent de la page'));
 });

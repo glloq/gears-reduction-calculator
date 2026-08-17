@@ -8,11 +8,8 @@
 (function (GearApp) {
   'use strict';
 
-  var TYPE_LABELS = {
-    spur: 'Droit', helical: 'Hélicoïdal', internal: 'Intérieur', bevel: 'Conique',
-    planetary: 'Épicycloïdal', epicyclic: 'Épicycloïdal', worm: 'Vis sans fin',
-    belt: 'Courroie', chain: 'Chaîne', rack: 'Crémaillère'
-  };
+  // §19 : le nom d'une famille vient du registre, pas d'une table locale.
+  var familyName = GearTransmissionRegistry.familyName;
 
   var NUMERIC_FIELDS = [
     'refine_error_max', 'refine_efficiency_min', 'refine_sf_min', 'refine_sh_min',
@@ -231,7 +228,7 @@
       chip.className = 'refine-chip' + (active ? ' active' : '');
       chip.dataset.type = type;
       chip.setAttribute('aria-pressed', String(active));
-      chip.textContent = (TYPE_LABELS[type] || type);
+      chip.textContent = familyName(type, 'short');
       var count = document.createElement('span');
       count.className = 'refine-chip-count';
       count.textContent = String(counts[type] || 0);

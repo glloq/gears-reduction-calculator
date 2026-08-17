@@ -60,7 +60,46 @@
     // instant, quelle que soit la vue affichée.
     this.inspector.setSolution(solution, rendered && rendered.scene);
     this._applyState(rendered);
+    this._renderFidelity(rendered);
     return rendered;
+  };
+
+  /**
+   * §22, §23 : ce que la vue courante montre à l'ÉCHELLE, et ce qu'elle ne
+   * fait que suggérer.
+   *
+   * Les trois vues n'ont pas le même statut, et rien ne le disait : la
+   * Cinématique est un schéma symbolique — ses distances ne veulent rien dire
+   * — tandis que la Géométrie est une vue cotée. Lire la première comme la
+   * seconde, c'est mesurer un encombrement sur un dessin qui n'en porte
+   * aucun. À quoi s'ajoute le cas particulier d'une solution dont le moteur
+   * n'a pas fourni toutes les cotes : la scène l'a déjà noté membre par
+   * membre, encore fallait-il le dire.
+   */
+  var FIDELITY = {
+    teeth: 'Dentures et entraxes à l’échelle réelle ; la longueur des arbres est schématique.',
+    geometry: 'Vue cotée : diamètres, entraxes et courses sont ceux du calcul.',
+    kinematic: 'Schéma symbolique : les positions et les tailles ne sont pas à l’échelle, seuls les liens et les vitesses ont un sens.'
+  };
+
+  ViewerToolbar.prototype._renderFidelity = function (rendered) {
+    var host = document.getElementById('viewerFidelity');
+    if (!host) return;
+    var text = FIDELITY[this.currentView] || '';
+    var scene = rendered && rendered.scene;
+    // Une cote reconstruite faute de mieux ne doit pas être lue comme une cote
+    // calculée : la scène marque ces membres, la vue le répercute.
+    var derived = scene && scene.members
+      ? scene.members.filter(function (member) { return member.schematic; })
+      : [];
+    if (derived.length) {
+      var names = derived.map(function (member) { return member.memberName || member.role; });
+      var unique = names.filter(function (name, i) { return names.indexOf(name) === i; });
+      text += ' Cotes reconstruites, non calculées, pour : ' + unique.join(', ') + '.';
+    }
+    host.textContent = text;
+    host.hidden = !text;
+    host.classList.toggle('has-derived', derived.length > 0);
   };
 
   /** Réapplique l'état partagé à la vue qui vient d'être rendue. */

@@ -31,6 +31,14 @@
     return Object.assign({
       memberId: entry ? entry.id : null,
       role: entry ? entry.role : 'input',
+      // `role` est surchargé plus bas par la classe CSS du dessin (sun, ring,
+      // planet) : le code du schéma et le nommage voyagent donc à part, tels
+      // que la scène les a établis. Aucune vue ne les recalcule (§9, §18).
+      memberCode: entry ? entry.role : null,
+      memberName: entry ? entry.memberName : null,
+      localizedRole: entry ? entry.localizedRole : null,
+      functionalRole: entry ? entry.functionalRole : null,
+      rotationDisplayMode: entry ? entry.rotationDisplayMode : null,
       kind: entry ? entry.kind : 'gear',
       pitchD: pitch,
       outsideD: finite(g.outsideDiameter, pitch + 2 * m),
@@ -147,10 +155,19 @@
             orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
           }));
         }
-        entry.members = { input: stage.inputMember || 'S', output: stage.outputMember || 'C', fixed: stage.fixed || 'R' };
+        // La topologie est celle que la scène a établie, pas une relecture de
+        // `stage.inputMember` : la vue n'a plus à savoir lire un étage (§31).
+        entry.members = {};
+        ['input', 'output', 'fixed'].forEach(function (functional) {
+          var member = scene.functionalMember ? scene.functionalMember(index, functional) : null;
+          if (member) entry.members[functional] = member.role;
+        });
         entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
         entry.carrier = { memberId: prefix + 'C', cx: cursor.x, cy: cursor.y, orbit: orbit, count: count,
-          speed: entry.carrierSpeed };
+          speed: entry.carrierSpeed,
+          functionalRole: byRole.C ? byRole.C.functionalRole : null,
+          memberName: byRole.C ? byRole.C.memberName : null,
+          localizedRole: byRole.C ? byRole.C.localizedRole : null };
         entry.stageRadius = ring.outsideD / 2;
         placed.push(ring);
         maxX = Math.max(maxX, cursor.x + ring.outsideD / 2);
@@ -242,6 +259,29 @@
 
     var wheels = [];
     out.forEach(function (entry) { entry.wheels.forEach(function (w) { wheels.push(w); }); });
+
+    // §17 : les puces Entrée/Sortie se posaient sur wheels[0] et wheels[1],
+    // c'est-à-dire sur l'ORDRE de dessin. Pour un planétaire, wheels[1] est la
+    // couronne : la sortie était donc affichée sur l'organe FIXE, y compris
+    // dans la configuration par défaut. La scène sait quel membre porte quelle
+    // fonction — on le lui demande.
+    function anchorFor(stageIndex, functional, fallback) {
+      var wanted = scene.functionalMember ? scene.functionalMember(stageIndex, functional) : null;
+      if (!wanted) return fallback || null;
+      for (var i = 0; i < wheels.length; i++) {
+        if (wheels[i].memberId === wanted.id) return wheels[i];
+      }
+      // Le porte-satellites n'est pas une roue : il n'a pas de denture, donc
+      // pas de `wheel`. Il peut pourtant parfaitement porter l'entrée ou la
+      // sortie, et c'est même la configuration planétaire la plus courante.
+      var stage = out[stageIndex];
+      if (stage && stage.carrier && stage.carrier.memberId === wanted.id) {
+        return { memberId: wanted.id, cx: stage.carrier.cx, cy: stage.carrier.cy,
+          chipR: finite(stage.carrier.chipR, finite(stage.carrier.orbit, 10) * 1.15) };
+      }
+      return fallback || null;
+    }
+
     var first = out[0], last = out[out.length - 1];
     return {
       stages: out,
@@ -249,9 +289,8 @@
       scene: scene,
       kinematics: scene.kinematics,
       io: {
-        input: first ? first.wheels[0] : null,
-        // Pour un planétaire, wheels[1] est la couronne (repère visuel de sortie).
-        output: last ? (last.wheels[1] || last.wheels[0]) : null
+        input: anchorFor(0, 'input', first ? first.wheels[0] : null),
+        output: anchorFor(out.length - 1, 'output', last ? last.wheels[0] : null)
       }
     };
   }

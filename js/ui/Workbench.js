@@ -15,11 +15,8 @@
     global: 'Équilibre précision, dimensions, rendement, résistance et fabrication.'
   };
 
-  var TYPE_NAMES = {
-    spur: 'Droit', helical: 'Hélicoïdal', internal: 'Intérieur', bevel: 'Conique',
-    epicyclic: 'Épicycloïdal', planetary: 'Épicycloïdal',
-    worm: 'Vis sans fin', belt: 'Courroie', chain: 'Chaîne', rack: 'Crémaillère'
-  };
+  // §19 : le nom d'une famille vient du registre, pas d'une table locale.
+  var familyName = GearTransmissionRegistry.familyName;
 
   function el(id) { return document.getElementById(id); }
   function finite(value, digits) { return Number.isFinite(value) ? value.toFixed(digits) : '—'; }
@@ -163,9 +160,35 @@
     this._refreshConfigurationFlow();
   };
 
-  /** Le modal s'ouvre de lui-même quand il n'y a rien à chercher (§24.1). */
-  Workbench.prototype.openSearchModalIfEmpty = function () {
-    if (this.session && this.session.isEmpty() && this.modal) this.modal.open(0);
+  /**
+   * Reprend une session rangée sous son schéma : elle remplace le modèle, et
+   * les miroirs sont réécrits depuis lui — l'inverse du chemin historique.
+   */
+  Workbench.prototype.adoptStoredSession = function (data) {
+    if (!this.session || !data) return this.refreshAfterRestore(false);
+    this.session.adopt(new GearApp.ui.SearchSession(data));
+    this._restored = true;
+    this._refreshConfigurationFlow();
+    return this;
+  };
+
+  /**
+   * §1 : ouvrir l'application, c'est vouloir chercher. Le modal ne s'ouvrait
+   * que si la session semblait VIDE — et une configuration rangée dans le
+   * localStorage par une version précédente suffisait à la remplir, donc à
+   * sauter le point d'entrée sans rien demander à personne.
+   *
+   * Un lien partagé est la seule exception : il désigne explicitement une
+   * recherche, et l'ouvrir sur un modal reviendrait à ignorer le lien.
+   * Une recherche relue du stockage n'est pas une demande : c'est un
+   * PRÉREMPLISSAGE, et le modal s'ouvre par-dessus.
+   *
+   * @param {'fresh'|'localStorage'|'sharedUrl'} source
+   */
+  Workbench.prototype.openInitialSearchModal = function (source) {
+    if (!this.modal) return this;
+    if (source === 'sharedUrl') return this;
+    this.modal.open(0);
     return this;
   };
 
@@ -256,7 +279,7 @@
       var group = document.createElement('details');
       group.className = 'type-param-group';
       var summary = document.createElement('summary');
-      summary.innerHTML = '<span class="type-badge ' + typeId + '">' + (TYPE_NAMES[typeId] || typeId) + '</span><em>réglages</em>';
+      summary.innerHTML = '<span class="type-badge ' + typeId + '">' + familyName(typeId, 'short') + '</span><em>réglages</em>';
       group.appendChild(summary);
 
       Object.keys(paramDefs).forEach(function (key) {
@@ -287,7 +310,9 @@
             def.options.forEach(function (opt, i) {
               var option = document.createElement('option');
               option.value = opt;
-              option.textContent = def.optionLabels ? def.optionLabels[i] : opt;
+              // Les libellés sont donnés par valeur (`{S: 'Solaire (S)'}`) ;
+              // l'indexation par rang ne marchait que pour un tableau.
+              option.textContent = def.optionLabels ? (def.optionLabels[opt] || def.optionLabels[i] || opt) : opt;
               if (opt === def.default) option.selected = true;
               input.appendChild(option);
             });
@@ -402,7 +427,7 @@
       });
       activeTypes.forEach(function (type) {
         var selected = Array.isArray(slot) && slot.indexOf(type) !== -1;
-        chip(TYPE_NAMES[type] || type, selected, function () {
+        chip(familyName(type, 'short'), selected, function () {
           var current = Array.isArray(template[stageIndex]) ? template[stageIndex].slice() : [];
           var position = current.indexOf(type);
           if (position === -1) current.push(type); else current.splice(position, 1);
@@ -717,7 +742,7 @@
         return '<span class="recommendation-badge ' + id + '">' + (id === 'recommended' ? '★ ' : '') + Evaluator.label(id, intent) + '</span>';
       }).join('');
       var origin = s.origin === 'variante' ? '<span class="recommendation-badge variant">Variante</span>' : '';
-      var architecture = (s.stages || []).map(function (x) { return TYPE_NAMES[x.type] || x.type; }).join(' → ');
+      var architecture = (s.stages || []).map(function (x) { return familyName(x.type, 'short'); }).join(' → ');
       // Choix 13C : la carte dit aussi si la solution TIENT les contraintes.
       var violations = annotation.compliance[poolIndexOf(position)] || (preferences ? [] : null);
       var why = Evaluator.explain(s, badges, violations, intent);

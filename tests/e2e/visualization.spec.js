@@ -144,10 +144,120 @@ test('a planetary draws every real planet, its carrier and its three roles', asy
   expect(motion.end.spin).not.toBe(motion.start.spin);
 
   await showView(page, 'kinematic');
+  // §9, §10 : « INPUT S » ne disait ni de quel organe il s'agit ni ce qu'il
+  // fait. L'organe est nommé, son code de schéma reste entre parenthèses.
   const roles = await page.locator('.kinematic-stage .role-label').allTextContents();
-  expect(roles.join(' ')).toContain('INPUT S');
-  expect(roles.join(' ')).toContain('OUTPUT C');
-  expect(roles.join(' ')).toContain('FIXED R');
+  expect(roles.join(' ')).toContain('Entrée · Solaire (S)');
+  expect(roles.join(' ')).toContain('Sortie · Porte-satellites (C)');
+  expect(roles.join(' ')).toContain('Fixe · Couronne (R)');
+});
+
+test('the fixed member carries a ground symbol in all three views (§18)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  // Couronne bloquée : c'est ELLE qui doit porter les hachures, dans les trois
+  // vues. Sans symbole, seule l'étiquette disait quel organe est immobile.
+  for (const view of ['teeth', 'geometry', 'kinematic']) {
+    await showView(page, view);
+    const hatches = await page.locator('.ground-hatch').count();
+    expect(hatches, view).toBeGreaterThan(3);
+  }
+
+  // Et le symbole SUIT la topologie : solaire bloqué, il change de place. La
+  // mesure se fait en Denture, la seule vue où le bâti épouse la pièce réelle.
+  await showView(page, 'teeth');
+  const moved = await page.evaluate(() => {
+    const box = () => {
+      const marks = Array.from(document.querySelectorAll('.ground-hatch'));
+      if (!marks.length) return null;
+      const xs = marks.map(m => Number(m.getAttribute('x1')));
+      return { count: marks.length, span: Math.max(...xs) - Math.min(...xs) };
+    };
+    const before = box();
+    const stage = window.__viewer.solution.stages[0];
+    Object.assign(stage, { inputMember: 'C', fixed: 'S', outputMember: 'R' });
+    window.__viewer.render(window.__viewer.solution);
+    return { before, after: box() };
+  });
+  // La couronne est bien plus large que le solaire : l'étendue du peigne change.
+  expect(moved.after.span).toBeLessThan(moved.before.span);
+});
+
+test('the worm turns without walking, in the Denture and Geometry views (§15)', async ({ page }) => {
+  await mount(page, ['worm']);
+  for (const view of ['teeth', 'geometry']) {
+    await showView(page, view);
+    const motion = await page.evaluate(v => {
+      const renderer = v === 'teeth' ? window.__viewer.teeth : window.__viewer.geometry;
+      const read = () => {
+        const phase = document.querySelector('.worm-thread-phase');
+        const body = document.querySelector('.worm-body, .worm-member');
+        return { phase: phase && phase.getAttribute('transform'),
+          body: body && (body.getAttribute('transform') || ''),
+          bodyX: body && (body.getAttribute('x') || body.getAttribute('cx') || '') };
+      };
+      renderer.setAnimationAngle(0);
+      const start = read();
+      renderer.setAnimationAngle(90);
+      const quarter = read();
+      renderer.setAnimationAngle(360);
+      return { start, quarter, full: read() };
+    }, view);
+    // Les filets défilent…
+    expect(motion.quarter.phase, view).not.toBe(motion.start.phase);
+    // …et se retrouvent exactement où ils étaient après un tour complet.
+    expect(motion.full.phase, view).toBe(motion.start.phase);
+    // …tandis que le corps ne bouge pas d'un pouce : c'était le défaut, la vis
+    // se déplaçait le long de son propre arbre.
+    expect(motion.quarter.body, view).toBe(motion.start.body);
+    expect(motion.quarter.bodyX, view).toBe(motion.start.bodyX);
+  }
+
+  // §15 : et surtout, plus d'aiguille radiale en Géométrie — elle prétendait
+  // une rotation dans le plan du dessin, que la vis vue de profil ne fait pas.
+  // La ROUE, elle, est bien vue de face : elle garde son repère. Seule la vis
+  // n'en a plus.
+  const needles = await page.evaluate(() => {
+    const worm = document.querySelector('.worm-member').closest('.geometry-member-group');
+    return { onWorm: worm.querySelectorAll('.index-mark').length,
+      total: document.querySelectorAll('.geometry-member-group .index-mark').length };
+  });
+  expect(needles.onWorm).toBe(0);
+  expect(needles.total).toBeGreaterThan(0);
+});
+
+test('the inspector explains a planetary, and the analysis lets it be checked (§20, §21)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
+  const inspector = page.locator('#stageInspector');
+  await expect(inspector).toBeVisible();
+  // §20 : la relation qui EXPLIQUE le rapport, et le rapport de base — pas
+  // seulement « 24 → 24 → 72 », qui ne dit pas qui mène.
+  await expect(inspector).toContainText('Rapport de base');
+  await expect(inspector).toContainText('ωS');
+  await expect(inspector).toContainText('Coaxialité');
+  await expect(inspector).toContainText('Équirépartition');
+  await expect(inspector).toContainText('Fixe');
+  await expect(inspector).toContainText('Couronne (R)');
+});
+
+test('each view says what it draws to scale, and what it only suggests (§22, §23)', async ({ page }) => {
+  await mount(page, ['spur']);
+  const badge = page.locator('#viewerFidelity');
+
+  await showView(page, 'geometry');
+  await expect(badge).toBeVisible();
+  await expect(badge).toContainText('cotée');
+
+  await showView(page, 'kinematic');
+  // Un schéma symbolique lu comme un plan coté est une source d'erreur :
+  // la vue le dit elle-même, elle ne le laisse pas deviner.
+  await expect(badge).toContainText('symbolique');
+  await expect(badge).toContainText('pas à l’échelle');
+
+  await showView(page, 'teeth');
+  await expect(badge).toContainText('à l’échelle réelle');
+  await expect(badge).not.toHaveClass(/has-derived/);
 });
 
 test('belts and chains use the exact tangent path and travelling elements', async ({ page }) => {
@@ -229,6 +339,88 @@ test('the same input angle yields the same member angles in all three views', as
   expect(angles.kinematic).toEqual(angles.teeth);
   // Et cette pose n'est pas triviale : les membres ne tournent pas tous pareil.
   expect(new Set(Object.values(angles.teeth)).size).toBeGreaterThan(2);
+});
+
+test('the three views agree on who drives and who is held, in all six topologies (§31)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  const TOPOLOGIES = [
+    { inputMember: 'S', fixed: 'R', outputMember: 'C' }, { inputMember: 'S', fixed: 'C', outputMember: 'R' },
+    { inputMember: 'R', fixed: 'S', outputMember: 'C' }, { inputMember: 'R', fixed: 'C', outputMember: 'S' },
+    { inputMember: 'C', fixed: 'S', outputMember: 'R' }, { inputMember: 'C', fixed: 'R', outputMember: 'S' }
+  ];
+  // La classe de dessin d'un organe n'est pas son code de schéma : la vue
+  // Denture parle de « sun », « ring », « planet-carrier ». C'est justement le
+  // genre de correspondance qu'une vue ne doit pas déduire toute seule.
+  const CLASS_OF = { S: 'sun', R: 'ring', C: 'planet-carrier' };
+
+  for (const topology of TOPOLOGIES) {
+    const report = await page.evaluate(({ topology, classOf }) => {
+      Object.assign(window.__viewer.solution.stages[0], topology);
+      const out = {};
+      for (const view of ['teeth', 'geometry', 'kinematic']) {
+        window.__viewer.setView(view);
+        const renderer = window.__viewer.renderer();
+        const scene = renderer.scene;
+        // La référence est la SCÈNE : chaque vue est comparée à elle, jamais
+        // les vues entre elles — sinon trois vues également fausses passeraient.
+        const truth = ['input', 'output', 'fixed'].reduce((acc, role) => {
+          const member = scene.functionalMember(0, role);
+          acc[role] = { code: member.role, name: member.memberName, rpm: member.mechanical.rpm };
+          return acc;
+        }, {});
+        const svg = document.querySelector('#svgContainer svg');
+        const hatch = svg.querySelector('.ground-hatch');
+        let grounded = null;
+        if (hatch && view === 'teeth') {
+          const owner = hatch.closest('.train-wheel, .planet-carrier');
+          grounded = owner ? Object.keys(classOf).find(code => owner.classList.contains(classOf[code])) : null;
+        }
+        out[view] = { truth: truth, text: svg.textContent, hatches: svg.querySelectorAll('.ground-hatch').length, grounded: grounded };
+      }
+      return out;
+    }, { topology, classOf: CLASS_OF });
+
+    const label = JSON.stringify(topology);
+    for (const view of ['teeth', 'geometry', 'kinematic']) {
+      const seen = report[view];
+      // 1. Chaque vue lit la même topologie que la scène.
+      expect(seen.truth.input.code, view + ' ' + label).toBe(topology.inputMember);
+      expect(seen.truth.output.code, view + ' ' + label).toBe(topology.outputMember);
+      expect(seen.truth.fixed.code, view + ' ' + label).toBe(topology.fixed);
+      // 2. L'organe bloqué ne tourne pas, quelle que soit la vue.
+      expect(Math.abs(seen.truth.fixed.rpm || 0), view + ' ' + label).toBeLessThan(1e-6);
+      // 3. Et chacune le montre : le bâti est dessiné, pas seulement calculé.
+      expect(seen.hatches, view + ' ' + label).toBeGreaterThan(3);
+    }
+    // 4. En Denture, le bâti est bien SUR l'organe bloqué — c'était le défaut :
+    //    la couronne était hachurée quelle que soit la topologie.
+    expect(report.teeth.grounded, label).toBe(topology.fixed);
+    // 5. La cinématique nomme les trois organes, avec leur fonction.
+    expect(report.kinematic.text, label).toContain('Fixe · ' + report.kinematic.truth.fixed.name);
+    expect(report.kinematic.text, label).toContain('Entrée · ' + report.kinematic.truth.input.name);
+  }
+});
+
+test('the inspector reports the same speeds whichever view opened it (§31)', async ({ page }) => {
+  await mount(page, ['spur', 'planetary']);
+  const readings = {};
+  for (const view of ['teeth', 'geometry', 'kinematic']) {
+    await showView(page, view);
+    readings[view] = await page.evaluate(() => {
+      const inspector = window.__viewer.inspector;
+      const rows = [];
+      for (let index = 0; index < 2; index++) {
+        inspector.show(index);
+        rows.push(document.querySelector('#stageInspector .inspector-grid').textContent);
+      }
+      return rows;
+    });
+  }
+  // L'inspecteur lit la scène de la vue courante : trois scènes, un seul texte.
+  expect(readings.geometry).toEqual(readings.teeth);
+  expect(readings.kinematic).toEqual(readings.teeth);
+  // Et il dit bien quelque chose : sinon l'égalité serait vide de sens.
+  expect(readings.teeth[1]).toContain('Rapport de base');
 });
 
 test('belt markers travel around the pulleys, not only along the strands', async ({ page }) => {

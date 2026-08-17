@@ -99,14 +99,52 @@
   }
 
   /** Vis sans fin : corps cylindrique et axe, vus de côté. */
-  function worm(group, x, y, pitchDiameter, moduleValue, className) {
-    var r = Math.max(2, finite(pitchDiameter, 10) / 2);
+  /**
+   * §15 : la vis est vue DE PROFIL. Son corps ne bouge pas et son axe non
+   * plus ; ce sont ses filets qui défilent le long de l'axe. La vue Géométrie
+   * y faisait tourner une aiguille radiale, comme si la vis était vue de face
+   * — un mouvement que la pièce ne fait pas.
+   *
+   * La géométrie du filetage vient du même calcul que la vue Denture, pour que
+   * les deux vues montrent le même nombre de filets au même pas.
+   *
+   * @returns {SVGElement} le groupe des filets, le seul à animer.
+   */
+  function worm(group, x, y, pitchDiameter, moduleValue, className, options) {
+    options = options || {};
     var m = Math.max(0.1, finite(moduleValue, 1));
-    var length = Math.max(4 * r, 20 * m);
+    var g = typeof GearTeethPrimitives !== 'undefined' && GearTeethPrimitives.wormGeometry
+      ? GearTeethPrimitives.wormGeometry({ kind: 'worm', pitchD: finite(pitchDiameter, 10), module: m,
+        teeth: options.starts, leadAngle: options.leadAngleDeg })
+      : { radius: Math.max(2, finite(pitchDiameter, 10) / 2), length: Math.max(4 * finite(pitchDiameter, 10) / 2, 20 * m),
+        module: m, starts: 1, pitch: Math.PI * m, lead: 0 };
+    var r = g.radius, length = g.length;
     group.appendChild(node('rect', { class: className || 'geometry-member worm-member',
       x: (x - length / 2).toFixed(2), y: (y - r).toFixed(2), width: length.toFixed(2), height: (2 * r).toFixed(2), rx: r.toFixed(2) }));
-    return group.appendChild(node('line', { class: 'shaft-axis construction-axis',
+    group.appendChild(node('line', { class: 'shaft-axis construction-axis',
       x1: (x - length / 2 - 3 * m).toFixed(2), y1: y, x2: (x + length / 2 + 3 * m).toFixed(2), y2: y }));
+
+    // Les filets débordent de deux pas de chaque côté : sans ce débord, un
+    // filet disparaîtrait d'un bord avant que le suivant n'entre par l'autre,
+    // et la boucle sauterait à chaque tour.
+    var margin = (typeof GearTeethPrimitives !== 'undefined' && GearTeethPrimitives.WORM_MARGIN_PITCHES ? GearTeethPrimitives.WORM_MARGIN_PITCHES : 2) * g.pitch;
+    var phase = node('g', { class: 'worm-thread-phase' });
+    for (var start = -length / 2 - margin; start < length / 2 + margin; start += g.pitch) {
+      for (var k = 0; k < g.starts; k++) {
+        var offset = start + k * g.pitch / g.starts;
+        var d = '';
+        for (var i = 0; i <= 8; i++) {
+          var t = i / 8;
+          var px = x + offset + t * g.pitch / g.starts;
+          var py = y - r * Math.cos(Math.PI * t) * Math.cos(g.lead);
+          d += (d ? ' L ' : 'M ') + px.toFixed(2) + ' ' + py.toFixed(2);
+        }
+        phase.appendChild(node('path', { class: 'worm-thread', d: d }));
+      }
+    }
+    group.appendChild(phase);
+    phase.dataset.pitch = g.pitch.toFixed(4);
+    return phase;
   }
 
   /** Bras du porte-satellites : rend le membre C lisible sans l'animer. */

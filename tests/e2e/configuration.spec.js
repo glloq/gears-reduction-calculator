@@ -408,6 +408,76 @@ test('only the explored families expose their own parameters', async ({ page }) 
   await expect(page.locator('.type-parameters[data-family="worm"]')).toHaveCount(0);
 });
 
+test('a planetary chooses its topology automatically, or exactly as told', async ({ page }) => {
+  await page.goto('/');
+  // Couronne menante, solaire bloqué : le rapport vaut (Zs+Zr)/Zr, donc entre
+  // 1 et 2. Viser 12:1 ici, c'est demander ce que cette topologie ne peut pas.
+  await setQuantity(page, 'ratio', 1.5);
+  await openSetting(page, 'technology');
+  await page.locator('#technologyPolicy [data-policy="restrict"]').click();
+  await page.locator('.family-card[data-family="planetary"]').click();
+  await openOption(page, 'technical');
+  const block = page.locator('.type-parameters[data-family="planetary"]');
+  await block.locator('summary').click();
+
+  // Par défaut la recherche essaie les six topologies : imposer un organe
+  // d'entrée n'aurait alors aucun sens, et le champ ne s'affiche pas.
+  await expect(block.locator('#tpm_planetary_topologyMode')).toHaveValue('auto');
+  await expect(block.locator('#tpm_planetary_inputMember')).toBeHidden();
+  await block.locator('#tpm_planetary_topologyMode').selectOption('fixed');
+  await expect(block.locator('#tpm_planetary_inputMember')).toBeVisible();
+  // Le code nu « S » ne dit rien : l'organe est nommé.
+  await expect(block.locator('#tpm_planetary_inputMember option[value="S"]')).toHaveText(/Solaire/);
+
+  // Trois organes, trois rôles : prendre la couronne en entrée alors qu'elle
+  // était fixe échange les deux au lieu de laisser un rôle orphelin.
+  await block.locator('#tpm_planetary_inputMember').selectOption('R');
+  await expect(block.locator('#tpm_planetary_fixed')).toHaveValue('S');
+  await expect(block.locator('#tpm_planetary_outputMember')).toHaveValue('C');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+  expect(await page.inputValue('#tp_planetary_inputMember')).toBe('R');
+  expect(await page.inputValue('#tp_planetary_fixed')).toBe('S');
+
+  // §21 : l'analyse doit permettre de VÉRIFIER le train, pas seulement de le
+  // nommer — organe bloqué, rapport de base, conditions de montage.
+  const analysis = page.locator('#mechanicalPanel');
+  await expect(analysis).toContainText('Trains épicycloïdaux');
+  await analysis.getByRole('tab', { name: 'Trains épicycloïdaux' }).click();
+  await expect(analysis).toContainText('Rapport de base');
+  await expect(analysis).toContainText('Équirépartition');
+  // Et la table des étages nomme la famille en français, plus « planetary ».
+  await analysis.getByRole('tab', { name: 'Étages' }).click();
+  await expect(analysis.locator('.stages-table').first()).toContainText('Épicycloïdal');
+});
+
+test('the last search survives a reload, and the old flat format is retired (§28, §29)', async ({ page }) => {
+  await page.goto('/');
+  // Une configuration écrite par une version précédente : elle doit encore
+  // être reprise, c'est tout le chemin de migration.
+  await page.evaluate(() => localStorage.setItem('gearCalcParams', JSON.stringify({ rapport: '7' })));
+  await setQuantity(page, 'ratio', 18);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+
+  const stored = await page.evaluate(() => ({
+    session: !!localStorage.getItem('gearLastSearch'),
+    version: JSON.parse(localStorage.getItem('gearLastSearch') || '{}').schemaVersion,
+    legacy: localStorage.getItem('gearCalcParams')
+  }));
+  expect(stored.session).toBe(true);
+  expect(stored.version).toBeGreaterThan(0);
+  // Deux mémoires de la même recherche, dont une jamais relue, c'est une de
+  // trop : la conversion faite, l'ancienne est effacée.
+  expect(stored.legacy).toBeNull();
+
+  // Et au rechargement, la recherche est bien celle qu'on avait lancée.
+  await page.reload();
+  await expect(page.locator('#searchModal')).toBeVisible();
+  expect(await page.inputValue('#rapport')).toBe('18');
+});
+
 test('a parameter set in the modal drives the search and the historic mirror', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);

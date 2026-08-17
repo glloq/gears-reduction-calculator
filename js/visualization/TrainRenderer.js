@@ -26,11 +26,34 @@
     if (text != null) el.textContent = text;
     return el;
   }
-  function materialize(descriptor) { return n(descriptor.tag, descriptor.attrs, descriptor.text); }
+  /**
+   * Les primitives décrivent le SVG sans le construire — elles restent ainsi
+   * testables hors navigateur. Un descripteur peut porter des enfants : c'est
+   * ce qui permet à la vis sans fin de grouper ses filets à part de son corps.
+   */
+  function materialize(descriptor) {
+    var element = n(descriptor.tag, descriptor.attrs, descriptor.text);
+    (descriptor.children || []).forEach(function (child) { element.appendChild(materialize(child)); });
+    return element;
+  }
   function appendAll(host, descriptors) { (descriptors || []).forEach(function (d) { host.appendChild(materialize(d)); }); }
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
   function rad(deg) { return deg * Math.PI / 180; }
   function fmt(value, digits) { return Number.isFinite(value) ? value.toFixed(digits == null ? 2 : digits) : '—'; }
+
+  /**
+   * « Solaire (S) · Entrée ». Le nom vient de la scène — le renderer ne
+   * traduit rien lui-même — et la fonction n'est rappelée que lorsqu'elle
+   * apporte quelque chose : dire « Menant · Entrée » serait redondant.
+   */
+  function memberTitle(wheel) {
+    var name = wheel.memberName || wheel.role || '';
+    // Seuls les organes d'un planétaire ont un code de schéma ; « Menant
+    // (input) » n'aiderait personne.
+    var code = /^[SRPC]$/.test(wheel.memberCode) ? ' (' + wheel.memberCode + ')' : '';
+    var role = wheel.localizedRole && wheel.localizedRole !== name ? ' · ' + wheel.localizedRole : '';
+    return name + code + role;
+  }
 
   function TrainRenderer(container) {
     this.container = typeof container === 'string' ? document.getElementById(container) : container;
@@ -184,8 +207,10 @@
     }
     seat.appendChild(construction);
 
-    var roleNames = { input: 'Entrée', output: 'Sortie', sun: 'Solaire', ring: 'Couronne', planet: 'Satellite' };
-    seat.appendChild(n('title', {}, (roleNames[wheel.role] || wheel.role) +
+    // §9, §10 : la scène nomme déjà l'organe ET sa fonction. Le renderer n'en
+    // garde pas de copie, et n'affiche plus « S » tout court : « Solaire (S) ·
+    // Entrée » dit à la fois de quel organe il s'agit et ce qu'il fait.
+    seat.appendChild(n('title', {}, memberTitle(wheel) +
       (wheel.teeth ? ' — Z=' + wheel.teeth : '') +
       '\nØ primitif ' + fmt(wheel.pitchD, 2) + ' mm' +
       (wheel.kind === 'gear' ? '\nØ tête ' + fmt(wheel.outsideD, 2) + ' mm · Ø pied ' + fmt(wheel.rootD, 2) + ' mm' : '') +
@@ -243,6 +268,12 @@
     arms.appendChild(n('path', { d: d.trim() }));
     arms.appendChild(n('circle', { class: 'carrier-hub', r: Math.max(1.5, carrier.orbit * 0.12).toFixed(2) }));
     host.appendChild(arms);
+    // §18 : un porte-satellites bloqué est un bâti. Les hachures se posent sur
+    // le groupe FIXE, pas sur les bras — c'est justement qu'ils ne tournent pas.
+    if (carrier.functionalRole === 'fixed') {
+      appendAll(host, GearGroundSymbol.ring(carrier.cx, carrier.cy,
+        Math.max(2, carrier.orbit * 0.28), { length: Math.max(1.5, carrier.orbit * 0.14) }));
+    }
     group.appendChild(host);
     entry.carrierElement = arms;
     return host;
@@ -537,10 +568,20 @@
         return;
       }
       if (wheel.kind === 'worm') {
-        // Le filet avance axialement d'un pas par tour : c'est ce défilement qui
-        // donne la sensation d'entraînement de la roue.
-        var lead = Math.max(1e-6, Math.PI * finite(wheel.module, 1) * Math.max(1, finite(wheel.teeth, 1)));
-        record.rotor.setAttribute('transform', 'translate(' + ((own / 360 * lead) % lead).toFixed(2) + ' 0)');
+        // §11 : le groupe ENTIER était translaté — corps, axe et filets — donc
+        // la vis se déplaçait le long de son arbre. Elle tourne autour de son
+        // axe : le corps ne bouge pas, seuls les filets défilent.
+        var geometry = GearTeethPrimitives.wormGeometry ? GearTeethPrimitives.wormGeometry(wheel) : null;
+        var pitch = geometry ? geometry.pitch
+          : Math.max(1e-6, Math.PI * finite(wheel.module, 1) * Math.max(1, finite(wheel.teeth, 1)));
+        var threads = record.rotor.querySelector('.worm-thread-phase');
+        record.rotor.removeAttribute('transform');
+        if (threads) {
+          // Modulo le pas : la phase revient exactement sur elle-même à
+          // chaque tour, sans saut, grâce aux filets dessinés en débord.
+          var phase = ((own / 360 * pitch) % pitch + pitch) % pitch;
+          threads.setAttribute('transform', 'translate(' + phase.toFixed(3) + ' 0)');
+        }
         return;
       }
       record.rotor.setAttribute('transform', 'rotate(' + own.toFixed(2) + ')');
@@ -646,6 +687,8 @@
       '.helix-label,.worm-label{fill:' + muted + ';font:600 3px system-ui,sans-serif}' +
       '.carrier-arms path{stroke:' + muted + ';stroke-width:1.2;fill:none}' +
       '.carrier-hub{fill:' + surface + ';stroke:' + muted + ';stroke-width:.5}' +
+      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8}' +
+      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75}' +
       '.belt-line{stroke:' + ink + ';stroke-width:1.4;fill:none}' +
       '.chain-line{stroke:' + ink + ';stroke-width:1.4;fill:none;stroke-dasharray:3 2.2}' +
       '.belt-tooth{fill:' + ink + ';opacity:.75}' +

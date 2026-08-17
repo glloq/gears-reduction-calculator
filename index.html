@@ -560,6 +560,10 @@
           </details>
         </div>
         <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+        <!-- §22, §23 : ce que la vue courante montre à l'échelle, et ce qu'elle
+             ne fait que suggérer. Un schéma symbolique lu comme un plan coté
+             est une source d'erreur ; la vue le dit elle-même. -->
+        <p id="viewerFidelity" class="viewer-fidelity" aria-live="polite" hidden></p>
         <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, cliquer un étage pour l'inspecter</p>
         <!-- §24 : les trois vues modernes couvrent tout ce que montrait cette
              vue linéaire. Le canevas reste dans le DOM — du code d'export s'en
@@ -678,6 +682,7 @@
   <script src="js/visualization/core/ViewportController.js" defer></script>
   <script src="js/visualization/core/SvgExport.js" defer></script>
   <script src="js/visualization/core/GeometryUtils.js" defer></script>
+  <script src="js/visualization/core/GroundSymbol.js" defer></script>
   <script src="js/visualization/geometry/GeometryLayout.js" defer></script>
   <script src="js/visualization/geometry/GeometryPrimitives.js" defer></script>
   <script src="js/visualization/geometry/DimensionRenderer.js" defer></script>
@@ -700,6 +705,7 @@
   <script src="js/requirements/SearchIntentModel.js" defer></script>
   <script src="js/requirements/TechnologySelectionModel.js" defer></script>
   <script src="js/requirements/TechnicalSettingsModel.js" defer></script>
+  <script src="js/ui/SessionStore.js" defer></script>
   <script src="js/ui/SearchSession.js" defer></script>
   <script src="js/ui/search/TypeStep.js" defer></script>
   <script src="js/ui/search/TypeParametersEditor.js" defer></script>

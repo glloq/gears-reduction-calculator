@@ -305,13 +305,7 @@
     var reductionEl = document.getElementById("reduction_only");
     if (reductionEl) data.reductionOnly = reductionEl.checked;
 
-    // Paramètres matériaux (pro)
-    PRO_FIELDS.forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el && el.value.trim() !== '') data[id] = el.value;
-    });
-
-    localStorage.setItem("gearCalcParams", JSON.stringify(data));
+    localStorage.setItem(LEGACY_KEY, JSON.stringify(data));
   };
 
     var SIMPLE_FIELDS = [
@@ -320,13 +314,24 @@
     'teeth_inventory', 'module_list'
   ];
 
-  var PRO_FIELDS = ['angle_pression', 'coeff_frottement', 'largeur_dent', 'limite_elastique', 'qualite_iso'];
+  /**
+   * §29 : le format plat d'avant la refonte. Il n'est plus la mémoire de
+   * l'application — `SessionStore` range le MODÈLE sous un schéma versionné —
+   * mais il reste LU une dernière fois, pour convertir une configuration
+   * enregistrée par une version précédente. Le nom dit ce que c'est.
+   *
+   * Cinq champs « pro » figuraient encore dans cette liste — angle de pression,
+   * coefficient de frottement, largeur de dent, limite élastique, qualité ISO —
+   * alors que les contrôles correspondants n'existent plus dans la page depuis
+   * la refonte de l'interface : on sauvegardait et on relisait le vide.
+   */
+  var LEGACY_KEY = 'gearCalcParams';
 
   /**
    * Restaure depuis localStorage avec validation des données.
    */
   SearchParams.restore = function () {
-    var saved = localStorage.getItem("gearCalcParams");
+    var saved = localStorage.getItem(LEGACY_KEY);
     if (!saved) return false;
     try {
       var data = JSON.parse(saved);
@@ -344,12 +349,6 @@
         if (el && data[id] !== undefined && data[id] !== '') el.value = data[id];
       });
       document.querySelectorAll('[data-persist]').forEach(function(el){if(data[el.id]!==undefined){if(el.type==='checkbox')el.checked=!!data[el.id];else el.value=data[el.id];}});
-
-      // Champs pro
-      PRO_FIELDS.forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el && data[id] !== undefined && data[id] !== '') el.value = data[id];
-      });
 
       // Sliders noUiSlider
       if (data.sliderMenante) {

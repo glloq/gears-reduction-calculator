@@ -41,14 +41,31 @@
 
     ui.paramForm.initSliders();
 
-    // Restaurer depuis l'URL d'abord, sinon depuis localStorage.
+    // D'où vient la recherche affichée au démarrage ? La question n'était pas
+    // posée, et la réponse changeait le comportement en silence : une vieille
+    // configuration rangée dans le localStorage par une version précédente
+    // suffisait à faire croire à une session « non vide », donc à sauter le
+    // modal — alors que l'utilisateur ouvrait l'application pour chercher.
     var hasURLParams = GearApp.models.SearchParams.fromURL();
-    var restored = hasURLParams || ui.paramForm.restore();
-    // La restauration modifie les miroirs après le premier rendu : la session
-    // les adopte alors. Sans restauration, ses propres valeurs font foi.
-    workbench.refreshAfterRestore(!!restored);
-    // §24.1 : sans besoin défini, le modal est le point d'entrée.
-    workbench.openSearchModalIfEmpty();
+    var source = 'fresh';
+    if (hasURLParams) {
+      source = 'sharedUrl';
+      workbench.refreshAfterRestore(true);
+    } else {
+      // §2 : la session rangée sous son propre schéma prime sur l'ancien
+      // format plat — elle porte le MODÈLE, pas le reflet des champs.
+      var stored = GearApp.ui.SessionStore.load();
+      if (stored) {
+        source = 'localStorage';
+        workbench.adoptStoredSession(stored.session);
+      } else if (ui.paramForm.restore()) {
+        source = 'localStorage';
+        workbench.refreshAfterRestore(true);
+      } else {
+        workbench.refreshAfterRestore(false);
+      }
+    }
+    workbench.openInitialSearchModal(source);
 
     ui.paramForm.restoreTheme();
 
@@ -135,7 +152,19 @@
     }
 
     // Persistance automatique : chaque lancement mémorise la configuration.
-    searchParams.save();
+    //
+    // §29 : la session part sous son schéma versionné, et c'est TOUT. Le format
+    // plat n'est plus écrit : au démarrage, adopter la session réécrit les
+    // miroirs depuis le modèle, donc rien de ce qu'il portait n'est perdu — il
+    // n'était plus qu'une seconde mémoire, jamais relue, et donc périmée dès la
+    // première recherche. Il reste lu une dernière fois pour convertir une
+    // configuration d'avant la refonte ; ensuite il est effacé.
+    if (session) {
+      GearApp.ui.SessionStore.save(session);
+      GearApp.ui.SessionStore.dropLegacy();
+    } else {
+      searchParams.save();
+    }
     _saveToHistory(searchParams);
     _renderHistory();
 
