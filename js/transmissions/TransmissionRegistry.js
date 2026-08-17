@@ -7,7 +7,45 @@
   'use strict';
   var radians = function (degrees) { return degrees * Math.PI / 180; };
   var pairRatio = function (stage) { return stage.output.teeth / stage.input.teeth; };
+  /**
+   * Un engrènement extérieur inverse le sens : c'est vrai d'un couple
+   * cylindrique, et faux d'une vis sans fin — voir `wormDirection`.
+   */
   var pairDirection = function () { return -1; };
+
+  /**
+   * Sens du filet d'une vis, ou de l'hélice d'un hélicoïdal.
+   *
+   * L'interface ne connaissait que l'angle d'avance, toujours positif : elle
+   * ne pouvait donc pas distinguer un filet à droite d'un filet à gauche. Or
+   * c'est ce sens, avec la position de la roue, qui décide de la rotation de la
+   * roue — et pour un hélicoïdal, du signe de l'effort axial. Le renderer ne
+   * pouvait mathématiquement pas trouver le bon sens : la donnée manquait.
+   */
+  function handedness(stage) {
+    var declared = stage && stage.parameters && stage.parameters.handedness;
+    return declared === 'left' ? -1 : 1;
+  }
+  /** De quel côté de la vis la roue engrène : +1 ou −1 le long de son axe. */
+  function meshSide(stage) {
+    var declared = stage && stage.parameters && stage.parameters.meshSide;
+    return Number(declared) === -1 ? -1 : 1;
+  }
+  /**
+   * Le sens d'une roue entraînée par une vis sans fin.
+   *
+   * La vis renvoyait `pairDirection`, c'est-à-dire −1 en toutes circonstances,
+   * comme un couple cylindrique — ce qui n'a aucun sens pour un renvoi à 90° :
+   * la roue tourne d'un côté ou de l'autre selon le sens du filet ET le côté
+   * où elle engrène. Inverser l'un OU l'autre inverse la roue ; inverser les
+   * deux la laisse tourner comme avant.
+   *
+   * Le cas par défaut — filet à droite, roue du côté positif — redonne −1,
+   * exactement ce que le code faisait avant : cette propriété AJOUTE la
+   * possibilité de dire autre chose, elle ne retourne pas en silence tous les
+   * réducteurs déjà décrits.
+   */
+  function wormDirection(stage) { return -handedness(stage) * meshSide(stage); }
   var AXIS_RELATIONS={spur:'parallel',helical:'parallel',internal:'internal-parallel',bevel:'perpendicular',worm:'perpendicular',planetary:'coaxial',epicyclic:'coaxial',belt:'parallel',chain:'parallel',rack:'linear'};
   function axisRelation(stage){return AXIS_RELATIONS[stage.type]||'parallel';}
   function geometryContract(stage,geometry){
@@ -68,7 +106,9 @@
       radialN: ft * Math.tan(alphaT) * Math.cos(delta),
       // Une hélice et un cône poussent tous deux le long de l'arbre ; aucune
       // famille ne combine les deux ici, la somme reste donc exacte.
-      axialN: ft * Math.tan(beta) + ft * Math.tan(alphaT) * Math.sin(delta) };
+      // L'hélice pousse d'un côté ou de l'autre selon son sens : un effort
+      // axial sans signe ne dit pas de quel côté prévoir la butée.
+      axialN: handedness(stage) * ft * Math.tan(beta) + ft * Math.tan(alphaT) * Math.sin(delta) };
   }
   function candidatePair(type, a, b, parameters) { return { type: type, input: { teeth: a }, output: { teeth: b }, parameters: parameters || {} }; }
   function pairCandidates(type, options, constraints) {
@@ -180,7 +220,7 @@
     calculateRatio: function (s) { return s.wheelTeeth / s.wormStarts; },
     calculateGeometry: function (s) { var m = s.parameters.module || 1, dw = m * s.wheelTeeth, ds = m * (s.parameters.diameterQuotient || 10); return geometryContract(s,{ pitchDiameterInput: ds, pitchDiameterOutput: dw, centerDistance: (ds + dw) / 2, maxDiameter: dw + 2 * m, width: 12 * m,axisRelation:'perpendicular' }); },
     calculateEfficiency: function (s) { var gamma = radians(s.parameters.leadAngle || 20), mu = s.parameters.frictionCoefficient || 0.06; return Math.max(0.2, Math.min(0.9, Math.tan(gamma) / Math.tan(gamma + Math.atan(mu)))); },
-    calculateForces: function (s, t) { var g = this.calculateGeometry(s), ft = 2000 * t / g.pitchDiameterInput; return { tangentialN: ft, radialN: ft * Math.tan(radians(s.parameters.pressureAngle || 20)), axialN: ft / Math.tan(radians(s.parameters.leadAngle || 20)) }; }, rotationDirection: pairDirection,
+    calculateForces: function (s, t) { var g = this.calculateGeometry(s), ft = 2000 * t / g.pitchDiameterInput; return { tangentialN: ft, radialN: ft * Math.tan(radians(s.parameters.pressureAngle || 20)), axialN: ft / Math.tan(radians(s.parameters.leadAngle || 20)) }; }, rotationDirection: wormDirection,
     generateCandidates: function (o) { var out = [], p = o.typeParameters.worm || {}, lo = p.wormStartsMin || 1, hi = p.wormStartsMax || 6; for (var a = lo; a <= hi; a++) for (var b = Math.max(15, o.outputMin); b <= Math.min(120, o.outputMax); b++) out.push({ type: 'worm', wormStarts: a, wheelTeeth: b, parameters: p }); return out; } });
   function planetarySpeeds(s, inputSpeed) {
     var members = ['S', 'R', 'C'], fixed = s.fixed || 'R', input = s.inputMember || 'S', output = s.outputMember || 'C';
@@ -331,10 +371,10 @@
      because transmission definitions themselves are frozen by register(). */
   var parameterDefinitions={
     spur:{pressureAngle:{label:'Angle de pression (°)',type:'number',default:20,min:14.5,max:25,step:.5},faceWidth:{label:'Largeur de dent (mm)',type:'number',default:10,min:1,step:.5},profileShiftInput:{label:'Déport x1',type:'number',default:0,min:-1,max:1,step:.05},profileShiftOutput:{label:'Déport x2',type:'number',default:0,min:-1,max:1,step:.05}},
-    helical:{helixAngle:{label:"Angle d'hélice (°)",type:'number',default:20,min:5,max:45,step:1},pressureAngle:{label:'Angle de pression normal (°)',type:'number',default:20,min:14.5,max:25,step:.5},faceWidth:{label:'Largeur (mm)',type:'number',default:12,min:1,step:.5}},
+    helical:{handedness:{label:'Sens de l’hélice',type:'select',default:'right',options:['right','left'],optionLabels:{right:'À droite',left:'À gauche'}},helixAngle:{label:"Angle d'hélice (°)",type:'number',default:20,min:5,max:45,step:1},pressureAngle:{label:'Angle de pression normal (°)',type:'number',default:20,min:14.5,max:25,step:.5},faceWidth:{label:'Largeur (mm)',type:'number',default:12,min:1,step:.5}},
     internal:{pressureAngle:{label:'Angle de pression (°)',type:'number',default:20,min:14.5,max:25,step:.5},profileShiftInput:{label:'Déport pignon x1',type:'number',default:0,min:-1,max:1,step:.05},profileShiftOutput:{label:'Déport couronne x2',type:'number',default:0,min:-1,max:1,step:.05}},
     bevel:{shaftAngle:{label:'Angle entre axes (°)',type:'number',default:90,min:10,max:170,step:5},faceWidth:{label:'Largeur (mm)',type:'number',default:10,min:1,step:.5}},
-    worm:{wormStartsMin:{label:'Filets minimum',type:'number',default:1,min:1,max:6,step:1},wormStartsMax:{label:'Filets maximum',type:'number',default:6,min:1,max:6,step:1},leadAngle:{label:"Angle d'avance (°)",type:'number',default:20,min:5,max:45,step:1}},
+    worm:{handedness:{label:'Sens du filet',type:'select',default:'right',options:['right','left'],optionLabels:{right:'À droite',left:'À gauche'}},meshSide:{label:'Position de la roue',type:'select',default:'1',options:['1','-1'],optionLabels:{'1':'Côté +','-1':'Côté −'}},wormStartsMin:{label:'Filets minimum',type:'number',default:1,min:1,max:6,step:1},wormStartsMax:{label:'Filets maximum',type:'number',default:6,min:1,max:6,step:1},leadAngle:{label:"Angle d'avance (°)",type:'number',default:20,min:5,max:45,step:1}},
     // §26, §27, §28 : « automatique » est la valeur par défaut et le reste
     // pour qui ne veut pas connaître S/R/C. Choisir « imposée » distingue une
     // topologie VOULUE d'une topologie simplement retenue par le moteur.
@@ -344,5 +384,5 @@
     rack:{faceWidth:{label:'Largeur pignon/crémaillère (mm)',type:'number',default:10,min:1,step:.5}}
   };
   var beltPitches={GT2:2,GT3:3,'HTD-3M':3,'HTD-5M':5,'HTD-8M':8,T5:5,T10:10};
-  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, planetaryDetails: planetaryDetails, wormDetails: wormDetails, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
+  return { register: register, handedness: handedness, meshSide: meshSide, wormDirection: wormDirection, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, planetaryDetails: planetaryDetails, wormDetails: wormDetails, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
 });

@@ -88,7 +88,8 @@
       // pas. Seuls les filets défilent, comme dans la vue Denture.
       var threads = p.worm(host, member.cx, member.cy, member.pitchDiameter,
         finite(item.stage.parameters && item.stage.parameters.module, 1), null,
-        { starts: member.teeth, leadAngleDeg: member.leadAngleDeg });
+        { starts: member.teeth, leadAngleDeg: member.leadAngleDeg,
+          memberId: member.memberId || ('s' + item.index + '-' + member.role) });
       this._phases.push({ el: threads, memberId: member.memberId,
         pitch: Number(threads.dataset.pitch) || 1 });
       return host;

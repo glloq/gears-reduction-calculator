@@ -391,11 +391,18 @@ test('the centre distance is a real constraint, not a label', () => {
 
 test('a family exposes exactly the parameters the registry defines for it', () => {
   const worm = Technical.TechnicalSettingsModel.definitionsFor('worm');
-  assert.deepEqual(Object.keys(worm), ['wormStartsMin', 'wormStartsMax', 'leadAngle']);
+  // Le sens du filet et le côté d'engrènement font partie de la définition
+  // d'une vis : sans eux, le sens de rotation de la roue est indécidable.
+  assert.deepEqual(Object.keys(worm), ['handedness', 'meshSide', 'wormStartsMin', 'wormStartsMax', 'leadAngle']);
   const planetary = Technical.TechnicalSettingsModel.definitionsFor('planetary');
   assert.ok(planetary.inputMember && planetary.outputMember && planetary.fixed);
   // L'hélicoïdal n'expose pas de nombre de filets, et réciproquement.
-  assert.ok(!Technical.TechnicalSettingsModel.definitionsFor('helical').wormStartsMin);
+  const helical = Technical.TechnicalSettingsModel.definitionsFor('helical');
+  assert.ok(!helical.wormStartsMin);
+  // Il a en revanche un sens d'hélice : c'est lui qui décide du côté de
+  // l'effort axial, donc de la butée à prévoir.
+  assert.ok(helical.handedness);
+  assert.ok(!helical.meshSide, 'la position de la roue ne concerne que la vis');
 });
 
 test('the editor only renders the families the search will explore', () => {
