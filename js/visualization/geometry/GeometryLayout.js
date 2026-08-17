@@ -42,6 +42,11 @@
     return Object.assign({
       memberId: entry ? entry.id : null,
       role: role, kind: entry ? entry.kind : 'gear', cx: cx, cy: cy, label: label,
+      // La fonction et le nom viennent de la scène : la vue ne les redéduit pas.
+      functionalRole: entry ? entry.functionalRole : null,
+      memberName: entry ? entry.memberName : null,
+      localizedRole: entry ? entry.localizedRole : null,
+      rotationDisplayMode: entry ? entry.rotationDisplayMode : null,
       pitchDiameter: present(g.pitchDiameter), outsideDiameter: present(g.outsideDiameter),
       rootDiameter: present(g.rootDiameter), baseDiameter: present(g.baseDiameter),
       teeth: present(g.teeth), width: present(g.width),

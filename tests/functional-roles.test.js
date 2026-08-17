@@ -6,6 +6,7 @@ const Layout = require('../js/visualization/TrainLayout.js');
 const Inspector = require('../js/visualization/StageInspector.js');
 const Registry = require('../js/transmissions/TransmissionRegistry.js');
 const Primitives = require('../js/visualization/teeth/TeethPrimitives.js');
+const Ground = require('../js/visualization/core/GroundSymbol.js');
 
 /** Un planétaire assemblable : (20 + 70) divisible par 3 satellites. */
 function planetary(topology) {
@@ -179,4 +180,53 @@ test('no view keeps a family dictionary of its own', () => {
     assert.doesNotMatch(source, /['"](Épicycloïdal|Hélicoïdal|Vis sans fin)['"]/, path + ' renomme les familles dans son coin');
     assert.match(source, /familyName/, path + ' doit lire le registre');
   });
+});
+
+// ===== §18 : le membre fixe porte un symbole, pas seulement une étiquette =====
+
+test('the ground symbol hatches outward, all around the boundary', () => {
+  const marks = Ground.ring(0, 0, 10);
+  const boundary = marks.filter(m => m.attrs.class === 'ground-boundary');
+  const hatches = marks.filter(m => m.attrs.class === 'ground-hatch');
+  assert.equal(boundary.length, 1);
+  assert.ok(hatches.length >= 12, 'peigne trop clairsemé pour se lire');
+  // Chaque trait part du contour et s'en éloigne : un bâti hachuré vers
+  // l'intérieur se confondrait avec la pièce qu'il immobilise.
+  hatches.forEach(h => {
+    const start = Math.hypot(Number(h.attrs.x1), Number(h.attrs.y1));
+    const end = Math.hypot(Number(h.attrs.x2), Number(h.attrs.y2));
+    // Les coordonnées sont arrondies au centième dans le descripteur.
+    assert.ok(Math.abs(start - 10) < 0.02, 'départ hors du contour');
+    assert.ok(end > start, 'hachure dirigée vers l’intérieur');
+  });
+  // Un rayon nul ou négatif ne produit rien, plutôt qu'un tas de NaN.
+  assert.deepEqual(Ground.ring(0, 0, 0), []);
+  assert.deepEqual(Ground.ring(0, 0, -4), []);
+});
+
+test('the ground hatching of a segment stays on one side', () => {
+  const marks = Ground.line(0, 0, 20, 0, { length: 5, spacing: 5 });
+  const hatches = marks.filter(m => m.attrs.class === 'ground-hatch');
+  assert.ok(hatches.length >= 4);
+  const sides = new Set(hatches.map(h => Math.sign(Number(h.attrs.y2) - Number(h.attrs.y1))));
+  assert.equal(sides.size, 1, 'les hachures d’un bâti ne changent pas de côté');
+  // Le côté est choisi, pas subi.
+  const other = Ground.line(0, 0, 20, 0, { length: 5, spacing: 5, side: -1 })
+    .filter(m => m.attrs.class === 'ground-hatch');
+  assert.notEqual(Math.sign(Number(other[0].attrs.y2)), Math.sign(Number(hatches[0].attrs.y2)));
+  assert.deepEqual(Ground.line(3, 3, 3, 3), []);
+});
+
+test('only the fixed member is grounded, and it follows the topology', () => {
+  const ring = { kind: 'internal-ring', role: 'R', teeth: 72, module: 2, pitchD: 144, outsideD: 150, rootD: 154 };
+  const grounded = Primitives.build(Object.assign({ functionalRole: 'fixed' }, ring), { lod: 2 });
+  const free = Primitives.build(Object.assign({ functionalRole: 'output' }, ring), { lod: 2 });
+  assert.ok(grounded.fixed.some(s => s.attrs.class === 'ground-hatch'));
+  assert.equal(free.fixed.filter(s => s.attrs.class === 'ground-hatch').length, 0);
+  // Le bâti va dans `fixed`, jamais dans le rotor : il ne doit pas tourner.
+  assert.equal(grounded.rotor.filter(s => s.attrs.class === 'ground-hatch').length, 0);
+  // La denture d'une couronne plonge vers le centre : hachurer sur le diamètre
+  // de tête aurait posé le bâti à l'intérieur du trou.
+  const r = Primitives.radii(ring);
+  assert.ok(Primitives.groundRadius(ring, r) > r.tip, 'bâti attendu sur la jante');
 });

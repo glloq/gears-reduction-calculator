@@ -185,6 +185,14 @@
         g.appendChild(KinematicPrimitives.element('text', { x: node.input.x, y: node.input.y + 78 + index * 16,
           'text-anchor': 'middle', class: 'role-label ' + functional + '-role' },
         member.localizedRole + ' · ' + member.memberName + ' (' + member.role + ')'));
+        // §18 : le blocage se DESSINE. Sur un schéma cinématique le bâti est un
+        // trait hachuré ; sans lui, seule l'étiquette disait quel organe est
+        // immobile — et l'étiquette disparaît dès qu'on masque les libellés.
+        if (functional === 'fixed') {
+          GearGroundSymbol.line(node.input.x - 26, node.input.y + 58, node.input.x + 26, node.input.y + 58,
+            { length: 7, spacing: 7, side: -1 })
+            .forEach(function (shape) { g.appendChild(KinematicPrimitives.element(shape.tag, shape.attrs)); });
+        }
       });
     }
 
@@ -273,7 +281,8 @@
     var cs = getComputedStyle(document.body);
     function v(name, fallback) { var value = cs.getPropertyValue(name).trim(); return value || fallback; }
     var ink = v('--ink', '#182335'), muted = v('--muted', '#5d6b81'), accent = v('--accent', '#2563eb'),
-      success = v('--success', '#0c7f5c'), danger = v('--danger', '#b3261e'), surface = v('--surface-1', '#ffffff');
+      success = v('--success', '#0c7f5c'), danger = v('--danger', '#b3261e'), surface = v('--surface-1', '#ffffff'),
+      warning = v('--warning', '#b06d00');
     return '.kinematic-shaft{stroke:' + ink + ';stroke-width:4;stroke-linecap:round}' +
       '.shaft-bearing{fill:' + surface + ';stroke:' + ink + ';stroke-width:1.5}' +
       '.gear-symbol,.pulley,.worm-wheel,.internal-ring,.sun,.ring,.planet,.bevel-symbol{fill:none;stroke:' + ink + ';stroke-width:1.5}' +
@@ -285,6 +294,9 @@
       '.shaft-label,.stage-label,.member-label,.stage-ratio{fill:' + muted + ';font:600 11px system-ui,sans-serif}' +
       '.role-label{font:700 10px system-ui,sans-serif;fill:' + muted + '}' +
       '.input-role{fill:' + success + '}.output-role{fill:' + danger + '}' +
+      '.fixed-role{fill:' + warning + '}' +
+      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8;vector-effect:non-scaling-stroke}' +
+      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75;vector-effect:non-scaling-stroke}' +
       '.relation-badge{fill:' + surface + ';stroke:' + muted + ';stroke-width:1}' +
       '.relation-glyph{fill:' + muted + ';font:700 11px system-ui,sans-serif}' +
       'svg{background:' + surface + '}';

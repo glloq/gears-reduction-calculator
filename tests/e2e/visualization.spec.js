@@ -152,6 +152,36 @@ test('a planetary draws every real planet, its carrier and its three roles', asy
   expect(roles.join(' ')).toContain('Fixe · Couronne (R)');
 });
 
+test('the fixed member carries a ground symbol in all three views (§18)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  // Couronne bloquée : c'est ELLE qui doit porter les hachures, dans les trois
+  // vues. Sans symbole, seule l'étiquette disait quel organe est immobile.
+  for (const view of ['teeth', 'geometry', 'kinematic']) {
+    await showView(page, view);
+    const hatches = await page.locator('.ground-hatch').count();
+    expect(hatches, view).toBeGreaterThan(3);
+  }
+
+  // Et le symbole SUIT la topologie : solaire bloqué, il change de place. La
+  // mesure se fait en Denture, la seule vue où le bâti épouse la pièce réelle.
+  await showView(page, 'teeth');
+  const moved = await page.evaluate(() => {
+    const box = () => {
+      const marks = Array.from(document.querySelectorAll('.ground-hatch'));
+      if (!marks.length) return null;
+      const xs = marks.map(m => Number(m.getAttribute('x1')));
+      return { count: marks.length, span: Math.max(...xs) - Math.min(...xs) };
+    };
+    const before = box();
+    const stage = window.__viewer.solution.stages[0];
+    Object.assign(stage, { inputMember: 'C', fixed: 'S', outputMember: 'R' });
+    window.__viewer.render(window.__viewer.solution);
+    return { before, after: box() };
+  });
+  // La couronne est bien plus large que le solaire : l'étendue du peigne change.
+  expect(moved.after.span).toBeLessThan(moved.before.span);
+});
+
 test('belts and chains use the exact tangent path and travelling elements', async ({ page }) => {
   for (const [name, marker] of [['belt', '.belt-tooth'], ['chain', '.chain-link']]) {
     await mount(page, [name]);

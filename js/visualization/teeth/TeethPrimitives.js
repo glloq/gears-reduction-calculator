@@ -13,9 +13,10 @@
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('./ToothProfile.js') : root.GearToothProfile,
-    common ? require('./ToothProfileCache.js') : root.GearToothProfileCache);
+    common ? require('./ToothProfileCache.js') : root.GearToothProfileCache,
+    common ? require('../core/GroundSymbol.js') : root.GearGroundSymbol);
   if (common) module.exports = api; else root.GearTeethPrimitives = api;
-})(typeof self !== 'undefined' ? self : this, function (Profile, Cache) {
+})(typeof self !== 'undefined' ? self : this, function (Profile, Cache, Ground) {
   'use strict';
 
   var LEVELS = { SILHOUETTE: 0, SIMPLIFIED: 1, INVOLUTE: 2, TECHNICAL: 3 };
@@ -303,10 +304,26 @@
         labels.push(node('text', { class: 'tooth-count', 'text-anchor': 'middle', y: fixed(y, 1), 'font-size': fixed(size, 1) }, 'Z=' + wheel.teeth));
       }
     }
+    // §18 : un organe bloqué porte les hachures de bâti. Elles vont dans
+    // `fixed` — pas dans le rotor — puisque justement rien ne tourne.
+    if (wheel.functionalRole === 'fixed' && Ground) {
+      labels = labels.concat(Ground.ring(0, 0, groundRadius(wheel, r), { length: r.module * 1.6 }));
+    }
     return { rotor: body, fixed: labels, lod: lod };
+  }
+
+  /**
+   * Rayon sur lequel poser le bâti : le contour EXTÉRIEUR de la pièce. Pour une
+   * couronne c'est la jante, pas le diamètre de tête — la denture d'une
+   * couronne plonge vers le centre, hachurer sur `tip` mettrait le bâti au
+   * milieu du trou.
+   */
+  function groundRadius(wheel, r) {
+    if (wheel.kind === 'internal-ring') return Math.max(r.pitch + 3 * r.module, r.root + r.module) + r.module * 0.4;
+    return r.tip + r.module * 0.4;
   }
 
   return { LEVELS: LEVELS, THRESHOLDS: THRESHOLDS, level: level, levelFor: levelFor, build: build,
     radii: radii, circlePath: circlePath, node: node, group: group,
-    wormGeometry: wormGeometry, WORM_MARGIN_PITCHES: WORM_MARGIN_PITCHES };
+    wormGeometry: wormGeometry, WORM_MARGIN_PITCHES: WORM_MARGIN_PITCHES, groundRadius: groundRadius };
 });

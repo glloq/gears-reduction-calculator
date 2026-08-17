@@ -41,6 +41,7 @@
     var p = GearGeometryPrimitives;
     var host = p.node('g', { class: 'geometry-member-group role-' + member.role, 'data-role': member.role });
     group.appendChild(host);
+    this._ground(item, member);
 
     if (member.kind === 'rack') {
       var geometry = item.stage.geometry || {};
@@ -85,6 +86,21 @@
 
     this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
     return host;
+  };
+
+  /**
+   * §18 : les hachures de bâti d'un organe bloqué. Elles vont dans la couche
+   * « envelope », sous les cotes : le blocage est un fait de montage, pas une
+   * cote, et il doit rester lisible même quand on masque les cotations.
+   */
+  GeometryRenderer.prototype._ground = function (item, member) {
+    if (member.functionalRole !== 'fixed') return;
+    var radius = finite(member.outsideDiameter, finite(member.pitchDiameter, 0)) / 2;
+    if (member.kind === 'carrier') radius = finite(member.pitchDiameter, 0) / 2 * 0.55;
+    if (!(radius > 0)) return;
+    var host = this._layers.envelope;
+    GearGroundSymbol.ring(member.cx, member.cy, radius * 1.04, { length: radius * 0.16 })
+      .forEach(function (shape) { host.appendChild(GearGeometryPrimitives.node(shape.tag, shape.attrs)); });
   };
 
   /**
@@ -270,7 +286,7 @@
     var cs = getComputedStyle(document.body);
     function v(name, fallback) { var value = cs.getPropertyValue(name).trim(); return value || fallback; }
     var ink = v('--ink', '#182335'), muted = v('--muted', '#5d6b81'), accent = v('--accent', '#2563eb'),
-      success = v('--success', '#0c7f5c'), surface = v('--surface-1', '#ffffff');
+      success = v('--success', '#0c7f5c'), surface = v('--surface-1', '#ffffff'), warning = v('--warning', '#b06d00');
     return '.geometry-member{fill:none;stroke:' + ink + ';stroke-width:1;vector-effect:non-scaling-stroke}' +
       '.geometry-member.input-member{stroke:' + accent + '}.geometry-member.output-member{stroke:' + success + '}' +
       '.construction-circle{fill:none;stroke:' + muted + ';stroke-width:.6;vector-effect:non-scaling-stroke}' +
@@ -280,6 +296,8 @@
       '.dimension-arrow{fill:' + muted + '}' +
       '.geometry-dimension,.stage-label{fill:' + muted + ';font:600 11px system-ui,sans-serif}' +
       '.geometry-envelope{fill:none;stroke:' + muted + ';stroke-dasharray:7 5;opacity:.55}' +
+      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8;vector-effect:non-scaling-stroke}' +
+      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75;vector-effect:non-scaling-stroke}' +
       '.belt-span,.chain-span{fill:none;stroke:' + ink + ';stroke-width:1.4}' +
       '.chain-span{stroke-dasharray:4 3}.tangency-point{fill:' + accent + '}' +
       '.rack-profile,.worm-member,.cone-member,.carrier-member{fill:none;stroke:' + ink + ';stroke-width:1}' +

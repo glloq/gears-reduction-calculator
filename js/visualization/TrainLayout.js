@@ -31,6 +31,14 @@
     return Object.assign({
       memberId: entry ? entry.id : null,
       role: entry ? entry.role : 'input',
+      // `role` est surchargé plus bas par la classe CSS du dessin (sun, ring,
+      // planet) : le code du schéma et le nommage voyagent donc à part, tels
+      // que la scène les a établis. Aucune vue ne les recalcule (§9, §18).
+      memberCode: entry ? entry.role : null,
+      memberName: entry ? entry.memberName : null,
+      localizedRole: entry ? entry.localizedRole : null,
+      functionalRole: entry ? entry.functionalRole : null,
+      rotationDisplayMode: entry ? entry.rotationDisplayMode : null,
       kind: entry ? entry.kind : 'gear',
       pitchD: pitch,
       outsideD: finite(g.outsideDiameter, pitch + 2 * m),
@@ -147,10 +155,19 @@
             orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
           }));
         }
-        entry.members = { input: stage.inputMember || 'S', output: stage.outputMember || 'C', fixed: stage.fixed || 'R' };
+        // La topologie est celle que la scène a établie, pas une relecture de
+        // `stage.inputMember` : la vue n'a plus à savoir lire un étage (§31).
+        entry.members = {};
+        ['input', 'output', 'fixed'].forEach(function (functional) {
+          var member = scene.functionalMember ? scene.functionalMember(index, functional) : null;
+          if (member) entry.members[functional] = member.role;
+        });
         entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
         entry.carrier = { memberId: prefix + 'C', cx: cursor.x, cy: cursor.y, orbit: orbit, count: count,
-          speed: entry.carrierSpeed };
+          speed: entry.carrierSpeed,
+          functionalRole: byRole.C ? byRole.C.functionalRole : null,
+          memberName: byRole.C ? byRole.C.memberName : null,
+          localizedRole: byRole.C ? byRole.C.localizedRole : null };
         entry.stageRadius = ring.outsideD / 2;
         placed.push(ring);
         maxX = Math.max(maxX, cursor.x + ring.outsideD / 2);

@@ -50,7 +50,7 @@
     var name = wheel.memberName || wheel.role || '';
     // Seuls les organes d'un planétaire ont un code de schéma ; « Menant
     // (input) » n'aiderait personne.
-    var code = /^[SRPC]$/.test(wheel.role) ? ' (' + wheel.role + ')' : '';
+    var code = /^[SRPC]$/.test(wheel.memberCode) ? ' (' + wheel.memberCode + ')' : '';
     var role = wheel.localizedRole && wheel.localizedRole !== name ? ' · ' + wheel.localizedRole : '';
     return name + code + role;
   }
@@ -268,6 +268,12 @@
     arms.appendChild(n('path', { d: d.trim() }));
     arms.appendChild(n('circle', { class: 'carrier-hub', r: Math.max(1.5, carrier.orbit * 0.12).toFixed(2) }));
     host.appendChild(arms);
+    // §18 : un porte-satellites bloqué est un bâti. Les hachures se posent sur
+    // le groupe FIXE, pas sur les bras — c'est justement qu'ils ne tournent pas.
+    if (carrier.functionalRole === 'fixed') {
+      appendAll(host, GearGroundSymbol.ring(carrier.cx, carrier.cy,
+        Math.max(2, carrier.orbit * 0.28), { length: Math.max(1.5, carrier.orbit * 0.14) }));
+    }
     group.appendChild(host);
     entry.carrierElement = arms;
     return host;
@@ -681,6 +687,8 @@
       '.helix-label,.worm-label{fill:' + muted + ';font:600 3px system-ui,sans-serif}' +
       '.carrier-arms path{stroke:' + muted + ';stroke-width:1.2;fill:none}' +
       '.carrier-hub{fill:' + surface + ';stroke:' + muted + ';stroke-width:.5}' +
+      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8}' +
+      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75}' +
       '.belt-line{stroke:' + ink + ';stroke-width:1.4;fill:none}' +
       '.chain-line{stroke:' + ink + ';stroke-width:1.4;fill:none;stroke-dasharray:3 2.2}' +
       '.belt-tooth{fill:' + ink + ';opacity:.75}' +
