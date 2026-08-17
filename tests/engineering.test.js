@@ -43,3 +43,44 @@ test('a bevel gear pushes along its shaft; a spur one does not', () => {
   assert.equal(flat.axialN, 0);
   assert.ok(Math.abs(flat.radialN - flat.tangentialN * Math.tan(20 * Math.PI / 180)) < 1e-9);
 });
+
+test('a worm drive turns according to its thread hand and its mesh side', () => {
+  // Le registre renvoyait −1 quoi qu'il arrive, comme un couple cylindrique.
+  // Pour un renvoi à 90°, le sens dépend du sens du filet ET du côté où la roue
+  // engrène : inverser l'un OU l'autre inverse la roue, inverser les deux la
+  // laisse tourner comme avant.
+  const Registry = require('../js/transmissions/TransmissionRegistry.js');
+  const worm = (handedness, meshSide) => ({ type: 'worm', wormStarts: 2, wheelTeeth: 40,
+    parameters: { module: 2, leadAngle: 20, diameterQuotient: 10, handedness, meshSide } });
+  const sense = (h, s) => Registry.get('worm').rotationDirection(worm(h, s));
+  assert.equal(sense('right', 1), -1);
+  assert.equal(sense('left', 1), 1);
+  assert.equal(sense('right', -1), 1);
+  assert.equal(sense('left', -1), -1, 'les deux inversions se compensent');
+
+  // Le cas par défaut redonne exactement le comportement précédent : cette
+  // propriété ajoute une possibilité, elle ne retourne pas en silence tous les
+  // réducteurs déjà décrits.
+  assert.equal(Registry.get('worm').rotationDirection(
+    { type: 'worm', wormStarts: 2, wheelTeeth: 40, parameters: { module: 2 } }), -1);
+
+  // Et le sens est déclarable dans le schéma de paramètres, sans quoi le
+  // renderer ne pourrait mathématiquement pas le connaître.
+  assert.ok(Registry.parameterDefinitions.worm.handedness);
+  assert.ok(Registry.parameterDefinitions.worm.meshSide);
+});
+
+test('a helical gear pushes to the side its helix leans', () => {
+  const Registry = require('../js/transmissions/TransmissionRegistry.js');
+  const helical = handedness => ({ type: 'helical', input: { teeth: 18 }, output: { teeth: 54 },
+    parameters: { module: 2, helixAngle: 25, pressureAngle: 20, faceWidth: 20, handedness } });
+  const right = Registry.get('helical').calculateForces(helical('right'), 10);
+  const left = Registry.get('helical').calculateForces(helical('left'), 10);
+  // Un effort axial sans signe ne dit pas de quel côté prévoir la butée.
+  assert.ok(right.axialN > 0);
+  assert.ok(Math.abs(left.axialN + right.axialN) < 1e-9, 'même intensité, sens opposé');
+  // Le reste de l'engrènement est inchangé.
+  assert.equal(left.tangentialN, right.tangentialN);
+  assert.equal(left.radialN, right.radialN);
+  assert.ok(Registry.parameterDefinitions.helical.handedness);
+});
