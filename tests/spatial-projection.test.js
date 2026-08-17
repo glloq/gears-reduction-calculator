@@ -217,3 +217,74 @@ test('an empty layout projects to something drawable rather than throwing', () =
   assert.ok(projected.bounds.width > 0);
   assert.equal(Spatial.build(null).members.length, 0);
 });
+
+test('unfolding keeps every mesh at its true centre distance', () => {
+  // Projeter aussi les longueurs est irréprochable et illisible : une vue
+  // oblique raccourcit les entraxes, et deux roues dessinées en cercles à un
+  // entraxe raccourci se chevauchent — un engrènement qu'on lit comme cassé.
+  // On garde donc les directions de la projection et les longueurs vraies.
+  const chains = [
+    [[SPUR(20, 60), SPUR(15, 45)], 9],
+    [[SPUR(20, 40), WORM(), SPUR(20, 40)], 160],
+    [[SPUR(20, 40), BEVEL()], 4],
+    [[WORM(), WORM()], 400]
+  ];
+  chains.forEach(([stages, target]) => {
+    const layout = layoutOf(stages, target);
+    Projection.VIEWS.forEach(view => {
+      const frame = Spatial.unfold(layout, view.id);
+      layout.graph.mechanisms.forEach(mechanism => {
+        if (!mechanism.outputPort || !mechanism.outputPort.shaftId) return;
+        const a = frame.byId[mechanism.inputPort.memberId];
+        const b = frame.byId[mechanism.outputPort.memberId];
+        if (!a || !b) return;
+        const inAxis = layout.graph.axisFor(mechanism.inputPort.shaftId);
+        const outAxis = layout.graph.axisFor(mechanism.outputPort.shaftId);
+        const truth = Math.hypot(outAxis.origin[0] - inAxis.origin[0],
+          outAxis.origin[1] - inAxis.origin[1], outAxis.origin[2] - inAxis.origin[2]);
+        if (truth < 1e-6) return;                 // étage coaxial : pas d'entraxe
+        const drawn = Math.hypot(b.x - a.x, b.y - a.y);
+        assert.ok(Math.abs(drawn - truth) < 1e-6,
+          `${view.id} : entraxe dessiné ${drawn.toFixed(2)} pour ${truth.toFixed(2)}`);
+      });
+    });
+  });
+});
+
+test('unfolding closes every shaft joint, instead of drifting', () => {
+  // C'est le défaut qu'ancrer chaque étage indépendamment sur sa position
+  // projetée produisait : la position venait de la projection, la longueur du
+  // calcul, et deux organes d'un même arbre ne se rejoignaient plus.
+  const layout = layoutOf([SPUR(20, 40), WORM(), SPUR(20, 40)], 160);
+  Projection.VIEWS.forEach(view => {
+    const frame = Spatial.unfold(layout, view.id);
+    layout.shafts.forEach(shaft => {
+      if (shaft.memberIds.length < 2) return;
+      const drawn = shaft.memberIds.map(id => frame.byId[id]).filter(Boolean);
+      if (drawn.length < 2) return;
+      const seat = frame.shafts[shaft.id];
+      const spacing = Math.hypot(drawn[1].x - drawn[0].x, drawn[1].y - drawn[0].y);
+      const axial = Math.abs(layout.byId[shaft.memberIds[1]].axialPosition
+        - layout.byId[shaft.memberIds[0]].axialPosition);
+      // Deux organes solidaires sont écartés de leur écart axial réel — sauf
+      // dans une vue où l'arbre pointe vers l'œil, où ils se superposent parce
+      // que c'est ce que cette vue montre.
+      const endOn = Math.hypot(seat.along[0], seat.along[1]) < 1e-9;
+      assert.ok(endOn || Math.abs(spacing - axial) < 1e-6,
+        `${view.id} / ${shaft.id} : ${spacing.toFixed(2)} pour ${axial.toFixed(2)}`);
+    });
+  });
+});
+
+test('every member of the chain gets a seat, in every view', () => {
+  const layout = layoutOf([SPUR(20, 40), WORM(), SPUR(20, 40)], 160);
+  Projection.VIEWS.forEach(view => {
+    const frame = Spatial.unfold(layout, view.id);
+    layout.members.forEach(member => {
+      const seat = frame.byId[member.id];
+      assert.ok(seat, `${view.id} : ${member.id} doit être placé`);
+      assert.ok(Number.isFinite(seat.x) && Number.isFinite(seat.y), member.id);
+    });
+  });
+  assert.deepEqual(Spatial.unfold(null, 'front').byId, {});
+});

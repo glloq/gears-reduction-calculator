@@ -123,12 +123,97 @@
     return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
   }
 
+  /**
+   * DÉPLIER : les angles viennent de la projection, les longueurs restent vraies.
+   *
+   * Projeter tout, positions comprises, est géométriquement irréprochable et
+   * illisible ici : une vue oblique raccourcit les entraxes, et deux roues
+   * dessinées en cercles à un entraxe raccourci se chevauchent — un engrènement
+   * qu'on lit comme cassé. Le faire proprement demanderait de dessiner chaque
+   * roue en ellipse, ce qui est un autre chantier.
+   *
+   * L'alternative retenue est la convention du dessin d'ensemble de réducteur :
+   * on conserve les DIRECTIONS que la projection donne — c'est elles qui
+   * portent l'information spatiale, un renvoi à 90° reste un renvoi à 90° — et
+   * on garde les LONGUEURS vraies, si bien qu'aucun engrènement ne se décolle
+   * et qu'aucun entraxe n'est dessiné plus court qu'il n'est.
+   *
+   * La cohérence tient à une seule chose : rien n'est ancré indépendamment. La
+   * chaîne se construit de proche en proche, chaque arbre à partir de celui
+   * dont il descend. Ancrer chaque étage sur sa position projetée pendant que
+   * ses longueurs restent vraies faisait dériver les raccords — deux organes
+   * d'un même arbre ne se rejoignaient plus.
+   */
+  function unfold(layout, viewId) {
+    var view = Projection.view(viewId);
+    var graph = layout && layout.graph;
+    if (!graph) return { view: view, byId: {}, shafts: {} };
+
+    function direction2d(vector, fallback) {
+      var xy = Projection.project(vector, view);
+      var length = Math.hypot(xy[0], xy[1]);
+      // Un axe vu en bout n'a pas de direction à l'écran : ses organes se
+      // superposent, ce qui est la vérité de cette vue et non un défaut.
+      return length < 1e-9 ? (fallback || [0, 0]) : [xy[0] / length, xy[1] / length];
+    }
+
+    var shafts = {}, byId = {};
+    function draw(shaft, origin, along) {
+      shafts[shaft.id] = { origin: origin, along: along };
+      shaft.members.forEach(function (member) {
+        byId[member.id] = { x: origin[0] + along[0] * member.axialPosition,
+          y: origin[1] + along[1] * member.axialPosition, shaftId: shaft.id };
+      });
+    }
+
+    var first = graph.shafts[0];
+    if (!first) return { view: view, byId: byId, shafts: shafts };
+    draw(first, [0, 0], direction2d(graph.byAxis[first.axisId].direction, [1, 0]));
+
+    graph.mechanisms.forEach(function (mechanism) {
+      var input = mechanism.inputPort, output = mechanism.outputPort;
+      if (!input || !output || !output.shaftId) return;
+      var source = byId[input.memberId], host = shafts[input.shaftId];
+      var target = graph.byShaft[output.shaftId];
+      if (!source || !host || !target || shafts[target.id]) return;
+
+      var inAxis = graph.byAxis[graph.byShaft[input.shaftId].axisId];
+      var outAxis = graph.byAxis[target.axisId];
+      var along = direction2d(outAxis.direction, host.along);
+
+      // La direction de l'engrènement est celle que la projection donne à
+      // l'écart entre les deux axes ; sa longueur reste l'entraxe vrai.
+      var offset = [outAxis.origin[0] - inAxis.origin[0], outAxis.origin[1] - inAxis.origin[1],
+        outAxis.origin[2] - inAxis.origin[2]];
+      var span = Math.sqrt(offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]);
+      var toward = direction2d(offset, [-host.along[1], host.along[0]]);
+      var driven = graph.byId[output.memberId];
+      var seat = [source.x + toward[0] * span, source.y + toward[1] * span];
+      draw(target, [seat[0] - along[0] * (driven ? driven.axialPosition : 0),
+        seat[1] - along[1] * (driven ? driven.axialPosition : 0)], along);
+    });
+
+    // Les corps qu'aucun mécanisme ne relie — couronne bloquée, satellites —
+    // partagent l'axe de leur étage : ils se dessinent sur le même tracé.
+    graph.shafts.forEach(function (shaft) {
+      if (shafts[shaft.id]) return;
+      var sibling = null;
+      graph.shafts.forEach(function (other) {
+        if (!sibling && other.axisId === shaft.axisId && shafts[other.id]) sibling = other;
+      });
+      var host = sibling ? shafts[sibling.id] : { origin: [0, 0], along: [1, 0] };
+      draw(shaft, host.origin, host.along);
+    });
+
+    return { view: view, byId: byId, shafts: shafts };
+  }
+
   /** La vue conseillée pour cette transmission — voir ProjectionEngine.auto. */
   function autoView(layout) {
     var axes = (layout && layout.graph && layout.graph.axes) || [];
     return Projection.auto(axes);
   }
 
-  return { build: build, project: project, autoView: autoView, bounds: bounds,
+  return { build: build, project: project, unfold: unfold, autoView: autoView, bounds: bounds,
     SHAFT_OVERHANG: SHAFT_OVERHANG };
 });
