@@ -61,15 +61,35 @@
    * @param {object} preferences PreferenceModel d'origine
    * @returns {{status, blocker, candidates, text}}
    */
-  function analyze(probePool, preferences) {
+  /**
+   * Ce qu'il reste à ASSOUPLIR dépend de ce qui a été décidé. En mode
+   * Construire, conseiller d'élargir les technologies, le nombre d'étages ou la
+   * tolérance revient à conseiller d'annuler la chaîne qu'on vient d'écrire :
+   * ce sont trois décisions, pas trois réglages oubliés. Ce qui reste réellement
+   * ajustable, c'est la plage de dentures balayée, le module, et les valeurs
+   * qu'on a soi-même épinglées.
+   *
+   * @param {object} [context] `{ chain: true, unknownStages, teethRange }`
+   */
+  function infeasibleText(context) {
+    if (!context || !context.chain) {
+      return 'Même sans vos contraintes de dimensions et de performance, aucune architecture n’atteint ce rapport. ' +
+        'Élargissez les technologies, le nombre d’étages ou la tolérance sur le rapport.';
+    }
+    var range = context.teethRange;
+    var span = range && Number.isFinite(range.min) && Number.isFinite(range.max)
+      ? ' La plage de dentures balayée va de ' + range.min + ' à ' + range.max + ' dents.'
+      : '';
+    return 'Aucune denture de cette plage ne complète la chaîne au rapport demandé.' + span +
+      ' Élargissez la plage de dentures, changez le module, ou libérez une des valeurs que vous avez imposées.';
+  }
+
+  function analyze(probePool, preferences, context) {
     var pool = Array.isArray(probePool) ? probePool : [];
     var hard = preferences ? preferences.constraints() : [];
 
     if (!pool.length) {
-      return {
-        status: 'infeasible', blocker: null, candidates: [],
-        text: 'Même sans vos contraintes de dimensions et de performance, aucune architecture n’atteint ce rapport. Élargissez les technologies, le nombre d’étages ou la tolérance sur le rapport.'
-      };
+      return { status: 'infeasible', blocker: null, candidates: [], text: infeasibleText(context) };
     }
     if (!hard.length) {
       return {
@@ -149,5 +169,5 @@
     return lines.join(' ');
   }
 
-  return { analyze: analyze, probePreferences: probePreferences, relax: relax, niceBound: niceBound, measure: measure };
+  return { analyze: analyze, infeasibleText: infeasibleText, probePreferences: probePreferences, relax: relax, niceBound: niceBound, measure: measure };
 });

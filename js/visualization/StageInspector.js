@@ -61,7 +61,9 @@
       try { worm = registry && registry.wormDetails ? registry.wormDetails(stage) : null; }
       catch (ignore) { worm = null; }
     }
-    return { index: index, type: stage.type, topology: topology, worm: worm,
+    // §24 : d'où vient chaque valeur, quand la solution le sait.
+    var origin = (solution && solution.origin && solution.origin[index]) || null;
+    return { index: index, type: stage.type, topology: topology, worm: worm, origin: origin,
       teeth: teeth.filter(function (v) { return finite(v) && v > 0; }), ratio: mech.ratio,
       efficiency: mech.efficiency, centerDistance: geometry.centerDistance, module: stage.parameters && stage.parameters.module,
       inputRpm: inputRpm, outputRpm: outputRpm, inputTorque: mech.inputTorqueNm, outputTorque: mech.outputTorqueNm || mech.torqueNm,
@@ -73,6 +75,22 @@
       if (registry && registry.familyName) return registry.familyName(type);
     } catch (ignore) { /* registre absent : on retombe sur l'identifiant */ }
     return type;
+  }
+
+  /**
+   * §24 : « 🔒 votre valeur » ou « ✨ proposée ». Sur une chaîne complétée,
+   * « 20 → 60 » ne dit pas que le 20 venait d'une roue déjà taillée et que le 60
+   * est une proposition du solveur — or c'est exactement ce qu'on veut vérifier
+   * avant de fabriquer quoi que ce soit.
+   */
+  var ORIGIN_MARKS = {
+    pinned: { mark: ' 🔒', title: 'Valeur que vous avez imposée' },
+    found: { mark: ' ✨', title: 'Valeur proposée par le solveur' }
+  };
+
+  function origin(data, path) {
+    if (!data.origin) return null;
+    return data.origin.fields && data.origin.fields[path] ? 'pinned' : 'found';
   }
 
   /** « Solaire (S) · 1500 rpm ↺ » — organe, code, et ce qu'il fait. */
@@ -130,7 +148,14 @@
         // Pour un planétaire comme pour une vis, la denture seule ne dit rien :
         // c'est la topologie, ou l'angle d'avance, qui définit le mécanisme. Le
         // bloc de famille les porte, et cette ligne ferait doublon.
-        ['Dents', topology || worm ? null : (data.teeth.join(' → ') || null)],
+        // « 20 → 60 » suffit tant qu'on ne sait pas d'où viennent les valeurs.
+        // Dès qu'on le sait, les deux se séparent : leurs provenances diffèrent,
+        // et « 20 imposé, 60 proposé » est le cas normal d'une chaîne complétée.
+        ['Dents', topology || worm || data.origin ? null : (data.teeth.join(' → ') || null)],
+        ['Menante', topology || worm || !data.origin || !finite(data.teeth[0]) ? null
+          : data.teeth[0] + ' dents', origin(data, 'input.teeth')],
+        ['Menée', topology || worm || !data.origin || !finite(data.teeth[1]) ? null
+          : data.teeth[1] + ' dents', origin(data, 'output.teeth')],
         ['Rapport', format(data.ratio, 3, ' : 1')]
       ] },
       topology ? { title: 'Architecture', rows: [
@@ -139,9 +164,9 @@
         ['Sortie', memberLine(topology.output)]
       ] } : null,
       topology ? { title: 'Denture', rows: [
-        ['Solaire', finite(topology.sunTeeth) ? topology.sunTeeth + ' dents' : null],
+        ['Solaire', finite(topology.sunTeeth) ? topology.sunTeeth + ' dents' : null, origin(data, 'sunTeeth')],
         ['Satellites', finite(topology.planetTeeth) ? topology.planetTeeth + ' dents × ' + topology.planetCount : null],
-        ['Couronne', finite(topology.ringTeeth) ? topology.ringTeeth + ' dents' : null]
+        ['Couronne', finite(topology.ringTeeth) ? topology.ringTeeth + ' dents' : null, origin(data, 'ringTeeth')]
       ] } : null,
       // §20 : deux trains aux mêmes dentures donnent des rapports opposés
       // selon l'organe bloqué. Ce qui explique le rapport, c'est Willis et le
@@ -157,8 +182,8 @@
         ['Équirépartition (Zs + Zr)/n', conditionLine(topology.details.assembly, 'entier attendu')]
       ] } : null,
       worm ? { title: 'Vis', rows: [
-        ['Filets', finite(worm.starts) ? worm.starts + (worm.starts > 1 ? ' filets' : ' filet') : null],
-        ['Roue', finite(worm.wheelTeeth) ? worm.wheelTeeth + ' dents' : null],
+        ['Filets', finite(worm.starts) ? worm.starts + (worm.starts > 1 ? ' filets' : ' filet') : null, origin(data, 'wormStarts')],
+        ['Roue', finite(worm.wheelTeeth) ? worm.wheelTeeth + ' dents' : null, origin(data, 'wheelTeeth')],
         ['Angle d’avance γ', format(worm.leadAngleDeg, 1, '°')],
         // C'est l'angle d'avance face au frottement qui décide du maintien de
         // charge, pas la famille : une vis n'est pas irréversible par nature.
@@ -198,6 +223,15 @@
       rows.forEach(function (row) {
         var line = document.createElement('div'), label = document.createElement('span'), value = document.createElement('strong');
         label.textContent = row[0]; value.textContent = row[1];
+        var provenance = row[2] && ORIGIN_MARKS[row[2]];
+        if (provenance) {
+          var mark = document.createElement('span');
+          mark.className = 'value-origin origin-' + row[2];
+          mark.textContent = provenance.mark;
+          mark.title = provenance.title;
+          value.appendChild(mark);
+          line.dataset.origin = row[2];
+        }
         line.appendChild(label); line.appendChild(value); grid.appendChild(line);
       });
     });

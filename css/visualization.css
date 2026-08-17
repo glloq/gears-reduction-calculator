@@ -283,3 +283,7 @@ body.dark-theme .geometry-envelope { opacity: .7; }
    jamais se lire comme une cote garantie. */
 .geometry-stage.schematic .geometry-member { stroke-dasharray: 6 3; }
 .geometry-dimension.schematic, .diameter-dimension.schematic text { opacity: .75; font-style: italic; }
+
+/* §24 : d'où vient chaque valeur d'une chaîne complétée. */
+.value-origin { font-size: .85em; margin-left: 2px; }
+.inspector-grid [data-origin="found"] strong { color: var(--accent); }

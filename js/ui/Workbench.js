@@ -127,6 +127,15 @@
       self.modal.open(0);
     });
 
+    // §25 : reprendre une solution DANS Construire. « Optimiser » cherche mieux
+    // à rapport égal, sans rendre la main sur les étages ; « Modifier » les rend
+    // tous, chacun avec son degré de liberté. C'est ce qui referme la boucle
+    // concevoir → modifier → compléter → nouvelle solution.
+    ['editSolutionBtn', 'editTransmissionBtn'].forEach(function (id) {
+      var button = el(id);
+      if (button) button.addEventListener('click', function () { self.editSelectedSolution(); });
+    });
+
     var edit = el('editSearchBtn');
     // §25 : rouvrir une recherche définie ramène à l'étape qui la porte.
     if (edit) edit.addEventListener('click', function () { self.modal.open(); });
@@ -138,6 +147,24 @@
     });
 
     this._refreshConfigurationFlow();
+  };
+
+  /**
+   * Charge la solution affichée dans le constructeur. Tous ses étages y entrent
+   * IMPOSÉS : c'est bien ce qu'on veut d'abord — la solution telle qu'elle est —
+   * et l'utilisateur libère ensuite ce qu'il souhaite voir recalculé, en vidant
+   * un champ. L'inverse — tout ouvrir d'emblée — perdrait la solution qu'on
+   * venait justement de reprendre.
+   */
+  Workbench.prototype.editSelectedSolution = function () {
+    var solution = this.solutions && this.selected != null ? this.solutions[this.selected] : null;
+    if (!solution || !this.session) return this;
+    this.session.build = GearApp.requirements.build.fromStages(solution.stages);
+    this.session.setWorkspaceMode('build');
+    this.session.invalidate();
+    this._refreshConfigurationFlow();
+    this.modal.open(0);
+    return this;
   };
 
   /** Réaligne les miroirs et le bandeau sur la session. */

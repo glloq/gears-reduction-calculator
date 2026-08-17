@@ -129,10 +129,39 @@
     var linear = this._pool.length > 0 && this._pool[0].mode === 'rotationTranslation';
     var bar = el('refineBar');
     if (bar) {
-      bar.hidden = this._pool.length === 0;
+      bar.hidden = this._pool.length === 0 || this._isSingleTransmission();
       bar.classList.toggle('refine-linear', linear);
     }
+    this._renderAnalysed();
     this._publish(true);
+  };
+
+  /**
+   * §23 : une transmission ANALYSÉE n'est pas un vivier d'une solution. La
+   * réutilisation du vivier est un bon choix technique — tout le reste en
+   * dépend — mais l'écran ne doit pas pour autant proposer de trier une liste
+   * d'un élément, de la filtrer, ni de comparer une transmission à elle-même.
+   */
+  SolutionExplorer.prototype._isSingleTransmission = function () {
+    return this._pool.length === 1 && !!this._pool[0].isBuilt;
+  };
+
+  SolutionExplorer.prototype._renderAnalysed = function () {
+    var single = this._isSingleTransmission();
+    var banner = el('analysedBanner');
+    document.body.classList.toggle('single-transmission', single);
+    if (!banner) return;
+    banner.hidden = !single;
+    if (!single) return;
+    var solution = this._pool[0];
+    var summary = el('analysedSummary');
+    if (summary) {
+      var architecture = (solution.stages || []).map(function (stage) {
+        return GearTransmissionRegistry.familyName(stage.type, 'short');
+      }).join(' → ');
+      var ratio = Number.isFinite(solution.ratio) ? ', rapport ' + solution.ratio.toFixed(3) + ':1' : '';
+      summary.textContent = architecture + ratio;
+    }
   };
 
   SolutionExplorer.prototype.addVariant = function (solution) {

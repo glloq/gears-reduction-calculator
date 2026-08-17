@@ -339,6 +339,92 @@ test('without a regime the chain states ratios and invents no rpm (§2, §17)', 
   await expect(nodes.nth(2)).toContainText('—');
 });
 
+test('an analysed transmission is not a pool of one (§23)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  const banner = page.locator('#analysedBanner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText('Transmission analysée');
+  await expect(banner).toContainText('rapport 3.000:1');
+  // Trier une liste d'un élément, la filtrer, ou comparer une transmission à
+  // elle-même : autant d'actions sans objet.
+  await expect(page.locator('#refineBar')).toBeHidden();
+  await expect(page.locator('.results-body')).toBeHidden();
+  await expect(page.locator('.solution-reference')).toBeHidden();
+});
+
+test('a solution can be taken back into Construire (§25)', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  // Une vraie recherche, pour reprendre une solution qu'on n'a pas écrite.
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  const before = await page.evaluate(() =>
+    window.GearApp._workbench.solutions[0].stages.map(s => s.type + ':' + (s.input ? s.input.teeth + '/' + s.output.teeth : '')));
+
+  await page.locator('#editSolutionBtn').click();
+  await expect(page.locator('#searchModal')).toBeVisible();
+  // Le mode a basculé, et la chaîne est reprise TELLE QU'ELLE EST : tout ouvrir
+  // d'emblée perdrait la solution qu'on venait de reprendre.
+  await expect(page.locator('[data-workspace="build"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.build-stage')).toHaveCount(before.length);
+  const levels = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.build-stage')).map(n => n.dataset.level));
+  expect(levels.every(l => l === 'fixed')).toBe(true);
+  await expect(page.locator('#searchModalSubmit')).toContainText('Analyser');
+
+  // Libérer une denture rend la main au solveur, sur ce seul étage. La famille
+  // trouvée n'est pas connue d'avance : on vide le premier champ REQUIS.
+  const field = page.locator('.build-stage[data-stage="0"] .build-field:not(.build-field-optional)')
+    .locator('input, select').first();
+  await field.fill('');
+  await field.dispatchEvent('change');
+  await expect(page.locator('.build-stage[data-stage="0"]')).toHaveAttribute('data-level', 'partial');
+  await expect(page.locator('#searchModalSubmit')).toContainText('Compléter (1 étage)');
+});
+
+test('a completed chain says which values are yours (§24)', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20 });
+  await setQuantity(page, 'ratio', 2.25);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('#searchModal')).toBeHidden({ timeout: 40000 });
+  await expect(page.locator('#stageNav')).toBeVisible({ timeout: 40000 });
+  await page.locator('#stageNav [data-stage-nav="0"]').click();
+
+  const inspector = page.locator('#stageInspector .inspector-grid');
+  await expect(inspector.locator('[data-origin="pinned"]')).toContainText('20 dents');
+  await expect(inspector.locator('[data-origin="found"]')).toContainText('45 dents');
+});
+
+test('an unreachable chain blames the range, not the decisions', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  // 20 dents imposées, 3:1 demandé : il faudrait 60 dents, hors de la plage
+  // balayée par défaut (10 à 50).
+  await addBuildStage(page, 'spur', { 'input.teeth': 20 });
+  await setQuantity(page, 'ratio', 3);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('#searchModal')).toBeHidden({ timeout: 40000 });
+  const hint = page.locator('#workspaceEmptyHint');
+  await expect(hint).toContainText('plage de dentures', { timeout: 40000 });
+  await expect(hint).toContainText('10 à 50 dents');
+  // Conseiller d'élargir les technologies ou les étages à qui vient d'écrire sa
+  // chaîne revient à lui conseiller de l'annuler.
+  await expect(hint).not.toContainText('technologies');
+  await expect(hint).not.toContainText('nombre d’étages');
+});
+
 test('a built chain survives a reload', async ({ page }) => {
   await page.goto('/');
   await chooseMode(page, 'build');

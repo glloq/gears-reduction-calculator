@@ -321,3 +321,79 @@ test('the inspector attaches the family block, and drops the generic one', () =>
   assert.equal(plain.topology, null);
   assert.deepEqual(plain.teeth, [20, 60], 'lui garde sa ligne « Dents »');
 });
+
+// ===== §24, §25 : d'où vient chaque valeur, et comment reprendre la main =====
+
+test('a completed chain remembers what the user pinned', () => {
+  const model = chain([
+    { family: 'spur', values: { 'input.teeth': 20 } },
+    { family: 'planetary' }
+  ]);
+  const origin = model.toOrigin();
+  // « 20 → 60 » ne dit pas que le 20 venait d'une roue déjà taillée et que le
+  // 60 est une proposition. C'est exactement ce qu'on veut savoir avant de
+  // fabriquer quoi que ce soit.
+  assert.deepEqual(origin[0], { family: true, fields: { 'input.teeth': true } });
+  assert.deepEqual(origin[1], { family: true, fields: {} });
+  // C'est un INSTANTANÉ, pas un renvoi vers le modèle vivant : celui-ci peut
+  // être édité ensuite, la solution affichée doit garder son origine.
+  model.stage(0).set('output.teeth', 60);
+  assert.deepEqual(origin[0].fields, { 'input.teeth': true });
+});
+
+test('the inspector marks pinned values apart from found ones', () => {
+  const Inspector = require('../js/visualization/StageInspector.js');
+  const Scene = require('../js/visualization/core/SceneBuilder.js');
+  const solution = {
+    stages: [{ type: 'spur', input: { teeth: 20 }, output: { teeth: 60 }, parameters: { module: 1 } }],
+    mechanical: [{ ratio: 3 }], inputSpeedRpm: 1500,
+    origin: [{ family: true, fields: { 'input.teeth': true } }]
+  };
+  const data = Inspector.model(solution, 0, Registry, Scene.build(solution));
+  assert.deepEqual(data.origin.fields, { 'input.teeth': true });
+  // Sans origine connue, rien n'est marqué : on ne prétend pas savoir.
+  const blind = Object.assign({}, solution, { origin: null });
+  assert.equal(Inspector.model(blind, 0, Registry, Scene.build(blind)).origin, null);
+});
+
+test('a found solution becomes editable, every stage imposed', () => {
+  const stages = [
+    { type: 'spur', input: { teeth: 20 }, output: { teeth: 60 }, parameters: { module: 1.5 } },
+    { type: 'planetary', sunTeeth: 20, ringTeeth: 70, planetTeeth: 25, planetCount: 3,
+      inputMember: 'S', outputMember: 'C', fixed: 'R', parameters: { module: 1.5 } }
+  ];
+  const model = Build.fromStages(stages);
+  // Tous imposés : c'est la solution TELLE QU'ELLE EST qu'on reprend. Tout
+  // ouvrir d'emblée perdrait précisément ce qu'on venait de reprendre.
+  assert.deepEqual(model.levels(), ['fixed', 'fixed']);
+  assert.equal(model.isComplete(), true);
+  assert.equal(model.module, 1.5);
+  assert.equal(Math.round(model.ratio() * 100) / 100, 13.5);
+  // La topologie planétaire survit au passage : sinon le rapport changerait.
+  assert.equal(model.stage(1).values.fixed, 'R');
+  assert.equal(model.stage(1).values.planetCount, 3);
+  // Et libérer une valeur rend la main au solveur.
+  model.stage(0).set('output.teeth', null);
+  assert.equal(model.unknownCount(), 1);
+  // Aller-retour : la chaîne reconstruite redonne les mêmes étages.
+  const round = Build.fromStages(Build.fromStages(stages).toStages());
+  assert.deepEqual(round.levels(), ['fixed', 'fixed']);
+  assert.equal(round.ratio(), model.ratio() === null ? round.ratio() : 13.5);
+});
+
+test('an unreachable chain blames the range, not the decisions', () => {
+  const NearMiss = require('../js/requirements/NearMissAnalyzer.js');
+  // Conseiller « élargissez les technologies ou le nombre d'étages » à qui vient
+  // d'écrire sa chaîne revient à lui conseiller de l'annuler : ce sont des
+  // décisions, pas des réglages oubliés.
+  const search = NearMiss.analyze([], null, null);
+  assert.match(search.text, /technologies/);
+  const built = NearMiss.analyze([], null,
+    { chain: true, unknownStages: 1, teethRange: { min: 10, max: 50 } });
+  assert.match(built.text, /plage de dentures/);
+  assert.match(built.text, /10 à 50 dents/);
+  assert.match(built.text, /libérez une des valeurs/);
+  assert.doesNotMatch(built.text, /nombre d’étages/);
+  // Sans plage connue, on n'invente pas de bornes.
+  assert.doesNotMatch(NearMiss.analyze([], null, { chain: true }).text, /\d+ à \d+/);
+});

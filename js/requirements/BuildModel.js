@@ -306,6 +306,22 @@
     return this.stages.map(function (stage) { return stage.toConstraint(); });
   };
 
+  /**
+   * §24 : ce que l'utilisateur avait ÉPINGLÉ, figé au moment du calcul. Sans
+   * cette trace, une chaîne complétée est indiscernable d'une chaîne trouvée de
+   * bout en bout : « 20 → 60 » ne dit pas que le 20 venait d'une roue déjà
+   * taillée et que le 60 est une proposition. C'est un instantané, pas un
+   * renvoi vers le modèle vivant : celui-ci peut avoir été édité depuis, et la
+   * solution affichée doit continuer de dire d'où elle vient.
+   */
+  BuildModel.prototype.toOrigin = function () {
+    return this.stages.map(function (stage) {
+      var fields = {};
+      Object.keys(stage.values).forEach(function (path) { fields[path] = true; });
+      return { family: !!stage.family, fields: fields };
+    });
+  };
+
   /** Le gabarit de familles, tel que le moteur le connaît déjà. */
   BuildModel.prototype.toTemplate = function () {
     return this.stages.map(function (stage) { return stage.family ? [stage.family] : null; });
@@ -380,8 +396,37 @@
 
   BuildModel.prototype.clone = function () { return new BuildModel(this.toJSON()); };
 
+  /**
+   * §25 : une solution rendue ÉDITABLE. C'est la conversion inverse de
+   * `toStages()`, et elle referme la boucle : concevoir, puis reprendre la main
+   * étage par étage sur ce qui a été trouvé.
+   *
+   * Tous les étages entrent IMPOSÉS. C'est bien ce qu'on veut d'abord — la
+   * solution telle qu'elle est — et libérer un champ se fait ensuite en le
+   * vidant. L'inverse, tout ouvrir d'emblée, perdrait précisément la solution
+   * qu'on venait de reprendre.
+   */
+  function fromStages(stages) {
+    var model = new BuildModel();
+    (stages || []).forEach(function (stage) {
+      var family = Helpers.registryId(stage.type);
+      model.addStage(family);
+      var built = model.stage(model.stages.length - 1);
+      requiredFields(family).concat(optionalFields(family)).forEach(function (path) {
+        var value = get(stage, path);
+        if (present(value)) built.set(path, value);
+      });
+    });
+    // Le module est celui de la chaîne : le moteur n'en applique qu'un, et
+    // c'est déjà la règle du constructeur.
+    var first = (stages || [])[0];
+    var module = first && first.parameters ? first.parameters.module : null;
+    if (present(module)) model.setModule(module);
+    return model;
+  }
+
   return { BuildModel: BuildModel, BuildStage: BuildStage, LEVELS: LEVELS, LEVEL_LABELS: LEVEL_LABELS,
-    READINGS: READINGS, reading: reading,
+    READINGS: READINGS, reading: reading, fromStages: fromStages,
     REQUIRED: REQUIRED, OPTIONAL: OPTIONAL, requiredFields: requiredFields, optionalFields: optionalFields,
     familyKey: familyKey, get: get, set: set };
 });

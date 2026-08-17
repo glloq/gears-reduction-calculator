@@ -471,3 +471,23 @@
 .chain-stage:hover, .chain-stage:focus-visible { background: var(--surface-2); }
 .chain-stage.active { background: color-mix(in srgb, var(--accent) 12%, var(--surface-1)); }
 .chain-shaft { color: var(--muted); padding-left: calc(var(--sp-2) + 3px); }
+
+/* ----- §23 : une transmission analysée n'est pas un vivier de 1 ----- */
+
+.analysed-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); margin-bottom: var(--sp-2);
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.analysed-summary { color: var(--muted); font-size: var(--font-sm); }
+.analysed-banner button { margin-left: auto; }
+/* Trier une liste d'un élément, la filtrer, ou comparer une transmission à
+   elle-même : autant d'actions sans objet. */
+body.single-transmission #refineBar,
+body.single-transmission #cardsViewBtn,
+body.single-transmission #tableViewBtn,
+body.single-transmission .results-body,
+body.single-transmission .solution-badge,
+body.single-transmission .solution-reference { display: none; }
+body.single-transmission .solution-cards { grid-template-columns: 1fr; }

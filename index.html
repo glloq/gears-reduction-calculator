@@ -494,6 +494,13 @@
             <div id="refineTypeChips" class="refine-chips refine-rotary" role="group" aria-label="Types présents dans les solutions"></div>
             <p id="refineCount" class="refine-count" aria-live="polite"></p>
           </div>
+          <!-- §23 : une transmission analysée n'est pas un vivier de 1. Trier,
+               filtrer et la comparer à elle-même n'ont aucun sens. -->
+          <div id="analysedBanner" class="analysed-banner" hidden>
+            <strong>Transmission analysée</strong>
+            <span id="analysedSummary" class="analysed-summary"></span>
+            <button type="button" class="btn-small btn-primary" id="editTransmissionBtn">Modifier la transmission</button>
+          </div>
           <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
           <div class="results-body">
             <div class="table-scroll">
@@ -585,6 +592,10 @@
                solution → optimisation → nouvelle recherche. -->
           <div class="detail-actions" id="detailActions" hidden>
             <button type="button" class="btn-small" id="optimiseSolutionBtn">Optimiser cette solution</button>
+            <!-- §25 : reprendre une solution dans Construire referme la boucle
+                 concevoir → modifier → compléter. « Optimiser » cherche mieux à
+                 rapport égal ; « Modifier » rend la main sur chaque étage. -->
+            <button type="button" class="btn-small" id="editSolutionBtn">Modifier cette solution</button>
           </div>
 
           <!-- §25 : « Comparer » et « Graphiques » n'ont de sens qu'avec de
