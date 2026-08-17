@@ -94,38 +94,55 @@
   }
 
   /**
-   * La vue qui montre le mieux CE mécanisme.
+   * Ce qu'une vue perd de CE mécanisme.
    *
-   * Le choix automatique cherchait la disposition la moins encombrée. C'est un
-   * critère de dessin, pas de mécanique : il pouvait choisir une vue où
-   * l'engrènement n'était pas visible parce qu'elle évitait deux
-   * chevauchements. On décide donc par ce qu'il y a à comprendre.
+   * Le choix automatique cherchait la disposition la moins encombrée : un
+   * critère de dessin, pas de mécanique, qui pouvait cacher l'engrènement pour
+   * éviter deux chevauchements. On décide par ce qui serait PERDU.
    *
-   *   axes tous parallèles  → de face, on voit les engrènements ;
-   *   un seul renvoi         → le plan qui CONTIENT les deux axes ;
-   *   plusieurs renvois      → axonométrie, aucune vue plane ne suffit.
+   * Une première version ne regardait que les DIRECTIONS d'axes. C'est
+   * insuffisant : deux étages parallèles ont la même direction, et ce qui les
+   * distingue est leur ENTRAXE. Choisir la vue sur les seules directions
+   * pouvait donc élire un point de vue où deux arbres parallèles se confondent
+   * — les roues d'un train à deux étages se retrouvaient l'une sur l'autre.
+   *
+   * On note donc deux pertes, et on retient la pire :
+   *   un axe vu en bout se réduit à un point ;
+   *   deux axes distincts projetés au même endroit se confondent.
    */
+  function penalty(axes, candidate) {
+    var worst = 1;
+    axes.forEach(function (axis) {
+      var direction = unit(axis.direction || axis);
+      // 0 quand l'axe pointe vers l'œil, 1 quand il est dans le plan de l'écran.
+      worst = Math.min(worst, Math.sqrt(Math.max(0, 1 - dot(direction, candidate.w) * dot(direction, candidate.w))));
+    });
+    var origins = axes.map(function (axis) { return axis.origin; }).filter(Boolean);
+    var separation = 0, pairs = 0;
+    for (var i = 0; i < origins.length; i++) {
+      for (var j = i + 1; j < origins.length; j++) {
+        var delta = [origins[j][0] - origins[i][0], origins[j][1] - origins[i][1], origins[j][2] - origins[i][2]];
+        var space = Math.sqrt(dot(delta, delta));
+        if (space < 1e-6) continue;                 // axes confondus dans le monde
+        pairs++;
+        var seen = Math.hypot(dot(delta, candidate.u), dot(delta, candidate.v));
+        separation = Math.max(separation, 1 - seen / space);
+      }
+    }
+    return Math.min(worst, pairs ? 1 - separation : 1);
+  }
+
   function auto(axes) {
-    var directions = (axes || []).map(function (axis) { return unit(axis.direction || axis); });
-    if (!directions.length) return view('front');
-    var distinct = [];
-    directions.forEach(function (d) {
-      var known = distinct.some(function (k) { return Math.abs(Math.abs(dot(k, d)) - 1) < 1e-6; });
-      if (!known) distinct.push(d);
-    });
-    if (distinct.length <= 1) return view('front');
-    if (distinct.length > 2) return view('iso');
-    // Deux directions : la bonne vue est celle dont le regard est perpendiculaire
-    // au plan qui les contient — on y voit les deux axes en vraie grandeur.
-    var planeNormal = unit(cross(distinct[0], distinct[1]));
-    var best = view('front'), score = -1;
+    var list = (axes || []).filter(Boolean);
+    if (!list.length) return view('front');
+    var best = null, score = -1;
     VIEWS.forEach(function (candidate) {
-      if (candidate.id === 'iso') return;
-      var alignment = Math.abs(dot(candidate.w, planeNormal));
-      if (alignment > score) { score = alignment; best = candidate; }
+      // L'axonométrie ne perd presque rien mais déforme : elle ne gagne qu'à
+      // défaut d'une vue plane honnête.
+      var value = penalty(list, candidate) - (candidate.id === 'iso' ? 0.08 : 0);
+      if (value > score) { score = value; best = candidate; }
     });
-    // Aucune vue plane ne contient ce plan : l'axonométrie dit au moins la vérité.
-    return score > 0.9 ? best : view('iso');
+    return best || view('front');
   }
 
   return { VIEWS: VIEWS, view: view, project: project, presentation: presentation,

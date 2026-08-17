@@ -88,6 +88,28 @@ test('the automatic view answers what there is to understand', () => {
   assert.equal(Projection.auto([]).id, 'front');
 });
 
+test('the automatic view never hides what separates two parallel shafts', () => {
+  // Une première version ne notait que les DIRECTIONS d'axes. Deux étages
+  // parallèles ont la même direction : ce qui les distingue est leur entraxe.
+  // Elle pouvait donc élire une vue où deux arbres se confondent — les roues
+  // d'un train à deux étages se retrouvaient l'une sur l'autre.
+  const chain = [
+    { direction: [1, 0, 0], origin: [0, 0, 0] },
+    { direction: [1, 0, 0], origin: [0, -80, 0] },     // entraxe suivant Y
+    { direction: [0, 0, 1], origin: [0, -80, 0] }      // puis un renvoi
+  ];
+  const chosen = Projection.auto(chain);
+  // « Dessus » (regard suivant Y) écraserait justement l'entraxe.
+  assert.notEqual(chosen.id, 'top');
+  // Quelle que soit la vue retenue, les deux axes parallèles restent séparés
+  // à l'écran, et aucun axe n'est vu en bout.
+  const seen = Math.hypot(dot([0, -80, 0], chosen.u), dot([0, -80, 0], chosen.v));
+  assert.ok(seen > 1, 'l’entraxe doit rester visible');
+  chain.forEach(axis => {
+    assert.ok(Math.abs(dot(axis.direction, chosen.w)) < 0.99, 'aucun axe réduit à un point');
+  });
+});
+
 // ===== Le placement spatial =====
 
 test('a member sits on its axis, at its abscissa — and nowhere else', () => {
