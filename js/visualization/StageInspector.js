@@ -47,6 +47,11 @@
       topology = { input: driving || null, output: driven || null, fixed: held || null,
         sunTeeth: stage.sunTeeth, planetTeeth: stage.planetTeeth, ringTeeth: stage.ringTeeth,
         planetCount: Math.max(2, Math.round(finite(stage.planetCount) ? stage.planetCount : 3)) };
+      // §20 : le rapport de base et les conditions de montage sont calculés
+      // par le registre — l'inspecteur affiche, il ne refait pas la mécanique.
+      try {
+        if (registry && registry.planetaryDetails) topology.details = registry.planetaryDetails(stage);
+      } catch (ignore) { topology.details = null; }
     }
     return { index: index, type: stage.type, topology: topology,
       teeth: teeth.filter(function (v) { return finite(v) && v > 0; }), ratio: mech.ratio,
@@ -71,6 +76,20 @@
     if (!finite(rpm)) return name;
     if (Math.abs(rpm) < 1e-6) return name + ' · immobile';
     return name + ' · ' + Math.abs(rpm).toFixed(0) + ' rpm ' + (rpm < 0 ? '↻' : '↺');
+  }
+
+  /** Vitesse d'un organe VUE DU PORTE-SATELLITES : c'est le repère de Willis. */
+  function relativeLine(details, code) {
+    var relative = details && details.relativeToCarrier;
+    if (!relative || !finite(relative[code])) return null;
+    return (relative[code] >= 0 ? '+' : '') + relative[code].toFixed(3) + ' × ω entrée';
+  }
+
+  /** « 30 ✓ » ou « 30,5 ✗ entier attendu » — la condition et son verdict. */
+  function conditionLine(condition, requirement) {
+    if (!condition || !finite(condition.value)) return null;
+    var value = Number.isInteger(condition.value) ? String(condition.value) : condition.value.toFixed(2);
+    return value + (condition.satisfied ? ' ✓' : ' ✗ ' + requirement);
   }
 
   function Inspector(container, options) { this.container = container; this.options = options || {}; this.solution = null; this.element = null; }
@@ -114,6 +133,19 @@
         ['Solaire', finite(topology.sunTeeth) ? topology.sunTeeth + ' dents' : null],
         ['Satellites', finite(topology.planetTeeth) ? topology.planetTeeth + ' dents × ' + topology.planetCount : null],
         ['Couronne', finite(topology.ringTeeth) ? topology.ringTeeth + ' dents' : null]
+      ] } : null,
+      // §20 : deux trains aux mêmes dentures donnent des rapports opposés
+      // selon l'organe bloqué. Ce qui explique le rapport, c'est Willis et le
+      // rapport de base — pas la liste des dents.
+      topology && topology.details ? { title: 'Cinématique', rows: [
+        ['Relation', '(ωS − ωC) / (ωR − ωC) = r₀'],
+        ['Rapport de base r₀', format(topology.details.basicRatio, 3)],
+        ['Solaire / porte-sat.', relativeLine(topology.details, 'S')],
+        ['Couronne / porte-sat.', relativeLine(topology.details, 'R')]
+      ] } : null,
+      topology && topology.details ? { title: 'Montage', rows: [
+        ['Coaxialité (Zr − Zs)/2', conditionLine(topology.details.coaxial, 'entier attendu')],
+        ['Équirépartition (Zs + Zr)/n', conditionLine(topology.details.assembly, 'entier attendu')]
       ] } : null,
       { title: 'Entrée', rows: [
         ['Vitesse', finite(data.inputRpm) ? format(Math.abs(data.inputRpm), 0, ' rpm') : null],

@@ -51,6 +51,8 @@
       rootDiameter: present(g.rootDiameter), baseDiameter: present(g.baseDiameter),
       teeth: present(g.teeth), width: present(g.width),
       coneAngleDeg: Number.isFinite(g.coneAngleDeg) ? g.coneAngleDeg : null,
+      leadAngleDeg: Number.isFinite(g.leadAngleDeg) ? g.leadAngleDeg : null,
+      module: present(g.module),
       travelPerRevolution: present(g.travelPerRevolution),
       schematic: !!(entry && entry.schematic),
       exact: entry ? entry.isExact.bind(entry) : function () { return false; }

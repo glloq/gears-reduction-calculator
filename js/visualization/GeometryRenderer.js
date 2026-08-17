@@ -23,6 +23,7 @@
     this.layout = null;
     this.scene = null;
     this._rotors = [];
+    this._phases = [];
     this._linear = [];
     this._angle = 0;
     this._animating = false;
@@ -57,8 +58,14 @@
     // repère d'indexation que les roues, sinon la vue Géométrie raconterait une
     // cinématique incomplète.
     if (member.kind === 'worm') {
-      p.worm(host, member.cx, member.cy, member.pitchDiameter, finite(item.stage.parameters && item.stage.parameters.module, 1));
-      this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
+      // §15 : la vis est vue de profil. Pas d'aiguille radiale — elle
+      // prétendrait une rotation dans le plan du dessin, que la pièce ne fait
+      // pas. Seuls les filets défilent, comme dans la vue Denture.
+      var threads = p.worm(host, member.cx, member.cy, member.pitchDiameter,
+        finite(item.stage.parameters && item.stage.parameters.module, 1), null,
+        { starts: member.teeth, leadAngleDeg: member.leadAngleDeg });
+      this._phases.push({ el: threads, memberId: member.memberId,
+        pitch: Number(threads.dataset.pitch) || 1 });
       return host;
     }
     if (member.kind === 'cone') {
@@ -175,6 +182,7 @@
     this.scene = GearSceneBuilder.build(solution);
     this.layout = GearGeometryLayout.build(solution, { scene: this.scene });
     this._rotors = [];
+    this._phases = [];
     this._linear = [];
     if (this.viewport) this.viewport.detach();
 
@@ -254,6 +262,14 @@
       }
       rotor.el.setAttribute('transform', transform);
     });
+    // §15 : la phase des filets d'une vis. Un tour d'entrée fait avancer le
+    // motif d'exactement un pas, donc la boucle se referme sans saut.
+    this._phases.forEach(function (entry) {
+      var own = finite((members[entry.memberId] || {}).angle, 0);
+      var pitch = entry.pitch > 0 ? entry.pitch : 1;
+      var shift = ((own / 360 * pitch) % pitch + pitch) % pitch;
+      entry.el.setAttribute('transform', 'translate(' + shift.toFixed(3) + ' 0)');
+    });
     this._linear.forEach(function (entry) {
       entry.el.setAttribute('transform', 'translate(' + finite((linear[entry.linearId] || {}).position, 0).toFixed(2) + ' 0)');
     });
@@ -296,6 +312,7 @@
       '.dimension-arrow{fill:' + muted + '}' +
       '.geometry-dimension,.stage-label{fill:' + muted + ';font:600 11px system-ui,sans-serif}' +
       '.geometry-envelope{fill:none;stroke:' + muted + ';stroke-dasharray:7 5;opacity:.55}' +
+      '.worm-thread{stroke:' + accent + ';stroke-width:.8;fill:none;opacity:.8;vector-effect:non-scaling-stroke}' +
       '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8;vector-effect:non-scaling-stroke}' +
       '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75;vector-effect:non-scaling-stroke}' +
       '.belt-span,.chain-span{fill:none;stroke:' + ink + ';stroke-width:1.4}' +

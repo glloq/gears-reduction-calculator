@@ -439,6 +439,17 @@ test('a planetary chooses its topology automatically, or exactly as told', async
   await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
   expect(await page.inputValue('#tp_planetary_inputMember')).toBe('R');
   expect(await page.inputValue('#tp_planetary_fixed')).toBe('S');
+
+  // §21 : l'analyse doit permettre de VÉRIFIER le train, pas seulement de le
+  // nommer — organe bloqué, rapport de base, conditions de montage.
+  const analysis = page.locator('#mechanicalPanel');
+  await expect(analysis).toContainText('Trains épicycloïdaux');
+  await analysis.getByRole('tab', { name: 'Trains épicycloïdaux' }).click();
+  await expect(analysis).toContainText('Rapport de base');
+  await expect(analysis).toContainText('Équirépartition');
+  // Et la table des étages nomme la famille en français, plus « planetary ».
+  await analysis.getByRole('tab', { name: 'Étages' }).click();
+  await expect(analysis.locator('.stages-table').first()).toContainText('Épicycloïdal');
 });
 
 test('a parameter set in the modal drives the search and the historic mirror', async ({ page }) => {

@@ -177,6 +177,38 @@
     else speeds.R = ((1 + k) * speeds.C - speeds.S) / k;
     return { speeds: speeds, ratio: inputSpeed / speeds[output] };
   }
+  /**
+   * §20, §21 : ce qu'il faut savoir d'un train épicycloïdal au-delà de
+   * « 20 → 80 ». Un planétaire n'est pas décrit par ses dentures : son rapport
+   * vient de la relation de Willis, et deux trains aux mêmes dentures donnent
+   * des rapports opposés selon l'organe bloqué. L'inspecteur et l'analyse
+   * mécanique lisent donc CES grandeurs-là, calculées ici une seule fois.
+   *
+   * Le rapport de BASE est celui qu'aurait le train porte-satellites bloqué :
+   * c'est l'invariant géométrique du mécanisme, indépendant de la topologie
+   * choisie, et c'est lui qu'on retrouve d'un bout à l'autre de Willis.
+   */
+  function planetaryDetails(s) {
+    if (!s) return null;
+    var zs = s.sunTeeth, zr = s.ringTeeth;
+    var n = Math.max(2, Math.round(Number.isFinite(s.planetCount) ? s.planetCount : 3));
+    var zp = (zr - zs) / 2;
+    var speeds = null;
+    try { speeds = planetarySpeeds(s, 1).speeds; } catch (ignore) { speeds = null; }
+    var relative = speeds ? { S: speeds.S - speeds.C, R: speeds.R - speeds.C, C: 0 } : null;
+    return {
+      members: { input: s.inputMember || 'S', output: s.outputMember || 'C', fixed: s.fixed || 'R' },
+      sunTeeth: zs, ringTeeth: zr, planetTeeth: zp, planetCount: n,
+      basicRatio: Number.isFinite(zs) && zs !== 0 ? -zr / zs : null,
+      // Deux conditions de montage, distinctes : la coaxialité impose un
+      // satellite entier, l'équirépartition impose que les n satellites
+      // tombent tous en face d'une dent.
+      coaxial: { value: zp, satisfied: Number.isInteger(zp) && zp > 0 },
+      assembly: { value: (zs + zr) / n, satisfied: Number.isInteger((zs + zr) / n) },
+      speeds: speeds, relativeToCarrier: relative
+    };
+  }
+
   register({ id: 'planetary', aliases: ['epicyclic'], name: 'Train épicycloïdal', constraints: { minInput: 12, maxInput: 60, minOutput: 30, maxOutput: 200, maxRatio: 12 }, parameterDefinitions: {},
     validateConfiguration: function (s) {
       // §4 : entrée, sortie et organe fixe sont TROIS organes distincts. Sans
@@ -237,5 +269,5 @@
     rack:{faceWidth:{label:'Largeur pignon/crémaillère (mm)',type:'number',default:10,min:1,step:.5}}
   };
   var beltPitches={GT2:2,GT3:3,'HTD-3M':3,'HTD-5M':5,'HTD-8M':8,T5:5,T10:10};
-  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
+  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, planetaryDetails: planetaryDetails, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
 });

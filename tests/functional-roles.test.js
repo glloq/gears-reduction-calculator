@@ -230,3 +230,47 @@ test('only the fixed member is grounded, and it follows the topology', () => {
   const r = Primitives.radii(ring);
   assert.ok(Primitives.groundRadius(ring, r) > r.tip, 'bâti attendu sur la jante');
 });
+
+// ===== §20, §21 : un planétaire s'explique, il ne se liste pas =====
+
+test('a planetary reports its basic ratio and both assembly conditions', () => {
+  const details = Registry.planetaryDetails(planetary());
+  // Rapport de base : celui du train porte-satellites bloqué, −Zr/Zs. C'est
+  // l'invariant du mécanisme, le même pour les six topologies.
+  assert.equal(details.basicRatio, -70 / 20);
+  for (const topology of TOPOLOGIES) {
+    assert.equal(Registry.planetaryDetails(planetary(topology)).basicRatio, -3.5);
+  }
+  // Coaxialité et équirépartition sont deux conditions DISTINCTES.
+  assert.deepEqual(details.coaxial, { value: 25, satisfied: true });
+  assert.deepEqual(details.assembly, { value: 30, satisfied: true });
+  const uneven = Registry.planetaryDetails(planetary({ planetCount: 4 }));
+  assert.equal(uneven.assembly.satisfied, false, '(20+70)/4 n’est pas entier');
+  assert.equal(uneven.coaxial.satisfied, true, 'la coaxialité, elle, tient toujours');
+  const odd = Registry.planetaryDetails(Object.assign(planetary(), { ringTeeth: 71 }));
+  assert.equal(odd.coaxial.satisfied, false, '(71−20)/2 n’est pas entier');
+});
+
+test('Willis holds: the relative speeds seen from the carrier obey the basic ratio', () => {
+  for (const topology of TOPOLOGIES) {
+    const details = Registry.planetaryDetails(planetary(topology));
+    const relative = details.relativeToCarrier;
+    assert.equal(relative.C, 0, 'le porte-satellites est immobile dans son propre repère');
+    // (ωS − ωC) / (ωR − ωC) = r₀ : c'est la définition même du rapport de base.
+    if (Math.abs(relative.R) > 1e-9) {
+      assert.ok(Math.abs(relative.S / relative.R - details.basicRatio) < 1e-9, JSON.stringify(topology));
+    }
+  }
+});
+
+test('the inspector explains the ratio instead of listing the teeth', () => {
+  const solution = solutionFor({ inputMember: 'R', fixed: 'S', outputMember: 'C' });
+  const data = Inspector.model(solution, 0, Registry, Scene.build(solution));
+  assert.ok(data.topology.details, 'les détails cinématiques doivent être joints');
+  assert.equal(data.topology.details.basicRatio, -3.5);
+  assert.equal(data.topology.details.members.fixed, 'S');
+  // Un étage ordinaire n'a ni topologie ni détails à porter.
+  const spur = { stages: [{ type: 'spur', input: { teeth: 15 }, output: { teeth: 45 }, parameters: { module: 2 } }],
+    mechanical: [{ ratio: 3 }], inputSpeedRpm: 1500 };
+  assert.equal(Inspector.model(spur, 0, Registry, Scene.build(spur)).topology, null);
+});

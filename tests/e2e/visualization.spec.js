@@ -182,6 +182,84 @@ test('the fixed member carries a ground symbol in all three views (§18)', async
   expect(moved.after.span).toBeLessThan(moved.before.span);
 });
 
+test('the worm turns without walking, in the Denture and Geometry views (§15)', async ({ page }) => {
+  await mount(page, ['worm']);
+  for (const view of ['teeth', 'geometry']) {
+    await showView(page, view);
+    const motion = await page.evaluate(v => {
+      const renderer = v === 'teeth' ? window.__viewer.teeth : window.__viewer.geometry;
+      const read = () => {
+        const phase = document.querySelector('.worm-thread-phase');
+        const body = document.querySelector('.worm-body, .worm-member');
+        return { phase: phase && phase.getAttribute('transform'),
+          body: body && (body.getAttribute('transform') || ''),
+          bodyX: body && (body.getAttribute('x') || body.getAttribute('cx') || '') };
+      };
+      renderer.setAnimationAngle(0);
+      const start = read();
+      renderer.setAnimationAngle(90);
+      const quarter = read();
+      renderer.setAnimationAngle(360);
+      return { start, quarter, full: read() };
+    }, view);
+    // Les filets défilent…
+    expect(motion.quarter.phase, view).not.toBe(motion.start.phase);
+    // …et se retrouvent exactement où ils étaient après un tour complet.
+    expect(motion.full.phase, view).toBe(motion.start.phase);
+    // …tandis que le corps ne bouge pas d'un pouce : c'était le défaut, la vis
+    // se déplaçait le long de son propre arbre.
+    expect(motion.quarter.body, view).toBe(motion.start.body);
+    expect(motion.quarter.bodyX, view).toBe(motion.start.bodyX);
+  }
+
+  // §15 : et surtout, plus d'aiguille radiale en Géométrie — elle prétendait
+  // une rotation dans le plan du dessin, que la vis vue de profil ne fait pas.
+  // La ROUE, elle, est bien vue de face : elle garde son repère. Seule la vis
+  // n'en a plus.
+  const needles = await page.evaluate(() => {
+    const worm = document.querySelector('.worm-member').closest('.geometry-member-group');
+    return { onWorm: worm.querySelectorAll('.index-mark').length,
+      total: document.querySelectorAll('.geometry-member-group .index-mark').length };
+  });
+  expect(needles.onWorm).toBe(0);
+  expect(needles.total).toBeGreaterThan(0);
+});
+
+test('the inspector explains a planetary, and the analysis lets it be checked (§20, §21)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
+  const inspector = page.locator('#stageInspector');
+  await expect(inspector).toBeVisible();
+  // §20 : la relation qui EXPLIQUE le rapport, et le rapport de base — pas
+  // seulement « 24 → 24 → 72 », qui ne dit pas qui mène.
+  await expect(inspector).toContainText('Rapport de base');
+  await expect(inspector).toContainText('ωS');
+  await expect(inspector).toContainText('Coaxialité');
+  await expect(inspector).toContainText('Équirépartition');
+  await expect(inspector).toContainText('Fixe');
+  await expect(inspector).toContainText('Couronne (R)');
+});
+
+test('each view says what it draws to scale, and what it only suggests (§22, §23)', async ({ page }) => {
+  await mount(page, ['spur']);
+  const badge = page.locator('#viewerFidelity');
+
+  await showView(page, 'geometry');
+  await expect(badge).toBeVisible();
+  await expect(badge).toContainText('cotée');
+
+  await showView(page, 'kinematic');
+  // Un schéma symbolique lu comme un plan coté est une source d'erreur :
+  // la vue le dit elle-même, elle ne le laisse pas deviner.
+  await expect(badge).toContainText('symbolique');
+  await expect(badge).toContainText('pas à l’échelle');
+
+  await showView(page, 'teeth');
+  await expect(badge).toContainText('à l’échelle réelle');
+  await expect(badge).not.toHaveClass(/has-derived/);
+});
+
 test('belts and chains use the exact tangent path and travelling elements', async ({ page }) => {
   for (const [name, marker] of [['belt', '.belt-tooth'], ['chain', '.chain-link']]) {
     await mount(page, [name]);
