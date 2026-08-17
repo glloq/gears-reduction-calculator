@@ -88,6 +88,28 @@ test('the automatic view answers what there is to understand', () => {
   assert.equal(Projection.auto([]).id, 'front');
 });
 
+test('the engagement view answers a different question from the automatic one', () => {
+  const axes = list => list.map(direction => ({ direction, origin: [0, 0, 0] }));
+  // Axes tous parallèles : `auto` évite de les voir en bout — ce qui donne la
+  // coupe, toutes les roues en rectangles. La denture, elle, se voit en
+  // regardant DANS l'axe.
+  const parallel = axes([[1, 0, 0], [1, 0, 0]]);
+  const shown = Projection.engagement(parallel);
+  assert.equal(Projection.presentation([1, 0, 0], shown), 'face');
+  assert.notEqual(shown.id, Projection.auto(parallel).id);
+
+  // Un renvoi : aucune vue plane ne met les deux axes de face. On préfère
+  // celle qui les trace EXACTEMENT — l'un de face, l'autre de profil — à
+  // l'axonométrie, qui n'en approche que des ellipses.
+  const bent = Projection.engagement(axes([[1, 0, 0], [0, 0, 1]]));
+  assert.notEqual(bent.id, 'iso');
+  [[1, 0, 0], [0, 0, 1]].forEach(direction => {
+    assert.notEqual(Projection.presentation(direction, bent), 'oblique');
+  });
+
+  assert.equal(Projection.engagement([]).id, 'front');
+});
+
 test('the automatic view never hides what separates two parallel shafts', () => {
   // Une première version ne notait que les DIRECTIONS d'axes. Deux étages
   // parallèles ont la même direction : ce qui les distingue est leur entraxe.
@@ -240,8 +262,13 @@ test('unfolding keeps every mesh at its true centre distance', () => {
         if (!a || !b) return;
         const inAxis = layout.graph.axisFor(mechanism.inputPort.shaftId);
         const outAxis = layout.graph.axisFor(mechanism.outputPort.shaftId);
-        const truth = Math.hypot(outAxis.origin[0] - inAxis.origin[0],
-          outAxis.origin[1] - inAxis.origin[1], outAxis.origin[2] - inAxis.origin[2]);
+        // L'ENTRAXE est la distance entre les deux axes, c'est-à-dire la seule
+        // composante perpendiculaire. La distance entre leurs ORIGINES contient
+        // en plus l'abscisse à laquelle le mécanisme se trouve sur l'arbre
+        // amont : les confondre faisait attendre 65 mm là où l'entraxe vaut 60.
+        const gap = [0, 1, 2].map(i => outAxis.origin[i] - inAxis.origin[i]);
+        const axial = gap.reduce((sum, c, i) => sum + c * inAxis.direction[i], 0);
+        const truth = norm(gap.map((c, i) => c - inAxis.direction[i] * axial));
         if (truth < 1e-6) return;                 // étage coaxial : pas d'entraxe
         const drawn = Math.hypot(b.x - a.x, b.y - a.y);
         assert.ok(Math.abs(drawn - truth) < 1e-6,
@@ -274,6 +301,71 @@ test('unfolding closes every shaft joint, instead of drifting', () => {
         `${view.id} / ${shaft.id} : ${spacing.toFixed(2)} pour ${axial.toFixed(2)}`);
     });
   });
+});
+
+test('a mesh happens where the driving part actually sits', () => {
+  // L'axe mené naissait à l'abscisse du membre PRÉCÉDENT, pas du membre menant.
+  // Sur une vis sans fin montée en bout d'arbre, la roue se retrouvait donc en
+  // face de l'entrée de l'arbre, à dix-sept millimètres du filet qu'elle est
+  // censée toucher — et les deux roues d'un même engrènement parallèle
+  // n'étaient pas dans le même plan.
+  const layout = layoutOf([SPUR(20, 40), WORM(), SPUR(20, 40)], 160);
+  layout.graph.mechanisms.forEach(mechanism => {
+    if (!mechanism.outputPort || !mechanism.outputPort.shaftId) return;
+    const driving = layout.byId[mechanism.inputPort.memberId];
+    const inAxis = layout.graph.axisFor(mechanism.inputPort.shaftId);
+    const outAxis = layout.graph.axisFor(mechanism.outputPort.shaftId);
+    const gap = [0, 1, 2].map(i => outAxis.origin[i] - inAxis.origin[i]);
+    const axial = gap.reduce((sum, c, i) => sum + c * inAxis.direction[i], 0);
+    assert.ok(Math.abs(axial - driving.axialPosition) < 1e-6,
+      `${mechanism.id} : l’engrènement est à ${axial.toFixed(2)}, le menant à ${driving.axialPosition}`);
+  });
+});
+
+test('two bevel wheels share an apex without sharing a place', () => {
+  // Les génératrices d'un couple conique se rejoignent en un SOMMET, à
+  // (d/2)/tan δ de chaque grande face. Sans cet écart, le modèle posait les
+  // deux cônes à l'origine de leurs axes — c'est-à-dire l'un DANS l'autre.
+  const layout = layoutOf([BEVEL()], 2);
+  const [pinion, wheel] = layout.members;
+  const apart = Math.hypot(...pinion.position.map((c, i) => c - wheel.position[i]));
+  assert.ok(apart > 1, `deux cônes distants de ${apart.toFixed(2)} mm`);
+
+  // Chaque cône est à sa distance de sommet, sur son propre axe, et les deux
+  // sommets sont le MÊME point.
+  function apex(member) {
+    const axis = layout.graph.byAxis[member.axisId];
+    const back = (member.geometry.pitchDiameter / 2) / Math.tan(member.geometry.coneAngleDeg * Math.PI / 180);
+    // Le pignon menant regarde vers l'avant, la roue menée revient vers le sommet.
+    const sign = member === pinion ? 1 : -1;
+    return member.position.map((c, i) => c + axis.direction[i] * back * sign);
+  }
+  const [a, b] = [apex(pinion), apex(wheel)];
+  assert.ok(Math.hypot(...a.map((c, i) => c - b[i])) < 1e-6,
+    `sommets distincts : ${a} vs ${b}`);
+
+  // Et le dessin déplié ne les remet pas au même endroit.
+  Projection.VIEWS.forEach(view => {
+    const frame = Spatial.unfold(layout, view.id);
+    const [x, y] = [frame.byId[pinion.id], frame.byId[wheel.id]];
+    if (Math.abs(dot(layout.graph.byAxis[pinion.axisId].direction, view.w)) > 0.99) return;
+    assert.ok(Math.hypot(x.x - y.x, x.y - y.y) > 1, view.id + ' : les cônes se superposent');
+  });
+});
+
+test('the planets of a carrier know how far out they orbit', () => {
+  // Le rayon d'orbite était cherché dans `geometry`, où la scène ne le met
+  // pas : il valait donc toujours null, et les satellites se dessinaient tous
+  // au centre du solaire.
+  const layout = layoutOf([{ type: 'planetary', sunTeeth: 24, ringTeeth: 72, planetTeeth: 24,
+    planetCount: 3, inputMember: 'S', outputMember: 'C', fixed: 'R',
+    parameters: { module: 2, faceWidth: 20 } }], 4);
+  const planet = layout.graph.shafts.find(shaft => shaft.role === 'planet');
+  assert.ok(planet, 'le satellite a son propre arbre');
+  assert.ok(planet.orbitRadius > 0, 'rayon d’orbite : ' + planet.orbitRadius);
+  const sun = layout.byId['s0-S'], seed = layout.byId['s0-P'];
+  assert.ok(Math.abs(planet.orbitRadius - (sun.radius + seed.radius)) < 4 * 2,
+    'l’orbite vaut la somme des rayons primitifs, à la saillie près');
 });
 
 test('every member of the chain gets a seat, in every view', () => {

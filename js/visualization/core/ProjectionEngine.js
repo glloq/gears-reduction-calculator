@@ -145,8 +145,42 @@
     return best || view('front');
   }
 
+  /**
+   * La vue qui montre le plus de DENTURE — une autre question qu'`auto`.
+   *
+   * `auto` répond « d'où perd-on le moins du mécanisme ? », et compte l'axe vu
+   * en bout comme une perte, ce qu'il est : on n'y lit plus la longueur des
+   * arbres. Pour un train à axes parallèles, cela élit la coupe — toutes les
+   * roues en rectangles. C'est un dessin d'ensemble correct, et exactement ce
+   * qu'une vue nommée « denture réaliste » ne doit pas montrer.
+   *
+   * On note donc ce que le DESSIN pourra affirmer. Une roue vue de face ou de
+   * profil se trace exactement ; obliquement, elle n'est qu'approchée par une
+   * ellipse. On compte d'abord les organes tracés exactement, puis ceux dont
+   * la denture est visible, et l'on départage par ce qu'`auto` sait déjà : ne
+   * rien confondre.
+   */
+  function engagement(axes) {
+    var list = (axes || []).filter(Boolean);
+    if (!list.length) return view('front');
+    var best = null, score = null;
+    VIEWS.forEach(function (candidate) {
+      var exact = 0, faces = 0;
+      list.forEach(function (axis) {
+        var how = presentation(axis.direction || axis, candidate);
+        if (how !== 'oblique') exact++;
+        if (how === 'face') faces++;
+      });
+      var value = [exact, faces, penalty(list, candidate)];
+      if (!score || value[0] > score[0] ||
+        (value[0] === score[0] && (value[1] > score[1] ||
+          (value[1] === score[1] && value[2] > score[2])))) { score = value; best = candidate; }
+    });
+    return best || view('front');
+  }
+
   return { VIEWS: VIEWS, view: view, project: project, presentation: presentation,
-    foreshortening: foreshortening, auto: auto,
+    foreshortening: foreshortening, auto: auto, engagement: engagement, penalty: penalty,
     FACE_LIMIT: FACE_LIMIT, PROFILE_LIMIT: PROFILE_LIMIT,
     vector: { dot: dot, cross: cross, unit: unit, norm: norm } };
 });

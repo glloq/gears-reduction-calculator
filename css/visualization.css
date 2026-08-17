@@ -86,8 +86,15 @@
 .worm-thread { stroke: var(--ink); stroke-width: .5; fill: none; }
 .cone-body { fill: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); }
 .cone-tip, .cone-teeth { fill: none; stroke: var(--ink); stroke-width: .4; opacity: .8; }
+.cone-front { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 3 2; opacity: .7; }
 .cone-apex { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 6 2 1 2; }
 .cone-apex-point { fill: var(--muted); }
+
+/* Arbres : un segment quand on en voit la longueur, une croix d'axe quand il
+   pointe vers l'œil — c'est la même pièce, vue autrement. */
+.shaft-body { fill: none; stroke: var(--muted); stroke-width: 1.1; stroke-linecap: round; opacity: .85; }
+.shaft-centre { fill: none; stroke: var(--muted); stroke-width: .5; stroke-dasharray: 5 2 1 2; opacity: .8; }
+.train-shaft.grounded .shaft-body, .train-shaft.grounded .shaft-centre { stroke: var(--warning); }
 
 /* Porte-satellites : les bras rendent le membre C lisible. */
 .carrier-arms path { fill: none; stroke: var(--muted); stroke-width: 1.2; }

@@ -447,12 +447,30 @@
   }
 
   /** Cône vu de face : la grande face, avec la trace du cône primitif. */
+  /**
+   * Un cône vu en bout, c'est-à-dire depuis son propre axe : une couronne
+   * dentée. La denture est celle de sa section extérieure — la même que celle
+   * d'un engrenage droit de même diamètre — et le cercle de la petite face dit
+   * jusqu'où elle s'enfonce. Sans elle, la roue conique de sortie d'un renvoi
+   * n'était qu'un disque lisse, dans la vue même où l'on veut voir ses dents.
+   */
   function coneFace(wheel, lod) {
     var r = radii(wheel);
-    var shapes = [node('circle', { class: 'tooth-profile cone-face', r: fixed(r.tip) })];
-    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    if (lod <= LEVELS.SILHOUETTE) return [node('circle', { class: 'tooth-profile cone-face silhouette', r: fixed(r.tip) })];
+    var teeth = Math.max(4, Math.round(finite(wheel.teeth, 16)));
+    var delta = rad(finite(wheel.coneAngleDeg, 45));
+    var face = Math.max(3 * r.module, finite(wheel.faceWidth, 8 * r.module));
+    var front = Math.max(r.module, r.pitch - face * Math.sin(delta));
+    var shapes = [node('path', { class: 'tooth-profile cone-face',
+      d: Profile.toothedRingPath(teeth, r.tip, r.root, 0.5) || '' })];
     shapes.push(node('circle', { class: 'pitch-circle', r: fixed(r.pitch) }));
-    shapes.push(node('circle', { class: 'gear-hub', r: fixed(Math.max(1.2, r.pitch * 0.25)) }));
+    shapes.push(node('circle', { class: 'cone-front', r: fixed(front) }));
+    var hub = Math.max(1.2, Math.min(front * 0.5, 6 * r.module));
+    shapes.push(node('circle', { class: 'gear-hub', r: fixed(hub) }));
+    if (lod >= LEVELS.INVOLUTE) {
+      shapes.push(node('path', { class: 'hub-cross',
+        d: 'M ' + fixed(-hub) + ' 0 H ' + fixed(hub) + ' M 0 ' + fixed(-hub) + ' V ' + fixed(hub) }));
+    }
     return shapes;
   }
 
