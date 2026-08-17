@@ -152,3 +152,31 @@ test('the thread phase returns exactly to its start after a full turn', () => {
   // Une animation inversée recule sans sortir de l'intervalle.
   assert.ok(phase(-90) >= 0 && phase(-90) < geometry.pitch);
 });
+
+// ===== §19 : une famille porte un nom, et un seul =====
+
+test('every family is named by the registry, in both forms', () => {
+  const ids = ['spur', 'helical', 'internal', 'bevel', 'planetary', 'worm', 'belt', 'chain', 'rack'];
+  ids.forEach(id => {
+    assert.ok(Registry.familyName(id).length > 2, id + ' sans nom long');
+    assert.ok(Registry.familyName(id, 'short').length > 2, id + ' sans nom court');
+  });
+  // L'alias historique désigne le même train, pas une famille de plus.
+  assert.equal(Registry.familyName('epicyclic'), Registry.familyName('planetary'));
+  assert.equal(Registry.familyName('planetary', 'short'), 'Épicycloïdal');
+  // Un identifiant inconnu revient tel quel plutôt que de rendre `undefined`.
+  assert.equal(Registry.familyName('hypoid'), 'hypoid');
+});
+
+test('no view keeps a family dictionary of its own', () => {
+  // Cinq tables parallèles existaient — explorateur, éditeur d'étage, plan de
+  // travail, conseiller, adaptateur historique — et divergeaient déjà :
+  // « Crémaillère » ici, « Pignon-crémaillère » là, pour le même étage.
+  ['js/ui/SolutionExplorer.js', 'js/ui/StageEditor.js', 'js/ui/Workbench.js',
+    'js/models/TransmissionTypeRegistry.js', 'js/requirements/TransmissionAdvisor.js'
+  ].forEach(path => {
+    const source = fs.readFileSync(path, 'utf8');
+    assert.doesNotMatch(source, /['"](Épicycloïdal|Hélicoïdal|Vis sans fin)['"]/, path + ' renomme les familles dans son coin');
+    assert.match(source, /familyName/, path + ' doit lire le registre');
+  });
+});

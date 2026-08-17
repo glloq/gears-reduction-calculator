@@ -21,6 +21,18 @@
   function present(value) { return Number.isFinite(value) && value > 0 ? value : null; }
 
   /**
+   * §9, §10 : « Couronne (R) · Fixe ». La vue affichait « R · couronne » —
+   * le code d'abord, la fonction nulle part — si bien qu'on ne pouvait pas
+   * lire sur le dessin quel organe était bloqué. Le nom et la fonction
+   * viennent de la scène ; cette vue ne traduit rien elle-même.
+   */
+  function memberLabel(entry, code) {
+    if (!entry) return code;
+    var role = entry.localizedRole ? ' · ' + entry.localizedRole : '';
+    return (entry.memberName || code) + ' (' + code + ')' + role;
+  }
+
+  /**
    * Membre positionné, construit à partir d'un MEMBRE DE LA SCÈNE.
    * `schematic` propage la provenance : une cote reconstruite ne doit pas être
    * cotée comme si le moteur l'avait calculée.
@@ -53,14 +65,14 @@
       var count = Math.max(2, Math.round(finite(byRole.P && byRole.P.count, 3)));
       var orbit = finite(byRole.P && byRole.P.orbitRadius, 0);
       var list = [
-        place(byRole.R, 'ring', x, y, 'R · couronne'),
-        place(byRole.S, 'sun', x, y, 'S · solaire')
+        place(byRole.R, 'ring', x, y, memberLabel(byRole.R, 'R')),
+        place(byRole.S, 'sun', x, y, memberLabel(byRole.S, 'S'))
       ];
       for (var i = 0; i < count; i++) {
         var a = 2 * Math.PI * i / count;
-        list.push(place(byRole.P, 'planet', x + Math.cos(a) * orbit, y + Math.sin(a) * orbit, 'P · satellite'));
+        list.push(place(byRole.P, 'planet', x + Math.cos(a) * orbit, y + Math.sin(a) * orbit, memberLabel(byRole.P, 'P')));
       }
-      list.push(place(byRole.C, 'carrier', x, y, 'C · porte-satellites',
+      list.push(place(byRole.C, 'carrier', x, y, memberLabel(byRole.C, 'C'),
         { pitchDiameter: orbit ? 2 * orbit : null, count: count }));
       return list;
     }

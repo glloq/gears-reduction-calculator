@@ -57,8 +57,7 @@
   /** Nom lisible d'une famille : le registre fait foi, jamais `stage.type`. */
   function familyName(type, registry) {
     try {
-      var def = registry && registry.get ? registry.get(type === 'epicyclic' ? 'planetary' : type) : null;
-      if (def && def.name) return def.name;
+      if (registry && registry.familyName) return registry.familyName(type);
     } catch (ignore) { /* registre absent : on retombe sur l'identifiant */ }
     return type;
   }

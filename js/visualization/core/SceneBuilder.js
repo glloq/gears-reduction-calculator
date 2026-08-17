@@ -49,8 +49,7 @@
    * `role` reste la POSITION dans l'étage (S/R/P/C, input/output, rack). C'est
    * `functionalRole` qui dit la FONCTION.
    */
-  var MEMBER_NAMES = { S: 'Solaire', R: 'Couronne', P: 'Satellite', C: 'Porte-satellites',
-    input: 'Menant', output: 'Mené', rack: 'Crémaillère', pinion: 'Pignon' };
+  var MEMBER_NAMES = (Registry && Registry.MEMBER_NAMES) || {};
 
   var FUNCTION_NAMES = { input: 'Entrée', output: 'Sortie', fixed: 'Fixe', intermediate: 'Intermédiaire' };
 

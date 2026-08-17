@@ -13,29 +13,34 @@
 // solveur ne peut pas déduire — bruit, coût, aptitude à l'impression.
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
-  var api = factory();
+  var api = factory(common ? require('../transmissions/TransmissionRegistry.js') : root.GearTransmissionRegistry);
   if (common) module.exports = api;
   else {
     root.GearTransmissionAdvisor = api;
     if (root.GearApp) { root.GearApp.requirements = root.GearApp.requirements || {}; root.GearApp.requirements.TransmissionAdvisor = api; }
   }
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (Registry) {
   'use strict';
 
   // Traits normalisés dans [0, 1], « plus haut = mieux ». `quiet` est une
   // qualité de silence, pas un niveau de bruit : les huit axes se lisent alors
   // tous dans le même sens.
   var KNOWLEDGE = {
-    spur:      { name: 'Engrenage droit',       axis: 'parallel',      ratioPerStage: 8,   efficiency: 0.97, quiet: 0.50, cost: 0.90, printable: 0.90, compact: 0.55, robust: 0.85, selfLocking: false },
-    helical:   { name: 'Engrenage hélicoïdal',  axis: 'parallel',      ratioPerStage: 10,  efficiency: 0.98, quiet: 0.85, cost: 0.70, printable: 0.60, compact: 0.55, robust: 0.90, selfLocking: false },
-    internal:  { name: 'Engrenage intérieur',   axis: 'parallel',      ratioPerStage: 12,  efficiency: 0.98, quiet: 0.60, cost: 0.60, printable: 0.80, compact: 0.85, robust: 0.80, selfLocking: false },
-    bevel:     { name: 'Engrenage conique',     axis: 'perpendicular', ratioPerStage: 6,   efficiency: 0.96, quiet: 0.50, cost: 0.50, printable: 0.50, compact: 0.60, robust: 0.75, selfLocking: false },
-    planetary: { name: 'Train épicycloïdal',    axis: 'coaxial',       ratioPerStage: 12,  efficiency: 0.97, quiet: 0.60, cost: 0.45, printable: 0.70, compact: 0.95, robust: 0.95, selfLocking: false },
-    worm:      { name: 'Vis sans fin',          axis: 'perpendicular', ratioPerStage: 120, efficiency: 0.65, quiet: 0.90, cost: 0.60, printable: 0.35, compact: 0.80, robust: 0.70, selfLocking: true },
-    belt:      { name: 'Courroie',              axis: 'parallel',      ratioPerStage: 10,  efficiency: 0.98, quiet: 0.95, cost: 0.80, printable: 0.50, compact: 0.30, robust: 0.50, selfLocking: false, spansDistance: true },
-    chain:     { name: 'Chaîne',                axis: 'parallel',      ratioPerStage: 12,  efficiency: 0.97, quiet: 0.30, cost: 0.70, printable: 0.30, compact: 0.30, robust: 0.85, selfLocking: false, spansDistance: true },
-    rack:      { name: 'Pignon-crémaillère',    axis: 'linear',        ratioPerStage: Infinity, efficiency: 0.97, quiet: 0.55, cost: 0.80, printable: 0.75, compact: 0.60, robust: 0.75, selfLocking: false, linear: true }
+    spur:      { axis: 'parallel',      ratioPerStage: 8,   efficiency: 0.97, quiet: 0.50, cost: 0.90, printable: 0.90, compact: 0.55, robust: 0.85, selfLocking: false },
+    helical:   { axis: 'parallel',      ratioPerStage: 10,  efficiency: 0.98, quiet: 0.85, cost: 0.70, printable: 0.60, compact: 0.55, robust: 0.90, selfLocking: false },
+    internal:  { axis: 'parallel',      ratioPerStage: 12,  efficiency: 0.98, quiet: 0.60, cost: 0.60, printable: 0.80, compact: 0.85, robust: 0.80, selfLocking: false },
+    bevel:     { axis: 'perpendicular', ratioPerStage: 6,   efficiency: 0.96, quiet: 0.50, cost: 0.50, printable: 0.50, compact: 0.60, robust: 0.75, selfLocking: false },
+    planetary: { axis: 'coaxial',       ratioPerStage: 12,  efficiency: 0.97, quiet: 0.60, cost: 0.45, printable: 0.70, compact: 0.95, robust: 0.95, selfLocking: false },
+    worm:      { axis: 'perpendicular', ratioPerStage: 120, efficiency: 0.65, quiet: 0.90, cost: 0.60, printable: 0.35, compact: 0.80, robust: 0.70, selfLocking: true },
+    belt:      { axis: 'parallel',      ratioPerStage: 10,  efficiency: 0.98, quiet: 0.95, cost: 0.80, printable: 0.50, compact: 0.30, robust: 0.50, selfLocking: false, spansDistance: true },
+    chain:     { axis: 'parallel',      ratioPerStage: 12,  efficiency: 0.97, quiet: 0.30, cost: 0.70, printable: 0.30, compact: 0.30, robust: 0.85, selfLocking: false, spansDistance: true },
+    rack:      { axis: 'linear',        ratioPerStage: Infinity, efficiency: 0.97, quiet: 0.55, cost: 0.80, printable: 0.75, compact: 0.60, robust: 0.75, selfLocking: false, linear: true }
   };
+
+  // §19 : le nom vient du registre. Le conseiller décrit des APTITUDES —
+  // bruit, coût, aptitude à l'impression — et le nommage ne le regarde pas :
+  // le dupliquer ici, c'était le laisser diverger de ce que la vue affiche.
+  Object.keys(KNOWLEDGE).forEach(function (id) { KNOWLEDGE[id].name = Registry.familyName(id); });
 
   var ROTARY = Object.keys(KNOWLEDGE).filter(function (id) { return !KNOWLEDGE[id].linear; });
 

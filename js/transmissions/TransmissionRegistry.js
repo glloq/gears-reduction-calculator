@@ -77,6 +77,56 @@
   var types = {};
 
   /**
+   * §19 : le nom d'une famille, une fois pour toutes. Cinq dictionnaires
+   * parallèles vivaient dans l'interface — explorateur, éditeur d'étage, plan
+   * de travail, conseiller, adaptateur historique — et divergeaient : le même
+   * train s'appelait « Épicycloïdal » ici, « planetary » là, « epicyclic »
+   * ailleurs, selon celui qui l'affichait. Le registre nomme, l'interface lit.
+   *
+   * Deux formes, parce que les deux servent réellement : la forme longue dans
+   * un titre ou une fiche, la courte dans une puce ou un badge d'étage.
+   */
+  var FAMILY_NAMES = {
+    spur: ['Engrenage droit', 'Droit'], helical: ['Engrenage hélicoïdal', 'Hélicoïdal'],
+    internal: ['Engrenage intérieur', 'Intérieur'], bevel: ['Engrenage conique', 'Conique'],
+    planetary: ['Train épicycloïdal', 'Épicycloïdal'], epicyclic: ['Train épicycloïdal', 'Épicycloïdal'],
+    worm: ['Vis sans fin', 'Vis sans fin'], belt: ['Courroie', 'Courroie'],
+    chain: ['Chaîne', 'Chaîne'], rack: ['Pignon-crémaillère', 'Crémaillère']
+  };
+
+  /**
+   * §9, §10 : les organes portent un nom, pas un code. « S », « R », « C »
+   * sont la notation d'un schéma cinématique, pas un vocabulaire d'interface :
+   * un sélecteur qui propose « S / R / C » n'apprend rien à qui ne connaît pas
+   * déjà les trains épicycloïdaux. Le nom passe donc devant, et le code reste
+   * entre parenthèses pour relier l'écran au schéma.
+   *
+   * `input`/`output` nomment la POSITION dans un couple ordinaire — menant et
+   * mené — et non la fonction dans la chaîne, qui est dite ailleurs.
+   */
+  var MEMBER_NAMES = { S: 'Solaire', R: 'Couronne', P: 'Satellite', C: 'Porte-satellites',
+    input: 'Menant', output: 'Mené', rack: 'Crémaillère', pinion: 'Pignon' };
+
+  function memberName(code) { return MEMBER_NAMES[code] || String(code == null ? '' : code); }
+
+  /** « Solaire (S) ». */
+  function memberLabel(code) { return memberName(code) + ' (' + code + ')'; }
+
+  /** Libellés d'un sélecteur d'organe, engendrés — jamais retapés. */
+  function memberOptionLabels(codes) {
+    var out = {};
+    codes.forEach(function (code) { out[code] = memberLabel(code); });
+    return out;
+  }
+
+  /** @param {'long'|'short'} [form] longue par défaut. */
+  function familyName(id, form) {
+    var entry = FAMILY_NAMES[id];
+    if (entry) return form === 'short' ? entry[1] : entry[0];
+    return types[id] ? types[id].name : String(id == null ? '' : id);
+  }
+
+  /**
    * §4, §5 : les trois organes d'un planétaire — solaire, couronne,
    * porte-satellites — occupent chacun une fonction, et une seule. Les six
    * permutations sont toutes réalisables, et donnent des rapports, des sens et
@@ -181,11 +231,11 @@
     // §26, §27, §28 : « automatique » est la valeur par défaut et le reste
     // pour qui ne veut pas connaître S/R/C. Choisir « imposée » distingue une
     // topologie VOULUE d'une topologie simplement retenue par le moteur.
-    planetary:{topologyMode:{label:'Configuration',type:'select',default:'auto',options:['auto','fixed'],optionLabels:{auto:'Automatique',fixed:'Imposée'}},planetCount:{label:'Nombre de satellites',type:'number',default:3,min:2,max:6,step:1},inputMember:{label:'Organe d’entrée',type:'select',default:'S',options:['S','R','C'],optionLabels:{S:'Solaire (S)',R:'Couronne (R)',C:'Porte-satellites (C)'},dependsOn:{topologyMode:'fixed'}},fixed:{label:'Organe fixe',type:'select',default:'R',options:['R','S','C'],optionLabels:{S:'Solaire (S)',R:'Couronne (R)',C:'Porte-satellites (C)'},dependsOn:{topologyMode:'fixed'}},outputMember:{label:'Organe de sortie',type:'select',default:'C',options:['C','S','R'],optionLabels:{S:'Solaire (S)',R:'Couronne (R)',C:'Porte-satellites (C)'},dependsOn:{topologyMode:'fixed'}}},
+    planetary:{topologyMode:{label:'Configuration',type:'select',default:'auto',options:['auto','fixed'],optionLabels:{auto:'Automatique',fixed:'Imposée'}},planetCount:{label:'Nombre de satellites',type:'number',default:3,min:2,max:6,step:1},inputMember:{label:'Organe d’entrée',type:'select',default:'S',options:['S','R','C'],optionLabels:memberOptionLabels(['S','R','C']),dependsOn:{topologyMode:'fixed'}},fixed:{label:'Organe fixe',type:'select',default:'R',options:['R','S','C'],optionLabels:memberOptionLabels(['S','R','C']),dependsOn:{topologyMode:'fixed'}},outputMember:{label:'Organe de sortie',type:'select',default:'C',options:['C','S','R'],optionLabels:memberOptionLabels(['S','R','C']),dependsOn:{topologyMode:'fixed'}}},
     belt:{profile:{label:'Profil',type:'select',default:'GT2',options:['GT2','GT3','HTD-3M','HTD-5M','HTD-8M','T5','T10']},centerDistance:{label:'Entraxe (mm)',type:'number',default:100,min:1,step:1},crossed:{label:'Courroie croisée',type:'checkbox',default:false}},
     chain:{pitch:{label:'Pas (mm)',type:'number',default:12.7,min:1,step:.1},centerDistance:{label:'Entraxe (mm)',type:'number',default:200,min:1,step:1}},
     rack:{faceWidth:{label:'Largeur pignon/crémaillère (mm)',type:'number',default:10,min:1,step:.5}}
   };
   var beltPitches={GT2:2,GT3:3,'HTD-3M':3,'HTD-5M':5,'HTD-8M':8,T5:5,T10:10};
-  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
+  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
 });

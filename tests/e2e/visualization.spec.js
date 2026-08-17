@@ -144,10 +144,12 @@ test('a planetary draws every real planet, its carrier and its three roles', asy
   expect(motion.end.spin).not.toBe(motion.start.spin);
 
   await showView(page, 'kinematic');
+  // §9, §10 : « INPUT S » ne disait ni de quel organe il s'agit ni ce qu'il
+  // fait. L'organe est nommé, son code de schéma reste entre parenthèses.
   const roles = await page.locator('.kinematic-stage .role-label').allTextContents();
-  expect(roles.join(' ')).toContain('INPUT S');
-  expect(roles.join(' ')).toContain('OUTPUT C');
-  expect(roles.join(' ')).toContain('FIXED R');
+  expect(roles.join(' ')).toContain('Entrée · Solaire (S)');
+  expect(roles.join(' ')).toContain('Sortie · Porte-satellites (C)');
+  expect(roles.join(' ')).toContain('Fixe · Couronne (R)');
 });
 
 test('belts and chains use the exact tangent path and travelling elements', async ({ page }) => {

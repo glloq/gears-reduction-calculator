@@ -41,6 +41,20 @@
   function rad(deg) { return deg * Math.PI / 180; }
   function fmt(value, digits) { return Number.isFinite(value) ? value.toFixed(digits == null ? 2 : digits) : '—'; }
 
+  /**
+   * « Solaire (S) · Entrée ». Le nom vient de la scène — le renderer ne
+   * traduit rien lui-même — et la fonction n'est rappelée que lorsqu'elle
+   * apporte quelque chose : dire « Menant · Entrée » serait redondant.
+   */
+  function memberTitle(wheel) {
+    var name = wheel.memberName || wheel.role || '';
+    // Seuls les organes d'un planétaire ont un code de schéma ; « Menant
+    // (input) » n'aiderait personne.
+    var code = /^[SRPC]$/.test(wheel.role) ? ' (' + wheel.role + ')' : '';
+    var role = wheel.localizedRole && wheel.localizedRole !== name ? ' · ' + wheel.localizedRole : '';
+    return name + code + role;
+  }
+
   function TrainRenderer(container) {
     this.container = typeof container === 'string' ? document.getElementById(container) : container;
     this.svg = null;
@@ -193,8 +207,10 @@
     }
     seat.appendChild(construction);
 
-    var roleNames = { input: 'Entrée', output: 'Sortie', sun: 'Solaire', ring: 'Couronne', planet: 'Satellite' };
-    seat.appendChild(n('title', {}, (roleNames[wheel.role] || wheel.role) +
+    // §9, §10 : la scène nomme déjà l'organe ET sa fonction. Le renderer n'en
+    // garde pas de copie, et n'affiche plus « S » tout court : « Solaire (S) ·
+    // Entrée » dit à la fois de quel organe il s'agit et ce qu'il fait.
+    seat.appendChild(n('title', {}, memberTitle(wheel) +
       (wheel.teeth ? ' — Z=' + wheel.teeth : '') +
       '\nØ primitif ' + fmt(wheel.pitchD, 2) + ' mm' +
       (wheel.kind === 'gear' ? '\nØ tête ' + fmt(wheel.outsideD, 2) + ' mm · Ø pied ' + fmt(wheel.rootD, 2) + ' mm' : '') +
