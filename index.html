@@ -559,6 +559,11 @@
             </div>
           </details>
         </div>
+        <!-- §14, §15 : savoir ce qu'on regarde sans quitter le dessin. La bande
+             d'étages rend ADRESSABLE ce qui n'était atteignable qu'en visant
+             une roue à la souris — impossible au clavier. -->
+        <p id="solutionIdentity" class="solution-identity" aria-live="polite" hidden></p>
+        <div id="stageNav" class="stage-nav" role="group" aria-label="Étage à inspecter" hidden></div>
         <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
         <!-- §22, §23 : ce que la vue courante montre à l'échelle, et ce qu'elle
              ne fait que suggérer. Un schéma symbolique lu comme un plan coté
@@ -594,6 +599,9 @@
           </nav>
 
           <div class="detail-panel active" data-detail-panel="analyse">
+            <!-- §17 : la cascade des vitesses, de l'entrée à la sortie. Un
+                 tableau mécanique dit tout, mais ne montre pas le CHEMIN. -->
+            <ol id="kinematicChain" class="kinematic-chain" aria-label="Chaîne cinématique" hidden></ol>
             <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
             <p class="detail-placeholder" data-placeholder="analyse">Lancez une recherche puis sélectionnez une solution pour voir son analyse mécanique.</p>
           </div>
@@ -724,6 +732,7 @@
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
   <script src="js/ui/SolutionExplorer.js" defer></script>
+  <script src="js/ui/SolutionHeader.js" defer></script>
   <script src="js/ui/ComparePanel.js" defer></script>
   <script src="js/ui/ConstraintManager.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>

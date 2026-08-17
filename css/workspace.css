@@ -420,3 +420,54 @@
 .delta-better { color: var(--ok, #2a9d5c); }
 .delta-worse { color: var(--muted); }
 .solution-reference { font-size: var(--font-xs); color: var(--muted); font-style: italic; }
+
+/* ----- §14, §15 : savoir ce qu'on regarde, et viser un étage ----- */
+
+/* Une ligne, au-dessus du dessin. Elle répond à « qu'est-ce que je
+   regarde ? » — pas à « est-ce que ça tient ? », qui est le rôle de l'analyse
+   mécanique juste en dessous. */
+.solution-identity {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-2);
+  margin: 0 0 var(--sp-1); padding: var(--sp-1) var(--sp-2);
+  background: var(--surface-2); border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+}
+.identity-badge {
+  font-size: var(--font-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  color: var(--surface-1); background: var(--accent);
+  padding: 1px 6px; border-radius: 999px;
+}
+.identity-architecture { font-size: var(--font-md); }
+.identity-metrics { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-left: auto; }
+.identity-metric { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Viser un étage sans avoir à cliquer une roue : au clavier, et sans se battre
+   avec des cadres qui se recouvrent sur un train composé. */
+.stage-nav { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: var(--sp-1); }
+.stage-chip {
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface-1); color: var(--muted);
+  padding: 2px 10px; font-size: var(--font-xs); cursor: pointer;
+}
+.stage-chip:hover { border-color: var(--accent); color: var(--accent); }
+.stage-chip.active {
+  background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;
+}
+
+/* ----- §17 : la cascade des vitesses, de l'entrée à la sortie ----- */
+
+/* Le tableau mécanique dit tout, mais ne montre pas le CHEMIN. */
+.kinematic-chain { list-style: none; margin: 0 0 var(--sp-2); padding: 0; display: grid; gap: 2px; }
+.chain-node {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  padding: 3px var(--sp-2); border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+}
+.chain-label { color: var(--muted); }
+.chain-value { margin-left: auto; font-variant-numeric: tabular-nums; }
+.chain-end { background: var(--surface-2); font-weight: 600; }
+/* L'étage porte un liseré : c'est lui qui transforme, l'arbre ne fait que porter. */
+.chain-stage { border-left: 3px solid var(--accent); cursor: pointer; }
+.chain-stage:hover, .chain-stage:focus-visible { background: var(--surface-2); }
+.chain-stage.active { background: color-mix(in srgb, var(--accent) 12%, var(--surface-1)); }
+.chain-shaft { color: var(--muted); padding-left: calc(var(--sp-2) + 3px); }

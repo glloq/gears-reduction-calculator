@@ -231,6 +231,13 @@
       this._viewer = new GearApp.visualization.ViewerToolbar(document.getElementById('svgContainer'));
       this._viewer.bind();
       GearApp.visualization.viewerToolbar = this._viewer;
+      // §14, §15 : l'identité de la solution et la navigation par étage vivent
+      // juste au-dessus du dessin, et pilotent le même viewer.
+      if (GearApp.ui.SolutionHeader) {
+        this._solutionHeader = new GearApp.ui.SolutionHeader(null,
+          { bus: this._eventBus, viewer: this._viewer }).bind();
+        GearApp.ui.solutionHeader = this._solutionHeader;
+      }
     }
     this._viewer.render(solution);
   };

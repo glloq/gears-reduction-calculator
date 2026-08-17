@@ -695,6 +695,11 @@
     var intent = this.session ? this.session.intent : null;
     var annotation = Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences,
       this.session ? this.session.technologySelection : null);
+    // La bande d'identité, au-dessus du dessin, doit porter le MÊME badge que la
+    // carte : deux calculs donneraient deux verdicts pour une seule solution.
+    this._annotation = annotation;
+    this._poolIndexOf = info && info.pool ? function (position) { return self._indices[position]; }
+      : function (position) { return position; };
     var poolIndexOf = info && info.pool ? function (position) { return self._indices[position]; }
       : function (position) { return position; };
 

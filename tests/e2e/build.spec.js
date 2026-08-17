@@ -260,6 +260,85 @@ test('Construire delegates, Étudier records — the words differ (§11, §12)',
   await expect(page.locator('#buildStage0_planetCount').locator('..')).toHaveClass(/build-field-optional/);
 });
 
+test('the viewer says what is on screen, and every stage is addressable (§14, §15)', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await addBuildStage(page, 'planetary', { sunTeeth: 20, ringTeeth: 70 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  // §14 : identifier ce qu'on regarde ne doit plus demander un aller-retour du
+  // regard entre la carte, le dessin et le panneau mécanique.
+  const identity = page.locator('#solutionIdentity');
+  await expect(identity).toBeVisible();
+  await expect(identity.locator('.identity-architecture')).toHaveText('Droit → Épicycloïdal');
+  await expect(identity.locator('.identity-badge')).toHaveText('Analysée');
+
+  // §15 : un étage se vise sans avoir à cliquer une roue — au clavier compris.
+  const chips = page.locator('#stageNav .stage-chip');
+  await expect(chips).toHaveCount(3);
+  await expect(chips.first()).toHaveText('Ensemble');
+  await expect(chips.first()).toHaveClass(/active/);
+
+  await page.locator('#stageNav [data-stage-nav="1"]').click();
+  await expect(page.locator('#stageNav [data-stage-nav="1"]')).toHaveClass(/active/);
+  await expect(page.locator('#stageInspector')).toBeVisible();
+  await expect(page.locator('#stageInspector header')).toContainText('Train épicycloïdal');
+  await expect(page.locator('.train-stage.selected')).toHaveAttribute('data-stage', '1');
+
+  // Et l'inverse : cliquer une roue allume la puce. Les deux gestes désignent
+  // la même chose, par le même chemin.
+  await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
+  await expect(page.locator('#stageNav [data-stage-nav="0"]')).toHaveClass(/active/);
+
+  await page.locator('#stageNav [data-stage-nav="all"]').click();
+  await expect(page.locator('#stageInspector')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('the kinematic chain shows the path, not just the totals (§17)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await addBuildStage(page, 'worm', { wormStarts: 2, wheelTeeth: 40 });
+  await setQuantity(page, 'input.speed', 1500);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  const nodes = page.locator('#kinematicChain .chain-node');
+  await expect(nodes).toHaveCount(5);           // entrée + 2 étages + arbre + sortie
+  await expect(nodes.nth(0)).toContainText('1500 rpm');
+  await expect(nodes.nth(1)).toContainText('3.000 : 1');
+  await expect(nodes.nth(2)).toContainText('500.0 rpm');
+  await expect(nodes.nth(4)).toContainText('25.0 rpm');
+  // Un maillon d'étage est cliquable : même geste que la puce.
+  await page.locator('#kinematicChain [data-chain-stage="1"]').click();
+  await expect(page.locator('#stageNav [data-stage-nav="1"]')).toHaveClass(/active/);
+
+  // §16 : la fiche connaît la famille. Ce qu'on veut savoir d'une vis, c'est si
+  // elle tient la charge — et cela dépend de l'angle d'avance, pas de la famille.
+  const inspector = page.locator('#stageInspector .inspector-grid');
+  await expect(inspector).toContainText('Angle d’avance');
+  await expect(inspector).toContainText('Maintien de charge');
+  await expect(inspector).toContainText('2 filets');
+});
+
+test('without a regime the chain states ratios and invents no rpm (§2, §17)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  const nodes = page.locator('#kinematicChain .chain-node');
+  await expect(nodes.nth(0)).toContainText('régime non renseigné');
+  // Le rapport, lui, ne dépend d'aucun régime : il reste affiché.
+  await expect(nodes.nth(1)).toContainText('3.000 : 1');
+  await expect(nodes.nth(2)).toContainText('—');
+});
+
 test('a built chain survives a reload', async ({ page }) => {
   await page.goto('/');
   await chooseMode(page, 'build');

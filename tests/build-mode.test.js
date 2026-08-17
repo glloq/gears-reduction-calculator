@@ -283,3 +283,41 @@ test('the nominal regime assumed by the solver is named in exactly one place', (
   assert.doesNotMatch(session, /speed\.nominal\(\) \|\| 1500/);
   assert.match(session, /SERVICE_DEFAULTS/, 'la référence doit réclamer l’hypothèse explicitement');
 });
+
+// ===== §16 : la fiche d'un étage connaît sa famille =====
+
+test('a worm reports what makes it a worm: its lead angle and its holding', () => {
+  const worm = stage => ({ type: 'worm', wormStarts: 1, wheelTeeth: 40,
+    parameters: Object.assign({ module: 2, frictionCoefficient: 0.06 }, stage) });
+  // La raison la plus fréquente de choisir une vis est de tenir une charge à
+  // l'arrêt — et ce n'est PAS une propriété de la famille : c'est l'angle
+  // d'avance face au frottement qui décide. Une fiche générique laissait donc
+  // de côté la seule chose qu'on voulait vérifier.
+  assert.equal(Registry.wormDetails(worm({ leadAngle: 3 })).selfLocking, true);
+  assert.equal(Registry.wormDetails(worm({ leadAngle: 20 })).selfLocking, false);
+  // Le rendement inverse devient négatif quand la vis se bloque : impossible à
+  // rétro-entraîner, ce que « irréversible » dit en mots.
+  assert.ok(Registry.wormDetails(worm({ leadAngle: 3 })).backDrivingEfficiency < 0);
+  assert.ok(Registry.wormDetails(worm({ leadAngle: 20 })).backDrivingEfficiency > 0);
+  // Le seuil suit le frottement, pas une constante cachée.
+  assert.equal(Registry.wormDetails(worm({ leadAngle: 5, frictionCoefficient: 0.2 })).selfLocking, true);
+  assert.equal(Registry.wormDetails(worm({ leadAngle: 5, frictionCoefficient: 0.02 })).selfLocking, false);
+});
+
+test('the inspector attaches the family block, and drops the generic one', () => {
+  const Inspector = require('../js/visualization/StageInspector.js');
+  const Scene = require('../js/visualization/core/SceneBuilder.js');
+  const solution = { stages: [{ type: 'worm', wormStarts: 2, wheelTeeth: 40,
+    parameters: { module: 2, leadAngle: 18 } }], mechanical: [{ ratio: 20 }], inputSpeedRpm: 1500 };
+  const data = Inspector.model(solution, 0, Registry, Scene.build(solution));
+  assert.ok(data.worm, 'les détails de la vis doivent être joints');
+  assert.equal(data.worm.starts, 2);
+  assert.equal(data.worm.wheelTeeth, 40);
+  // Un étage ordinaire n'a ni bloc vis ni bloc planétaire.
+  const spur = { stages: [{ type: 'spur', input: { teeth: 20 }, output: { teeth: 60 }, parameters: { module: 1 } }],
+    mechanical: [{ ratio: 3 }], inputSpeedRpm: 1500 };
+  const plain = Inspector.model(spur, 0, Registry, Scene.build(spur));
+  assert.equal(plain.worm, null);
+  assert.equal(plain.topology, null);
+  assert.deepEqual(plain.teeth, [20, 60], 'lui garde sa ligne « Dents »');
+});

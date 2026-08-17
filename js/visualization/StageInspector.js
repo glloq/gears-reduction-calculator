@@ -53,7 +53,15 @@
         if (registry && registry.planetaryDetails) topology.details = registry.planetaryDetails(stage);
       } catch (ignore) { topology.details = null; }
     }
-    return { index: index, type: stage.type, topology: topology,
+    // §16 : la fiche doit connaître la FAMILLE. Une vis sans fin se choisit
+    // très souvent pour tenir une charge à l'arrêt, et une fiche générique
+    // laissait de côté la seule raison de l'avoir prise.
+    var worm = null;
+    if (stage.type === 'worm') {
+      try { worm = registry && registry.wormDetails ? registry.wormDetails(stage) : null; }
+      catch (ignore) { worm = null; }
+    }
+    return { index: index, type: stage.type, topology: topology, worm: worm,
       teeth: teeth.filter(function (v) { return finite(v) && v > 0; }), ratio: mech.ratio,
       efficiency: mech.efficiency, centerDistance: geometry.centerDistance, module: stage.parameters && stage.parameters.module,
       inputRpm: inputRpm, outputRpm: outputRpm, inputTorque: mech.inputTorqueNm, outputTorque: mech.outputTorqueNm || mech.torqueNm,
@@ -116,12 +124,13 @@
     // fait l'étage, ensuite comment il est taillé. Un groupe sans donnée
     // fiable n'est pas affiché du tout.
     var grid = document.createElement('div'); grid.className = 'inspector-grid';
-    var topology = data.topology;
+    var topology = data.topology, worm = data.worm;
     var GROUPS = [
       { title: null, rows: [
-        // Pour un planétaire, la denture seule ne dit rien : c'est la
-        // topologie qui définit le mécanisme.
-        ['Dents', topology ? null : (data.teeth.join(' → ') || null)],
+        // Pour un planétaire comme pour une vis, la denture seule ne dit rien :
+        // c'est la topologie, ou l'angle d'avance, qui définit le mécanisme. Le
+        // bloc de famille les porte, et cette ligne ferait doublon.
+        ['Dents', topology || worm ? null : (data.teeth.join(' → ') || null)],
         ['Rapport', format(data.ratio, 3, ' : 1')]
       ] },
       topology ? { title: 'Architecture', rows: [
@@ -146,6 +155,16 @@
       topology && topology.details ? { title: 'Montage', rows: [
         ['Coaxialité (Zr − Zs)/2', conditionLine(topology.details.coaxial, 'entier attendu')],
         ['Équirépartition (Zs + Zr)/n', conditionLine(topology.details.assembly, 'entier attendu')]
+      ] } : null,
+      worm ? { title: 'Vis', rows: [
+        ['Filets', finite(worm.starts) ? worm.starts + (worm.starts > 1 ? ' filets' : ' filet') : null],
+        ['Roue', finite(worm.wheelTeeth) ? worm.wheelTeeth + ' dents' : null],
+        ['Angle d’avance γ', format(worm.leadAngleDeg, 1, '°')],
+        // C'est l'angle d'avance face au frottement qui décide du maintien de
+        // charge, pas la famille : une vis n'est pas irréversible par nature.
+        ['Maintien de charge', worm.selfLocking
+          ? 'irréversible (tan γ < μ)'
+          : 'rétro-entraînable, η inverse ' + format(worm.backDrivingEfficiency * 100, 0, ' %')]
       ] } : null,
       { title: 'Entrée', rows: [
         ['Vitesse', finite(data.inputRpm) ? format(Math.abs(data.inputRpm), 0, ' rpm') : null],
