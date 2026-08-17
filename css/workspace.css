@@ -392,3 +392,31 @@
   font-size: var(--font-xs);
   color: var(--muted);
 }
+
+/* §26 : repartir d'une solution trouvée. */
+.detail-actions { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-2); }
+
+/* §22 : ce que chaque famille apporte au vivier. */
+.refine-chip-count {
+  margin-left: 5px; padding: 0 5px;
+  border-radius: 99px; background: var(--surface-2);
+  font-size: 0.85em; font-variant-numeric: tabular-nums;
+}
+
+/* §20 : les actions spécialisées quittent l'en-tête pour un menu. */
+.results-more { position: relative; }
+.results-more > summary { list-style: none; cursor: pointer; }
+.results-more > summary::-webkit-details-marker { display: none; }
+.results-more-panel {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
+  min-width: 14rem; padding: var(--sp-1);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-1); box-shadow: var(--shadow, 0 6px 18px rgba(0,0,0,.18));
+}
+.results-more-panel .btn-small { width: 100%; text-align: left; }
+
+/* §16 : ce qu'une solution gagne ou perd face à la référence. */
+.metric-delta { display: block; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
+.delta-better { color: var(--ok, #2a9d5c); }
+.delta-worse { color: var(--muted); }
+.solution-reference { font-size: var(--font-xs); color: var(--muted); font-style: italic; }

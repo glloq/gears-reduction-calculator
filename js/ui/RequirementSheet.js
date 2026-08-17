@@ -75,6 +75,12 @@
       // « Rapport » sans lui inventer une valeur.
       if (session.isRevealed(field.path)) return true;
       if (field.linear && !linear) return model.get(field.path).isKnown();
+      // §6 : puissance OU couple, selon ce que porte la plaque moteur. Les
+      // deux à la fois n'apparaissent que si l'utilisateur le demande.
+      if (field.motor) {
+        var choice = session.motorInput();
+        return choice === 'both' || choice === field.motor || model.get(field.path).isKnown();
+      }
       return field.essential || model.get(field.path).isKnown();
     });
   };
@@ -95,6 +101,7 @@
       title.textContent = side === 'input' ? 'Entrée' : side === 'output' ? 'Sortie souhaitée' : 'Rapport';
       block.appendChild(title);
       fields.forEach(function (field) { block.appendChild(self._row(field)); });
+      if (side === 'input') block.appendChild(self._motorChoice());
       self.root.appendChild(block);
     });
 
@@ -112,11 +119,61 @@
     var model = this.session.requirement;
     var ratio = model.ratioRequirement(), problem = model.inferProblem(), parts = [];
     if (ratio.isKnown() && problem.mode !== 'ratio') parts.push('Rapport déduit : ' + ratio.describe());
-    // §20 : une plaque signalétique donne une puissance, pas un couple.
-    if (!model.input.torque.isKnown() && model.inputTorqueRequirement().isKnown()) {
-      parts.push('Couple d’entrée déduit : ' + model.inputTorqueRequirement().describe());
-    }
     derived.textContent = parts.join(' · ');
+
+    // §6, §20 : le couple déduit s'annonce là où la puissance se saisit, et
+    // non dans une ligne à part — c'est de cette saisie qu'il découle.
+    var note = el('motorDerivedTorque');
+    if (!note) return;
+    var torque = model.inputTorqueRequirement();
+    note.textContent = !model.input.torque.isKnown() && torque.isKnown()
+      ? 'couple calculé ' + torque.describe() : '';
+  };
+
+  /**
+   * §6 : « Je connais la puissance / le couple / les deux ». Une plaque moteur
+   * porte presque toujours 1500 rpm et 750 W ; exiger un couple obligeait à le
+   * calculer soi-même alors que le logiciel sait le faire.
+   */
+  var MOTOR_CHOICES = [
+    { id: 'power', label: 'Puissance' },
+    { id: 'torque', label: 'Couple' },
+    { id: 'both', label: 'Les deux' }
+  ];
+
+  RequirementSheet.prototype._motorChoice = function () {
+    var self = this, current = this.session.motorInput();
+    var row = document.createElement('div');
+    row.className = 'motor-choice';
+    row.id = 'motorChoice';
+    row.setAttribute('role', 'radiogroup');
+    row.setAttribute('aria-label', 'Donnée moteur connue');
+    row.appendChild(document.createElement('span')).textContent = 'Je connais :';
+    MOTOR_CHOICES.forEach(function (choice) {
+      var active = current === choice.id;
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'motor-option' + (active ? ' active' : '');
+      button.dataset.motor = choice.id;
+      button.textContent = choice.label;
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-checked', String(active));
+      button.addEventListener('click', function () {
+        self.session.setMotorInput(choice.id);
+        self._changed();
+      });
+      row.appendChild(button);
+    });
+
+    // Le couple déduit est annoncé comme calculé : c'est une conséquence, pas
+    // une saisie, et le confondre avec une donnée serait trompeur. La ligne
+    // existe toujours, pour être remplie sans reconstruire la fiche — sinon
+    // elle n'apparaîtrait qu'au prochain rendu structurel.
+    var note = document.createElement('span');
+    note.className = 'motor-derived';
+    note.id = 'motorDerivedTorque';
+    row.appendChild(note);
+    return row;
   };
 
   RequirementSheet.prototype._row = function (field) {
@@ -247,17 +304,70 @@
     });
   };
 
+  /**
+   * §9 : le diagnostic listait TOUTES les notes. Avec les capacités actuelles
+   * cela fait sept lignes dont cinq n'appellent aucune action, et le résumé
+   * latéral porte déjà l'analyse détaillée. On montre donc l'état, la remarque
+   * la plus utile, et le reste sur demande.
+   */
   RequirementSheet.prototype._renderDiagnostic = function () {
     if (!this.diagnostic) return;
-    var notes = this.session.diagnose();
+    var self = this, notes = this.session.diagnose();
     this.diagnostic.innerHTML = '';
-    notes.forEach(function (note) {
-      var line = document.createElement('span');
-      line.className = 'diagnostic-note diagnostic-' + note.level;
-      line.dataset.code = note.code;
-      line.textContent = (note.level === 'error' ? '✕ ' : note.level === 'warn' ? '△ ' : '✓ ') + note.text;
-      this.diagnostic.appendChild(line);
-    }, this);
+    if (!notes.length) return;
+
+    var blocking = notes.filter(function (note) { return note.level === 'error'; });
+    var warnings = notes.filter(function (note) { return note.level === 'warn'; });
+    var lead = blocking.concat(warnings)[0];
+    var shown = blocking.length ? blocking : (lead ? [lead] : []);
+
+    var state = document.createElement('span');
+    state.className = 'diagnostic-note diagnostic-' + (blocking.length ? 'error' : 'ok');
+    state.dataset.code = 'state';
+    state.textContent = blocking.length ? '✕ Besoin incomplet' : '✓ Besoin exploitable';
+    this.diagnostic.appendChild(state);
+
+    shown.forEach(function (note) { self.diagnostic.appendChild(self._note(note)); });
+
+    var rest = notes.filter(function (note) {
+      return note !== lead && note.level !== 'ok' && shown.indexOf(note) === -1;
+    });
+    if (!rest.length) return;
+    var more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'btn-link diagnostic-more';
+    more.id = 'diagnosticMore';
+    more.textContent = this._diagnosticOpen
+      ? 'Masquer les remarques'
+      : rest.length + (rest.length > 1 ? ' autres remarques' : ' autre remarque');
+    more.setAttribute('aria-expanded', String(!!this._diagnosticOpen));
+    more.addEventListener('click', function () {
+      self._diagnosticOpen = !self._diagnosticOpen;
+      self._renderDiagnostic();
+    });
+    this.diagnostic.appendChild(more);
+    if (this._diagnosticOpen) rest.forEach(function (note) { self.diagnostic.appendChild(self._note(note)); });
+  };
+
+  RequirementSheet.prototype._note = function (note) {
+    var self = this;
+    var line = document.createElement('span');
+    line.className = 'diagnostic-note diagnostic-' + note.level;
+    line.dataset.code = note.code;
+    line.textContent = (note.level === 'error' ? '✕ ' : note.level === 'warn' ? '△ ' : '✓ ') + note.text;
+    // §14 : une remarque qui désigne un champ y emmène.
+    if (note.field) {
+      line.classList.add('diagnostic-actionable');
+      line.tabIndex = 0;
+      line.setAttribute('role', 'button');
+      line.title = 'Aller au champ concerné';
+      var jump = function () { self.session.reveal(note.field); self._changed(); self._focus(note.field); };
+      line.addEventListener('click', jump);
+      line.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); jump(); }
+      });
+    }
+    return line;
   };
 
   RequirementSheet.prototype._renderArchitecture = function () {

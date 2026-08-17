@@ -141,8 +141,32 @@
     // ouvrir une ligne vide, pas poser 12:1 : une valeur que l'utilisateur n'a
     // pas choisie ne doit jamais dimensionner son réducteur en silence (§21).
     this.revealed = (seed.revealed || []).slice();
+    this._motorInput = seed.motorInput || null;
     this._advice = null;
   }
+
+  /**
+   * §6 : ce que porte la plaque moteur — puissance, couple, ou les deux. La
+   * valeur est DÉDUITE de ce qui est renseigné : un couple déjà saisi ne doit
+   * pas disparaître parce qu'un réglage dit « puissance ».
+   */
+  SearchSession.prototype.motorInput = function () {
+    if (this._motorInput) return this._motorInput;
+    var torque = this.requirement.input.torque.isKnown();
+    var power = this.requirement.input.power.isKnown();
+    if (torque && power) return 'both';
+    if (torque) return 'torque';
+    return 'power';
+  };
+
+  SearchSession.prototype.setMotorInput = function (id) {
+    this._motorInput = id === 'torque' || id === 'both' ? id : 'power';
+    // Passer à « puissance seule » retire un couple saisi : le garder ferait
+    // deux sources pour la même grandeur, et c'est le couple qui gagne.
+    if (this._motorInput === 'power') this.requirement.clear('input.torque');
+    if (this._motorInput === 'torque') this.requirement.clear('input.power');
+    return this;
+  };
 
   /** Montre une grandeur sans rien y écrire. */
   SearchSession.prototype.reveal = function (path) {
@@ -398,7 +422,7 @@
       // « Il manque de quoi déterminer le rapport » est vrai, et sans objet :
       // ne pas fixer le rapport EST la méthode choisie.
       notes = notes.filter(function (note) { return note.code !== 'no-problem'; });
-      notes.unshift({ level: 'ok', code: 'exploration',
+      notes.unshift({ level: 'ok', code: 'exploration', section: 'type',
         text: 'Espace exploré : rapports ' + round(span.min) + ' à ' + round(span.max) + ':1' +
           (span.stated ? '' : ' (plage par défaut, modifiable dans le besoin)') + '.' });
     }
@@ -406,13 +430,13 @@
       notes = notes.filter(function (note) { return note.code !== 'no-problem'; });
       var described = this.existing.describe();
       if (!described) {
-        notes.unshift({ level: 'error', code: 'no-existing', text: 'Décrivez le réducteur que vous avez : au moins un étage.' });
+        notes.unshift({ level: 'error', code: 'no-existing', section: 'type', text: 'Décrivez le réducteur que vous avez : au moins un étage.' });
       } else {
         this.existing.errors().forEach(function (entry) {
-          notes.push({ level: 'error', code: 'existing-stage', text: 'Étage ' + entry.stage + ' : ' + entry.text });
+          notes.push({ level: 'error', code: 'existing-stage', section: 'type', text: 'Étage ' + entry.stage + ' : ' + entry.text });
         });
         var reference = this.baseline();
-        notes.unshift({ level: reference ? 'ok' : 'warn', code: 'existing',
+        notes.unshift({ level: reference ? 'ok' : 'warn', code: 'existing', section: 'type',
           text: reference
             ? 'Réducteur actuel : ' + described + ', Ø ' + Math.round(reference.dimensions.maxDiameter) +
               ' mm, rendement ' + Math.round(reference.efficiency * 100) + ' %.'
@@ -423,18 +447,20 @@
       if (this.intent.objective === 'torque' && !this.requirement.inputTorqueRequirement().isKnown()) {
         // Le couple de sortie est proportionnel au couple d'entrée : le
         // CLASSEMENT reste juste sans lui, seules les valeurs sont arbitraires.
-        notes.push({ level: 'warn', code: 'assumed-input-torque',
+        notes.push({ level: 'warn', code: 'assumed-input-torque', section: 'need', field: 'input.power',
           text: 'Sans couple ni puissance d’entrée, le classement reste valable mais les couples affichés sont indicatifs.' });
       }
     }
     if (this.technologySelection.policy === 'auto') {
-      this.advice().coverage.forEach(function (gap) { notes.push({ level: 'warn', code: gap.code, text: gap.text }); });
+      this.advice().coverage.forEach(function (gap) {
+        notes.push({ level: 'warn', code: gap.code, section: 'type', text: gap.text });
+      });
     }
     if (!this.technologySelection.isComplete()) {
-      notes.push({ level: 'error', code: 'no-technology', text: 'Choisissez au moins une famille de transmission.' });
+      notes.push({ level: 'error', code: 'no-technology', section: 'type', text: 'Choisissez au moins une famille de transmission.' });
     }
     var count = this.selectedTechnologies().length;
-    if (count) notes.push({ level: 'ok', code: 'technologies', text: count + (count > 1 ? ' technologies explorées.' : ' technologie explorée.') });
+    if (count) notes.push({ level: 'ok', code: 'technologies', section: 'type', text: count + (count > 1 ? ' technologies explorées.' : ' technologie explorée.') });
     return notes;
   };
 
@@ -582,7 +608,8 @@
       technologySelection: this.technologySelection.toJSON(),
       technical: this.technical.toJSON(),
       existing: this.existing.toJSON(),
-      revealed: this.revealed.slice()
+      revealed: this.revealed.slice(),
+      motorInput: this._motorInput || null
     };
   };
 
@@ -598,6 +625,7 @@
     this.technical = draft.technical;
     this.existing = draft.existing;
     this.revealed = draft.revealed;
+    this._motorInput = draft._motorInput;
     this._advice = null;
     return this;
   };

@@ -74,6 +74,13 @@
     { label: 'Linéaire', families: ['rack'] }
   ];
 
+  function node_(tag, className, text) {
+    var element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text != null) element.textContent = text;
+    return element;
+  }
+
   function button(className, text, onClick) {
     var node = document.createElement('button');
     node.type = 'button';
@@ -166,11 +173,13 @@
     var names = {};
     Object.keys(KNOWLEDGE).forEach(function (id) { names[id] = KNOWLEDGE[id].name; });
     var explored = this.draft.selectedTechnologies().length;
-    return {
-      customised: selection.policy !== 'auto',
-      text: selection.describe(names) + ' · ' + explored +
-        (explored > 1 ? ' familles explorées' : ' famille explorée')
-    };
+    var text = selection.describe(names) + ' · ' + explored +
+      (explored > 1 ? ' familles' : ' famille');
+    // §12 : le conseiller travaille déjà ; le laisser muet tant qu'on n'ouvre
+    // pas le panneau prive de son résultat ceux qui ne l'ouvriront jamais.
+    var lead = this.draft.advice().recommended.slice(0, 2).map(function (entry) { return entry.name; });
+    if (lead.length) text += ' · en tête : ' + lead.join(', ');
+    return { customised: selection.policy !== 'auto', text: text };
   };
 
   /** Ce que la ligne « Disposition » annonce sans être dépliée. */
@@ -511,6 +520,28 @@
       label.appendChild(select);
       functions.appendChild(label);
     });
+    // §13 : la distance entre arbres était rangée avec la fatigue et les
+    // heures par jour. Ce n'est pas une donnée de service, c'est une donnée
+    // d'architecture — et c'est elle qui rend courroies et chaînes évidentes.
+    var distance = document.createElement('label');
+    distance.className = 'type-function';
+    distance.appendChild(document.createTextNode('Distance entre arbres'));
+    var span = document.createElement('input');
+    span.type = 'number';
+    span.min = '0';
+    span.id = 'shaftDistance';
+    span.placeholder = 'libre';
+    var current = architecture.shaftDistanceMm;
+    span.value = current == null ? '' : String(current);
+    span.addEventListener('change', function () {
+      var value = parseFloat(span.value);
+      architecture.shaftDistanceMm = isFinite(value) && value > 0 ? value : null;
+      self._changed();
+    });
+    distance.appendChild(span);
+    distance.appendChild(node_('span', 'quantity-unit', 'mm'));
+    functions.appendChild(distance);
+
     section.appendChild(functions);
 
     // Ce qui vient d'être retiré est ANNONCÉ, et récupérable : perdre en

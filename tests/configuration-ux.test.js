@@ -474,7 +474,10 @@ test('the service cycle is reachable, and only expands once asked for', () => {
   assert.match(modal, /Estimer la fatigue/);
   assert.match(modal, /Durée de vie visée/);
   assert.match(modal, /Type de charge/);
-  assert.match(modal, /id = 'shaftDistance'/);
+  // §13 : la distance entre arbres a quitté « service » pour la disposition,
+  // dont elle relève réellement — c'est une donnée d'architecture.
+  assert.doesNotMatch(modal, /shaftDistance/);
+  assert.match(typeStep, /id = 'shaftDistance'/);
   // Le détail du cycle ne s'affiche qu'une fois la fatigue demandée.
   assert.match(modal, /if \(field\.key !== 'enabled' && !fatigue\.enabled\) return;/);
 });

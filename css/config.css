@@ -389,3 +389,21 @@
 
 /* Les cases historiques restent atteignables, mais ne se pilotent plus ici. */
 #technologyPanel .types-grid { opacity: .7; pointer-events: none; }
+
+/* §6 : puissance ou couple, comme sur une plaque moteur. */
+.motor-choice {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  margin-top: var(--sp-1); font-size: var(--font-xs); color: var(--muted);
+}
+.motor-option {
+  padding: 2px 9px;
+  border: 1px solid var(--line); border-radius: 99px;
+  background: var(--surface-1); font-size: var(--font-xs); color: var(--muted);
+}
+.motor-option.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.motor-derived { margin-left: auto; font-style: italic; }
+
+/* §9, §14 : un diagnostic court, et des remarques qui mènent au champ. */
+.diagnostic-more { font-size: var(--font-xs); padding: 0; }
+.diagnostic-actionable { cursor: pointer; text-decoration: underline dotted; }
+.diagnostic-actionable:hover { color: var(--accent); }

@@ -93,6 +93,7 @@
         chip.classList.toggle('active', !self._disabledTypes[type]);
         chip.setAttribute('aria-pressed', String(!self._disabledTypes[type]));
         self._publish(false);
+        self._renderChips();
       });
     }
 
@@ -204,17 +205,37 @@
     };
   };
 
+  /**
+   * §22 : une famille cochée ne disait pas ce qu'elle apporte. « Vis sans fin
+   * 4 » contre « Droit 31 » rend le filtre immédiatement lisible — et évite
+   * d'écarter la famille qui portait l'essentiel du vivier.
+   */
   SolutionExplorer.prototype._renderChips = function () {
-    var host = el('refineTypeChips');
+    var host = el('refineTypeChips'), self = this;
     if (!host) return;
+    var counts = {};
+    this._pool.forEach(function (solution) {
+      var seen = {};
+      (solution.stages || []).forEach(function (stage) {
+        var type = stage.type === 'epicyclic' ? 'planetary' : stage.type;
+        if (seen[type]) return;
+        seen[type] = true;
+        counts[type] = (counts[type] || 0) + 1;
+      });
+    });
     host.innerHTML = '';
     GearSolutionFilter.bounds(this._pool).types.forEach(function (type) {
       var chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'refine-chip active';
+      var active = !self._disabledTypes[type];
+      chip.className = 'refine-chip' + (active ? ' active' : '');
       chip.dataset.type = type;
-      chip.setAttribute('aria-pressed', 'true');
-      chip.textContent = TYPE_LABELS[type] || type;
+      chip.setAttribute('aria-pressed', String(active));
+      chip.textContent = (TYPE_LABELS[type] || type);
+      var count = document.createElement('span');
+      count.className = 'refine-chip-count';
+      count.textContent = String(counts[type] || 0);
+      chip.appendChild(count);
       host.appendChild(chip);
     });
     host.hidden = !host.children.length;

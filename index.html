@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Calculateur d'engrenages - Recherche et visualisation de trains de réduction multi-types">
-  <title>Calculateur d'Engrenages - Trains de Réduction</title>
+  <meta name="description" content="Concepteur de transmissions - recherche, dimensionnement et optimisation de réducteurs multi-technologies">
+  <title>Concepteur de transmissions — recherche, dimensionnement, optimisation</title>
 
   <!-- Icône embarquée : sans elle le navigateur réclame /favicon.ico et
        récolte un 404 sur GitHub Pages comme en local. -->
@@ -43,7 +43,11 @@
   <header class="app-header">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
-      <div><strong>Calculateur d'engrenages</strong><small>Recherche de trains de réduction</small></div>
+      <!-- §30 : le produit dépasse largement le calcul d'engrenages —
+           planétaires, vis sans fin, courroies, chaînes, crémaillères,
+           exploration d'espace de conception et optimisation d'un réducteur
+           existant. Le nom le dit maintenant. -->
+      <div><strong>Concepteur de transmissions</strong><small>Recherche · dimensionnement · optimisation</small></div>
     </div>
     <div class="header-actions">
       <!-- §18B : presets, historique et aide quittent le flux de configuration
@@ -404,7 +408,9 @@
       <section id="workspaceEmpty" class="workspace-empty empty-state">
         <div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div>
         <h2 id="workspaceEmptyTitle">Décrivez la transmission que vous recherchez</h2>
-        <p id="workspaceEmptyHint">Indiquez ce que vous voulez obtenir dans le panneau de gauche, puis lancez la recherche. Les architectures les mieux classées apparaîtront ici.</p>
+        <!-- §29 : la barre latérale de configuration n'existe plus. L'état
+             vide doit dire quoi faire, et permettre de le faire. -->
+        <p id="workspaceEmptyHint">Décrivez la transmission à rechercher : les architectures les mieux classées apparaîtront ici.</p>
         <ul id="workspaceEmptyBlockers" class="empty-state-blockers" hidden></ul>
         <div id="workspaceEmptyActions" class="empty-state-actions" hidden></div>
       </section>
@@ -412,6 +418,16 @@
       <!-- §17 : l'espace de conception. Le viewer est au centre, les solutions
            à gauche, l'inspecteur à droite. Il n'y a plus de configuration ici :
            elle est dans le modal, résumée par le bandeau ci-dessus. -->
+      <!-- §27 : sous 1000 px la grille s'empilait — Solutions, puis Viewer,
+           puis Détails. Avec trente solutions, le viewer était à un écran et
+           demi de défilement. Ces trois boutons choisissent ce qu'on regarde ;
+           au-dessus de 1000 px ils n'existent pas. -->
+      <nav class="mobile-panes" id="mobilePanes" role="tablist" aria-label="Vue affichée">
+        <button type="button" role="tab" data-pane="results" class="active" aria-selected="true">Solutions</button>
+        <button type="button" role="tab" data-pane="viewer" aria-selected="false">Vue</button>
+        <button type="button" role="tab" data-pane="detail" aria-selected="false">Détails</button>
+      </nav>
+
       <div class="design-workspace">
         <section class="results-pane" id="result-container" aria-label="Solutions trouvées">
           <header class="results-header">
@@ -422,7 +438,15 @@
                 <button id="cardsViewBtn" class="active" role="tab" aria-selected="true">Cartes</button>
                 <button id="tableViewBtn" role="tab" aria-selected="false">Tableau</button>
               </div>
-              <button class="btn-small" id="toggleComparisonBtn" title="Rechercher plusieurs rapports cibles et comparer leurs solutions" aria-label="Comparaison multi-cibles">Multi-cibles</button>
+              <!-- §19, §20 : la colonne des solutions est étroite. Le tri et
+                   les actions spécialisées passent dans un menu ; les chips
+                   actives restent visibles, elles seules décrivent le vivier. -->
+              <details class="results-more" id="resultsMore">
+                <summary class="btn-small" aria-label="Autres actions">⋯</summary>
+                <div class="results-more-panel">
+                  <button class="btn-small" id="toggleComparisonBtn" title="Rechercher plusieurs rapports cibles et comparer leurs solutions">Comparer plusieurs rapports</button>
+                </div>
+              </details>
             </div>
           </header>
           <div class="progress-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progression de la recherche">
@@ -537,22 +561,32 @@
         </div>
         <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
         <p class="viz-hint">Molette pour zoomer, clic-glisser pour déplacer, cliquer un étage pour l'inspecter</p>
-        <details class="legacy-canvas-section">
-          <summary>Vue linéaire simplifiée</summary>
-          <canvas id="gearCanvas" width="1000" height="200" aria-label="Schéma linéaire classique"></canvas>
-        </details>
+        <!-- §24 : les trois vues modernes couvrent tout ce que montrait cette
+             vue linéaire. Le canevas reste dans le DOM — du code d'export s'en
+             sert encore — mais il ne fait plus partie de l'interface. -->
+        <canvas id="gearCanvas" width="1000" height="200" aria-hidden="true" hidden></canvas>
       </section>
 
         <!-- Volet détail de la solution sélectionnée -->
         <section class="detail-pane" aria-label="Détail de la solution sélectionnée">
           <div id="solutionCard" class="solution-summary" hidden aria-live="polite"></div>
 
+          <!-- §26 : le logiciel sait repartir d'un réducteur décrit. Le faire
+               depuis une solution trouvée referme la boucle recherche →
+               solution → optimisation → nouvelle recherche. -->
+          <div class="detail-actions" id="detailActions" hidden>
+            <button type="button" class="btn-small" id="optimiseSolutionBtn">Optimiser cette solution</button>
+          </div>
+
+          <!-- §25 : « Comparer » et « Graphiques » n'ont de sens qu'avec de
+               quoi comparer ou tracer ; « Journal » est un outil de
+               diagnostic, pas une étape de conception. -->
           <nav class="detail-tabs" role="tablist" aria-label="Détail de la solution">
             <button role="tab" data-detail="analyse" class="active" aria-selected="true">Analyse</button>
-            <button role="tab" data-detail="editeur" aria-selected="false">Éditeur</button>
-            <button role="tab" data-detail="comparer" aria-selected="false">Comparer</button>
-            <button role="tab" data-detail="graphiques" aria-selected="false">Graphiques</button>
-            <button role="tab" data-detail="journal" aria-selected="false">Journal</button>
+            <button role="tab" data-detail="editeur" aria-selected="false">Modifier</button>
+            <button role="tab" data-detail="comparer" aria-selected="false" hidden>Comparer</button>
+            <button role="tab" data-detail="graphiques" aria-selected="false" hidden>Graphiques</button>
+            <button role="tab" data-detail="journal" aria-selected="false" hidden>Journal</button>
           </nav>
 
           <div class="detail-panel active" data-detail-panel="analyse">

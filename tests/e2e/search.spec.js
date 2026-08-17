@@ -20,7 +20,9 @@ test('need derives 12:1 and returns an output near 125 rpm',async({page})=>{
   await openModal(page);
   await setQuantity(page,'input.speed',1500);
   await setQuantity(page,'output.speed',125);
-  await expect(page.locator('#requirementDiagnostic')).toContainText('déterminent le rapport');
+  // §9 : le diagnostic dit l'état, pas toutes les notes — le détail est dans
+  // le résumé latéral, et les remarques restantes se déplient à la demande.
+  await expect(page.locator('#requirementDiagnostic')).toContainText('Besoin exploitable');
   await expect(page.locator('#derivedRatio')).toContainText('12');
   await page.locator('#searchModalSubmit').click();
   expect(await page.inputValue('#objective_mode')).toBe('need');
@@ -34,7 +36,10 @@ test('linear UI and constraints reach the rack solver',async({page})=>{
   await setQuantity(page,'input.speed',1500);
   await setQuantity(page,'input.torque',2);
   await setQuantity(page,'output.travelPerRev',62.83);
-  await expect(page.locator('#requirementDiagnostic')).toContainText('mouvement linéaire');
+  // Le problème bascule tout seul : la fiche montre alors les grandeurs
+  // linéaires, et le diagnostic annonce un besoin exploitable.
+  await expect(page.locator('#requirementDiagnostic')).toContainText('Besoin exploitable');
+  await expect(page.locator('.quantity-row[data-path="output.travelPerRev"]')).toBeVisible();
   await page.locator('#searchModalSubmit').click();
   expect(await page.inputValue('#objective_mode')).toBe('rotationTranslation');
   await expect(page.locator('.solution-card').first()).toContainText('Course',{timeout:30000});
