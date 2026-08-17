@@ -50,6 +50,7 @@
           position: add(axis.origin, scale(axis.direction, member.axialPosition)),
           axis: axis.direction,
           axialPosition: member.axialPosition,
+          axialPositionProvenance: member.axialPositionProvenance || 'exact',
           radius: radius, width: finite(member.width, 0),
           kind: member.kind, memberRole: member.memberRole,
           functionalRole: member.functionalRole,

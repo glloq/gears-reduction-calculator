@@ -136,7 +136,11 @@
       // Le CORPS auquel l'organe appartient : tout ce qui est sur cet arbre
       // tourne d'un bloc. C'est la question qu'un train composé pose sans
       // arrêt, et à laquelle le dessin ne répondait pas.
-      bodyId: placed ? placed.shaftId : null },
+      bodyId: placed ? placed.shaftId : null,
+      // §54 : l'abscisse est-elle mesurée, déduite d'un jeu par défaut, ou
+      // purement conventionnelle ? La vue s'en sert pour qualifier ce qu'elle
+      // montre au lieu de l'affirmer une fois pour toutes.
+      axialProvenance: placed ? placed.axialPositionProvenance : null },
     orientation(frame, member), overrides || {}));
   }
 

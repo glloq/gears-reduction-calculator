@@ -276,9 +276,29 @@
    * membre, encore fallait-il le dire.
    */
   var FIDELITY = {
-    teeth: 'Dentures et entraxes à l’échelle réelle ; la longueur des arbres est schématique.',
+    teeth: 'Dentures et entraxes à l’échelle réelle.',
     geometry: 'Vue cotée : diamètres, entraxes et courses sont ceux du calcul.',
     kinematic: 'Schéma symbolique : les positions et les tailles ne sont pas à l’échelle, seuls les liens et les vitesses ont un sens.'
+  };
+
+  /**
+   * §54 : ce que vaut l'ÉCARTEMENT des organes sur leurs arbres.
+   *
+   * La phrase disait une bonne fois « la longueur des arbres est
+   * schématique ». Elle l'était, faute d'abscisses ; elle ne l'est plus
+   * toujours, et continuer à l'affirmer serait un mensonge dans l'autre sens.
+   * Chaque abscisse porte maintenant sa provenance — mesurée, déduite d'un jeu
+   * d'arbre par défaut, ou purement conventionnelle — et la vue dit la moins
+   * bonne des trois, puisque c'est elle qui limite ce qu'on peut affirmer.
+   */
+  ViewerToolbar.prototype._axialFidelity = function (rendered) {
+    var wheels = rendered && rendered.model && rendered.model.wheels;
+    if (!wheels || !wheels.length) return '';
+    var seen = {};
+    wheels.forEach(function (wheel) { if (wheel.axialProvenance) seen[wheel.axialProvenance] = true; });
+    if (seen.schematic) return ' L’écartement des organes sur un même arbre est conventionnel : leur largeur de denture n’est pas calculée.';
+    if (seen.derived) return ' L’écartement des organes sur un même arbre suit un jeu d’arbre par défaut.';
+    return ' L’écartement des organes sur leurs arbres est celui du calcul.';
   };
 
   ViewerToolbar.prototype._renderFidelity = function (rendered) {
@@ -288,6 +308,7 @@
     // dessin absent parlerait du précédent.
     if (!rendered) { host.textContent = ''; host.title = ''; host.hidden = true; host.classList.remove('has-derived'); return; }
     var text = FIDELITY[this.currentView] || '';
+    text += this._axialFidelity(rendered);
     var scene = rendered && rendered.scene;
     // Une cote reconstruite faute de mieux ne doit pas être lue comme une cote
     // calculée : la scène marque ces membres, la vue le répercute.

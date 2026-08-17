@@ -99,21 +99,37 @@
    * se retrouvaient au même point, donc superposées : le dessin montrait une
    * roue là où il y en a deux, et l'arbre n'avait pas de longueur.
    */
-  function place(shaft, member, gap, at) {
+  function place(shaft, member, gap, at, gapIsExplicit) {
     var width = finite(member.geometry && member.geometry.width, 0);
     var position = 0;
+    var last = shaft.members.length ? shaft.members[shaft.members.length - 1] : null;
+    // §54 : d'OÙ vient cette abscisse. Le premier organe d'un arbre est à
+    // zéro par définition — c'est une origine, pas une mesure. Les suivants
+    // découlent des largeurs de denture et d'un jeu d'arbre ; si une largeur
+    // manque ou si le jeu est celui par défaut, la position est une
+    // convention de dessin, et le dire vaut mieux que de laisser croire
+    // qu'on a mesuré. La vue peut alors qualifier ce qu'elle montre au lieu
+    // d'affirmer une bonne fois que « la longueur des arbres est schématique ».
+    var provenance = 'exact';
     if (Number.isFinite(at)) {
       position = at;
-    } else if (shaft.members.length) {
-      var last = shaft.members[shaft.members.length - 1];
+    } else if (last) {
       position = last.axialPosition + last.width / 2 + gap + width / 2;
+      var known = exactWidth(member) && last.exactWidth;
+      provenance = !known ? 'schematic' : gapIsExplicit ? 'exact' : 'derived';
     }
     var entry = { id: member.id, shaftId: shaft.id, memberRole: member.role,
       functionalRole: member.functionalRole, kind: member.kind,
       axialPosition: Number(position.toFixed(4)), width: width,
+      axialPositionProvenance: provenance, exactWidth: exactWidth(member),
       geometry: member.geometry || {}, mechanical: member.mechanical || {} };
     shaft.members.push(entry);
     return entry;
+  }
+
+  /** La largeur de denture vient-elle du moteur, ou d'une reconstruction ? */
+  function exactWidth(member) {
+    return !!(member && member.provenance && member.provenance.width === 'engine');
   }
 
   function makeShaft(graph, axis, options) {
@@ -178,7 +194,7 @@
     // que faisait `context.cursor` — plaçait la roue d'une vis sans fin en
     // face de l'entrée de l'arbre plutôt qu'en face du filet, et laissait deux
     // roues d'un même engrènement dans deux plans différents.
-    var seated = place(context.shaft, driving, context.gap);
+    var seated = place(context.shaft, driving, context.gap, undefined, context.gapIsExplicit);
     var seat = seated.axialPosition + apexOffset(driving);
     var contact = add(inputAxis.origin, scale(inputAxis.direction, seat));
 
@@ -201,7 +217,7 @@
     var next = makeShaft(graph, axis, { angularSpeed: speedOf(driven) });
     members.forEach(function (member) {
       if (member === driving) return;
-      place(next, member, context.gap, member === driven ? drivenAt : undefined);
+      place(next, member, context.gap, member === driven ? drivenAt : undefined, context.gapIsExplicit);
     });
 
     graph.mechanisms.push({ id: 'mesh-' + index, stageIndex: index, type: stage.type,
@@ -236,14 +252,14 @@
       if (!member) return;
       var functional = member.functionalRole;
       // L'organe d'ENTRÉE prolonge l'arbre amont : c'est le même corps tournant.
-      if (functional === 'input') { bodies[role] = context.shaft; place(context.shaft, member, context.gap); return; }
+      if (functional === 'input') { bodies[role] = context.shaft; place(context.shaft, member, context.gap, undefined, context.gapIsExplicit); return; }
       var grounded = functional === 'fixed';
       var shaft = makeShaft(graph, axis, {
         id: 'shaft-' + graph.shafts.length + '-' + role,
         role: grounded ? 'fixed' : functional === 'output' ? 'driven' : 'intermediate',
         grounded: grounded, angularSpeed: speedOf(member)
       });
-      place(shaft, member, context.gap);
+      place(shaft, member, context.gap, undefined, context.gapIsExplicit);
       bodies[role] = shaft;
       if (grounded) graph.ground.memberIds.push(member.id);
     });
@@ -263,7 +279,7 @@
       // La scène décrit les satellites par UN membre : le nombre réel est une
       // propriété du corps, que le renderer instanciera autant de fois.
       shaft.count = Math.max(2, Math.round(finite(stage.planetCount, 3)));
-      place(shaft, planet, context.gap);
+      place(shaft, planet, context.gap, undefined, context.gapIsExplicit);
     });
 
     BODY_ROLES.forEach(function (role) {
@@ -288,7 +304,7 @@
     var axis = graph.byAxis[context.shaft.axisId];
     var pinion = members.filter(function (m) { return m.kind !== 'rack'; })[0] || members[0];
     var rack = members.filter(function (m) { return m.kind === 'rack'; })[0];
-    place(context.shaft, pinion, context.gap);
+    place(context.shaft, pinion, context.gap, undefined, context.gapIsExplicit);
     var slide = { id: 'slide-' + index, stageIndex: index,
       // La translation se fait perpendiculairement à l'axe du pignon, dans le
       // plan de son cercle primitif.
@@ -314,6 +330,9 @@
     scene = scene || (SceneBuilder && SceneBuilder.build ? SceneBuilder.build(solution) : null);
     var stages = solution.stages || [];
     var gap = finite(solution.shaftGapMm, 6);
+    // Un jeu d'arbre imposé est une donnée ; le jeu par défaut est une
+    // convention de dessin, et ce n'est pas la même chose à coter.
+    var gapIsExplicit = Number.isFinite(solution.shaftGapMm);
 
     var graph = { axes: [], shafts: [], mechanisms: [], slides: [],
       ground: { id: GROUND_ID, memberIds: [] }, byShaft: {}, byAxis: {} };
@@ -322,7 +341,7 @@
       angularSpeed: Number.isFinite(solution.inputSpeedRpm) ? solution.inputSpeedRpm : null });
     graph.axes.forEach(function (axis) { graph.byAxis[axis.id] = axis; });
 
-    var context = { shaft: inputShaft, cursor: 0, gap: gap };
+    var context = { shaft: inputShaft, gap: gap, gapIsExplicit: gapIsExplicit };
     stages.forEach(function (stage, index) {
       var members = (scene && scene.stageMembers ? scene.stageMembers(index) : []) || [];
       if (!members.length) return;

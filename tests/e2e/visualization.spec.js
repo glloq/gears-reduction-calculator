@@ -258,6 +258,16 @@ test('each view says what it draws to scale, and what it only suggests (§22, §
   await showView(page, 'teeth');
   await expect(badge).toContainText('à l’échelle réelle');
   await expect(badge).not.toHaveClass(/has-derived/);
+  // §54 : la phrase disait une bonne fois « la longueur des arbres est
+  // schématique ». Elle l'était faute d'abscisses ; elle ne l'est plus
+  // toujours, et la vue qualifie maintenant ce qu'elle montre.
+  await expect(badge).toContainText('L’écartement des organes');
+
+  // Un train composé fait porter deux organes au même arbre : leur écartement
+  // dépend alors d'un jeu d'arbre, que rien n'impose ici. La vue le dit.
+  await mount(page, ['spur', 'helical']);
+  await showView(page, 'teeth');
+  await expect(badge).toContainText('jeu d’arbre par défaut');
 });
 
 test('belts and chains use the exact tangent path and travelling elements', async ({ page }) => {

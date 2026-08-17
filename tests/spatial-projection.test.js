@@ -380,3 +380,39 @@ test('every member of the chain gets a seat, in every view', () => {
   });
   assert.deepEqual(Spatial.unfold(null, 'front').byId, {});
 });
+
+test('an axial abscissa says whether it was measured or conventional', () => {
+  // §54 : le dessin affirmait une bonne fois que « la longueur des arbres est
+  // schématique ». Elle l'était faute d'abscisses ; elle ne l'est plus
+  // toujours, et continuer à l'affirmer serait un mensonge dans l'autre sens.
+  const layout = layoutOf([SPUR(20, 60), SPUR(15, 45)], 9);
+  const seats = layout.members.map(m => [m.id, m.axialPositionProvenance]);
+  seats.forEach(([id, provenance]) => {
+    assert.ok(['exact', 'derived', 'schematic'].includes(provenance), id + ' : ' + provenance);
+  });
+  // Le premier organe d'un arbre est à zéro par DÉFINITION : c'est une
+  // origine, pas une mesure.
+  layout.shafts.forEach(shaft => {
+    assert.equal(layout.byId[shaft.memberIds[0]].axialPositionProvenance, 'exact', shaft.id);
+  });
+  // Le second découle des largeurs et d'un jeu d'arbre. Les largeurs viennent
+  // ici du moteur, mais le jeu est celui par défaut : c'est donc déduit.
+  const compound = layout.shafts.find(s => s.memberIds.length > 1);
+  assert.ok(compound, 'un arbre porte deux organes');
+  assert.equal(layout.byId[compound.memberIds[1]].axialPositionProvenance, 'derived');
+
+  // Un jeu d'arbre imposé est une donnée : l'abscisse devient mesurée.
+  const stages = [SPUR(20, 60), SPUR(15, 45)].map(s => JSON.parse(JSON.stringify(s)));
+  const solution = Engineering.analyzeSolution(stages, 9, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+  solution.shaftGapMm = 5;
+  const measured = Spatial.build(Graph.build(solution));
+  const same = measured.shafts.find(s => s.memberIds.length > 1);
+  assert.equal(measured.byId[same.memberIds[1]].axialPositionProvenance, 'exact');
+
+  // Sans largeur de denture calculée, l'écartement n'est plus qu'une convention.
+  const bare = JSON.parse(JSON.stringify(solution));
+  bare.stages.forEach(stage => { delete stage.geometry.width; delete stage.parameters.faceWidth; });
+  const guessed = Spatial.build(Graph.build(bare));
+  const loose = guessed.shafts.find(s => s.memberIds.length > 1);
+  assert.equal(guessed.byId[loose.memberIds[1]].axialPositionProvenance, 'schematic');
+});
