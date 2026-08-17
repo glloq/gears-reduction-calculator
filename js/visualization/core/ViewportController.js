@@ -36,6 +36,12 @@
   ViewportController.prototype._apply = function () {
     if (this.svg) this.svg.setAttribute('viewBox', this.state.map(function (v) { return v.toFixed(2); }).join(' '));
     this.onChange(this.getState());
+    // §2 : le palier de lecture se lit sur le zoom. Le signaler ici évite que
+    // chaque renderer ait à relayer son propre changement de cadrage — et donc
+    // qu'un seul l'oublie.
+    if (this.svg && this.svg.dispatchEvent) {
+      this.svg.dispatchEvent(new CustomEvent('viewport:changed', { bubbles: true, detail: this.getState() }));
+    }
     return this;
   };
 
@@ -89,10 +95,76 @@
   };
 
   /** Millimètres visibles par pixel écran : c'est la mesure qui pilote le LOD. */
+  /**
+   * §2 : le PALIER de lecture. Chaque vue a ses propres unités monde — la
+   * cinématique est symbolique, la géométrie en millimètres — si bien qu'aucun
+   * seuil en pixels par unité ne peut être partagé. Le zoom RELATIF au cadrage
+   * initial, lui, a le même sens partout : « je vois l'ensemble » vaut 1,
+   * « je regarde une dent » vaut 12.
+   *
+   * Les paliers gouvernent la densité d'ANNOTATION, pas la finesse du tracé :
+   * celle-ci reste calculée par roue, d'après sa taille réelle à l'écran, ce
+   * qui est plus juste qu'un seuil global — une roue de 8 dents et une de 200
+   * n'ont pas la même lisibilité au même zoom.
+   */
+  var ZOOM_TIERS = [
+    { id: 0, name: 'overview', from: 0 },
+    { id: 1, name: 'medium', from: 1.8 },
+    { id: 2, name: 'close', from: 4.5 },
+    { id: 3, name: 'technical', from: 11 }
+  ];
+
+  ViewportController.prototype.zoomTier = function () {
+    var scale = this.getState().scale;
+    var tier = ZOOM_TIERS[0];
+    for (var i = 0; i < ZOOM_TIERS.length; i++) if (scale >= ZOOM_TIERS[i].from) tier = ZOOM_TIERS[i];
+    return tier;
+  };
+
   ViewportController.prototype.pixelsPerUnit = function () {
     var rect = this.svg ? this.svg.getBoundingClientRect() : null;
     if (!rect || !rect.width || !this.state[2]) return 1;
     return rect.width / this.state[2];
+  };
+
+  /**
+   * §7 : cadrer un élément du dessin, sans que le renderer ait à convertir des
+   * boîtes lui-même. Les trois vues appellent la même chose, si bien qu'un
+   * étage se cadre pareil en Denture, en Géométrie et en Cinématique.
+   *
+   * `getBBox()` échoue sur un élément non mesurable (détaché, display:none) :
+   * on renvoie simplement `false` plutôt que d'interrompre l'interaction.
+   */
+  ViewportController.prototype.focusElement = function (element, padding) {
+    if (!element || !element.getBBox) return false;
+    var box;
+    try { box = element.getBBox(); } catch (error) { return false; }
+    if (!box || !(box.width > 0) || !(box.height > 0)) return false;
+    this.focus(box, padding);
+    return true;
+  };
+
+  /** Un millimètre CSS, en pixels : 96 dpi est la définition de référence. */
+  var PX_PER_MM = 96 / 25.4;
+
+  /**
+   * §7 : échelle réelle — un millimètre dessiné occupe un millimètre d'écran.
+   *
+   * Cela n'a de sens que si le dessin est EN millimètres : c'est le cas de la
+   * Denture et de la Géométrie, pas de la vue Cinématique, qui est symbolique.
+   * L'appelant décide donc de l'offrir ou non ; ce contrôleur, lui, ne peut pas
+   * savoir ce que vaut son unité. On garde le centre du cadrage courant, parce
+   * que passer à l'échelle réelle sert à juger une taille, pas à se déplacer.
+   */
+  ViewportController.prototype.actualSize = function () {
+    var rect = this.svg ? this.svg.getBoundingClientRect() : null;
+    if (!rect || !rect.width || !rect.height) return false;
+    var width = this._clampWidth(rect.width / PX_PER_MM);
+    var height = width * this.state[3] / this.state[2];
+    this.state = [this.state[0] + (this.state[2] - width) / 2,
+      this.state[1] + (this.state[3] - height) / 2, width, height];
+    this._apply();
+    return true;
   };
 
   ViewportController.prototype._on = function (target, type, handler, options) {
@@ -202,5 +274,6 @@
   };
 
   ViewportController.DRAG_THRESHOLD = DRAG_THRESHOLD;
+  ViewportController.ZOOM_TIERS = ZOOM_TIERS;
   return ViewportController;
 });

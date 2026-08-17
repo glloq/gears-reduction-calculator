@@ -145,6 +145,336 @@ test('Étudier l’existant computes a described mechanism without searching', a
   await expect(page.locator('#mechanicalPanel')).toContainText('4.0000');
 });
 
+test('Étudier tells the truth about what it can and cannot compute (§2, §3)', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+
+  // §3 : une chaîne complète fournit son rapport et sa géométrie sans rien
+  // demander à personne. Le résumé annonçait « besoin incomplet » à côté d'un
+  // bouton « Analyser » parfaitement actif.
+  const levels = page.locator('#analysisLevels');
+  await expect(levels.locator('[data-level="geometry"]')).toHaveText(/^✓/);
+  await expect(levels.locator('[data-level="kinematics"]')).toContainText('vitesse d’entrée non renseignée');
+  await expect(levels.locator('[data-level="forces"]')).toContainText('couple ou puissance');
+
+  // §4 : plus de remarque sur des technologies « explorées » — rien ne l'est.
+  await expect(page.locator('#searchModalSummary')).not.toContainText('technologie explorée');
+  await expect(page.locator('#searchModalSummary')).not.toContainText('technologies explorées');
+  // §5 : le résumé parle de la transmission décrite, pas d'une méthode.
+  await expect(page.locator('#searchModalSummary')).toContainText('Transmission');
+  await expect(page.locator('#searchModalSummary')).toContainText('Rapport calculé');
+  await expect(page.locator('#searchModalSummary')).not.toContainText('Méthode');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  // §2 : ni 1500 rpm ni 10 N·m inventés. Ce qui n'est pas connu reste vide.
+  const panel = page.locator('#mechanicalPanel .mechanical-summary');
+  await expect(panel).toContainText('3.0000');
+  await expect(panel).toContainText('— → —');
+  const values = await page.evaluate(() => {
+    const s = window.GearApp._workbench.solutions[0];
+    return { speed: s.outputSpeedRpm, torque: s.outputTorqueNm, power: s.inputPowerW,
+      thermal: s.thermalRisk, bending: s.mechanical[0].bending, status: s.mechanical[0].bendingStatus };
+  });
+  expect(values).toEqual({ speed: null, torque: null, power: null, thermal: null,
+    bending: null, status: 'not-evaluated' });
+  expect(errors).toEqual([]);
+});
+
+test('stating the regime restores the full analysis', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await setQuantity(page, 'input.speed', 900);
+  await setQuantity(page, 'input.torque', 25);
+  await page.locator('[data-step="type"]').click();
+  await expect(page.locator('#analysisLevels [data-level="kinematics"]')).toHaveText(/^✓/);
+  await expect(page.locator('#analysisLevels [data-level="forces"]')).toHaveText(/^✓/);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  await expect(page.locator('#mechanicalPanel .mechanical-summary')).toContainText('900 → 300.0');
+});
+
+test('a built chain is a project, not an empty session (§9, §10)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  // Une transmission construite sans aucune grandeur de besoin finissait sous
+  // « Aucune recherche définie », alors qu'elle existait bel et bien.
+  const banner = page.locator('#requirementBannerText');
+  await expect(banner).not.toContainText('Aucune recherche définie');
+  await expect(banner).toContainText('Construire');
+  await expect(banner).toContainText('Droit');
+  await expect(banner).toContainText('i = 3');
+});
+
+test('each mode names its own steps and its own footer (§6, §7)', async ({ page }) => {
+  await page.goto('/');
+  const steps = () => page.locator('#searchModalSteps .search-step-label').allTextContents();
+  const footer = () => page.locator('.search-modal-context').first().textContent();
+
+  await chooseMode(page, 'design');
+  expect(await steps()).toEqual(['Méthode', 'Besoin', 'Affiner']);
+  expect(await footer()).toContain('technologies');
+
+  // « Recherche » en tête d'un mode qui ne cherche rien fait lire l'écran de
+  // travers ; et « 8 technologies » n'a aucun sens sur une chaîne décrite.
+  await chooseMode(page, 'build');
+  expect(await steps()).toEqual(['Transmission', 'Objectif', 'Options']);
+  await chooseMode(page, 'analyze');
+  expect(await steps()).toEqual(['Transmission', 'Conditions', 'Analyse']);
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  expect(await footer()).toContain('analyse directe');
+  expect(await footer()).not.toContain('technologie');
+
+  // Une exploration balaye un espace : c'est cela que le pied annonce.
+  await chooseMode(page, 'explore');
+  expect(await steps()).toEqual(['Exploration', 'Limites', 'Affiner']);
+  expect(await footer()).toMatch(/rapports \d+→\d+/);
+});
+
+test('Construire delegates, Étudier records — the words differ (§11, §12)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'planetary', { sunTeeth: 20 });
+  const badge = page.locator('.build-stage[data-stage="0"] .build-level');
+  // §12 : combien il manque, pas seulement « il manque ».
+  await expect(badge).toContainText('Partiel · 1 valeur à trouver');
+  await expect(page.locator('#buildStage0_ringTeeth')).toHaveAttribute('placeholder', 'auto');
+  await expect(page.locator('#buildPlan')).toContainText('le solveur ne cherchera qu’eux');
+
+  // §11 : en Étudier, un champ vide est une donnée MANQUANTE, pas une
+  // délégation. Lui faire dire « automatique » inviterait à inventer.
+  await chooseMode(page, 'analyze');
+  await expect(badge).toContainText('Incomplet · 1 valeur manquante');
+  await expect(page.locator('#buildStage0_ringTeeth')).toHaveAttribute('placeholder', 'non renseigné');
+  await expect(page.locator('#buildStage0_inputMember option').first()).toHaveText('Non renseigné');
+  await expect(page.locator('#buildPlan')).toContainText('ne seront pas calculés');
+  await expect(page.locator('#buildPlan')).not.toContainText('compléter');
+  // Le champ requis encore vide se distingue du facultatif laissé libre.
+  await expect(page.locator('#buildStage0_ringTeeth').locator('..')).toHaveClass(/build-field-missing/);
+  await expect(page.locator('#buildStage0_planetCount').locator('..')).toHaveClass(/build-field-optional/);
+});
+
+test('the viewer says what is on screen, and every stage is addressable (§14, §15)', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await addBuildStage(page, 'planetary', { sunTeeth: 20, ringTeeth: 70 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  // §14 : identifier ce qu'on regarde ne doit plus demander un aller-retour du
+  // regard entre la carte, le dessin et le panneau mécanique.
+  const identity = page.locator('#solutionIdentity');
+  await expect(identity).toBeVisible();
+  await expect(identity.locator('.identity-architecture')).toHaveText('Droit → Épicycloïdal');
+  await expect(identity.locator('.identity-badge')).toHaveText('Analysée');
+
+  // §15 : un étage se vise sans avoir à cliquer une roue — au clavier compris.
+  const chips = page.locator('#stageNav .stage-chip');
+  await expect(chips).toHaveCount(3);
+  await expect(chips.first()).toHaveText('Ensemble');
+  await expect(chips.first()).toHaveClass(/active/);
+
+  await page.locator('#stageNav [data-stage-nav="1"]').click();
+  await expect(page.locator('#stageNav [data-stage-nav="1"]')).toHaveClass(/active/);
+  await expect(page.locator('#stageInspector')).toBeVisible();
+  await expect(page.locator('#stageInspector header')).toContainText('Train épicycloïdal');
+  await expect(page.locator('.train-stage.selected')).toHaveAttribute('data-stage', '1');
+
+  // Et l'inverse : cliquer une roue allume la puce. Les deux gestes désignent
+  // la même chose, par le même chemin.
+  await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
+  await expect(page.locator('#stageNav [data-stage-nav="0"]')).toHaveClass(/active/);
+
+  await page.locator('#stageNav [data-stage-nav="all"]').click();
+  await expect(page.locator('#stageInspector')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('the kinematic chain shows the path, not just the totals (§17)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await addBuildStage(page, 'worm', { wormStarts: 2, wheelTeeth: 40 });
+  await setQuantity(page, 'input.speed', 1500);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  const nodes = page.locator('#kinematicChain .chain-node');
+  await expect(nodes).toHaveCount(5);           // entrée + 2 étages + arbre + sortie
+  await expect(nodes.nth(0)).toContainText('1500 rpm');
+  await expect(nodes.nth(1)).toContainText('3.000 : 1');
+  await expect(nodes.nth(2)).toContainText('500.0 rpm');
+  await expect(nodes.nth(4)).toContainText('25.0 rpm');
+  // Un maillon d'étage est cliquable : même geste que la puce.
+  await page.locator('#kinematicChain [data-chain-stage="1"]').click();
+  await expect(page.locator('#stageNav [data-stage-nav="1"]')).toHaveClass(/active/);
+
+  // §16 : la fiche connaît la famille. Ce qu'on veut savoir d'une vis, c'est si
+  // elle tient la charge — et cela dépend de l'angle d'avance, pas de la famille.
+  const inspector = page.locator('#stageInspector .inspector-grid');
+  await expect(inspector).toContainText('Angle d’avance');
+  await expect(inspector).toContainText('Maintien de charge');
+  await expect(inspector).toContainText('2 filets');
+});
+
+test('without a regime the chain states ratios and invents no rpm (§2, §17)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  const nodes = page.locator('#kinematicChain .chain-node');
+  await expect(nodes.nth(0)).toContainText('régime non renseigné');
+  // Le rapport, lui, ne dépend d'aucun régime : il reste affiché.
+  await expect(nodes.nth(1)).toContainText('3.000 : 1');
+  await expect(nodes.nth(2)).toContainText('—');
+});
+
+test('an analysed transmission is not a pool of one (§23)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  const banner = page.locator('#analysedBanner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText('Transmission analysée');
+  await expect(banner).toContainText('rapport 3.000:1');
+  // Trier une liste d'un élément, la filtrer, ou comparer une transmission à
+  // elle-même : autant d'actions sans objet.
+  await expect(page.locator('#refineBar')).toBeHidden();
+  await expect(page.locator('.results-body')).toBeHidden();
+  await expect(page.locator('.solution-reference')).toBeHidden();
+});
+
+test('a solution can be taken back into Construire (§25)', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  // Une vraie recherche, pour reprendre une solution qu'on n'a pas écrite.
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  const before = await page.evaluate(() =>
+    window.GearApp._workbench.solutions[0].stages.map(s => s.type + ':' + (s.input ? s.input.teeth + '/' + s.output.teeth : '')));
+
+  await page.locator('#editSolutionBtn').click();
+  await expect(page.locator('#searchModal')).toBeVisible();
+  // Le mode a basculé, et la chaîne est reprise TELLE QU'ELLE EST : tout ouvrir
+  // d'emblée perdrait la solution qu'on venait de reprendre.
+  await expect(page.locator('[data-workspace="build"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.build-stage')).toHaveCount(before.length);
+  const levels = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.build-stage')).map(n => n.dataset.level));
+  expect(levels.every(l => l === 'fixed')).toBe(true);
+  await expect(page.locator('#searchModalSubmit')).toContainText('Analyser');
+
+  // Libérer une denture rend la main au solveur, sur ce seul étage. La famille
+  // trouvée n'est pas connue d'avance : on vide le premier champ REQUIS.
+  const field = page.locator('.build-stage[data-stage="0"] .build-field:not(.build-field-optional)')
+    .locator('input, select').first();
+  await field.fill('');
+  await field.dispatchEvent('change');
+  await expect(page.locator('.build-stage[data-stage="0"]')).toHaveAttribute('data-level', 'partial');
+  await expect(page.locator('#searchModalSubmit')).toContainText('Compléter (1 étage)');
+});
+
+test('a completed chain says which values are yours (§24)', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20 });
+  await setQuantity(page, 'ratio', 2.25);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('#searchModal')).toBeHidden({ timeout: 40000 });
+  await expect(page.locator('#stageNav')).toBeVisible({ timeout: 40000 });
+  await page.locator('#stageNav [data-stage-nav="0"]').click();
+
+  const inspector = page.locator('#stageInspector .inspector-grid');
+  await expect(inspector.locator('[data-origin="pinned"]')).toContainText('20 dents');
+  await expect(inspector.locator('[data-origin="found"]')).toContainText('45 dents');
+});
+
+test('an unreachable chain blames the range, not the decisions', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  // 20 dents imposées, 3:1 demandé : il faudrait 60 dents, hors de la plage
+  // balayée par défaut (10 à 50).
+  await addBuildStage(page, 'spur', { 'input.teeth': 20 });
+  await setQuantity(page, 'ratio', 3);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('#searchModal')).toBeHidden({ timeout: 40000 });
+  const hint = page.locator('#workspaceEmptyHint');
+  await expect(hint).toContainText('plage de dentures', { timeout: 40000 });
+  await expect(hint).toContainText('10 à 50 dents');
+  // Conseiller d'élargir les technologies ou les étages à qui vient d'écrire sa
+  // chaîne revient à lui conseiller de l'annuler.
+  await expect(hint).not.toContainText('technologies');
+  await expect(hint).not.toContainText('nombre d’étages');
+});
+
+test('the finishing touches: names, deltas, no duplicate action (§19, §21, §22, §26)', async ({ page }) => {
+  test.setTimeout(90000);
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+
+  // §22 : la carte est entièrement cliquable ; un bouton « Voir » en pied
+  // faisait exactement la même chose.
+  await expect(page.locator('.solution-view')).toHaveCount(0);
+  await expect(page.locator('.solution-card-actions')).toHaveCount(0);
+  await page.locator('.solution-card').first().click();
+  await expect(page.locator('#svgContainer svg')).toBeVisible();
+
+  // §19 : le nom de la vue dit ce qu'on y cherche, pas la technique du dessin.
+  await expect(page.locator('.view-mode[data-view="geometry"]')).toHaveText('Dimensions');
+  await expect(page.locator('.view-mode[data-view="geometry"]')).toHaveAttribute('title', /cotes/);
+
+  // §21 : plus aucun identifiant interne dans les textes du viewer.
+  const markup = await page.locator('#svgContainer svg').innerHTML();
+  expect(markup).not.toMatch(/Étage \d+ · (planetary|spur|worm|helical|bevel|internal|belt|chain)/);
+
+  // §18 : les flux physiques sont nommés par la question à laquelle ils répondent.
+  await page.locator('#viewerDisplayMenu > summary').click();
+  await expect(page.locator('#viewerDisplayMenu')).toContainText('Flux physiques');
+  await expect(page.locator('#viewerDisplayMenu')).toContainText('Efforts — Ft / Fr / Fa');
+  expect(errors).toEqual([]);
+});
+
+test('two pinned solutions are compared with deltas, not raw columns (§26)', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').nth(1)).toBeVisible({ timeout: 40000 });
+  await page.locator('.solution-card').nth(0).locator('.tile-pin').click();
+  await page.locator('.solution-card').nth(1).locator('.tile-pin').click();
+  await page.locator('.detail-tabs [data-detail="comparer"]').click();
+
+  const table = page.locator('.compare-table');
+  await expect(table).toBeVisible();
+  // « 94 mm » et « 72 mm » côte à côte obligeaient à faire la soustraction de
+  // tête : la première colonne sert de référence, les autres disent l'écart.
+  await expect(table.locator('.metric-delta').first()).toBeVisible();
+  // §21 : la famille est nommée, pas identifiée.
+  const architecture = await table.locator('.type-badge').first().textContent();
+  expect(architecture).not.toMatch(/^(spur|planetary|worm|helical|bevel|internal|belt|chain)$/);
+});
+
 test('a built chain survives a reload', async ({ page }) => {
   await page.goto('/');
   await chooseMode(page, 'build');

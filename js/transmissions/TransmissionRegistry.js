@@ -240,6 +240,34 @@
       referenceMember: input, planetCount: n, referenceDiameter: equivalent };
   }
 
+  /**
+   * §16 : ce qu'il faut savoir d'une vis sans fin. Sa question propre n'est pas
+   * son rapport — il se lit sur les dentures — mais son IRRÉVERSIBILITÉ : une
+   * vis se choisit très souvent pour tenir une charge à l'arrêt, et c'est
+   * l'angle d'avance face au frottement qui le décide, pas la famille. Une
+   * fiche générique laissait donc de côté la seule raison d'avoir pris une vis.
+   */
+  function wormDetails(s) {
+    if (!s) return null;
+    var p = s.parameters || {};
+    var lead = p.leadAngle == null ? 20 : p.leadAngle;
+    var friction = p.frictionCoefficient == null ? 0.06 : p.frictionCoefficient;
+    var gamma = radians(lead);
+    // tan γ < μ : le couple renvoyé par la sortie ne suffit plus à faire
+    // tourner la vis. C'est la condition classique d'irréversibilité statique.
+    var selfLocking = Math.tan(gamma) < friction;
+    return {
+      starts: s.wormStarts, wheelTeeth: s.wheelTeeth,
+      leadAngleDeg: lead, frictionCoefficient: friction,
+      // Rendement direct : entrée vis → sortie roue.
+      efficiency: types.worm ? types.worm.calculateEfficiency(s) : null,
+      // Rendement inverse : c'est LUI qui décide du maintien de charge, et il
+      // devient négatif — donc impossible — dès que tan γ passe sous μ.
+      backDrivingEfficiency: 1 - friction / Math.tan(gamma),
+      selfLocking: selfLocking
+    };
+  }
+
   register({ id: 'planetary', aliases: ['epicyclic'], name: 'Train épicycloïdal', constraints: { minInput: 12, maxInput: 60, minOutput: 30, maxOutput: 200, maxRatio: 12 }, parameterDefinitions: {},
     validateConfiguration: function (s) {
       // §4 : entrée, sortie et organe fixe sont TROIS organes distincts. Sans
@@ -300,5 +328,5 @@
     rack:{faceWidth:{label:'Largeur pignon/crémaillère (mm)',type:'number',default:10,min:1,step:.5}}
   };
   var beltPitches={GT2:2,GT3:3,'HTD-3M':3,'HTD-5M':5,'HTD-8M':8,T5:5,T10:10};
-  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, planetaryDetails: planetaryDetails, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
+  return { register: register, get: function(id){return types[id];}, distinctMembers: distinctMembers, PLANETARY_TOPOLOGIES: PLANETARY_TOPOLOGIES, familyName: familyName, FAMILY_NAMES: FAMILY_NAMES, planetaryDetails: planetaryDetails, wormDetails: wormDetails, memberName: memberName, memberLabel: memberLabel, MEMBER_NAMES: MEMBER_NAMES, list:function(){return Object.keys(types).filter(function(k){return k!=='epicyclic';}).map(function(k){return types[k];});},getAxisRelation:axisRelation,validateGeometryResult:validateGeometryResult,getToothCounts:function(s){return s.type==='worm'?[s.wheelTeeth]:s.type==='planetary'?[s.sunTeeth,s.planetTeeth,s.ringTeeth]:s.type==='rack'?[s.pinionTeeth]:[s.input.teeth,s.output.teeth];},getCharacteristicModule:function(s){return s.parameters&&s.parameters.module||null;},getCharacteristicWidths:function(s){var g=s.geometry||types[s.type].calculateGeometry(s);return g.width==null?[]:[g.width];},parameterDefinitions:parameterDefinitions,beltPitches:beltPitches, createLegacyStage:function(a,b,type,params){if(type==='worm')return {type:type,wormStarts:a,wheelTeeth:b,parameters:params||{}};if(type==='epicyclic'||type==='planetary')return {type:'planetary',sunTeeth:a,ringTeeth:b,planetTeeth:(b-a)/2,planetCount:(params&&params.planetCount)||3,inputMember:(params&&params.inputMember)||'S',outputMember:(params&&params.outputMember)||'C',fixed:(params&&params.fixed)||'R',parameters:params||{}};return candidatePair(type,a,b,params);}, toLegacy:function(s){return s.type==='worm'?[s.wormStarts,s.wheelTeeth,s.type]:s.type==='planetary'?[s.sunTeeth,s.ringTeeth,'epicyclic']:[s.input.teeth,s.output.teeth,s.type];} };
 });

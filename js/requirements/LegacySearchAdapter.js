@@ -22,6 +22,16 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
+  /**
+   * Régime NOMINAL supposé par le solveur quand rien n'est renseigné. Une
+   * recherche ne peut pas dimensionner sans un régime quelconque : celui-ci est
+   * donc une hypothèse, et elle est nommée ici pour qu'un seul endroit la
+   * porte — et pour que la référence d'une comparaison soit mesurée sous la
+   * MÊME hypothèse que ses concurrentes. Une simple analyse, elle, n'a pas
+   * besoin d'hypothèse : elle laisse ce qui n'est pas connu non évalué.
+   */
+  var SERVICE_DEFAULTS = { inputSpeedRpm: 1500, inputTorqueNm: 10 };
+
   /** Réglages techniques par défaut, quand personne ne les a touchés. */
   var TECHNICAL_DEFAULTS = {
     dentMenanteMin: 10, dentMenanteMax: 30, dentMeneeMin: 20, dentMeneeMax: 50,
@@ -54,8 +64,8 @@
 
     params.objectiveMode = request.mode || 'ratio';
     params.searchMode = request.searchMode || 'global';
-    params.vitesseEntree = number(request.inputSpeedRpm, 1500);
-    params.coupleEntree = number(request.inputTorqueNm, 10);
+    params.vitesseEntree = number(request.inputSpeedRpm, SERVICE_DEFAULTS.inputSpeedRpm);
+    params.coupleEntree = number(request.inputTorqueNm, SERVICE_DEFAULTS.inputTorqueNm);
 
     params.rapportCible = request.linear ? null : number(request.ratio, null);
     params.precision = number(request.ratioTolerancePercent, 5);
@@ -118,5 +128,5 @@
     return typeof value === 'number' && isFinite(value) ? value : fallback;
   }
 
-  return { toSearchParams: toSearchParams, technologiesFor: technologiesFor, normalizeWeights: normalizeWeights, TECHNICAL_DEFAULTS: TECHNICAL_DEFAULTS };
+  return { toSearchParams: toSearchParams, technologiesFor: technologiesFor, normalizeWeights: normalizeWeights, TECHNICAL_DEFAULTS: TECHNICAL_DEFAULTS, SERVICE_DEFAULTS: SERVICE_DEFAULTS };
 });

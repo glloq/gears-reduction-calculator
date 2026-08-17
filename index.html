@@ -494,6 +494,13 @@
             <div id="refineTypeChips" class="refine-chips refine-rotary" role="group" aria-label="Types présents dans les solutions"></div>
             <p id="refineCount" class="refine-count" aria-live="polite"></p>
           </div>
+          <!-- §23 : une transmission analysée n'est pas un vivier de 1. Trier,
+               filtrer et la comparer à elle-même n'ont aucun sens. -->
+          <div id="analysedBanner" class="analysed-banner" hidden>
+            <strong>Transmission analysée</strong>
+            <span id="analysedSummary" class="analysed-summary"></span>
+            <button type="button" class="btn-small btn-primary" id="editTransmissionBtn">Modifier la transmission</button>
+          </div>
           <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
           <div class="results-body">
             <div class="table-scroll">
@@ -508,9 +515,11 @@
       <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
         <div class="viz-controls">
           <div class="segmented view-switch">
-            <button class="view-mode active" data-view="teeth" title="Profils de denture en développante, animables — crémaillère comprise">Denture</button>
-            <button class="view-mode" data-view="geometry">Géométrie 2D</button>
-            <button class="view-mode" data-view="kinematic">Cinématique</button>
+            <!-- §19 : le nom dit ce qu'on y voit. « Géométrie 2D » décrivait la
+                 technique du dessin, pas ce qu'on y cherche : des cotes. -->
+            <button class="view-mode active" data-view="teeth" title="Forme et engrènement : profils en développante, animables">Denture</button>
+            <button class="view-mode" data-view="geometry" title="Encombrement et cotes : diamètres, entraxes, courses">Dimensions</button>
+            <button class="view-mode" data-view="kinematic" title="Arbres, sens et vitesses : schéma symbolique">Cinématique</button>
           </div>
           <span class="kinematic-projections">
             <button class="btn-small active" data-projection="auto">Vue auto</button>
@@ -530,8 +539,17 @@
               <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
             </div>
           </details>
+          <!-- §3 : quatre intentions de lecture, plutôt que onze cases. Les
+               questions sont peu nombreuses et connues — de quoi c'est fait,
+               comment ça bouge, quelle taille, est-ce que ça tient. -->
+          <div class="segmented display-presets" id="viewerPresets" role="group" aria-label="Préréglage d’affichage">
+            <button type="button" class="btn-small" data-preset="simple" aria-pressed="false">Simple</button>
+            <button type="button" class="btn-small" data-preset="motion" aria-pressed="false">Mouvement</button>
+            <button type="button" class="btn-small" data-preset="sizing" aria-pressed="false">Dimensionnement</button>
+            <button type="button" class="btn-small" data-preset="mechanical" aria-pressed="false">Mécanique</button>
+          </div>
           <details class="display-menu" id="viewerDisplayMenu">
-            <summary>Affichage</summary>
+            <summary>Affichage avancé</summary>
             <div class="display-menu-panel">
               <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
               <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
@@ -539,15 +557,27 @@
               <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
               <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
               <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
-              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
+              <!-- §18 : trois flux physiques, nommés par ce qu'ils montrent.
+                   « RPM » et « Flux de puissance » décrivaient la donnée tracée,
+                   pas la question à laquelle elle répond. -->
+              <p class="display-menu-group" data-views="teeth geometry kinematic">Flux physiques</p>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> Mouvement — vitesses et sens</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Puissance — chemin de l’énergie</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts — Ft / Fr / Fa</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports par étage</label>
               <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
               <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
             </div>
           </details>
-          <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
+          <!-- §7 : les trois cadrages nommés par ce qu'ils donnent. « Recentrer »
+               ne disait pas sur quoi ; « Tout voir » le dit. « 1:1 » n'a de sens
+               que si le dessin est en millimètres, donc pas en Cinématique :
+               le bouton s'y désactive plutôt que de mentir sur l'échelle. -->
+          <div class="segmented view-framing" role="group" aria-label="Cadrage">
+            <button id="viewerReset" type="button" class="btn-small" title="Cadrer la transmission entière">Tout voir</button>
+            <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>
+            <button id="viewerActualSize" type="button" class="btn-small" title="Échelle réelle : un millimètre dessiné occupe un millimètre d’écran">1:1</button>
+          </div>
           <details class="export-menu">
             <summary>Exporter</summary>
             <div>
@@ -559,7 +589,19 @@
             </div>
           </details>
         </div>
-        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+        <!-- §14, §15 : savoir ce qu'on regarde sans quitter le dessin. La bande
+             d'étages rend ADRESSABLE ce qui n'était atteignable qu'en visant
+             une roue à la souris — impossible au clavier. -->
+        <p id="solutionIdentity" class="solution-identity" aria-live="polite" hidden></p>
+        <div id="stageNav" class="stage-nav" role="group" aria-label="Étage à inspecter" hidden></div>
+        <!-- §6 : l'inspecteur est DOCKÉ à côté du dessin. Posé dessus, il
+             masquait la pièce qu'on venait de choisir, et sur un train
+             composé il recouvrait les étages voisins — jusqu'à intercepter
+             le clic suivant. -->
+        <div class="viewer-stage">
+          <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+          <aside id="stageInspector" class="stage-inspector" aria-live="polite" hidden></aside>
+        </div>
         <!-- §22, §23 : ce que la vue courante montre à l'échelle, et ce qu'elle
              ne fait que suggérer. Un schéma symbolique lu comme un plan coté
              est une source d'erreur ; la vue le dit elle-même. -->
@@ -580,6 +622,10 @@
                solution → optimisation → nouvelle recherche. -->
           <div class="detail-actions" id="detailActions" hidden>
             <button type="button" class="btn-small" id="optimiseSolutionBtn">Optimiser cette solution</button>
+            <!-- §25 : reprendre une solution dans Construire referme la boucle
+                 concevoir → modifier → compléter. « Optimiser » cherche mieux à
+                 rapport égal ; « Modifier » rend la main sur chaque étage. -->
+            <button type="button" class="btn-small" id="editSolutionBtn">Modifier cette solution</button>
           </div>
 
           <!-- §25 : « Comparer » et « Graphiques » n'ont de sens qu'avec de
@@ -594,6 +640,9 @@
           </nav>
 
           <div class="detail-panel active" data-detail-panel="analyse">
+            <!-- §17 : la cascade des vitesses, de l'entrée à la sortie. Un
+                 tableau mécanique dit tout, mais ne montre pas le CHEMIN. -->
+            <ol id="kinematicChain" class="kinematic-chain" aria-label="Chaîne cinématique" hidden></ol>
             <div id="mechanicalPanel" class="mechanical-panel" style="display:none;"></div>
             <p class="detail-placeholder" data-placeholder="analyse">Lancez une recherche puis sélectionnez une solution pour voir son analyse mécanique.</p>
           </div>
@@ -683,6 +732,7 @@
   <script src="js/visualization/core/SvgExport.js" defer></script>
   <script src="js/visualization/core/GeometryUtils.js" defer></script>
   <script src="js/visualization/core/GroundSymbol.js" defer></script>
+  <script src="js/visualization/core/ViewerHUD.js" defer></script>
   <script src="js/visualization/geometry/GeometryLayout.js" defer></script>
   <script src="js/visualization/geometry/GeometryPrimitives.js" defer></script>
   <script src="js/visualization/geometry/DimensionRenderer.js" defer></script>
@@ -724,6 +774,7 @@
   <script src="js/ui/ComparisonManager.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
   <script src="js/ui/SolutionExplorer.js" defer></script>
+  <script src="js/ui/SolutionHeader.js" defer></script>
   <script src="js/ui/ComparePanel.js" defer></script>
   <script src="js/ui/ConstraintManager.js" defer></script>
   <script src="js/ui/Workbench.js" defer></script>

@@ -583,3 +583,9 @@ body.modal-open { overflow: hidden; }
   margin: var(--sp-1) 0 0; padding-left: 1.2rem;
   font-size: var(--font-xs); color: var(--danger, #d33);
 }
+
+/* Un champ requis encore vide retient le calcul ; un facultatif non (§12). */
+.build-field-missing input, .build-field-missing select { border-color: var(--warning); }
+.build-field-optional { opacity: .82; }
+/* En Étudier, un champ vide est une donnée manquante, pas une délégation (§11). */
+.build-section[data-reading="observe"] .build-stage[data-level="auto"] { border-left-color: var(--line); }

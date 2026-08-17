@@ -158,7 +158,12 @@
 
   SearchIntentModel.prototype.descriptor = function () { return mode(this.mode) || MODES[0]; };
 
-  /** Étape sur laquelle ouvrir le modal pour cette méthode. */
+  /**
+   * Étape sur laquelle ouvrir le modal pour cette méthode.
+   * @deprecated Le parcours est décidé par `WorkspaceModel.focusStep()` — le
+   * mode de travail sait ouvrir sur une chaîne, une intention de recherche non.
+   * Conservé le temps qu'aucune session sérialisée ne s'y réfère plus.
+   */
   SearchIntentModel.prototype.focusStep = function () { return this.descriptor().focus; };
 
   /**

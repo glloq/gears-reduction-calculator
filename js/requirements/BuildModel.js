@@ -65,11 +65,44 @@
 
   var LEVELS = { FIXED: 'fixed', PARTIAL: 'partial', AUTO: 'auto' };
 
-  var LEVEL_LABELS = {
-    fixed: { label: 'Imposé', icon: '🔒', help: 'Toutes les valeurs sont données : rien à chercher.' },
-    partial: { label: 'Partiel', icon: '◐', help: 'Le système cherche seulement ce qui manque.' },
-    auto: { label: 'Automatique', icon: '⚙', help: 'Le système choisit tout cet étage.' }
+  /**
+   * §11 : deux LECTURES du même état, parce que les deux parcours ne promettent
+   * pas la même chose. « Automatique » dit ce que le système fera : juste en
+   * Construire, faux en Étudier, où rien ne doit être choisi à la place de
+   * l'utilisateur. Un champ vide y est une donnée MANQUANTE, pas une
+   * délégation — et le laisser afficher « automatique » inviterait précisément
+   * à ce que le logiciel s'est engagé à ne plus faire : inventer.
+   */
+  var READINGS = {
+    build: {
+      fixed: { label: 'Imposé', icon: '🔒', help: 'Toutes les valeurs sont données : rien à chercher.' },
+      partial: { label: 'Partiel', icon: '◐', help: 'Le système cherche seulement ce qui manque.' },
+      auto: { label: 'Automatique', icon: '⚙', help: 'Le système choisit tout cet étage.' },
+      emptyField: 'auto',
+      emptyOption: 'Automatique',
+      emptyFamily: 'Famille automatique',
+      missingOne: 'valeur à trouver', missingMany: 'valeurs à trouver',
+      hint: 'Laissez vide ce que le système doit choisir.',
+      stageHint: 'Choisissez une famille pour fixer des dentures, ou laissez le système décider de tout cet étage.'
+    },
+    observe: {
+      fixed: { label: 'Renseigné', icon: '🔒', help: 'Toutes les valeurs sont connues : cet étage est calculable.' },
+      partial: { label: 'Incomplet', icon: '◐', help: 'Il manque des valeurs : cet étage ne sera pas évalué.' },
+      auto: { label: 'Non renseigné', icon: '·', help: 'Rien n’est décrit : cet étage ne sera pas évalué.' },
+      emptyField: 'non renseigné',
+      emptyOption: 'Non renseigné',
+      emptyFamily: 'Famille non renseignée',
+      missingOne: 'valeur manquante', missingMany: 'valeurs manquantes',
+      hint: 'Décrivez ce qui existe réellement. Les valeurs inconnues resteront non évaluées.',
+      stageHint: 'Choisissez la famille de cet étage pour pouvoir en décrire les dentures.'
+    }
   };
+
+  /** @param {'build'|'observe'} [reading] lecture « Construire » par défaut. */
+  function reading(id) { return READINGS[id] || READINGS.build; }
+
+  /** Vocabulaire historique : celui de Construire. */
+  var LEVEL_LABELS = READINGS.build;
 
   function familyKey(type) {
     var id = Helpers.registryId(type);
@@ -163,6 +196,17 @@
   };
 
   BuildStage.prototype.isFixed = function () { return this.level() === LEVELS.FIXED; };
+
+  /**
+   * §12 : ce qu'il reste à déterminer sur cet étage. « ◐ Partiel » dit qu'il
+   * manque quelque chose sans dire quoi, ni combien : sur un planétaire à six
+   * champs, l'écart entre « il manque une valeur » et « il en manque cinq »
+   * change complètement la lecture.
+   */
+  BuildStage.prototype.missingFields = function () {
+    if (!this.family) return [];
+    return requiredFields(this.family).filter(function (path) { return !present(this.values[path]); }, this);
+  };
 
   /** L'étage au format moteur, ou null s'il n'est pas entièrement déterminé. */
   BuildStage.prototype.toStage = function (module) {
@@ -262,6 +306,22 @@
     return this.stages.map(function (stage) { return stage.toConstraint(); });
   };
 
+  /**
+   * §24 : ce que l'utilisateur avait ÉPINGLÉ, figé au moment du calcul. Sans
+   * cette trace, une chaîne complétée est indiscernable d'une chaîne trouvée de
+   * bout en bout : « 20 → 60 » ne dit pas que le 20 venait d'une roue déjà
+   * taillée et que le 60 est une proposition. C'est un instantané, pas un
+   * renvoi vers le modèle vivant : celui-ci peut avoir été édité depuis, et la
+   * solution affichée doit continuer de dire d'où elle vient.
+   */
+  BuildModel.prototype.toOrigin = function () {
+    return this.stages.map(function (stage) {
+      var fields = {};
+      Object.keys(stage.values).forEach(function (path) { fields[path] = true; });
+      return { family: !!stage.family, fields: fields };
+    });
+  };
+
   /** Le gabarit de familles, tel que le moteur le connaît déjà. */
   BuildModel.prototype.toTemplate = function () {
     return this.stages.map(function (stage) { return stage.family ? [stage.family] : null; });
@@ -336,7 +396,37 @@
 
   BuildModel.prototype.clone = function () { return new BuildModel(this.toJSON()); };
 
+  /**
+   * §25 : une solution rendue ÉDITABLE. C'est la conversion inverse de
+   * `toStages()`, et elle referme la boucle : concevoir, puis reprendre la main
+   * étage par étage sur ce qui a été trouvé.
+   *
+   * Tous les étages entrent IMPOSÉS. C'est bien ce qu'on veut d'abord — la
+   * solution telle qu'elle est — et libérer un champ se fait ensuite en le
+   * vidant. L'inverse, tout ouvrir d'emblée, perdrait précisément la solution
+   * qu'on venait de reprendre.
+   */
+  function fromStages(stages) {
+    var model = new BuildModel();
+    (stages || []).forEach(function (stage) {
+      var family = Helpers.registryId(stage.type);
+      model.addStage(family);
+      var built = model.stage(model.stages.length - 1);
+      requiredFields(family).concat(optionalFields(family)).forEach(function (path) {
+        var value = get(stage, path);
+        if (present(value)) built.set(path, value);
+      });
+    });
+    // Le module est celui de la chaîne : le moteur n'en applique qu'un, et
+    // c'est déjà la règle du constructeur.
+    var first = (stages || [])[0];
+    var module = first && first.parameters ? first.parameters.module : null;
+    if (present(module)) model.setModule(module);
+    return model;
+  }
+
   return { BuildModel: BuildModel, BuildStage: BuildStage, LEVELS: LEVELS, LEVEL_LABELS: LEVEL_LABELS,
+    READINGS: READINGS, reading: reading, fromStages: fromStages,
     REQUIRED: REQUIRED, OPTIONAL: OPTIONAL, requiredFields: requiredFields, optionalFields: optionalFields,
     familyKey: familyKey, get: get, set: set };
 });

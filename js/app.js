@@ -212,6 +212,9 @@
           _resetButton();
         });
       }
+      // §24 : d'où vient chaque valeur. Une chaîne complétée est sinon
+      // indiscernable d'une chaîne trouvée de bout en bout.
+      _stampOrigin(session, resultats);
       explorer.setPool(resultats, searchParams, ui.lastStats(), null,
         session ? { sort: session.poolSort() } : null);
       ui.logger.setStatus(resultats.length > 0
@@ -255,9 +258,23 @@
       _resetButton();
       return;
     }
+    _stampOrigin(session, [solution]);
     explorer.setPool([solution], session.toSearchParams(), ui.lastStats(), null, { sort: null });
     ui.logger.setStatus('Transmission analysée');
     _resetButton();
+  }
+
+  /**
+   * Marque les solutions d'une chaîne construite avec ce que l'utilisateur avait
+   * épinglé. Toutes les solutions d'un même « compléter » partagent la même
+   * origine : ce sont les mêmes contraintes qui les ont produites.
+   */
+  function _stampOrigin(session, solutions) {
+    if (!session || !session.workspace.editsChain() || session.build.isEmpty()) return;
+    var origin = session.build.toOrigin();
+    (solutions || []).forEach(function (solution) {
+      if (solution && !solution.isExisting) solution.origin = origin;
+    });
   }
 
   /** Vivier maximal d'une exploration : au-delà, la barre d'affinage trie du bruit. */
@@ -301,13 +318,30 @@
     var NearMiss = GearApp.requirements.NearMissAnalyzer;
     var preferences = session.effectivePreferences();
     var probePreferences = NearMiss.probePreferences(preferences);
+    // Le conseil dépend de ce qui a été DÉCIDÉ : sur une chaîne construite,
+    // « élargissez les technologies » revient à conseiller d'annuler la chaîne.
+    var context = _diagnosisContext(session, searchParams);
     if (!preferences.constraints().length) {
-      return Promise.resolve(NearMiss.analyze([], preferences));
+      return Promise.resolve(NearMiss.analyze([], preferences, context));
     }
     var probeParams = session.toSearchParams({ preferences: probePreferences });
     return engine.rechercher(probeParams)
-      .then(function (pool) { return NearMiss.analyze(pool, preferences); })
+      .then(function (pool) { return NearMiss.analyze(pool, preferences, context); })
       .catch(function () { return null; });
+  }
+
+  /** Ce qui reste réellement ajustable, pour que le diagnostic le nomme. */
+  function _diagnosisContext(session, searchParams) {
+    if (!session || !session.workspace.editsChain() || session.build.isEmpty()) return null;
+    var gearing = session.technical.gearing;
+    return {
+      chain: true,
+      unknownStages: session.build.unknownCount(),
+      teethRange: {
+        min: Math.min(gearing.drivingMin, gearing.drivenMin),
+        max: Math.max(gearing.drivingMax, gearing.drivenMax)
+      }
+    };
   }
 
   function arreterRecherche() {

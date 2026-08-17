@@ -489,7 +489,8 @@
    * cela, il serait impossible de dé-fixer une denture après l'avoir saisie —
    * exactement le piège qu'on a déjà corrigé sur les priorités secondaires.
    */
-  function buildField(path, value, spec, onCommit, id) {
+  function buildField(path, value, spec, onCommit, id, words) {
+    words = words || GearApp.requirements.build.READINGS.build;
     var wrap = document.createElement('label');
     wrap.className = 'build-field' + (value == null ? ' build-field-auto' : '');
     wrap.appendChild(document.createTextNode(spec.label));
@@ -497,7 +498,7 @@
     if (spec.options) {
       input = document.createElement('select');
       var empty = document.createElement('option');
-      empty.value = ''; empty.textContent = 'Automatique';
+      empty.value = ''; empty.textContent = words.emptyOption;
       input.appendChild(empty);
       spec.options.forEach(function (option) {
         var node = document.createElement('option');
@@ -512,7 +513,7 @@
       if (spec.min != null) input.min = spec.min;
       if (spec.max != null) input.max = spec.max;
       input.step = spec.step || 1;
-      input.placeholder = 'auto';
+      input.placeholder = words.emptyField;
       input.value = value == null ? '' : String(value);
     }
     input.id = id;
@@ -539,12 +540,23 @@
    * capacité qui existait déjà — Technologie → Architecture — mais qui ne
    * permettait de fixer que la FAMILLE de chaque étage, jamais ses dentures.
    */
+  /**
+   * §11 : la lecture des états dépend du mode. En Étudier, un champ vide est une
+   * donnée MANQUANTE, pas une délégation au solveur : lui faire dire
+   * « automatique » inviterait au contraire de ce qu'on vient de corriger.
+   */
+  TypeStep.prototype._buildWords = function () {
+    return GearApp.requirements.build.reading(
+      this.draft.workspace.mode === 'analyze' ? 'observe' : 'build');
+  };
+
   TypeStep.prototype._renderBuild = function () {
-    var self = this, build = this.draft.build;
-    var Levels = GearApp.requirements.build.LEVEL_LABELS;
+    var self = this, build = this.draft.build, words = this._buildWords();
+    var observing = this.draft.workspace.mode === 'analyze';
     var section = document.createElement('section');
     section.className = 'type-section build-section';
-    section.innerHTML = '<h3>Votre transmission</h3>';
+    section.dataset.reading = observing ? 'observe' : 'build';
+    section.innerHTML = '<h3>' + (observing ? 'Votre mécanisme' : 'Votre transmission') + '</h3>';
 
     var plan = document.createElement('p');
     plan.className = 'build-plan';
@@ -556,7 +568,7 @@
     list.className = 'build-stages';
     list.id = 'buildStages';
     build.stages.forEach(function (stage, index) {
-      list.appendChild(self._buildStage(stage, index, Levels));
+      list.appendChild(self._buildStage(stage, index, words));
     });
     section.appendChild(list);
 
@@ -571,7 +583,7 @@
     // serait une promesse que rien ne tient.
     section.appendChild(buildField('module', build.module,
       { label: 'Module de la chaîne', unit: 'mm', min: 0.1, step: 0.05 },
-      function (value) { build.setModule(value); self._changed(); }, 'buildModule'));
+      function (value) { build.setModule(value); self._changed(); }, 'buildModule', words));
 
     var errors = build.errors();
     if (errors.length) {
@@ -590,20 +602,29 @@
 
   /** Ce qui se passera au clic : le dire évite de faire deviner (§8). */
   TypeStep.prototype._buildPlanText = function () {
-    var build = this.draft.build;
-    if (build.isEmpty()) return 'Ajoutez un étage pour commencer. Laissez vide ce que vous ne connaissez pas encore.';
+    var build = this.draft.build, words = this._buildWords();
+    var observing = this.draft.workspace.mode === 'analyze';
+    if (build.isEmpty()) return 'Ajoutez un étage pour commencer. ' + words.hint;
     var unknown = build.unknownCount();
     if (!unknown) {
       var ratio = build.ratio();
-      return 'Chaîne entièrement décrite' + (ratio ? ', rapport ' + (Math.round(ratio * 100) / 100) + ':1' : '') +
-        ' — elle sera calculée directement, sans recherche.';
+      return (observing ? 'Mécanisme entièrement décrit' : 'Chaîne entièrement décrite') +
+        (ratio ? ', rapport ' + (Math.round(ratio * 100) / 100) + ':1' : '') +
+        ' — il sera calculé directement, sans recherche.';
+    }
+    // En Étudier, il n'y a rien à « compléter » : ce qui manque restera non
+    // évalué, et c'est cela qu'il faut annoncer.
+    if (observing) {
+      return unknown + (unknown > 1 ? ' étages sont incomplets' : ' étage est incomplet') +
+        ' : le rapport et la géométrie ne seront pas calculés tant qu’il manque des valeurs.';
     }
     return unknown + (unknown > 1 ? ' étages restent' : ' étage reste') + ' à compléter : le solveur ne cherchera qu’eux.';
   };
 
-  TypeStep.prototype._buildStage = function (stage, index, Levels) {
+  TypeStep.prototype._buildStage = function (stage, index, words) {
     var self = this, build = this.draft.build;
-    var level = stage.level(), badge = Levels[level];
+    var level = stage.level(), badge = words[level];
+    var missing = stage.missingFields();
     var item = document.createElement('li');
     item.className = 'build-stage';
     item.dataset.stage = String(index);
@@ -619,14 +640,20 @@
     mark.className = 'build-level';
     mark.dataset.level = level;
     mark.title = badge.help;
-    mark.textContent = badge.icon + ' ' + badge.label;
+    // §12 : « Partiel » dit qu'il manque quelque chose sans dire combien. Sur un
+    // planétaire à six champs, « il manque une valeur » et « il en manque cinq »
+    // ne se lisent pas du tout pareil.
+    mark.textContent = badge.icon + ' ' + badge.label +
+      (missing.length && level !== 'auto'
+        ? ' · ' + missing.length + ' ' + (missing.length > 1 ? words.missingMany : words.missingOne)
+        : '');
     head.appendChild(mark);
 
     var family = document.createElement('select');
     family.className = 'build-family';
     family.id = 'buildFamily' + index;
     var free = document.createElement('option');
-    free.value = ''; free.textContent = 'Famille automatique';
+    free.value = ''; free.textContent = words.emptyFamily;
     family.appendChild(free);
     buildFamilies().forEach(function (id) {
       var option = document.createElement('option');
@@ -665,14 +692,19 @@
     if (!stage.family) {
       var hint = document.createElement('p');
       hint.className = 'hint';
-      hint.textContent = 'Choisissez une famille pour fixer des dentures, ou laissez le système décider de tout cet étage.';
+      hint.textContent = words.stageHint;
       fields.appendChild(hint);
     } else {
       stage.fields().forEach(function (field) {
-        fields.appendChild(buildField(field.path, field.value, fieldSpec(field.path), function (value) {
+        var host = buildField(field.path, field.value, fieldSpec(field.path), function (value) {
           stage.set(field.path, value);
           self._changed();
-        }, 'buildStage' + index + '_' + field.path.replace(/\./g, '_')));
+        }, 'buildStage' + index + '_' + field.path.replace(/\./g, '_'), words);
+        // Un champ requis encore vide se distingue d'un champ facultatif laissé
+        // libre : le premier retient le calcul, le second non.
+        if (!field.required) host.classList.add('build-field-optional');
+        else if (field.value == null) host.classList.add('build-field-missing');
+        fields.appendChild(host);
       });
     }
     item.appendChild(fields);

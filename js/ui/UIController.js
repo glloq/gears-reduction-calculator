@@ -3,6 +3,15 @@
 
 (function (GearApp) {
 
+  /**
+   * Une valeur de service peut être NON RENSEIGNÉE : une chaîne analysée sans
+   * régime n'a ni vitesse de sortie ni couple. `toFixed` sur un `null` faisait
+   * tomber la carte entière, et avec elle tout ce qui suivait dans la page.
+   */
+  function num(value, digits, unit) {
+    return (Number.isFinite(value) ? value.toFixed(digits) : '—') + (unit || '');
+  }
+
   function UIController(eventBus) {
     this._eventBus = eventBus || GearApp.eventBus;
     this.logger = new GearApp.ui.Logger('logs', 'status');
@@ -193,15 +202,15 @@
     var warnings = solution.warnings || [];
     var linear=solution.mode==='rotationTranslation';
     var outputs=linear
-      ? '<div class="card-item"><span class="card-label">Course / tour</span><span class="card-value">'+solution.travelPerRevolutionMm.toFixed(2)+' mm/tr</span></div><div class="card-item"><span class="card-label">Vitesse linéaire</span><span class="card-value">'+solution.outputLinearSpeedMmMin.toFixed(0)+' mm/min</span></div><div class="card-item"><span class="card-label">Force sortie</span><span class="card-value">'+solution.outputForceN.toFixed(1)+' N</span></div>'
-      : '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">'+solution.ratio.toFixed(4)+'</span></div><div class="card-item"><span class="card-label">RPM sortie</span><span class="card-value">'+solution.outputSpeedRpm.toFixed(1)+' rpm</span></div><div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">'+solution.outputTorqueNm.toFixed(1)+' N·m</span></div>';
+      ? '<div class="card-item"><span class="card-label">Course / tour</span><span class="card-value">'+num(solution.travelPerRevolutionMm,2)+' mm/tr</span></div><div class="card-item"><span class="card-label">Vitesse linéaire</span><span class="card-value">'+num(solution.outputLinearSpeedMmMin,0)+' mm/min</span></div><div class="card-item"><span class="card-label">Force sortie</span><span class="card-value">'+num(solution.outputForceN,1)+' N</span></div>'
+      : '<div class="card-item"><span class="card-label">Rapport</span><span class="card-value">'+num(solution.ratio,4)+'</span></div><div class="card-item"><span class="card-label">RPM sortie</span><span class="card-value">'+num(solution.outputSpeedRpm,1)+' rpm</span></div><div class="card-item"><span class="card-label">Couple sortie</span><span class="card-value">'+num(solution.outputTorqueNm,1)+' N·m</span></div>';
     var title = index >= 0 ? 'Solution du vivier n° ' + (index + 1) : 'Solution épinglée / variante';
     card.innerHTML =
       '<div class="solution-summary-title"><div><span class="card-label">Résultat sélectionné</span><h2>' + title + '</h2></div><span class="type-badge">Classement : ' + modeLabel + '</span></div>' +
       outputs +
-      '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + (solution.efficiency * 100).toFixed(1) + '%</span></div>' +
+      '<div class="card-item"><span class="card-label">Rendement</span><span class="card-value ' + rendClass + '">' + num(solution.efficiency * 100, 1) + '%</span></div>' +
       '<div class="card-item"><span class="card-label">Architecture</span><span class="card-value">' + types + '</span></div>' +
-      '<div class="card-item"><span class="card-label">Dimensions</span><span class="card-value">' + solution.dimensions.length.toFixed(0)+' × '+solution.dimensions.maxDiameter.toFixed(0)+' × '+solution.dimensions.width.toFixed(0)+' mm</span></div>' +
+      '<div class="card-item"><span class="card-label">Dimensions</span><span class="card-value">' + num(solution.dimensions.length,0)+' × '+num(solution.dimensions.maxDiameter,0)+' × '+num(solution.dimensions.width,0)+' mm</span></div>' +
       '<div class="card-item"><span class="card-label">SF min</span><span class="card-value">' + (Number.isFinite(sf)?sf.toFixed(2):'—') + '</span></div>' +
       '<div class="card-item"><span class="card-label">SH min</span><span class="card-value">' + (Number.isFinite(sh)?sh.toFixed(2):'—') + '</span></div>' +
       '<div class="card-item" title="' + moduleTitle + '"><span class="card-label">Module</span><span class="card-value">' + moduleValue + moduleSuffix + '</span></div>' +
@@ -222,6 +231,13 @@
       this._viewer = new GearApp.visualization.ViewerToolbar(document.getElementById('svgContainer'));
       this._viewer.bind();
       GearApp.visualization.viewerToolbar = this._viewer;
+      // §14, §15 : l'identité de la solution et la navigation par étage vivent
+      // juste au-dessus du dessin, et pilotent le même viewer.
+      if (GearApp.ui.SolutionHeader) {
+        this._solutionHeader = new GearApp.ui.SolutionHeader(null,
+          { bus: this._eventBus, viewer: this._viewer }).bind();
+        GearApp.ui.solutionHeader = this._solutionHeader;
+      }
     }
     this._viewer.render(solution);
   };

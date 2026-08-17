@@ -52,29 +52,34 @@
     {
       id: 'design', label: 'Concevoir', icon: '★',
       help: 'Trouver automatiquement une transmission qui répond à mon besoin.',
-      engine: ENGINES.search, intent: 'design', focus: 'need'
+      engine: ENGINES.search, intent: 'design', focus: 'need',
+      steps: ['Méthode', 'Besoin', 'Affiner']
     },
     {
       id: 'build', label: 'Construire', icon: '✚',
       help: 'Choisir moi-même les étages, et laisser le système compléter ce que je ne fixe pas.',
       // Compléter par défaut ; une chaîne entièrement décrite bascule d'elle-
       // même en simple calcul (voir `engineFor`).
-      engine: ENGINES.complete, intent: 'design', focus: 'build'
+      engine: ENGINES.complete, intent: 'design', focus: 'type', chain: true,
+      steps: ['Transmission', 'Objectif', 'Options']
     },
     {
       id: 'analyze', label: 'Étudier l’existant', icon: '◉',
       help: 'Décrire un mécanisme et savoir ce qu’il fait, et s’il tient.',
-      engine: ENGINES.analyze, intent: null, focus: 'build'
+      engine: ENGINES.analyze, intent: null, focus: 'type', chain: true,
+      steps: ['Transmission', 'Conditions', 'Analyse']
     },
     {
       id: 'explore', label: 'Explorer', icon: '↗',
       help: 'Je ne sais pas encore ce qui est possible : chercher les limites.',
-      engine: ENGINES.search, intent: 'maximize', focus: 'need'
+      engine: ENGINES.search, intent: 'maximize', focus: 'need',
+      steps: ['Exploration', 'Limites', 'Affiner']
     },
     {
       id: 'optimize', label: 'Optimiser', icon: '↻',
       help: 'J’ai un système : en chercher un meilleur, à rapport égal.',
-      engine: ENGINES.search, intent: 'improve', focus: 'type'
+      engine: ENGINES.search, intent: 'improve', focus: 'type',
+      steps: ['Existant', 'Contraintes', 'Objectif']
     }
   ];
 
@@ -133,8 +138,13 @@
 
   WorkspaceModel.prototype.runsSearch = function () { return this.engine() !== ENGINES.analyze; };
 
-  /** Le mode décrit-il une chaîne d'étages plutôt qu'un besoin ? */
-  WorkspaceModel.prototype.editsChain = function () { return this.descriptor().focus === 'build'; };
+  /**
+   * Le mode décrit-il une chaîne d'étages plutôt qu'un besoin ? C'est une
+   * NATURE de parcours, distincte de l'étape d'ouverture : les deux étaient
+   * portées par le même champ, si bien qu'on ne pouvait pas dire « ce mode
+   * édite une chaîne » sans inventer une étape « build » qui n'existe pas.
+   */
+  WorkspaceModel.prototype.editsChain = function () { return !!this.descriptor().chain; };
 
   /**
    * L'intention à donner au solveur, ou null quand rien n'est cherché.
@@ -145,7 +155,23 @@
     return this.runsSearch() ? this.descriptor().intent : null;
   };
 
-  /** Étape sur laquelle ouvrir le modal. */
+  /**
+   * §7 : le nom des trois étapes. Le parcours est le même — décrire, poser des
+   * conditions, affiner — mais les mots ne peuvent pas l'être : « Recherche »
+   * en tête d'un mode qui ne cherche rien, ou « Besoin » là où l'on saisit les
+   * conditions de service d'un mécanisme existant, font lire l'écran de travers.
+   * Le mode nomme ses étapes ; le modal garde le même DOM et les mêmes
+   * identifiants.
+   *
+   * @param {number} index rang de l'étape, 0 à 2
+   * @param {string} fallback nom générique, si le mode n'en propose pas
+   */
+  WorkspaceModel.prototype.stepLabel = function (index, fallback) {
+    var steps = this.descriptor().steps;
+    return steps && steps[index] ? steps[index] : fallback;
+  };
+
+  /** Étape sur laquelle ouvrir le modal — un identifiant d'étape réel. */
   WorkspaceModel.prototype.focusStep = function () { return this.descriptor().focus; };
 
   WorkspaceModel.prototype.describe = function () { return this.descriptor().label; };

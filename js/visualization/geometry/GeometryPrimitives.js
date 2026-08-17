@@ -47,11 +47,16 @@
     return host;
   }
 
-  /** Cercle primitif coté : c'est le repère de dimensionnement principal. */
+  /**
+   * Cercle primitif coté : c'est le repère de dimensionnement principal.
+   * `label` est facultatif — le titre du membre est normalement porté par son
+   * groupe, pour que la vis et le porte-satellites, qui n'ont pas de cercle,
+   * soient lisibles comme les roues.
+   */
   function circle(group, x, y, diameter, className, label) {
     var value = Number(diameter) || 0;
     var element = node('circle', { cx: x, cy: y, r: Math.max(4, value / 2), class: className, 'data-diameter-mm': value });
-    element.appendChild(node('title', {}, label + ' — Ø primitif ' + fmt(value) + ' mm'));
+    if (label) element.appendChild(node('title', {}, label + ' — Ø primitif ' + fmt(value) + ' mm'));
     group.appendChild(element);
     return element;
   }
