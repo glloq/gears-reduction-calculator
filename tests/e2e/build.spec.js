@@ -212,6 +212,54 @@ test('a built chain is a project, not an empty session (§9, §10)', async ({ pa
   await expect(banner).toContainText('i = 3');
 });
 
+test('each mode names its own steps and its own footer (§6, §7)', async ({ page }) => {
+  await page.goto('/');
+  const steps = () => page.locator('#searchModalSteps .search-step-label').allTextContents();
+  const footer = () => page.locator('.search-modal-context').first().textContent();
+
+  await chooseMode(page, 'design');
+  expect(await steps()).toEqual(['Méthode', 'Besoin', 'Affiner']);
+  expect(await footer()).toContain('technologies');
+
+  // « Recherche » en tête d'un mode qui ne cherche rien fait lire l'écran de
+  // travers ; et « 8 technologies » n'a aucun sens sur une chaîne décrite.
+  await chooseMode(page, 'build');
+  expect(await steps()).toEqual(['Transmission', 'Objectif', 'Options']);
+  await chooseMode(page, 'analyze');
+  expect(await steps()).toEqual(['Transmission', 'Conditions', 'Analyse']);
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  expect(await footer()).toContain('analyse directe');
+  expect(await footer()).not.toContain('technologie');
+
+  // Une exploration balaye un espace : c'est cela que le pied annonce.
+  await chooseMode(page, 'explore');
+  expect(await steps()).toEqual(['Exploration', 'Limites', 'Affiner']);
+  expect(await footer()).toMatch(/rapports \d+→\d+/);
+});
+
+test('Construire delegates, Étudier records — the words differ (§11, §12)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'planetary', { sunTeeth: 20 });
+  const badge = page.locator('.build-stage[data-stage="0"] .build-level');
+  // §12 : combien il manque, pas seulement « il manque ».
+  await expect(badge).toContainText('Partiel · 1 valeur à trouver');
+  await expect(page.locator('#buildStage0_ringTeeth')).toHaveAttribute('placeholder', 'auto');
+  await expect(page.locator('#buildPlan')).toContainText('le solveur ne cherchera qu’eux');
+
+  // §11 : en Étudier, un champ vide est une donnée MANQUANTE, pas une
+  // délégation. Lui faire dire « automatique » inviterait à inventer.
+  await chooseMode(page, 'analyze');
+  await expect(badge).toContainText('Incomplet · 1 valeur manquante');
+  await expect(page.locator('#buildStage0_ringTeeth')).toHaveAttribute('placeholder', 'non renseigné');
+  await expect(page.locator('#buildStage0_inputMember option').first()).toHaveText('Non renseigné');
+  await expect(page.locator('#buildPlan')).toContainText('ne seront pas calculés');
+  await expect(page.locator('#buildPlan')).not.toContainText('compléter');
+  // Le champ requis encore vide se distingue du facultatif laissé libre.
+  await expect(page.locator('#buildStage0_ringTeeth').locator('..')).toHaveClass(/build-field-missing/);
+  await expect(page.locator('#buildStage0_planetCount').locator('..')).toHaveClass(/build-field-optional/);
+});
+
 test('a built chain survives a reload', async ({ page }) => {
   await page.goto('/');
   await chooseMode(page, 'build');

@@ -65,11 +65,44 @@
 
   var LEVELS = { FIXED: 'fixed', PARTIAL: 'partial', AUTO: 'auto' };
 
-  var LEVEL_LABELS = {
-    fixed: { label: 'Imposé', icon: '🔒', help: 'Toutes les valeurs sont données : rien à chercher.' },
-    partial: { label: 'Partiel', icon: '◐', help: 'Le système cherche seulement ce qui manque.' },
-    auto: { label: 'Automatique', icon: '⚙', help: 'Le système choisit tout cet étage.' }
+  /**
+   * §11 : deux LECTURES du même état, parce que les deux parcours ne promettent
+   * pas la même chose. « Automatique » dit ce que le système fera : juste en
+   * Construire, faux en Étudier, où rien ne doit être choisi à la place de
+   * l'utilisateur. Un champ vide y est une donnée MANQUANTE, pas une
+   * délégation — et le laisser afficher « automatique » inviterait précisément
+   * à ce que le logiciel s'est engagé à ne plus faire : inventer.
+   */
+  var READINGS = {
+    build: {
+      fixed: { label: 'Imposé', icon: '🔒', help: 'Toutes les valeurs sont données : rien à chercher.' },
+      partial: { label: 'Partiel', icon: '◐', help: 'Le système cherche seulement ce qui manque.' },
+      auto: { label: 'Automatique', icon: '⚙', help: 'Le système choisit tout cet étage.' },
+      emptyField: 'auto',
+      emptyOption: 'Automatique',
+      emptyFamily: 'Famille automatique',
+      missingOne: 'valeur à trouver', missingMany: 'valeurs à trouver',
+      hint: 'Laissez vide ce que le système doit choisir.',
+      stageHint: 'Choisissez une famille pour fixer des dentures, ou laissez le système décider de tout cet étage.'
+    },
+    observe: {
+      fixed: { label: 'Renseigné', icon: '🔒', help: 'Toutes les valeurs sont connues : cet étage est calculable.' },
+      partial: { label: 'Incomplet', icon: '◐', help: 'Il manque des valeurs : cet étage ne sera pas évalué.' },
+      auto: { label: 'Non renseigné', icon: '·', help: 'Rien n’est décrit : cet étage ne sera pas évalué.' },
+      emptyField: 'non renseigné',
+      emptyOption: 'Non renseigné',
+      emptyFamily: 'Famille non renseignée',
+      missingOne: 'valeur manquante', missingMany: 'valeurs manquantes',
+      hint: 'Décrivez ce qui existe réellement. Les valeurs inconnues resteront non évaluées.',
+      stageHint: 'Choisissez la famille de cet étage pour pouvoir en décrire les dentures.'
+    }
   };
+
+  /** @param {'build'|'observe'} [reading] lecture « Construire » par défaut. */
+  function reading(id) { return READINGS[id] || READINGS.build; }
+
+  /** Vocabulaire historique : celui de Construire. */
+  var LEVEL_LABELS = READINGS.build;
 
   function familyKey(type) {
     var id = Helpers.registryId(type);
@@ -163,6 +196,17 @@
   };
 
   BuildStage.prototype.isFixed = function () { return this.level() === LEVELS.FIXED; };
+
+  /**
+   * §12 : ce qu'il reste à déterminer sur cet étage. « ◐ Partiel » dit qu'il
+   * manque quelque chose sans dire quoi, ni combien : sur un planétaire à six
+   * champs, l'écart entre « il manque une valeur » et « il en manque cinq »
+   * change complètement la lecture.
+   */
+  BuildStage.prototype.missingFields = function () {
+    if (!this.family) return [];
+    return requiredFields(this.family).filter(function (path) { return !present(this.values[path]); }, this);
+  };
 
   /** L'étage au format moteur, ou null s'il n'est pas entièrement déterminé. */
   BuildStage.prototype.toStage = function (module) {
@@ -337,6 +381,7 @@
   BuildModel.prototype.clone = function () { return new BuildModel(this.toJSON()); };
 
   return { BuildModel: BuildModel, BuildStage: BuildStage, LEVELS: LEVELS, LEVEL_LABELS: LEVEL_LABELS,
+    READINGS: READINGS, reading: reading,
     REQUIRED: REQUIRED, OPTIONAL: OPTIONAL, requiredFields: requiredFields, optionalFields: optionalFields,
     familyKey: familyKey, get: get, set: set };
 });

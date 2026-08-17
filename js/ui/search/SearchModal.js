@@ -80,8 +80,10 @@
     var nav = node('nav', 'search-modal-steps');
     nav.id = 'searchModalSteps';
     nav.setAttribute('aria-label', 'Étapes');
+    // Les libellés sont réécrits à chaque rendu : ils dépendent du mode (§7).
     STEPS.forEach(function (step, index) {
-      var button = node('button', 'search-step', '<span class="search-step-index">' + (index + 1) + '</span>' + step.label);
+      var button = node('button', 'search-step', '<span class="search-step-index">' + (index + 1) + '</span>' +
+        '<span class="search-step-label">' + step.label + '</span>');
       button.type = 'button';
       button.dataset.step = step.id;
       button.addEventListener('click', function () { self.goTo(index); });
@@ -534,16 +536,44 @@
     return errors.length ? errors[0].text : 'Complétez le besoin pour lancer la recherche';
   };
 
+  /**
+   * §6 : ce que le pied de page annonce dépend du mode. « Standard · 8
+   * technologies · ≤ 3 étages » décrit une recherche ; sur une chaîne décrite,
+   * aucune des trois valeurs n'a de sens — rien n'est exploré, et le nombre
+   * d'étages est une décision déjà prise, pas une borne.
+   */
   SearchModal.prototype._context = function () {
     var draft = this.draft;
+    if (draft.workspace.editsChain()) return this._chainContext();
     var depth = draft.technical.depth();
     var families = draft.selectedTechnologies().length;
-    return [
+    var bits = [
       depth ? depth.label : draft.technical.search.maxSolutions + ' solutions',
       families + (families > 1 ? ' technologies' : ' technologie'),
       '≤ ' + draft.compile().maxStages + ' étages'
-    ].join(' · ');
+    ];
+    // Une exploration balaye un espace : c'est CELA qu'il faut annoncer, pas
+    // une borne d'étages qu'elle ne vise pas.
+    if (draft.intent.explores()) {
+      var span = draft.explorationSpan();
+      bits[2] = 'rapports ' + shortRatio(span.min) + '→' + shortRatio(span.max);
+    }
+    return bits.join(' · ');
   };
+
+  SearchModal.prototype._chainContext = function () {
+    var build = this.draft.build;
+    if (build.isEmpty()) return 'aucun étage décrit';
+    var unknown = build.unknownCount();
+    var bits = [build.stages.length + (build.stages.length > 1 ? ' étages' : ' étage')];
+    bits.push(unknown ? unknown + ' à compléter' : 'analyse directe');
+    if (build.module != null) bits.push('module ' + build.module);
+    return bits.join(' · ');
+  };
+
+  function shortRatio(value) {
+    return value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
+  }
 
   SearchModal.prototype._optionSummary = function (key) {
     var draft = this.draft, technical = draft.technical;
@@ -910,6 +940,10 @@
     STEPS.forEach(function (step, index) {
       self.panes[step.id].hidden = index !== self.step;
       var button = self.root.querySelector('[data-step="' + step.id + '"]');
+      // §7 : le mode nomme ses étapes. « Recherche » en tête d'un mode qui ne
+      // cherche rien fait lire l'écran de travers.
+      var label = button.querySelector('.search-step-label');
+      if (label) label.textContent = self.draft.workspace.stepLabel(index, step.label);
       button.classList.toggle('active', index === self.step);
       button.classList.toggle('step-blocked', !!blocking[step.id]);
       button.classList.toggle('step-done', !blocking[step.id]);
