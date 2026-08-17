@@ -23,6 +23,15 @@
     clone.classList.remove('is-animated');
     Array.prototype.forEach.call(clone.querySelectorAll('.selected'), function (el) { el.classList.remove('selected'); });
     Array.prototype.forEach.call(clone.querySelectorAll('[data-animation-transform]'), function (el) { el.removeAttribute('data-animation-transform'); });
+    // Le HUD a repris les `<title>` pour supprimer l'infobulle native (voir
+    // ViewerHUD) : on les reconstruit ici, sinon un SVG exporté perdrait toutes
+    // ses annotations en sortant de l'application.
+    Array.prototype.forEach.call(clone.querySelectorAll('[data-hud]'), function (el) {
+      var title = clone.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'title');
+      title.textContent = el.dataset.hud;
+      el.insertBefore(title, el.firstChild);
+      el.removeAttribute('data-hud');
+    });
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     var viewBox = svg.getAttribute('viewBox') || svg.dataset.initialViewBox || '0 0 800 400';
     clone.setAttribute('viewBox', viewBox);

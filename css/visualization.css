@@ -293,3 +293,49 @@ body.dark-theme .geometry-envelope { opacity: .7; }
   margin: var(--sp-1) 0 2px; font-size: var(--font-xs); font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
 }
+
+/* §3 : quatre intentions de lecture. Le menu détaillé reste, replié. */
+.display-presets { flex-wrap: wrap; }
+.display-presets button.active {
+  background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;
+}
+
+/* ----- §4 : le HUD de survol, commun aux trois vues ----- */
+
+.svg-container { position: relative; }
+.viewer-hud {
+  position: absolute; z-index: 5; pointer-events: none;
+  display: flex; flex-direction: column; gap: 1px;
+  max-width: 15rem; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-1); box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+  font-size: var(--font-xs); line-height: 1.35;
+}
+.hud-title { font-size: var(--font-sm); }
+.hud-line { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ----- §2 : zoom sémantique — la densité d'annotation suit le palier ----- */
+/*
+   Le tracé garde sa finesse calculée par roue (voir TeethPrimitives) ; ce sont
+   les ANNOTATIONS qui apparaissent par paliers. Vu de loin, un train de six
+   étages n'a pas besoin de porter quarante nombres : il a besoin de dire ce
+   qu'il enchaîne. De près, l'inverse.
+*/
+/* Vue d'ensemble : l'enchaînement et les rapports, rien de plus. */
+.svg-container.zoom-overview .tooth-count,
+.svg-container.zoom-overview .train-dim,
+.svg-container.zoom-overview .geometry-dimension,
+.svg-container.zoom-overview .dimension-line,
+.svg-container.zoom-overview .dimension-witness,
+.svg-container.zoom-overview .dimension-arrow,
+.svg-container.zoom-overview .helix-label,
+.svg-container.zoom-overview .worm-label { display: none; }
+/* Palier intermédiaire : les dentures se nomment, les cotes attendent. */
+.svg-container.zoom-medium .train-dim,
+.svg-container.zoom-medium .geometry-dimension,
+.svg-container.zoom-medium .dimension-line,
+.svg-container.zoom-medium .dimension-witness,
+.svg-container.zoom-medium .dimension-arrow { display: none; }
+/* Les tracés de construction ne se justifient qu'au dernier palier. */
+.svg-container:not(.zoom-technical) .base-circle,
+.svg-container:not(.zoom-technical) .root-circle { display: none; }

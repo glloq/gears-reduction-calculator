@@ -36,6 +36,12 @@
   ViewportController.prototype._apply = function () {
     if (this.svg) this.svg.setAttribute('viewBox', this.state.map(function (v) { return v.toFixed(2); }).join(' '));
     this.onChange(this.getState());
+    // §2 : le palier de lecture se lit sur le zoom. Le signaler ici évite que
+    // chaque renderer ait à relayer son propre changement de cadrage — et donc
+    // qu'un seul l'oublie.
+    if (this.svg && this.svg.dispatchEvent) {
+      this.svg.dispatchEvent(new CustomEvent('viewport:changed', { bubbles: true, detail: this.getState() }));
+    }
     return this;
   };
 
@@ -89,6 +95,32 @@
   };
 
   /** Millimètres visibles par pixel écran : c'est la mesure qui pilote le LOD. */
+  /**
+   * §2 : le PALIER de lecture. Chaque vue a ses propres unités monde — la
+   * cinématique est symbolique, la géométrie en millimètres — si bien qu'aucun
+   * seuil en pixels par unité ne peut être partagé. Le zoom RELATIF au cadrage
+   * initial, lui, a le même sens partout : « je vois l'ensemble » vaut 1,
+   * « je regarde une dent » vaut 12.
+   *
+   * Les paliers gouvernent la densité d'ANNOTATION, pas la finesse du tracé :
+   * celle-ci reste calculée par roue, d'après sa taille réelle à l'écran, ce
+   * qui est plus juste qu'un seuil global — une roue de 8 dents et une de 200
+   * n'ont pas la même lisibilité au même zoom.
+   */
+  var ZOOM_TIERS = [
+    { id: 0, name: 'overview', from: 0 },
+    { id: 1, name: 'medium', from: 1.8 },
+    { id: 2, name: 'close', from: 4.5 },
+    { id: 3, name: 'technical', from: 11 }
+  ];
+
+  ViewportController.prototype.zoomTier = function () {
+    var scale = this.getState().scale;
+    var tier = ZOOM_TIERS[0];
+    for (var i = 0; i < ZOOM_TIERS.length; i++) if (scale >= ZOOM_TIERS[i].from) tier = ZOOM_TIERS[i];
+    return tier;
+  };
+
   ViewportController.prototype.pixelsPerUnit = function () {
     var rect = this.svg ? this.svg.getBoundingClientRect() : null;
     if (!rect || !rect.width || !this.state[2]) return 1;
@@ -202,5 +234,6 @@
   };
 
   ViewportController.DRAG_THRESHOLD = DRAG_THRESHOLD;
+  ViewportController.ZOOM_TIERS = ZOOM_TIERS;
   return ViewportController;
 });

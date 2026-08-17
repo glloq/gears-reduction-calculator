@@ -558,3 +558,169 @@ test('the display menu adapts to the current view and toggles overlays', async (
   // Une option masquée dans une vue reste mémorisée pour son retour.
   await expect(page.locator('#svgContainer')).toHaveClass(/hide-dimensions/);
 });
+
+test('the reading tier follows the zoom, and thins the annotations (§2)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'helical']);
+  await showView(page, 'teeth');
+  const container = page.locator('#svgContainer');
+
+  await expect(container).toHaveAttribute('data-zoom-tier', 'overview');
+  // À l'ensemble, les cotes et les dentures chiffrées se taisent : à cette
+  // échelle elles se superposent au dessin sans être lisibles.
+  await expect(page.locator('#svgContainer .tooth-count').first()).toBeHidden();
+  await expect(page.locator('#svgContainer .train-dim').first()).toBeHidden();
+
+  await page.evaluate(() => window.__viewer.renderer().viewport.zoomAt(0, 0, 6));
+  await expect(container).toHaveAttribute('data-zoom-tier', 'close');
+  await expect(page.locator('#svgContainer .tooth-count').first()).toBeVisible();
+  await expect(page.locator('#svgContainer .train-dim').first()).toBeVisible();
+  // Les cercles de construction restent réservés au palier technique.
+  await expect(container).not.toHaveClass(/zoom-technical/);
+
+  await page.evaluate(() => window.__viewer.renderer().viewport.zoomAt(0, 0, 4));
+  await expect(container).toHaveAttribute('data-zoom-tier', 'technical');
+
+  await page.evaluate(() => window.__viewer.renderer().resetView());
+  await expect(container).toHaveAttribute('data-zoom-tier', 'overview');
+
+  // Le palier vaut dans les trois vues, malgré des unités différentes.
+  for (const view of ['geometry', 'kinematic']) {
+    await showView(page, view);
+    await expect(container).toHaveAttribute('data-zoom-tier', 'overview');
+    await page.evaluate(() => window.__viewer.renderer().viewport.zoomAt(0, 0, 6));
+    await expect(container).toHaveAttribute('data-zoom-tier', 'close');
+  }
+  expect(errors).toEqual([]);
+});
+
+test('four presets answer four questions, and a single case leaves them (§3)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur']);
+  const hidden = () => page.evaluate(() => Array.from(document.getElementById('svgContainer').classList)
+    .filter(name => name.startsWith('hide-')).sort());
+  const pressed = () => page.evaluate(() => Array.from(document.querySelectorAll('[data-preset]'))
+    .filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.dataset.preset));
+
+  const states = {};
+  for (const id of ['simple', 'motion', 'sizing', 'mechanical']) {
+    await page.locator(`[data-preset="${id}"]`).click();
+    expect(await pressed(), id).toEqual([id]);
+    states[id] = await hidden();
+  }
+  // Quatre intentions distinctes : si deux préréglages montraient la même
+  // chose, l'un des deux ne servirait à rien.
+  const signatures = Object.values(states).map(list => list.join('|'));
+  expect(new Set(signatures).size).toBe(4);
+  expect(states.mechanical).not.toContain('hide-line-of-action');
+  expect(states.sizing).toContain('hide-forces');
+  expect(states.motion).not.toContain('hide-rpm');
+  expect(states.sizing).not.toContain('hide-dimensions');
+
+  // Chaque préréglage donne l'état COMPLET, pas seulement ce qu'il ajoute :
+  // « Simple » demandé après « Mécanique » ne doit pas laisser traîner la ligne
+  // d'action ni les efforts. L'ordre compte, d'où cette seconde demande —
+  // vérifier « Simple » depuis l'état par défaut ne prouverait rien.
+  await page.locator('[data-preset="mechanical"]').click();
+  await page.locator('[data-preset="simple"]').click();
+  expect(await hidden(), 'Simple après Mécanique doit tout reprendre').toEqual(states.simple);
+  expect(states.simple).toContain('hide-line-of-action');
+  expect(states.simple).toContain('hide-forces');
+
+  // Les cases du menu détaillé décrivent le préréglage actif…
+  await page.locator('[data-preset="sizing"]').click();
+  await expect(page.locator('#viewerDisplayMenu [data-overlay="dimensions"]')).toBeChecked();
+  await expect(page.locator('#viewerDisplayMenu [data-overlay="forces"]')).not.toBeChecked();
+  // …et toucher une case sort du préréglage, plutôt que de le décrire à faux.
+  await page.evaluate(() => window.__viewer.setOverlay('forces', true));
+  expect(await pressed()).toEqual([]);
+  await expect(page.locator('#svgContainer')).not.toHaveClass(/hide-forces/);
+  expect(errors).toEqual([]);
+});
+
+test('hovering a wheel reads it at once, and the export keeps the titles (§4)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+
+  // Les `<title>` sont déplacés dans data-hud : l'infobulle native ne peut plus
+  // se superposer au panneau une seconde plus tard.
+  const absorbed = await page.evaluate(() => ({
+    titles: document.querySelectorAll('#svgContainer svg title').length,
+    hud: document.querySelectorAll('#svgContainer [data-hud]').length,
+    labelled: document.querySelectorAll('#svgContainer [data-hud][aria-label]').length
+  }));
+  expect(absorbed.hud).toBeGreaterThan(2);
+  expect(absorbed.titles).toBe(0);
+  expect(absorbed.labelled, 'le nom accessible ne doit pas être perdu').toBe(absorbed.hud);
+
+  const hud = page.locator('#viewerHud');
+  await expect(hud).toBeHidden();
+  await page.locator('#svgContainer [data-hud]').first().hover();
+  await expect(hud).toBeVisible();
+  // Le HUD présente ce que le renderer écrit : titre puis grandeurs.
+  await expect(hud.locator('.hud-title')).toHaveCount(1);
+  expect(await hud.locator('.hud-line').count()).toBeGreaterThan(0);
+  const shown = (await hud.locator('.hud-title').textContent()).trim();
+  expect(shown.length).toBeGreaterThan(0);
+  expect(shown).not.toMatch(/NaN|undefined/);
+
+  await page.mouse.move(2, 2);
+  await expect(hud).toBeHidden();
+
+  // Le panneau survit à un nouveau rendu — les renderers vident le conteneur.
+  await showView(page, 'geometry');
+  await expect(page.locator('#viewerHud')).toHaveCount(1);
+  await page.locator('#svgContainer [data-hud]').first().hover();
+  await expect(page.locator('#viewerHud')).toBeVisible();
+
+  // Hors de l'application, un SVG exporté doit rester lisible : les `<title>`
+  // sont reconstruits, et data-hud disparaît.
+  const exportedGeometry = await page.evaluate(() => window.__viewer.renderer().exportSVG());
+  expect((exportedGeometry.match(/<title>/g) || []).length).toBeGreaterThan(2);
+  expect(exportedGeometry).not.toContain('data-hud');
+  expect(errors).toEqual([]);
+});
+
+test('no member of the Geometry view stays mute, and no decoration steals the hover (§4)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Une vis et un porte-satellites n'ont pas de cercle primitif : le titre posé
+  // sur le cercle les laissait muets, et les annotations dessinées par-dessus
+  // les roues interceptaient le survol.
+  await mount(page, ['planetary', 'worm', 'bevel']);
+  await showView(page, 'geometry');
+
+  const mute = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .geometry-member-group'))
+    .filter(group => !(group.dataset.hud || '').trim())
+    .map(group => group.dataset.role));
+  expect(mute, 'tout membre dessiné doit pouvoir se lire').toEqual([]);
+
+  const texts = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .geometry-member-group'))
+    .map(group => group.dataset.hud));
+  // Chaque membre se nomme, et aucun ne montre de trou de calcul.
+  texts.forEach(text => {
+    expect(text).not.toMatch(/NaN|undefined|null/);
+    expect(text.split('\n')[0].length).toBeGreaterThan(2);
+  });
+  expect(texts.join('|')).toContain('Porte-satellites');
+  expect(texts.join('|')).toContain('Vis');
+
+  // Le repère d'indexation est dessiné SUR la roue et ne porte aucune grandeur :
+  // le pointeur doit le traverser plutôt que refermer le panneau.
+  const throughDecoration = await page.evaluate(() => {
+    const mark = document.querySelector('#svgContainer .index-mark');
+    if (!mark) return 'aucun repère dessiné';
+    const box = mark.getBoundingClientRect();
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    document.getElementById('svgContainer').dispatchEvent(
+      new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }));
+    const hit = document.elementFromPoint(x, y);
+    const panel = document.getElementById('viewerHud');
+    return { onMark: !!(hit && hit.closest('.index-rotor')), hidden: panel.hidden,
+      read: (panel.textContent || '').slice(0, 30) };
+  });
+  expect(throughDecoration.onMark, 'le point choisi doit bien tomber sur le repère').toBe(true);
+  expect(throughDecoration.hidden, 'survoler un repère doit lire la roue dessous').toBe(false);
+  expect(throughDecoration.read.length).toBeGreaterThan(2);
+  expect(errors).toEqual([]);
+});

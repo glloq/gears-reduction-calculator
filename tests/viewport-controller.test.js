@@ -71,6 +71,39 @@ test('screen conversions drive both panning and the level of detail', () => {
   assert.equal(ViewportController.screenUnit(svg, 200), 0.25);
 });
 
+test('the reading tier follows the zoom relative to the fitted view', () => {
+  const viewport = new ViewportController(fakeSvg());
+  assert.equal(viewport.zoomTier().name, 'overview');
+  viewport.zoomAt(100, 50, 2);       // ×2
+  assert.equal(viewport.zoomTier().name, 'medium');
+  viewport.zoomAt(100, 50, 3);       // ×6
+  assert.equal(viewport.zoomTier().name, 'close');
+  viewport.zoomAt(100, 50, 3);       // ×18
+  assert.equal(viewport.zoomTier().name, 'technical');
+  viewport.reset();
+  assert.equal(viewport.zoomTier().name, 'overview', 'revenir à l’ensemble revient au premier palier');
+});
+
+test('the tier is unit-agnostic: the same zoom gives the same tier in the three views', () => {
+  // La cinématique est symbolique, la géométrie en millimètres. Un seuil en
+  // pixels par unité les séparerait ; le zoom relatif les réunit.
+  const symbolic = new ViewportController(fakeSvg('0 0 200 100'));
+  const millimetres = new ViewportController(fakeSvg('0 0 640 320'));
+  symbolic.zoomAt(100, 50, 6);
+  millimetres.zoomAt(320, 160, 6);
+  assert.equal(symbolic.zoomTier().id, millimetres.zoomTier().id);
+  assert.equal(symbolic.zoomTier().name, 'close');
+});
+
+test('the tiers are ordered and cover every scale', () => {
+  const tiers = ViewportController.ZOOM_TIERS;
+  assert.equal(tiers[0].from, 0, 'un palier doit répondre même à l’échelle nulle');
+  tiers.forEach((tier, index) => {
+    assert.equal(tier.id, index, 'l’identifiant sert de classe CSS : il doit rester stable');
+    if (index) assert.ok(tier.from > tiers[index - 1].from, 'seuils strictement croissants');
+  });
+});
+
 test('invalid states are ignored rather than producing a NaN viewBox', () => {
   const svg = fakeSvg();
   const viewport = new ViewportController(svg);

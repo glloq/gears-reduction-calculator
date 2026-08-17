@@ -38,9 +38,34 @@
    * qu'il porte tourne à la vitesse relative réelle, donc la vue Géométrie
    * raconte la même cinématique que la Denture.
    */
+  /**
+   * §4 : la lecture au survol porte sur le GROUPE du membre, pas sur sa
+   * silhouette.
+   *
+   * Le titre était posé sur le cercle primitif, ce qui laissait muets les trois
+   * organes qui n'en ont pas : la vis, le cône et le porte-satellites. Pointer
+   * un bras de porte-satellites ne disait donc rien — et, une fois les
+   * annotations rendues transparentes au pointeur, cela disait pire : la
+   * grandeur du voisin situé dessous.
+   *
+   * Un seul titre par membre, sur le groupe, garantit aussi qu'on lit la même
+   * chose où qu'on pointe dans le membre.
+   */
+  GeometryRenderer.prototype._memberTitle = function (member) {
+    var speed = this.scene && member.memberId ? (this.scene.member(member.memberId) || {}).mechanical : null;
+    return member.label +
+      (member.teeth ? ' — Z=' + member.teeth : '') +
+      (member.pitchDiameter ? '\nØ primitif ' + fmt(member.pitchDiameter, 2) + ' mm' : '') +
+      (member.outsideDiameter && member.rootDiameter
+        ? '\nØ tête ' + fmt(member.outsideDiameter, 2) + ' mm · Ø pied ' + fmt(member.rootDiameter, 2) + ' mm' : '') +
+      (member.leadAngleDeg != null ? '\nAngle d’hélice ' + fmt(member.leadAngleDeg, 1) + '°' : '') +
+      (speed && Number.isFinite(speed.relativeSpeed) ? '\nVitesse relative ' + fmt(speed.relativeSpeed, 3) + '×' : '');
+  };
+
   GeometryRenderer.prototype._member = function (group, item, member) {
     var p = GearGeometryPrimitives;
     var host = p.node('g', { class: 'geometry-member-group role-' + member.role, 'data-role': member.role });
+    host.appendChild(p.node('title', {}, this._memberTitle(member)));
     group.appendChild(host);
     this._ground(item, member);
 
@@ -83,7 +108,9 @@
 
     var roleClass = member.role === 'input' ? 'input-member' : member.role === 'output' ? 'output-member' : member.role;
     var kindClass = member.kind === 'internal-ring' ? 'internal-ring' : member.kind;
-    p.circle(host, member.cx, member.cy, member.pitchDiameter, 'geometry-member ' + kindClass + ' ' + roleClass, member.label);
+    // Le titre est porté par le groupe (voir _memberTitle) : le doubler ici
+    // ferait dire deux choses différentes au même membre selon l'endroit pointé.
+    p.circle(host, member.cx, member.cy, member.pitchDiameter, 'geometry-member ' + kindClass + ' ' + roleClass);
 
     // Couche « pitch » : tête, pied et base — masquables sans toucher au reste.
     var construction = this._layers.pitch;

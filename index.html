@@ -539,8 +539,17 @@
               <button id="viewerMode" class="btn-small" aria-pressed="false" title="Cadence : pédagogique (lisible) ou proportionnelle au régime réel d’entrée">Cadence pédagogique</button>
             </div>
           </details>
+          <!-- §3 : quatre intentions de lecture, plutôt que onze cases. Les
+               questions sont peu nombreuses et connues — de quoi c'est fait,
+               comment ça bouge, quelle taille, est-ce que ça tient. -->
+          <div class="segmented display-presets" id="viewerPresets" role="group" aria-label="Préréglage d’affichage">
+            <button type="button" class="btn-small" data-preset="simple" aria-pressed="false">Simple</button>
+            <button type="button" class="btn-small" data-preset="motion" aria-pressed="false">Mouvement</button>
+            <button type="button" class="btn-small" data-preset="sizing" aria-pressed="false">Dimensionnement</button>
+            <button type="button" class="btn-small" data-preset="mechanical" aria-pressed="false">Mécanique</button>
+          </div>
           <details class="display-menu" id="viewerDisplayMenu">
-            <summary>Affichage</summary>
+            <summary>Affichage avancé</summary>
             <div class="display-menu-panel">
               <label data-views="teeth"><input type="checkbox" data-overlay="autoDetails" checked> Détails automatiques</label>
               <label data-views="teeth geometry"><input type="checkbox" data-overlay="pitchCircles" checked> Cercles primitifs</label>
@@ -708,6 +717,7 @@
   <script src="js/visualization/core/SvgExport.js" defer></script>
   <script src="js/visualization/core/GeometryUtils.js" defer></script>
   <script src="js/visualization/core/GroundSymbol.js" defer></script>
+  <script src="js/visualization/core/ViewerHUD.js" defer></script>
   <script src="js/visualization/geometry/GeometryLayout.js" defer></script>
   <script src="js/visualization/geometry/GeometryPrimitives.js" defer></script>
   <script src="js/visualization/geometry/DimensionRenderer.js" defer></script>

@@ -19,6 +19,44 @@
     envelope: false, forces: false, rpm: true, ratios: true, powerFlow: true, spatialAxes: true, labels: true
   };
 
+  /**
+   * §3 : quatre INTENTIONS de lecture, plutôt que onze cases.
+   *
+   * Les overlays individuels sont un bon découpage technique — chacun a un sens
+   * propre et se teste seul — mais ils font payer à l'utilisateur un travail qui
+   * n'est pas le sien : décider, case par case, ce qu'il faut voir pour
+   * répondre à une question. Or les questions sont peu nombreuses et connues :
+   * de quoi c'est fait, comment ça bouge, quelle taille ça fait, est-ce que ça
+   * tient. Chaque préréglage est la réponse d'usage à l'une d'elles.
+   *
+   * Un préréglage donne l'état COMPLET, pas seulement ce qu'il ajoute : sinon
+   * passer de « Mécanique » à « Simple » laisserait traîner la ligne d'action —
+   * exactement le piège des dispositions, déjà corrigé une fois.
+   */
+  var PRESETS = [
+    { id: 'simple', label: 'Simple', help: 'De quoi c’est fait : les étages, l’entrée et la sortie.',
+      overlays: { autoDetails: true, pitchCircles: false, lineOfAction: false, dimensions: false,
+        axes: false, envelope: false, forces: false, rpm: false, ratios: true,
+        powerFlow: false, spatialAxes: false, labels: true } },
+    { id: 'motion', label: 'Mouvement', help: 'Comment ça bouge : sens, vitesses, chemin de la puissance.',
+      overlays: { autoDetails: true, pitchCircles: false, lineOfAction: false, dimensions: false,
+        axes: true, envelope: false, forces: false, rpm: true, ratios: true,
+        powerFlow: true, spatialAxes: true, labels: true } },
+    { id: 'sizing', label: 'Dimensionnement', help: 'Quelle taille ça fait : cotes, axes, encombrement.',
+      overlays: { autoDetails: true, pitchCircles: true, lineOfAction: false, dimensions: true,
+        axes: true, envelope: true, forces: false, rpm: false, ratios: false,
+        powerFlow: false, spatialAxes: true, labels: true } },
+    { id: 'mechanical', label: 'Mécanique', help: 'Est-ce que ça tient : efforts, contact, alertes.',
+      overlays: { autoDetails: true, pitchCircles: true, lineOfAction: true, dimensions: false,
+        axes: false, envelope: false, forces: true, rpm: true, ratios: false,
+        powerFlow: false, spatialAxes: false, labels: true } }
+  ];
+
+  function preset(id) {
+    for (var i = 0; i < PRESETS.length; i++) if (PRESETS[i].id === id) return PRESETS[i];
+    return null;
+  }
+
   function kebab(name) { return name.replace(/[A-Z]/g, function (letter) { return '-' + letter.toLowerCase(); }); }
 
   function ViewerToolbar(container) {
@@ -35,6 +73,9 @@
     // au régime réel d'entrée). Les poses sont identiques dans les deux cas.
     this.animationMode = 'pedagogical';
     this.overlays = Object.assign({}, DEFAULT_OVERLAYS);
+    // Aucun préréglage actif au départ : l'état d'usine n'en est pas un, et
+    // allumer un bouton qui ne décrit pas l'écran serait un mensonge de plus.
+    this.preset = null;
     this.geometry = new GearApp.visualization.GeometryRenderer(container);
     this.kinematic = GearApp.visualization.kinematicRenderer;
     // Instances longue durée : chaque vue reconstruit son svg à chaque rendu.
@@ -61,6 +102,7 @@
     this.inspector.setSolution(solution, rendered && rendered.scene);
     this._applyState(rendered);
     this._renderFidelity(rendered);
+    this._syncZoomTier();
     return rendered;
   };
 
@@ -125,6 +167,62 @@
       rendered.selectStage(this.selectedStage, true);
       this.inspector.show(this.selectedStage);
     }
+  };
+
+  /**
+   * Applique un préréglage. Il pose l'état complet et devient le préréglage
+   * actif ; toucher ensuite une case individuelle le quitte — l'écran ne doit
+   * pas prétendre « Mécanique » quand on vient d'éteindre les efforts.
+   */
+  ViewerToolbar.prototype.setPreset = function (id) {
+    var entry = preset(id);
+    if (!entry) return this;
+    this.preset = id;
+    Object.keys(entry.overlays).forEach(function (name) {
+      this.overlays[name] = entry.overlays[name];
+    }, this);
+    var renderer = this.renderer();
+    if (renderer && renderer.setAutoDetails) renderer.setAutoDetails(this.overlays.autoDetails);
+    this._applyOverlayClasses();
+    this._syncOverlayInputs();
+    this._markPreset();
+    this.container.dispatchEvent(new CustomEvent('viewer:preset-changed', { detail: { preset: id } }));
+    return this;
+  };
+
+  /** Les cases doivent refléter l'état : sinon elles décrivent le précédent. */
+  ViewerToolbar.prototype._syncOverlayInputs = function () {
+    var overlays = this.overlays;
+    document.querySelectorAll('#viewerDisplayMenu [data-overlay]').forEach(function (input) {
+      var wanted = !!overlays[input.dataset.overlay];
+      if (input.checked !== wanted) input.checked = wanted;
+    });
+  };
+
+  ViewerToolbar.prototype._markPreset = function () {
+    var current = this.preset;
+    document.querySelectorAll('[data-preset]').forEach(function (button) {
+      var mine = button.dataset.preset === current;
+      button.classList.toggle('active', mine);
+      button.setAttribute('aria-pressed', String(mine));
+    });
+  };
+
+  /**
+   * Reporte le palier de lecture sur le conteneur. Le tracé, lui, garde sa
+   * finesse calculée par roue : un seuil global se tromperait sur une roue de
+   * 8 dents à côté d'une de 200.
+   */
+  ViewerToolbar.prototype._syncZoomTier = function () {
+    var renderer = this.renderer();
+    var viewport = renderer && renderer.viewport;
+    var tier = viewport && viewport.zoomTier ? viewport.zoomTier() : null;
+    var classes = this.container.classList;
+    GearViewportController.ZOOM_TIERS.forEach(function (entry) {
+      classes.toggle('zoom-' + entry.name, !!tier && tier.id === entry.id);
+    });
+    this.container.dataset.zoomTier = tier ? tier.name : '';
+    return this;
   };
 
   ViewerToolbar.prototype._applyOverlayClasses = function () {
@@ -212,6 +310,10 @@
 
   ViewerToolbar.prototype.setOverlay = function (name, enabled) {
     this.overlays[name] = !!enabled;
+    // Régler une case à la main quitte le préréglage : le contraire ferait
+    // dire « Mécanique » à un écran dont on vient d'éteindre les efforts.
+    this.preset = null;
+    this._markPreset();
     this.container.classList.toggle('hide-' + kebab(name), !enabled);
     if (name === 'autoDetails') {
       var renderer = this.renderer();
@@ -223,10 +325,22 @@
 
   ViewerToolbar.prototype.bind = function () {
     var self = this, controls = document.querySelector('.viz-controls');
+    // §4 : lire une roue au survol, tout de suite. L'information est déjà dans
+    // les `<title>` ; seule sa consultation était lente.
+    if (GearApp.visualization.ViewerHUD && !this.hud) {
+      this.hud = new GearApp.visualization.ViewerHUD(this.container).bind();
+    }
+    // §2 : le palier de lecture suit le zoom, dans les trois vues. Il est porté
+    // par une classe du conteneur, ce qui laisse chaque vue décider en CSS de
+    // ce qu'elle montre à quel palier — sans qu'aucune n'ait à connaître les
+    // seuils.
+    this.container.addEventListener('viewport:changed', function () { self._syncZoomTier(); });
     if (!controls) return;
     controls.addEventListener('click', function (event) {
       var view = event.target.closest('.view-mode');
       if (view) { self.setView(view.dataset.view); return; }
+      var chosen = event.target.closest('[data-preset]');
+      if (chosen) { self.setPreset(chosen.dataset.preset); return; }
       var renderer = self.renderer();
       if (event.target.id === 'viewerAnimate') { self.toggleAnimation(); return; }
       if (event.target.id === 'viewerReverse') {
@@ -265,5 +379,7 @@
   };
 
   ViewerToolbar.DEFAULT_OVERLAYS = DEFAULT_OVERLAYS;
+  ViewerToolbar.PRESETS = PRESETS;
+  ViewerToolbar.preset = preset;
   GearApp.visualization.ViewerToolbar = ViewerToolbar;
 })(GearApp);
