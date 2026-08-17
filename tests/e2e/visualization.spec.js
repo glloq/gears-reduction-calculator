@@ -341,6 +341,88 @@ test('the same input angle yields the same member angles in all three views', as
   expect(new Set(Object.values(angles.teeth)).size).toBeGreaterThan(2);
 });
 
+test('the three views agree on who drives and who is held, in all six topologies (§31)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  const TOPOLOGIES = [
+    { inputMember: 'S', fixed: 'R', outputMember: 'C' }, { inputMember: 'S', fixed: 'C', outputMember: 'R' },
+    { inputMember: 'R', fixed: 'S', outputMember: 'C' }, { inputMember: 'R', fixed: 'C', outputMember: 'S' },
+    { inputMember: 'C', fixed: 'S', outputMember: 'R' }, { inputMember: 'C', fixed: 'R', outputMember: 'S' }
+  ];
+  // La classe de dessin d'un organe n'est pas son code de schéma : la vue
+  // Denture parle de « sun », « ring », « planet-carrier ». C'est justement le
+  // genre de correspondance qu'une vue ne doit pas déduire toute seule.
+  const CLASS_OF = { S: 'sun', R: 'ring', C: 'planet-carrier' };
+
+  for (const topology of TOPOLOGIES) {
+    const report = await page.evaluate(({ topology, classOf }) => {
+      Object.assign(window.__viewer.solution.stages[0], topology);
+      const out = {};
+      for (const view of ['teeth', 'geometry', 'kinematic']) {
+        window.__viewer.setView(view);
+        const renderer = window.__viewer.renderer();
+        const scene = renderer.scene;
+        // La référence est la SCÈNE : chaque vue est comparée à elle, jamais
+        // les vues entre elles — sinon trois vues également fausses passeraient.
+        const truth = ['input', 'output', 'fixed'].reduce((acc, role) => {
+          const member = scene.functionalMember(0, role);
+          acc[role] = { code: member.role, name: member.memberName, rpm: member.mechanical.rpm };
+          return acc;
+        }, {});
+        const svg = document.querySelector('#svgContainer svg');
+        const hatch = svg.querySelector('.ground-hatch');
+        let grounded = null;
+        if (hatch && view === 'teeth') {
+          const owner = hatch.closest('.train-wheel, .planet-carrier');
+          grounded = owner ? Object.keys(classOf).find(code => owner.classList.contains(classOf[code])) : null;
+        }
+        out[view] = { truth: truth, text: svg.textContent, hatches: svg.querySelectorAll('.ground-hatch').length, grounded: grounded };
+      }
+      return out;
+    }, { topology, classOf: CLASS_OF });
+
+    const label = JSON.stringify(topology);
+    for (const view of ['teeth', 'geometry', 'kinematic']) {
+      const seen = report[view];
+      // 1. Chaque vue lit la même topologie que la scène.
+      expect(seen.truth.input.code, view + ' ' + label).toBe(topology.inputMember);
+      expect(seen.truth.output.code, view + ' ' + label).toBe(topology.outputMember);
+      expect(seen.truth.fixed.code, view + ' ' + label).toBe(topology.fixed);
+      // 2. L'organe bloqué ne tourne pas, quelle que soit la vue.
+      expect(Math.abs(seen.truth.fixed.rpm || 0), view + ' ' + label).toBeLessThan(1e-6);
+      // 3. Et chacune le montre : le bâti est dessiné, pas seulement calculé.
+      expect(seen.hatches, view + ' ' + label).toBeGreaterThan(3);
+    }
+    // 4. En Denture, le bâti est bien SUR l'organe bloqué — c'était le défaut :
+    //    la couronne était hachurée quelle que soit la topologie.
+    expect(report.teeth.grounded, label).toBe(topology.fixed);
+    // 5. La cinématique nomme les trois organes, avec leur fonction.
+    expect(report.kinematic.text, label).toContain('Fixe · ' + report.kinematic.truth.fixed.name);
+    expect(report.kinematic.text, label).toContain('Entrée · ' + report.kinematic.truth.input.name);
+  }
+});
+
+test('the inspector reports the same speeds whichever view opened it (§31)', async ({ page }) => {
+  await mount(page, ['spur', 'planetary']);
+  const readings = {};
+  for (const view of ['teeth', 'geometry', 'kinematic']) {
+    await showView(page, view);
+    readings[view] = await page.evaluate(() => {
+      const inspector = window.__viewer.inspector;
+      const rows = [];
+      for (let index = 0; index < 2; index++) {
+        inspector.show(index);
+        rows.push(document.querySelector('#stageInspector .inspector-grid').textContent);
+      }
+      return rows;
+    });
+  }
+  // L'inspecteur lit la scène de la vue courante : trois scènes, un seul texte.
+  expect(readings.geometry).toEqual(readings.teeth);
+  expect(readings.kinematic).toEqual(readings.teeth);
+  // Et il dit bien quelque chose : sinon l'égalité serait vide de sens.
+  expect(readings.teeth[1]).toContain('Rapport de base');
+});
+
 test('belt markers travel around the pulleys, not only along the strands', async ({ page }) => {
   await mount(page, ['belt']);
   await showView(page, 'teeth');
