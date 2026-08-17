@@ -44,6 +44,7 @@
     this._emptyHintDefault = hint ? hint.textContent : '';
 
     this._bindConfigurationFlow();
+    this._bindMobilePanes();
     this._bindObjective();
     this._bindTypes();
     this._bindTypeTemplate();
@@ -67,7 +68,11 @@
       var bar = document.querySelector('.sticky-progress');
       if (bar) bar.style.width = data.percent + '%';
     });
-    this.bus.on('compare:changed', function (data) { self._pinnedUids = data.uids || []; self._refreshPinMarks(); });
+    this.bus.on('compare:changed', function (data) {
+      self._pinnedUids = data.uids || [];
+      self._refreshPinMarks();
+      self._refreshDetailTabs();
+    });
   };
 
   Workbench.prototype._refreshPinMarks = function () {
@@ -110,6 +115,19 @@
         if (start) start.click();
       },
       onClose: function () { self._refreshConfigurationFlow(); }
+    });
+
+    // §26 : repartir d'une solution trouvée, sans la ressaisir. Le modèle
+    // « réducteur existant » attend exactement des étages au format moteur —
+    // c'est ce que la solution porte déjà.
+    var optimise = el('optimiseSolutionBtn');
+    if (optimise) optimise.addEventListener('click', function () {
+      var solution = self.solutions && self.selected != null ? self.solutions[self.selected] : null;
+      if (!solution || !self.session) return;
+      self.session.existing = new GearApp.requirements.ExistingReducer({ stages: solution.stages });
+      self.session.intent.setMode('improve');
+      self.session.invalidate();
+      self.modal.open(0);
     });
 
     var edit = el('editSearchBtn');
@@ -486,15 +504,55 @@
   Workbench.prototype._bindSummary = function () { return this; };
 
   /** Le cahier des charges en une ligne, dans le bandeau (§16). */
+  /**
+   * §15 : le bandeau enfilait TOUT le cahier des charges en une phrase, qui
+   * pouvait tenir sur trois lignes. Il sert à IDENTIFIER le projet, pas à
+   * remplacer le modal : on garde les premiers éléments, on compte le reste.
+   */
+  var BANNER_PARTS = 4;
+
   Workbench.prototype.updateSummary = function () {
     var banner = el('requirementBannerText'), legacy = el('configurationSummary');
     if (!this.session) return;
-    var text = this.session.isEmpty()
-      ? 'Aucune recherche définie.'
-      : this.session.summarise().join(' · ');
-    if (banner) banner.textContent = text;
-    if (legacy) legacy.textContent = text;
+    var parts = this.session.isEmpty() ? [] : this.session.summarise();
+    var full = parts.length ? parts.join(' · ') : 'Aucune recherche définie.';
+    if (legacy) legacy.textContent = full;
+    if (!banner) return;
+    banner.title = full;
+    if (parts.length <= BANNER_PARTS) { banner.textContent = full; return; }
+    var rest = parts.length - BANNER_PARTS;
+    banner.textContent = parts.slice(0, BANNER_PARTS).join(' · ') +
+      ' · + ' + rest + (rest > 1 ? ' critères' : ' critère');
   };
+  /**
+   * §27 : choisir le volet visible sur téléphone. Sélectionner une solution
+   * bascule sur la vue — c'est ce qu'on vient de demander à voir — sans
+   * enfermer : les trois boutons restent là.
+   */
+  Workbench.prototype._bindMobilePanes = function () {
+    var self = this, nav = el('mobilePanes');
+    var grid = document.querySelector('.design-workspace');
+    if (!nav || !grid) return;
+    grid.dataset.mobilePane = 'results';
+    nav.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-pane]');
+      if (!button) return;
+      self.showMobilePane(button.dataset.pane);
+    });
+
+  };
+
+  Workbench.prototype.showMobilePane = function (pane) {
+    var nav = el('mobilePanes'), grid = document.querySelector('.design-workspace');
+    if (!nav || !grid) return;
+    grid.dataset.mobilePane = pane;
+    Array.prototype.forEach.call(nav.querySelectorAll('[data-pane]'), function (button) {
+      var active = button.dataset.pane === pane;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+  };
+
   Workbench.prototype._bindResultsView = function () {
     var container = el('result-container'), cards = el('cardsViewBtn'), table = el('tableViewBtn');
     if (!container || !cards || !table) return;
@@ -615,6 +673,17 @@
     var poolIndexOf = info && info.pool ? function (position) { return self._indices[position]; }
       : function (position) { return position; };
 
+    // §16 : deux cartes indépendantes obligent à comparer de tête. La
+    // solution de tête sert de RÉFÉRENCE, et les autres disent ce qu'elles
+    // gagnent ou perdent face à elle — c'est ce qui fait choisir.
+    var referencePosition = -1;
+    this.solutions.forEach(function (s, position) {
+      if (referencePosition === -1 && (annotation.byIndex[poolIndexOf(position)] || []).indexOf('recommended') >= 0) {
+        referencePosition = position;
+      }
+    });
+    var reference = referencePosition >= 0 ? this.solutions[referencePosition] : null;
+
     // Toutes les tuiles de la vue sont rendues : le compteur de la barre
     // d'affinage correspond exactement à ce qui est affiché.
     this.solutions.forEach(function (s, position) {
@@ -653,13 +722,17 @@
       var violations = annotation.compliance[poolIndexOf(position)] || (preferences ? [] : null);
       var why = Evaluator.explain(s, badges, violations, intent);
 
+      var deltas = reference && s !== reference ? deltaMarkup(s, reference, linear) : {};
+      var referenceMark = s === reference ? '<span class="solution-reference">— référence —</span>' : '';
+
       tile.innerHTML =
         '<header class="solution-card-head">' + badgeMarkup + origin +
           '<button class="tile-pin" title="Épingler pour comparer" aria-pressed="false">☆</button></header>' +
-        '<h3 class="solution-architecture">' + architecture + '</h3>' +
+        '<h3 class="solution-architecture">' + architecture + referenceMark + '</h3>' +
         '<div class="solution-metrics">' + metrics.map(function (metric) {
           return '<span class="metric' + (metric[2] ? ' metric-primary' : ' metric-secondary') + '">' +
-            '<small>' + metric[0] + '</small><strong>' + metric[1] + '</strong></span>';
+            '<small>' + metric[0] + '</small><strong>' + metric[1] + '</strong>' +
+            (deltas[metric[0]] || '') + '</span>';
         }).join('') + '</div>' +
         (why ? '<p class="solution-why">' + why + '</p>' : '') +
         '<footer class="solution-card-actions"><button type="button" class="btn-small solution-view">Voir</button></footer>';
@@ -667,6 +740,10 @@
       function select() {
         self.selected = index;
         self.bus.emit('solution:selected', { index: index, solution: s });
+        // §27 : choisir une solution, c'est demander à la voir. La sélection
+        // AUTOMATIQUE du premier résultat, elle, ne demande rien — basculer
+        // dessus cacherait la liste avant qu'on l'ait lue.
+        if (window.matchMedia('(max-width: 1000px)').matches) self.showMobilePane('viewer');
         self._markSelected();
       }
       tile.addEventListener('click', select);
@@ -686,6 +763,63 @@
     this._refreshPinMarks();
 
     this._markSelected();
+    this._refreshDetailTabs();
+  };
+
+  /**
+   * §16 : ce qu'une solution gagne ou perd face à la référence, métrique par
+   * métrique. `better` dit dans quel sens va le mieux : un Ø plus petit est un
+   * gain, un rendement plus petit une perte, et confondre les deux rendrait
+   * l'écart illisible.
+   */
+  var DELTA_METRICS = {
+    'Rendement': { read: function (s) { return s.efficiency * 100; }, digits: 1, unit: ' pt', better: 'up' },
+    'Couple': { read: function (s) { return s.outputTorqueNm; }, digits: 1, unit: ' N·m', better: 'up' },
+    'Ø max': { read: function (s) { return s.dimensions && s.dimensions.maxDiameter; }, digits: 0, unit: ' mm', better: 'down' },
+    'Étages': { read: function (s) { return (s.stages || []).length; }, digits: 0, unit: '', better: 'down' },
+    'Force': { read: function (s) { return s.outputForceN; }, digits: 1, unit: ' N', better: 'up' },
+    'Ø pignon': { read: function (s) { return s.dimensions && s.dimensions.maxDiameter; }, digits: 1, unit: ' mm', better: 'down' }
+  };
+
+  function deltaMarkup(solution, reference) {
+    var out = {};
+    Object.keys(DELTA_METRICS).forEach(function (name) {
+      var spec = DELTA_METRICS[name];
+      var mine = spec.read(solution), theirs = spec.read(reference);
+      if (!Number.isFinite(mine) || !Number.isFinite(theirs)) return;
+      var gap = mine - theirs;
+      var rounded = Math.round(gap * Math.pow(10, spec.digits)) / Math.pow(10, spec.digits);
+      if (!rounded) return;
+      var good = spec.better === 'up' ? rounded > 0 : rounded < 0;
+      out[name] = '<span class="metric-delta ' + (good ? 'delta-better' : 'delta-worse') + '">' +
+        (rounded > 0 ? '+' : '−') + Math.abs(rounded).toFixed(spec.digits) + spec.unit + '</span>';
+    });
+    return out;
+  }
+
+  /**
+   * §25 : « Comparer » n'a de sens qu'avec des solutions épinglées,
+   * « Graphiques » qu'avec un vivier à tracer, et « Journal » relève du
+   * diagnostic. Les montrer toujours faisait payer cinq onglets pour deux.
+   */
+  Workbench.prototype._refreshDetailTabs = function () {
+    var tabs = document.querySelector('.detail-tabs');
+    if (!tabs) return;
+    var pinned = (this._pinnedUids || []).length;
+    var pool = this.solutions ? this.solutions.length : 0;
+    var visible = { comparer: pinned > 1, graphiques: pool > 0, journal: false };
+    Array.prototype.forEach.call(tabs.querySelectorAll('[data-detail]'), function (button) {
+      var id = button.dataset.detail;
+      if (!(id in visible)) return;
+      button.hidden = !visible[id];
+      // Un onglet qui disparaît ne doit pas laisser son panneau actif.
+      if (button.hidden && button.classList.contains('active')) {
+        var first = tabs.querySelector('[data-detail="analyse"]');
+        if (first) first.click();
+      }
+    });
+    var actions = el('detailActions');
+    if (actions) actions.hidden = this.selected == null || pool === 0;
   };
 
   /**
@@ -706,7 +840,19 @@
       if (title) title.textContent = 'Décrivez la transmission que vous recherchez';
       if (hint) hint.textContent = this._emptyHintDefault;
       if (blockers) { blockers.hidden = true; blockers.textContent = ''; }
-      if (actions) { actions.hidden = true; actions.textContent = ''; }
+      // §29 : l'état vide dit quoi faire ET permet de le faire. Renvoyer vers
+      // « le panneau de gauche » ne menait nulle part depuis qu'il a disparu.
+      if (actions) {
+        actions.textContent = '';
+        var open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'btn-primary';
+        open.id = 'openSearchFromEmpty';
+        open.textContent = 'Définir la recherche';
+        open.addEventListener('click', function () { if (self.modal) self.modal.open(); });
+        actions.appendChild(open);
+        actions.hidden = false;
+      }
       return;
     }
 

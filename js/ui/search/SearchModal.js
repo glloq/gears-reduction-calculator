@@ -142,11 +142,19 @@
     this.context.id = 'searchModalContext';
     footer.appendChild(this.context);
 
-    this.nextButton = node('button', 'btn-small', 'Suivant');
+    this.nextButton = node('button', 'btn-small', 'Continuer');
     this.nextButton.type = 'button';
     this.nextButton.id = 'searchModalNext';
     this.nextButton.addEventListener('click', function () { self.goTo(self.step + 1); });
     footer.appendChild(this.nextButton);
+
+    // §10 : « 1500 rpm → 100 rpm » n'a rien à affiner. Le bouton reste offert,
+    // il cesse simplement d'être un passage obligé.
+    this.refineButton = node('button', 'btn-small', 'Affiner…');
+    this.refineButton.type = 'button';
+    this.refineButton.id = 'searchModalRefine';
+    this.refineButton.addEventListener('click', function () { self.goTo(STEPS.length - 1); });
+    footer.appendChild(this.refineButton);
 
     this.searchButton = node('button', 'btn-primary', 'Rechercher les solutions');
     this.searchButton.type = 'button';
@@ -479,16 +487,15 @@
   /**
    * §24 : une étape n'était qu'active ou inactive. Dire laquelle retient
    * encore la recherche évite de chercher l'information manquante à l'aveugle.
+   *
+   * §14 : la correspondance `code → étape` vivait ici, dans une table à tenir
+   * à jour à chaque nouveau diagnostic. Chaque note porte désormais sa
+   * `section` : plus rien à synchroniser, et rien ne peut être oublié.
    */
-  var STEP_OF_ERROR = {
-    'no-problem': 'need', 'no-existing': 'type',
-    'existing-stage': 'type', 'no-technology': 'type'
-  };
-
   SearchModal.prototype._stepStates = function () {
     var blocking = {};
     this.draft.diagnose().forEach(function (note) {
-      if (note.level === 'error' && STEP_OF_ERROR[note.code]) blocking[STEP_OF_ERROR[note.code]] = true;
+      if (note.level === 'error' && note.section) blocking[note.section] = true;
     });
     return blocking;
   };
@@ -725,24 +732,6 @@
       host.textContent = '';
       var fatigue = self.draft.technical.fatigue;
 
-      var distance = node('label', 'service-field');
-      distance.appendChild(node('span', null, 'Distance entre arbres (mm)'));
-      var input = document.createElement('input');
-      input.type = 'number';
-      input.min = '0';
-      input.id = 'shaftDistance';
-      input.placeholder = 'libre';
-      input.value = self.draft.requirement.architecture.shaftDistanceMm == null
-        ? '' : String(self.draft.requirement.architecture.shaftDistanceMm);
-      input.addEventListener('change', function () {
-        var value = parseFloat(input.value);
-        self.draft.requirement.architecture.shaftDistanceMm = isFinite(value) && value > 0 ? value : null;
-        self.draft.invalidate();
-        refresh(false);
-      });
-      distance.appendChild(input);
-      host.appendChild(distance);
-
       SERVICE_FIELDS.forEach(function (field) {
         // Le détail du cycle n'a de sens qu'une fois la fatigue demandée.
         if (field.key !== 'enabled' && !fatigue.enabled) return;
@@ -923,9 +912,16 @@
     this._renderSummary();
 
     this.context.textContent = this._context();
-    this.backButton.disabled = this.step === 0;
-    this.nextButton.hidden = this.step === STEPS.length - 1;
+    // §11 : le pied de page dit ce qu'il reste à faire, pas tout ce qu'on
+    // pourrait faire. Trois boutons permanents obligeaient à choisir entre des
+    // actions dont une seule avait du sens.
     var ready = this.draft.isReady();
+    var last = this.step === STEPS.length - 1;
+    this.backButton.hidden = this.step === 0;
+    this.backButton.disabled = this.step === 0;
+    this.nextButton.hidden = last || ready;
+    this.refineButton.hidden = last || !ready;
+    this.searchButton.hidden = !ready && !last;
     this.searchButton.disabled = !ready;
     // §28 : un bouton désactivé doit dire POURQUOI, et le dire au lecteur
     // d'écran — un `title` seul ne lui parvient pas.

@@ -29,9 +29,13 @@
 
   /** Les grandeurs de la fiche, avec leur unité et le rôle qu'elles tiennent. */
   var FIELDS = [
+    // §6 : une plaque moteur porte presque toujours une vitesse et une
+    // PUISSANCE ; le couple s'en déduit. Les deux restent saisissables, mais
+    // aucun des deux n'est imposé — c'est le sélecteur d'entrée qui décide
+    // lequel est demandé.
     { path: 'input.speed', label: 'Vitesse d’entrée', unit: 'rpm', side: 'input', essential: true },
-    { path: 'input.torque', label: 'Couple d’entrée', unit: 'N·m', side: 'input', essential: true },
-    { path: 'input.power', label: 'Puissance moteur', unit: 'W', side: 'input' },
+    { path: 'input.power', label: 'Puissance moteur', unit: 'W', side: 'input', motor: 'power' },
+    { path: 'input.torque', label: 'Couple d’entrée', unit: 'N·m', side: 'input', motor: 'torque' },
     { path: 'output.speed', label: 'Vitesse de sortie', unit: 'rpm', side: 'output' },
     { path: 'output.torque', label: 'Couple de sortie', unit: 'N·m', side: 'output' },
     { path: 'output.force', label: 'Force de sortie', unit: 'N', side: 'output', linear: true },
@@ -185,46 +189,52 @@
 
   // ===== Diagnostic vivant, sans lancer le solveur (10C) =====
 
+  /**
+   * §14 : chaque note dit de quelle ÉTAPE elle relève, et si possible de quel
+   * champ. Un tableau `code → étape` tenu à part se désynchronisait dès qu'un
+   * diagnostic nouveau apparaissait ; porter l'information à la source rend
+   * l'oubli impossible et permet de sauter droit au champ fautif.
+   */
   RequirementModel.prototype.diagnose = function () {
     var notes = [], problem = this.inferProblem(), ratio = this.ratioRequirement();
 
     if (!problem.mode) {
-      notes.push({ level: 'error', code: 'no-problem', text: problem.reason });
+      notes.push({ level: 'error', code: 'no-problem', section: 'need', field: 'output.speed', text: problem.reason });
     } else {
-      notes.push({ level: 'ok', code: 'problem', text: problem.reason });
+      notes.push({ level: 'ok', code: 'problem', section: 'need', text: problem.reason });
     }
 
     if (!this.input.speed.isKnown()) {
-      notes.push({ level: 'warn', code: 'no-input-speed', text: 'Sans vitesse d’entrée, les vitesses de sortie affichées seront approximatives.' });
+      notes.push({ level: 'warn', code: 'no-input-speed', section: 'need', field: 'input.speed', text: 'Sans vitesse d’entrée, les vitesses de sortie affichées seront approximatives.' });
     }
     var inputTorque = this.inputTorqueRequirement();
     if (!inputTorque.isKnown()) {
-      notes.push({ level: 'warn', code: 'no-input-torque', text: 'Sans couple ni puissance d’entrée, la tenue mécanique ne peut pas être vérifiée.' });
+      notes.push({ level: 'warn', code: 'no-input-torque', section: 'need', field: 'input.power', text: 'Sans couple ni puissance d’entrée, la tenue mécanique ne peut pas être vérifiée.' });
     } else if (!this.input.torque.isKnown()) {
-      notes.push({ level: 'ok', code: 'derived-torque', text: 'Couple d’entrée déduit de la puissance : ' + inputTorque.describe() + '.' });
+      notes.push({ level: 'ok', code: 'derived-torque', section: 'need', field: 'input.power', text: 'Couple d’entrée déduit de la puissance : ' + inputTorque.describe() + '.' });
     }
 
     if (ratio.isKnown()) {
       var nominal = ratio.nominal(), bounds = ratio.bounds();
       if (nominal != null && nominal > 0 && nominal < 1) {
-        notes.push({ level: 'warn', code: 'multiplier', text: 'Le rapport demandé est un multiplicateur : la sortie tournera plus vite que l’entrée.' });
+        notes.push({ level: 'warn', code: 'multiplier', section: 'need', field: 'ratio', text: 'Le rapport demandé est un multiplicateur : la sortie tournera plus vite que l’entrée.' });
       }
       if (nominal != null && nominal > 200) {
-        notes.push({ level: 'warn', code: 'very-high-ratio', text: 'Rapport très élevé : il demandera plusieurs étages, ou une vis sans fin.' });
+        notes.push({ level: 'warn', code: 'very-high-ratio', section: 'need', field: 'ratio', text: 'Rapport très élevé : il demandera plusieurs étages, ou une vis sans fin.' });
       }
       // Seule une INTENTION de plage peut être trop étroite. Un rapport donné
       // comme exact n'est pas un intervalle resserré, c'est une valeur.
       if (ratio.kind === 'range' && bounds.min != null && bounds.max != null && bounds.min > 0) {
         var span = (bounds.max - bounds.min) / bounds.min;
-        if (span < 0.005) notes.push({ level: 'warn', code: 'tight-ratio', text: 'La plage de rapport est très étroite : peu de combinaisons de dentures tomberont dedans.' });
+        if (span < 0.005) notes.push({ level: 'warn', code: 'tight-ratio', section: 'need', field: 'ratio', text: 'La plage de rapport est très étroite : peu de combinaisons de dentures tomberont dedans.' });
       }
     }
 
     if (this.architecture.axisAngle === 90 && this.architecture.coaxial === 'required') {
-      notes.push({ level: 'error', code: 'axis-conflict', text: 'Un renvoi d’angle et une sortie coaxiale s’excluent.' });
+      notes.push({ level: 'error', code: 'axis-conflict', section: 'type', text: 'Un renvoi d’angle et une sortie coaxiale s’excluent.' });
     }
     if (this.architecture.selfLocking === 'required' && this.architecture.direction === 'any' && this.fabrication.process === 'printing3d') {
-      notes.push({ level: 'warn', code: 'printed-worm', text: 'L’irréversibilité passe par une vis sans fin, difficile à imprimer avec un bon rendement.' });
+      notes.push({ level: 'warn', code: 'printed-worm', section: 'type', text: 'L’irréversibilité passe par une vis sans fin, difficile à imprimer avec un bon rendement.' });
     }
     return notes;
   };

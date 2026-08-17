@@ -101,3 +101,96 @@ test('every declared lead label matches a real objective', () => {
     assert.ok(Intent.objective(objective), objective + ' n’est pas une performance proposée');
   }
 });
+
+// ===== §6 : puissance ou couple, comme sur une plaque moteur =====
+
+test('the input block asks for what a nameplate actually carries', () => {
+  const model = fs.readFileSync('js/requirements/RequirementModel.js', 'utf8');
+  // La puissance précède le couple, et aucun des deux n'est imposé.
+  const input = model.slice(model.indexOf("path: 'input.speed'"), model.indexOf("path: 'output.speed'"));
+  assert.ok(input.indexOf("input.power") < input.indexOf("input.torque"), 'la puissance vient en premier');
+  assert.match(input, /path: 'input\.power'.*motor: 'power'/);
+  assert.match(input, /path: 'input\.torque'.*motor: 'torque'/);
+  assert.doesNotMatch(input, /path: 'input\.torque'[^\n]*essential: true/);
+  // Le choix vit dans la session, et se DÉDUIT de ce qui est renseigné.
+  assert.match(session, /SearchSession\.prototype\.motorInput = function/);
+  assert.match(session, /SearchSession\.prototype\.setMotorInput = function/);
+  assert.match(sheet, /choice === 'both' \|\| choice === field\.motor/);
+});
+
+// ===== §13, §14 : chaque chose à sa place =====
+
+test('the shaft distance is an architecture datum, not a service one', () => {
+  const modal = fs.readFileSync('js/ui/search/SearchModal.js', 'utf8');
+  assert.doesNotMatch(modal, /shaftDistance/);
+  assert.match(typeStep, /id = 'shaftDistance'/);
+});
+
+test('every diagnostic says which step it belongs to', () => {
+  const Requirement = require('../js/requirements/RequirementModel.js');
+  const notes = new Requirement.RequirementModel().diagnose();
+  assert.ok(notes.length);
+  for (const note of notes) {
+    assert.ok(note.section, note.code + ' ne dit pas de quelle étape il relève');
+  }
+  // Le modal n'entretient plus de table code → étape : elle se désynchronisait.
+  const modal = fs.readFileSync('js/ui/search/SearchModal.js', 'utf8');
+  assert.doesNotMatch(modal, /STEP_OF_ERROR/);
+  assert.match(modal, /note\.section\) blocking\[note\.section\] = true/);
+});
+
+// ===== §16, §22, §25, §26 : les résultats aident à choisir =====
+
+test('cards state what they gain or lose against the reference', () => {
+  const workbench = fs.readFileSync('js/ui/Workbench.js', 'utf8');
+  assert.match(workbench, /var DELTA_METRICS = \{/);
+  assert.match(workbench, /function deltaMarkup/);
+  // Un Ø plus petit est un gain, un rendement plus petit une perte : confondre
+  // les deux rendrait l'écart illisible.
+  assert.match(workbench, /'Ø max': \{[\s\S]*?better: 'down'/);
+  assert.match(workbench, /'Rendement': \{[\s\S]*?better: 'up'/);
+  assert.match(workbench, /solution-reference/);
+});
+
+test('the results panel drops what has nothing to show', () => {
+  const workbench = fs.readFileSync('js/ui/Workbench.js', 'utf8');
+  const explorer2 = fs.readFileSync('js/ui/SolutionExplorer.js', 'utf8');
+  const html = fs.readFileSync('index.html', 'utf8');
+  // §25 : comparer sans épingles, tracer sans vivier, n'a rien à montrer.
+  assert.match(workbench, /_refreshDetailTabs/);
+  assert.match(workbench, /comparer: pinned > 1, graphiques: pool > 0, journal: false/);
+  // §22 : chaque famille dit ce qu'elle apporte.
+  assert.match(explorer2, /refine-chip-count/);
+  // §24 : la vue linéaire simplifiée quitte l'interface.
+  assert.doesNotMatch(html, /Vue linéaire simplifiée/);
+  // §26 : repartir d'une solution trouvée.
+  assert.match(workbench, /optimiseSolutionBtn/);
+  assert.match(workbench, /new GearApp\.requirements\.ExistingReducer\(\{ stages: solution\.stages \}\)/);
+});
+
+// ===== §10, §11, §27, §29, §30 =====
+
+test('the modal footer offers only what the state allows', () => {
+  const modal = fs.readFileSync('js/ui/search/SearchModal.js', 'utf8');
+  assert.match(modal, /id = 'searchModalRefine'/);
+  assert.match(modal, /this\.nextButton\.hidden = last \|\| ready/);
+  assert.match(modal, /this\.refineButton\.hidden = last \|\| !ready/);
+});
+
+test('mobile picks a pane instead of stacking three', () => {
+  const workbench = fs.readFileSync('js/ui/Workbench.js', 'utf8');
+  const layout = fs.readFileSync('css/layout.css', 'utf8');
+  assert.match(workbench, /Workbench\.prototype\.showMobilePane = function/);
+  assert.match(layout, /data-mobile-pane="viewer"/);
+  // §28 : l'inspecteur reste sous le viewer, pas sous la liste.
+  assert.match(layout, /\.design-workspace > \.detail-pane \{ grid-column: 2; grid-row: 2; \}/);
+});
+
+test('nothing still points at a panel that no longer exists', () => {
+  const html = fs.readFileSync('index.html', 'utf8');
+  assert.doesNotMatch(html, /panneau de gauche/);
+  assert.doesNotMatch(html, /Mode expert/);
+  // §30 : le produit dépasse le calcul d'engrenages.
+  assert.match(html, /Concepteur de transmissions/);
+  assert.doesNotMatch(html, /<strong>Calculateur d'engrenages<\/strong>/);
+});

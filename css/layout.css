@@ -64,16 +64,21 @@ body.has-results .workspace-empty { display: none; }
 
 /* ----- Adaptatif ----- */
 
-/* Sous 1400 px l'inspecteur passe sous le viewer ; sous 1000 px tout s'empile.
-   On ne cherche pas à faire tenir trois colonnes sur un écran qui n'en porte
-   pas deux : le viewer resterait inutilisable. */
+/* §28 : sous 1400 px l'inspecteur passait sous les DEUX colonnes, donc aussi
+   sous la liste des solutions. Il décrit le viewer : il reste sous lui, et la
+   liste garde toute sa hauteur. Le lien « ce que je regarde → son analyse »
+   survit ainsi à la perte de la troisième colonne. */
 @media (max-width: 1400px) {
   .design-workspace { grid-template-columns: minmax(14rem, 1fr) minmax(0, 2.4fr); }
-  .design-workspace > .detail-pane { grid-column: 1 / -1; }
+  .design-workspace > .hero-viewer { grid-column: 2; grid-row: 1; }
+  .design-workspace > .detail-pane { grid-column: 2; grid-row: 2; }
+  .design-workspace > .results-pane { grid-column: 1; grid-row: 1 / span 2; }
 }
 @media (max-width: 1000px) {
   .design-workspace { grid-template-columns: minmax(0, 1fr); }
-  .design-workspace > .detail-pane { grid-column: auto; }
+  .design-workspace > .hero-viewer,
+  .design-workspace > .detail-pane,
+  .design-workspace > .results-pane { grid-column: auto; grid-row: auto; }
 }
 
 @media (max-width: 1000px) {
@@ -85,4 +90,31 @@ body.has-results .workspace-empty { display: none; }
   .brand small { display: none; }
   .header-actions #shareBtn { display: none; }
   .workspace { padding: var(--sp-3); }
+}
+
+/* §27 : navigation mobile entre les trois volets. Invisible au-dessus de
+   1000 px, où les trois tiennent côte à côte et n'ont rien à s'échanger. */
+.mobile-panes { display: none; }
+@media (max-width: 1000px) {
+  body.has-results .mobile-panes {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+    position: sticky; top: 0; z-index: 10;
+    margin-bottom: var(--sp-2);
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: var(--line); overflow: hidden;
+  }
+  .mobile-panes button {
+    padding: var(--sp-2); border: 0;
+    background: var(--surface-1); color: var(--muted);
+    font-size: var(--font-sm);
+  }
+  .mobile-panes button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  /* Un seul volet à la fois : le reste n'est pas replié, il est absent. */
+  body.has-results .design-workspace[data-mobile-pane="results"] > .hero-viewer,
+  body.has-results .design-workspace[data-mobile-pane="results"] > .detail-pane,
+  body.has-results .design-workspace[data-mobile-pane="viewer"] > .results-pane,
+  body.has-results .design-workspace[data-mobile-pane="viewer"] > .detail-pane,
+  body.has-results .design-workspace[data-mobile-pane="detail"] > .results-pane,
+  body.has-results .design-workspace[data-mobile-pane="detail"] > .hero-viewer { display: none; }
 }

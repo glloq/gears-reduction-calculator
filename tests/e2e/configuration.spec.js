@@ -23,7 +23,9 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(0);
   await expect(page.locator('.disposition-card')).toHaveCount(0);
   await expect(page.locator('.setting-row')).toHaveCount(2);
-  await expect(page.locator('[data-setting="technology"] .setting-value')).toContainText('familles explorées');
+  // §12 : la ligne repliée porte désormais le résultat du conseiller.
+  await expect(page.locator('[data-setting="technology"] .setting-value')).toContainText('familles');
+  await expect(page.locator('[data-setting="technology"] .setting-value')).toContainText('en tête :');
   // Et elles restent atteignables en un clic.
   await page.locator('.setting-toggle[data-setting="technology"]').click();
   await expect(page.locator('#technologyPolicy .policy-option')).toHaveCount(4);
@@ -309,7 +311,23 @@ test('the mobile layout turns the modal into a full-screen wizard', async ({ pag
   const box = await page.locator('.search-modal-panel').boundingBox();
   expect(box.width).toBeGreaterThanOrEqual(388);
   await search(page);
+  // §27 : sur téléphone les trois volets ne s'empilent plus, ils se
+  // choisissent. On arrive sur les solutions — la sélection automatique du
+  // premier résultat ne demande pas à voir le viewer.
+  await expect(page.locator('#mobilePanes')).toBeVisible();
+  await expect(page.locator('.design-workspace')).toHaveAttribute('data-mobile-pane', 'results');
+  await expect(page.locator('.solution-card').first()).toBeVisible();
+  await expect(page.locator('#svgContainer .train-svg')).toBeHidden();
+
+  // Choisir une solution, c'est demander à la voir.
+  await page.locator('.solution-card').first().click();
+  await expect(page.locator('.design-workspace')).toHaveAttribute('data-mobile-pane', 'viewer');
   await expect(page.locator('#svgContainer .train-svg')).toBeVisible();
+  await page.locator('#mobilePanes [data-pane="detail"]').click();
+  await expect(page.locator('.detail-pane')).toBeVisible();
+  await page.locator('#mobilePanes [data-pane="results"]').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible();
+
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   await expect(page.locator('#tableViewBtn')).toBeDisabled();
@@ -335,8 +353,10 @@ test('a nameplate power gives the torque, and unlocks the mechanical analysis', 
   await expect(page.locator('.analysis-level[data-level="forces"]')).toContainText('manquant');
 
   await setQuantity(page, 'input.power', 750);
-  await expect(page.locator('#derivedRatio')).toContainText('Couple d’entrée déduit');
-  await expect(page.locator('#derivedRatio')).toContainText('4.77');
+  // §6 : le couple déduit s'annonce là où la puissance se saisit — c'est de
+  // cette saisie qu'il découle, pas d'une ligne de dérivations à part.
+  await expect(page.locator('#motorDerivedTorque')).toContainText('couple calculé');
+  await expect(page.locator('#motorDerivedTorque')).toContainText('4.77');
   await expect(page.locator('.analysis-level[data-level="forces"]')).toHaveClass(/analysis-ok/);
 });
 
@@ -460,7 +480,9 @@ test('a shaft distance to span brings belts and chains forward', async ({ page }
   await setQuantity(page, 'input.speed', 1500);
   await setQuantity(page, 'ratio', 9);
   await page.locator('[data-step="criteria"]').click();
-  await openOption(page, 'service');
+  // §13 : la distance entre arbres est une donnée d'architecture, elle vit
+  // avec la disposition — pas avec la fatigue et les heures par jour.
+  await openSetting(page, 'disposition');
   await page.locator('#shaftDistance').fill('300');
   await page.locator('#shaftDistance').blur();
   await openSetting(page, 'technology');
