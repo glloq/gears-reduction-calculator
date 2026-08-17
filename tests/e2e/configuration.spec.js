@@ -452,6 +452,32 @@ test('a planetary chooses its topology automatically, or exactly as told', async
   await expect(analysis.locator('.stages-table').first()).toContainText('Épicycloïdal');
 });
 
+test('the last search survives a reload, and the old flat format is retired (§28, §29)', async ({ page }) => {
+  await page.goto('/');
+  // Une configuration écrite par une version précédente : elle doit encore
+  // être reprise, c'est tout le chemin de migration.
+  await page.evaluate(() => localStorage.setItem('gearCalcParams', JSON.stringify({ rapport: '7' })));
+  await setQuantity(page, 'ratio', 18);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 30000 });
+
+  const stored = await page.evaluate(() => ({
+    session: !!localStorage.getItem('gearLastSearch'),
+    version: JSON.parse(localStorage.getItem('gearLastSearch') || '{}').schemaVersion,
+    legacy: localStorage.getItem('gearCalcParams')
+  }));
+  expect(stored.session).toBe(true);
+  expect(stored.version).toBeGreaterThan(0);
+  // Deux mémoires de la même recherche, dont une jamais relue, c'est une de
+  // trop : la conversion faite, l'ancienne est effacée.
+  expect(stored.legacy).toBeNull();
+
+  // Et au rechargement, la recherche est bien celle qu'on avait lancée.
+  await page.reload();
+  await expect(page.locator('#searchModal')).toBeVisible();
+  expect(await page.inputValue('#rapport')).toBe('18');
+});
+
 test('a parameter set in the modal drives the search and the historic mirror', async ({ page }) => {
   await page.goto('/');
   await setQuantity(page, 'ratio', 12);

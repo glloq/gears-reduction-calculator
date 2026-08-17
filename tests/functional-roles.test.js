@@ -274,3 +274,45 @@ test('the inspector explains the ratio instead of listing the teeth', () => {
     mechanical: [{ ratio: 3 }], inputSpeedRpm: 1500 };
   assert.equal(Inspector.model(spur, 0, Registry, Scene.build(spur)).topology, null);
 });
+
+// ===== §30 : l'effort de denture ne dépend plus du seul solaire =====
+
+test('the planetary mesh load follows the driving member', () => {
+  const type = Registry.get('planetary');
+  const base = Object.assign(planetary(), { parameters: { module: 2, pressureAngle: 20 } });
+  const load = topology => type.calculateForces(Object.assign({}, base, topology), 10).tangentialN;
+
+  // Le calcul rapportait le couple au diamètre du solaire quoi qu'il arrive.
+  // Une couronne de 70 dents menant un solaire de 20 donnait donc un effort
+  // surestimé d'un facteur 3,5 — et des facteurs de sécurité sans valeur.
+  const bySun = load({ inputMember: 'S', fixed: 'R', outputMember: 'C' });
+  const byRing = load({ inputMember: 'R', fixed: 'S', outputMember: 'C' });
+  assert.ok(Math.abs(bySun / byRing - 70 / 20) < 1e-9, 'le rapport des efforts suit celui des diamètres');
+  assert.ok(byRing < bySun, 'même couple sur un plus grand rayon = moins d’effort');
+
+  // L'effort est celui d'UN engrènement : deux fois plus de satellites, deux
+  // fois moins d'effort par dent.
+  const three = type.calculateForces(Object.assign({}, base, { planetCount: 3 }), 10).tangentialN;
+  const six = type.calculateForces(Object.assign({}, base, { planetCount: 6 }), 10).tangentialN;
+  assert.ok(Math.abs(three / six - 2) < 1e-9);
+});
+
+test('the same physical train yields the same mesh load, described from either end', () => {
+  const type = Registry.get('planetary');
+  const base = Object.assign(planetary(), { parameters: { module: 2, pressureAngle: 20 } });
+  const forward = Object.assign({}, base, { inputMember: 'S', fixed: 'R', outputMember: 'C' });
+  const ratio = type.calculateRatio(forward);
+  // Même mécanisme, décrit à l'envers : le porte-satellites mène, avec le
+  // couple que la première description lui donnait en sortie. Les dents ne
+  // savent pas de quel côté on regarde — l'effort doit être le même.
+  const backward = Object.assign({}, base, { inputMember: 'C', fixed: 'R', outputMember: 'S' });
+  const a = type.calculateForces(forward, 10).tangentialN;
+  const b = type.calculateForces(backward, 10 * ratio).tangentialN;
+  assert.ok(Math.abs(a - b) < 1e-9, a + ' vs ' + b);
+
+  // Et l'effort dit à quoi il se rapporte, au lieu de laisser deviner.
+  const described = type.calculateForces(backward, 10);
+  assert.equal(described.referenceMember, 'C');
+  assert.equal(described.planetCount, 3);
+  assert.equal(described.referenceDiameter, 2 * (20 + 70));
+});

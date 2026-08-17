@@ -152,10 +152,19 @@
     }
 
     // Persistance automatique : chaque lancement mémorise la configuration.
-    // La session part sous son schéma versionné ; les champs continuent d'aller
-    // dans l'ancien format tant que les miroirs existent.
-    if (session) GearApp.ui.SessionStore.save(session);
-    searchParams.save();
+    //
+    // §29 : la session part sous son schéma versionné, et c'est TOUT. Le format
+    // plat n'est plus écrit : au démarrage, adopter la session réécrit les
+    // miroirs depuis le modèle, donc rien de ce qu'il portait n'est perdu — il
+    // n'était plus qu'une seconde mémoire, jamais relue, et donc périmée dès la
+    // première recherche. Il reste lu une dernière fois pour convertir une
+    // configuration d'avant la refonte ; ensuite il est effacé.
+    if (session) {
+      GearApp.ui.SessionStore.save(session);
+      GearApp.ui.SessionStore.dropLegacy();
+    } else {
+      searchParams.save();
+    }
     _saveToHistory(searchParams);
     _renderHistory();
 

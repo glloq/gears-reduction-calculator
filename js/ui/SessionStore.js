@@ -28,6 +28,8 @@
   /** Version du schéma. À incrémenter dès qu'une forme rangée change de sens. */
   var SCHEMA_VERSION = 3;
   var KEY = 'gearLastSearch';
+  /** L'ancienne clé, à ne plus qu'effacer. */
+  var LEGACY_KEY = 'gearCalcParams';
 
   function storage() {
     try { return typeof localStorage !== 'undefined' ? localStorage : null; }
@@ -75,5 +77,23 @@
     try { store.removeItem(KEY); } catch (ignore) { /* rien à faire */ }
   }
 
-  return { save: save, load: load, clear: clear, SCHEMA_VERSION: SCHEMA_VERSION, KEY: KEY };
+  /**
+   * §29 : le format plat d'avant la refonte, une fois converti, n'a plus de
+   * raison d'exister. Le garder « au cas où » revenait à conserver deux
+   * mémoires de la même recherche, dont une que plus personne ne relit — et
+   * qui, si elle venait à être relue, raconterait un état périmé. On l'efface
+   * dès qu'une session est rangée sous son schéma.
+   */
+  function dropLegacy() {
+    var store = storage();
+    if (!store) return false;
+    try {
+      if (store.getItem(LEGACY_KEY) == null) return false;
+      store.removeItem(LEGACY_KEY);
+      return true;
+    } catch (ignore) { return false; }
+  }
+
+  return { save: save, load: load, clear: clear, dropLegacy: dropLegacy,
+    SCHEMA_VERSION: SCHEMA_VERSION, KEY: KEY, LEGACY_KEY: LEGACY_KEY };
 });

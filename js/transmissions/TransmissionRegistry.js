@@ -209,6 +209,37 @@
     };
   }
 
+  /**
+   * §30 : l'effort dans un engrènement de planétaire, quel que soit l'organe
+   * menant.
+   *
+   * Le calcul rapportait TOUJOURS le couple d'entrée au diamètre du solaire.
+   * Juste quand le solaire mène ; faux sinon, et de beaucoup : une couronne à
+   * 70 dents menant un solaire à 20 donnait un effort surestimé d'un facteur
+   * 3,5, donc des facteurs de sécurité qui n'avaient plus de sens.
+   *
+   * Le couple d'entrée s'applique sur le membre MENANT, à son rayon :
+   *   solaire ou couronne → Ft = 2000·T / (d · n)
+   *   porte-satellites    → sa denture est le cercle des centres de satellites,
+   *                         et chaque satellite reçoit du porte-satellites une
+   *                         force qui se PARTAGE entre ses deux engrènements ;
+   *                         d'où le diamètre équivalent (ds + dr).
+   * Les trois expressions donnent bien le même effort de denture pour un même
+   * train, ce qui est le contrôle de cohérence naturel.
+   */
+  function planetaryForces(s, torqueNm) {
+    var p = s.parameters || {}, m = p.module || 1;
+    var ds = m * s.sunTeeth, dr = m * s.ringTeeth;
+    var n = Math.max(1, Math.round(Number.isFinite(s.planetCount) ? s.planetCount : 3));
+    var input = s.inputMember || 'S';
+    var equivalent = input === 'R' ? dr : input === 'C' ? ds + dr : ds;
+    if (!(equivalent > 0)) return { tangentialN: null, radialN: null, axialN: 0 };
+    var ft = 2000 * torqueNm / equivalent / n;
+    return { tangentialN: ft, radialN: ft * Math.tan(radians(p.pressureAngle || 20)), axialN: 0,
+      // Ce que l'effort décrit : un engrènement, pas l'étage entier.
+      referenceMember: input, planetCount: n, referenceDiameter: equivalent };
+  }
+
   register({ id: 'planetary', aliases: ['epicyclic'], name: 'Train épicycloïdal', constraints: { minInput: 12, maxInput: 60, minOutput: 30, maxOutput: 200, maxRatio: 12 }, parameterDefinitions: {},
     validateConfiguration: function (s) {
       // §4 : entrée, sortie et organe fixe sont TROIS organes distincts. Sans
@@ -221,7 +252,7 @@
     },
     calculateRatio: function (s) { return planetarySpeeds(s, 1).ratio; }, calculateSpeeds: planetarySpeeds,
     calculateGeometry: function (s) { var m = s.parameters.module || 1,ds=m*s.sunTeeth,dr=m*s.ringTeeth;return geometryContract(s,{ sunDiameter:ds, ringDiameter:dr, planetDiameter: m * (s.ringTeeth - s.sunTeeth) / 2,pitchDiameterInput:s.inputMember==='R'?dr:ds,pitchDiameterOutput:s.outputMember==='R'?dr:(s.outputMember==='S'?ds:dr), maxDiameter: m * (s.ringTeeth + 2), width: s.parameters.faceWidth || 10 * m, centerDistance: 0,axisRelation:'coaxial' }); },
-    calculateEfficiency: function () { return 0.97; }, calculateForces: function (s, t) { var d = s.parameters.module * s.sunTeeth, n = s.planetCount || 3, ft = 2000 * t / d / n; return { tangentialN: ft, radialN: ft * Math.tan(radians(s.parameters.pressureAngle || 20)), axialN: 0 }; }, rotationDirection: function (s) { return Math.sign(this.calculateRatio(s)); },
+    calculateEfficiency: function () { return 0.97; }, calculateForces: planetaryForces, rotationDirection: function (s) { return Math.sign(this.calculateRatio(s)); },
     generateCandidates: function (o) {
       var out = [], p = o.typeParameters.planetary || o.typeParameters.epicyclic || {};
       // §5 : la recherche n'essayait qu'UNE topologie — solaire menant,
