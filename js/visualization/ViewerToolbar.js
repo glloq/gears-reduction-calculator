@@ -32,21 +32,27 @@
    * Un préréglage donne l'état COMPLET, pas seulement ce qu'il ajoute : sinon
    * passer de « Mécanique » à « Simple » laisserait traîner la ligne d'action —
    * exactement le piège des dispositions, déjà corrigé une fois.
+   *
+   * Et il emmène dans la VUE qui répond à sa question. Les trois vues sont
+   * spécialisées : demander « Dimensionnement » en restant sur un schéma
+   * cinématique — explicitement symbolique, sans échelle — donnait des cotes
+   * dans la seule vue qui ne peut pas les porter. « Simple » ne change rien :
+   * c'est une question qu'on se pose dans n'importe quelle vue.
    */
   var PRESETS = [
-    { id: 'simple', label: 'Simple', help: 'De quoi c’est fait : les étages, l’entrée et la sortie.',
+    { id: 'simple', label: 'Simple', help: 'De quoi c’est fait : les étages, l’entrée et la sortie.', view: null,
       overlays: { autoDetails: true, pitchCircles: false, lineOfAction: false, dimensions: false,
         axes: false, envelope: false, forces: false, rpm: false, ratios: true,
         powerFlow: false, spatialAxes: false, labels: true } },
-    { id: 'motion', label: 'Mouvement', help: 'Comment ça bouge : sens, vitesses, chemin de la puissance.',
+    { id: 'motion', label: 'Mouvement', help: 'Comment ça bouge : sens, vitesses, chemin de la puissance.', view: 'kinematic',
       overlays: { autoDetails: true, pitchCircles: false, lineOfAction: false, dimensions: false,
         axes: true, envelope: false, forces: false, rpm: true, ratios: true,
         powerFlow: true, spatialAxes: true, labels: true } },
-    { id: 'sizing', label: 'Dimensionnement', help: 'Quelle taille ça fait : cotes, axes, encombrement.',
+    { id: 'sizing', label: 'Dimensionnement', help: 'Quelle taille ça fait : cotes, axes, encombrement.', view: 'geometry',
       overlays: { autoDetails: true, pitchCircles: true, lineOfAction: false, dimensions: true,
         axes: true, envelope: true, forces: false, rpm: false, ratios: false,
         powerFlow: false, spatialAxes: true, labels: true } },
-    { id: 'mechanical', label: 'Mécanique', help: 'Est-ce que ça tient : efforts, contact, alertes.',
+    { id: 'mechanical', label: 'Mécanique', help: 'Est-ce que ça tient : efforts, contact, alertes.', view: 'teeth',
       overlays: { autoDetails: true, pitchCircles: true, lineOfAction: true, dimensions: false,
         axes: false, envelope: false, forces: true, rpm: true, ratios: false,
         powerFlow: false, spatialAxes: false, labels: true } }
@@ -76,6 +82,9 @@
     // Aucun préréglage actif au départ : l'état d'usine n'en est pas un, et
     // allumer un bouton qui ne décrit pas l'écran serait un mensonge de plus.
     this.preset = null;
+    // §8 : un cadrage par vue, valable pour la solution en cours seulement.
+    this.camera = {};
+    this._cameraOwner = null;
     this.geometry = new GearApp.visualization.GeometryRenderer(container);
     this.kinematic = GearApp.visualization.kinematicRenderer;
     // Instances longue durée : chaque vue reconstruit son svg à chaque rendu.
@@ -95,16 +104,77 @@
   };
 
   ViewerToolbar.prototype.render = function (solution) {
+    // Une autre solution invalide les cadrages mémorisés : un viewBox n'a de
+    // sens que pour le dessin qui l'a produit.
+    if (solution !== this._cameraOwner) { this.camera = {}; this._cameraOwner = solution; }
     this.solution = solution;
     var rendered = this.renderer().render(solution);
     // L'inspecteur lit la scène de la vue courante : mêmes vitesses, même
     // instant, quelle que soit la vue affichée.
     this.inspector.setSolution(solution, rendered && rendered.scene);
     this._applyState(rendered);
+    this._restoreCamera(rendered);
     this._renderFidelity(rendered);
     this._syncZoomTier();
     this._syncFraming();
     return rendered;
+  };
+
+  /**
+   * §8 : chaque vue garde SON cadrage.
+   *
+   * L'état partagé — étage, animation, overlays — traverse déjà les trois vues,
+   * mais pas le zoom : partir examiner une denture puis revenir aux cotes
+   * rendait le travail de cadrage à refaire. Le partager n'aurait pas de sens
+   * non plus, les trois vues n'ayant ni la même échelle ni la même disposition.
+   * Il est donc mémorisé PAR VUE, et seulement pour la solution en cours.
+   */
+  ViewerToolbar.prototype._restoreCamera = function (rendered) {
+    var saved = this.camera && this.camera[this.currentView];
+    var viewport = rendered && rendered.viewport;
+    if (!saved || !viewport || !viewport.setState) return this;
+    viewport.setState({ viewBox: saved.slice() });
+    return this;
+  };
+
+  /** Le cadrage courant, retenu pour le retour dans cette vue. */
+  ViewerToolbar.prototype._rememberCamera = function () {
+    var renderer = this.renderer(), viewport = renderer && renderer.viewport;
+    if (!viewport || !viewport.getState) return this;
+    this.camera = this.camera || {};
+    this.camera[this.currentView] = viewport.getState().viewBox.slice();
+    return this;
+  };
+
+  /**
+   * Plus rien à montrer. Le viewer gardait le dernier dessin quand un filtre
+   * ne laissait passer aucune solution : l'écran annonçait « 0 / 50 » au-dessus
+   * d'un mécanisme qui n'existait plus dans la liste, et l'inspecteur en
+   * détaillait toujours les étages.
+   */
+  ViewerToolbar.prototype.clear = function () {
+    this.solution = null;
+    this.camera = {};
+    this._cameraOwner = null;
+    this.selectedStage = -1;
+    this.inspector.setSolution(null, null);
+    this.inspector.hide();
+    // Le HUD suit le dessin : il n'a plus de cible.
+    if (this.hud) this.hud.hide();
+    ['teeth', 'geometry', 'kinematic'].forEach(function (name) {
+      var renderer = this[name];
+      if (renderer) { renderer.solution = null; renderer.svg = null; }
+    }, this);
+    if (this.container) this.container.innerHTML = '';
+    this._ensureHudPanel();
+    this._renderFidelity(null);
+    this._syncFraming();
+    return this;
+  };
+
+  /** Le panneau du HUD vit dans le conteneur : le vider le décroche. */
+  ViewerToolbar.prototype._ensureHudPanel = function () {
+    if (this.hud && this.hud._ensurePanel) this.hud._ensurePanel();
   };
 
   /**
@@ -156,6 +226,9 @@
   ViewerToolbar.prototype._renderFidelity = function (rendered) {
     var host = document.getElementById('viewerFidelity');
     if (!host) return;
+    // Rien de dessiné, rien à qualifier : une phrase sur la fidélité d'un
+    // dessin absent parlerait du précédent.
+    if (!rendered) { host.textContent = ''; host.title = ''; host.hidden = true; host.classList.remove('has-derived'); return; }
     var text = FIDELITY[this.currentView] || '';
     var scene = rendered && rendered.scene;
     // Une cote reconstruite faute de mieux ne doit pas être lue comme une cote
@@ -210,6 +283,13 @@
     Object.keys(entry.overlays).forEach(function (name) {
       this.overlays[name] = entry.overlays[name];
     }, this);
+    // La vue d'abord : setView() re-rend, et le rendu doit déjà connaître les
+    // couches demandées. `preset` est réaffirmé après, setView repassant par
+    // render().
+    if (entry.view && entry.view !== this.currentView) {
+      this.setView(entry.view);
+      this.preset = id;
+    }
     var renderer = this.renderer();
     if (renderer && renderer.setAutoDetails) renderer.setAutoDetails(this.overlays.autoDetails);
     this._applyOverlayClasses();
@@ -363,7 +443,7 @@
     // par une classe du conteneur, ce qui laisse chaque vue décider en CSS de
     // ce qu'elle montre à quel palier — sans qu'aucune n'ait à connaître les
     // seuils.
-    this.container.addEventListener('viewport:changed', function () { self._syncZoomTier(); });
+    this.container.addEventListener('viewport:changed', function () { self._syncZoomTier(); self._rememberCamera(); });
     if (!controls) return;
     controls.addEventListener('click', function (event) {
       var view = event.target.closest('.view-mode');

@@ -67,7 +67,13 @@
       teeth: teeth.filter(function (v) { return finite(v) && v > 0; }), ratio: mech.ratio,
       efficiency: mech.efficiency, centerDistance: geometry.centerDistance, module: stage.parameters && stage.parameters.module,
       inputRpm: inputRpm, outputRpm: outputRpm, inputTorque: mech.inputTorqueNm, outputTorque: mech.outputTorqueNm || mech.torqueNm,
-      bendingSafety: mech.bending && mech.bending.safetyFactor, contactSafety: mech.contact && mech.contact.safetyFactor };
+      bendingSafety: mech.bending && mech.bending.safetyFactor, contactSafety: mech.contact && mech.contact.safetyFactor,
+      // La géométrie, les paramètres et les efforts de CET étage : le bloc de
+      // famille et le bloc d'efforts les lisent, ils ne les recalculent pas.
+      stage: stage, geometry: geometry, parameters: stage.parameters || {}, forces: mech.forces || null,
+      warnings: (solution && solution.warnings || []).filter(function (w) {
+        return finite(w.stageIndex) ? w.stageIndex === index : finite(w.stage) ? w.stage - 1 === index : false;
+      }) };
   }
   /** Nom lisible d'une famille : le registre fait foi, jamais `stage.type`. */
   function familyName(type, registry) {
@@ -118,6 +124,94 @@
     return value + (condition.satisfied ? ' ✓' : ' ✗ ' + requirement);
   }
 
+  /**
+   * Ce qu'il faut savoir d'un étage, PAR FAMILLE.
+   *
+   * Le planétaire et la vis sans fin avaient déjà leur bloc — ce sont les deux
+   * familles dont la denture seule ne dit rien. Les autres retombaient sur une
+   * fiche générique, où « 18 → 54 » et un rapport étaient tout ce qu'on
+   * obtenait : ni l'angle d'hélice qui décide de l'effort axial, ni l'angle
+   * d'enroulement qui décide de la capacité d'une courroie, ni la course par
+   * tour d'une crémaillère, qui est pourtant la raison de l'avoir choisie.
+   *
+   * Ces grandeurs sont déjà calculées ; elles n'étaient affichées nulle part.
+   * Les mettre ici, dans l'étage sélectionné, évite d'en couvrir le dessin.
+   */
+  var FAMILY_ROWS = {
+    spur: function (d) {
+      return [['Angle de pression α', format(d.geometry.pressureAngleDeg, 1, '°')],
+        ['Rapport de conduite', format(d.geometry.totalContactRatio, 2)]];
+    },
+    helical: function (d) {
+      var beta = finite(d.parameters.helixAngle) ? d.parameters.helixAngle : null;
+      return [['Angle d’hélice β', format(beta, 1, '°')],
+        ['Angle de pression α', format(d.geometry.transversePressureAngleDeg, 1, '°')],
+        ['Recouvrement', format(d.geometry.overlapContactRatio, 2)],
+        ['Rapport de conduite', format(d.geometry.totalContactRatio, 2)],
+        // L'hélice CRÉE l'effort axial : c'est le prix du silence, et il se
+        // paie en roulements.
+        ['Effort axial induit', finite(d.forces && d.forces.axialN)
+          ? format(Math.abs(d.forces.axialN), 0, ' N') + ' — prévoir une butée' : null]];
+    },
+    internal: function (d) {
+      return [['Denture', 'intérieure — même sens d’entrée et de sortie'],
+        ['Angle de pression α', format(d.geometry.pressureAngleDeg, 1, '°')],
+        ['Rapport de conduite', format(d.geometry.totalContactRatio, 2)]];
+    },
+    bevel: function (d) {
+      return [['Angle des arbres', format(d.geometry.shaftAngleDeg, 1, '°')],
+        ['Cône menant δ₁', format(d.geometry.pitchConeAngleInput, 1, '°')],
+        ['Cône mené δ₂', format(d.geometry.pitchConeAngleOutput, 1, '°')],
+        ['Distance conique', format(d.geometry.coneDistance, 2, ' mm')]];
+    },
+    belt: function (d) {
+      return [['Profil', d.parameters.profile || null],
+        ['Pas', format(d.parameters.pitch, 1, ' mm')],
+        ['Longueur', format(d.geometry.actualLength || d.geometry.length, 1, ' mm')],
+        ['Dents de courroie', finite(d.geometry.beltTeeth) ? String(d.geometry.beltTeeth) : null],
+        // Sous 120°, la petite poulie n'engrène plus assez de dents pour
+        // transmettre le couple annoncé.
+        ['Enroulement petite poulie', finite(d.geometry.wrapAngleDeg)
+          ? format(d.geometry.wrapAngleDeg, 1, '°') + (d.geometry.wrapAngleDeg < 120 ? ' — faible' : '') : null]];
+    },
+    chain: function (d) {
+      return [['Pas', format(d.parameters.pitch, 2, ' mm')],
+        ['Maillons', finite(d.geometry.links) ? String(d.geometry.links) : null],
+        ['Longueur', format(d.geometry.actualLength || d.geometry.length, 1, ' mm')],
+        ['Entraxe corrigé', format(d.geometry.correctedCenterDistance, 2, ' mm')]];
+    },
+    rack: function (d) {
+      return [['Pignon', finite(d.stage.pinionTeeth) ? d.stage.pinionTeeth + ' dents' : null, origin(d, 'pinionTeeth')],
+        ['Course par tour', format(d.geometry.travelPerRevolution, 2, ' mm/tr')],
+        ['Vitesse linéaire', format(d.geometry.linearSpeedMmMin, 0, ' mm/min')],
+        // Sur une crémaillère, la grandeur utile n'est pas un couple mais une
+        // force : c'est elle qui décide si la charge avance.
+        ['Force de poussée', finite(d.forces && d.forces.tangentialN)
+          ? format(d.forces.tangentialN, 0, ' N') : null]];
+    }
+  };
+
+  /** Le bloc de famille de cet étage, ou rien si la famille n'en a pas. */
+  function familyRows(data) {
+    var builder = FAMILY_ROWS[data.type];
+    if (!builder) return null;
+    try { return builder(data); } catch (ignore) { return null; }
+  }
+
+  /**
+   * Les efforts, CHIFFRÉS. L'overlay graphique donne leur direction et leur
+   * importance relative ; leurs valeurs n'étaient lisibles qu'en infobulle. Sur
+   * un hélicoïdal, un conique ou une vis, c'est l'effort axial qui dimensionne
+   * les roulements — un nombre qu'on relève, pas une flèche qu'on estime.
+   */
+  function forceRows(data) {
+    var f = data.forces;
+    if (!f || !finite(f.tangentialN)) return null;
+    return [['Tangentiel Ft', format(Math.abs(f.tangentialN), 0, ' N')],
+      ['Radial Fr', finite(f.radialN) ? format(Math.abs(f.radialN), 0, ' N') : null],
+      ['Axial Fa', finite(f.axialN) ? format(Math.abs(f.axialN), 0, ' N') : null]];
+  }
+
   function Inspector(container, options) { this.container = container; this.options = options || {}; this.solution = null; this.element = null; }
   Inspector.prototype.setSolution = function (solution, scene) { this.solution = solution; this.scene = scene || null; return this; };
   Inspector.prototype._element = function () {
@@ -150,6 +244,7 @@
     // fiable n'est pas affiché du tout.
     var grid = document.createElement('div'); grid.className = 'inspector-grid';
     var topology = data.topology, worm = data.worm;
+    var family = familyRows(data), efforts = forceRows(data);
     var GROUPS = [
       { title: null, rows: [
         // Pour un planétaire comme pour une vis, la denture seule ne dit rien :
@@ -198,6 +293,10 @@
           ? 'irréversible (tan γ < μ)'
           : 'rétro-entraînable, η inverse ' + format(worm.backDrivingEfficiency * 100, 0, ' %')]
       ] } : null,
+      // Ce que cette FAMILLE-ci demande de savoir. Planétaire et vis ont leur
+      // bloc juste au-dessus ; les autres n'avaient rien, et se lisaient donc
+      // toutes de la même façon — « 18 → 54 » et un rapport.
+      family ? { title: familyName(data.type, this.options.registry), rows: family } : null,
       { title: 'Entrée', rows: [
         ['Vitesse', finite(data.inputRpm) ? format(Math.abs(data.inputRpm), 0, ' rpm') : null],
         ['Couple', format(data.inputTorque, 1, ' N·m')]
@@ -210,9 +309,16 @@
         ['Module', finite(data.module) ? data.module + ' mm' : null],
         ['Entraxe', format(data.centerDistance, 2, ' mm')]
       ] },
+      efforts ? { title: 'Efforts', rows: efforts } : null,
       { title: 'Rendement', rows: [
         ['Étage', finite(data.efficiency) ? format(data.efficiency * 100, 1, ' %') : null]
       ] },
+      // §12 : la cause, à l'endroit où le badge « ! » conduit. Sans cela il
+      // désignait un étage sans dire ce qu'on lui reprochait.
+      data.warnings && data.warnings.length ? { title: 'Avertissements', rows:
+        data.warnings.map(function (w) {
+          return [w.message || w.code, w.recommendation || '—'];
+        }) } : null,
       { title: 'Sécurité', rows: [
         ['SF flexion', format(data.bendingSafety, 2)],
         ['SH contact', format(data.contactSafety, 2)]

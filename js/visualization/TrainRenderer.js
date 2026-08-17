@@ -158,8 +158,11 @@
       return Math.min(best, finite(wheel.cy, 0) - finite(wheel.outsideD, 20) / 2);
     }, Infinity);
     var middle = entry.wheels.reduce(function (sum, wheel) { return sum + finite(wheel.cx, 0); }, 0) / (entry.wheels.length || 1);
-    GearWarningOverlay.render(n, group, GearWarningOverlay.derive(stage, mech), index,
-      { x: middle, y: Number.isFinite(top) ? top : anchor.cy });
+    // Les alertes viennent du moteur, pas d'un calcul local : le dessin dit
+    // exactement ce que dit l'analyse.
+    GearWarningOverlay.render(n, group, (this.solution || {}).warnings, index,
+      { x: middle, y: Number.isFinite(top) ? top : anchor.cy },
+      function (stageIndex) { self.selectStage(stageIndex); });
 
     // Décor : libellé d'étage (couloirs anti-collision posés dans _placeLabels)
     // et cote d'entraxe.

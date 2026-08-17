@@ -183,14 +183,42 @@
 
   // Contexte d'ingénierie capturé au moment de la recherche : sert à l'éditeur
   // d'étages pour ré-analyser une chaîne avec les mêmes hypothèses.
+  /**
+   * Le régime de service n'est PAS inventé ici, et il ne peut pas l'être en
+   * relisant les paramètres de recherche : ceux-ci portent DÉJÀ 1500 rpm et
+   * 10 N·m, substitués volontairement en amont — un solveur ne peut pas
+   * dimensionner sans un régime quelconque, et cette hypothèse est nommée une
+   * fois dans LegacySearchAdapter.
+   *
+   * Une analyse, elle, n'a pas besoin de cette hypothèse : elle laisse non
+   * évalué ce qu'elle ignore. Mais modifier ensuite un étage rappelait ce
+   * contexte, et l'hypothèse du solveur revenait en silence : une analyse
+   * honnêtement muette redevenait bavarde, avec des efforts et des facteurs de
+   * sécurité tirés d'un régime que personne n'avait choisi.
+   *
+   * La SESSION sait ce qui a réellement été demandé. C'est elle qu'on
+   * interroge ; les paramètres de recherche ne servent plus que de repli, pour
+   * les chemins qui n'en ont pas.
+   */
+  SolutionExplorer.prototype._statedRegime = function () {
+    var session = this.workbench && this.workbench.session;
+    if (!session || !session.engineeringOptions) return null;
+    var stated = session.engineeringOptions();
+    return { inputSpeedRpm: Number.isFinite(stated.inputSpeedRpm) ? stated.inputSpeedRpm : null,
+      inputTorqueNm: Number.isFinite(stated.inputTorqueNm) ? stated.inputTorqueNm : null };
+  };
+
   SolutionExplorer.prototype.getContext = function () {
     var wp = this._workerParams || {};
+    var regime = this._statedRegime() ||
+      { inputSpeedRpm: Number.isFinite(wp.vitesseEntree) ? wp.vitesseEntree : null,
+        inputTorqueNm: Number.isFinite(wp.coupleEntree) ? wp.coupleEntree : null };
     return {
       target: Number.isFinite(wp.rapportCible) ? wp.rapportCible : null,
       linear: wp.objectiveMode === 'rotationTranslation',
       engineeringOptions: {
-        inputSpeedRpm: wp.vitesseEntree || 1500,
-        inputTorqueNm: wp.coupleEntree || 10,
+        inputSpeedRpm: regime.inputSpeedRpm,
+        inputTorqueNm: regime.inputTorqueNm,
         inputMaterial: wp.inputMaterial || 'C45',
         outputMaterial: wp.outputMaterial || 'C45',
         additiveDerating: wp.additiveDerating || 1,

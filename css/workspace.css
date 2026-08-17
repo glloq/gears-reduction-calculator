@@ -141,7 +141,15 @@
   font-size: var(--font-xs);
   font-weight: 600;
 }
-.status-badge.warning { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); }
+/* Quatre états, dont un que la carte n'exprimait pas : « non vérifié ». Il est
+   sourd et non coloré — ni promesse, ni alarme —, parce qu'une grandeur qu'on
+   n'a pas contrôlée n'est ni bonne ni mauvaise. Les vertes ne restent vertes
+   que lorsqu'un contrôle a réellement eu lieu. */
+.status-badge.state-ok { background: color-mix(in srgb, var(--success) 13%, transparent); color: var(--success); }
+.status-badge.warning,
+.status-badge.state-warning { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); }
+.status-badge.state-danger { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.status-badge.state-unknown { background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); font-weight: 500; }
 
 /* Onglets de détail */
 .detail-tabs { display: flex; gap: var(--sp-1); overflow-x: auto; }

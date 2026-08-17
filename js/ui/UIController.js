@@ -12,6 +12,17 @@
     return (Number.isFinite(value) ? value.toFixed(digits) : '—') + (unit || '');
   }
 
+  /**
+   * Les libellés de conformité viennent d'un catalogue, mais un procédé
+   * personnalisé peut porter un nom saisi par l'utilisateur : cette carte est
+   * construite par concaténation, elle doit donc échapper ce qu'elle insère.
+   */
+  function escapeText(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function escapeAttribute(value) { return escapeText(value).replace(/"/g, '&quot;'); }
+
   function UIController(eventBus) {
     this._eventBus = eventBus || GearApp.eventBus;
     this.logger = new GearApp.ui.Logger('logs', 'status');
@@ -117,9 +128,24 @@
     this._updateComparisonCharts(solutions, searchParams);
   };
 
+  /**
+   * Plus aucune solution sélectionnée — filtre trop serré, vivier vide.
+   *
+   * Cette méthode ne cachait que le panneau mécanique et la carte. Tout le
+   * reste survivait : le dessin, l'identité, les puces d'étage, la chaîne
+   * cinématique, l'inspecteur. On pouvait donc lire « aucune des 50 solutions
+   * ne passe vos filtres » au-dessus d'un mécanisme entièrement détaillé —
+   * exactement la contradiction que tout le reste du travail cherche à
+   * supprimer. Effacer un détail, c'est effacer TOUT ce qui le décrit.
+   */
   UIController.prototype.clearDetail = function () {
     this.mechanicalPanel.hide();
     this._hideSolutionCard();
+    if (this._viewer && this._viewer.clear) this._viewer.clear();
+    if (this._solutionHeader && this._solutionHeader.clear) this._solutionHeader.clear();
+    if (this.resultsTable && this.resultsTable.setSelectedIndex) this.resultsTable.setSelectedIndex(-1);
+    this._syncMechanicalRow(-1);
+    this._eventBus.emit('solution:cleared', {});
   };
 
   // Source unique du surlignage de ligne du panneau mécanique : dé-sélectionne
@@ -180,16 +206,14 @@
     var sf = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.bending&&stage.bending.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
     var sh = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.contact&&stage.contact.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
 
-    // Constructibilité : procédé appliqué et échecs éventuels (variantes d'éditeur).
-    var MANUFACTURING_LABELS = { standard:'Standard', CNC:'CNC', laser:'Laser', printing3d:'Impression 3D', custom:'Personnalisé' };
-    var FAILURE_LABELS = { MODULE_TOO_SMALL:'Module sous la limite du procédé', TOO_FEW_TEETH:'Dents sous la limite du procédé', FACE_WIDTH_TOO_SMALL:'Largeur de denture insuffisante', PRINTER_DIAMETER:'Ø supérieur au plateau d’impression' };
-    var manufacturingBadges = '';
-    if (solution.manufacturing) {
-      var processLabel = MANUFACTURING_LABELS[solution.manufacturing.rules && solution.manufacturing.rules.mode] || 'Standard';
-      manufacturingBadges = (solution.manufacturing.failures && solution.manufacturing.failures.length)
-        ? solution.manufacturing.failures.map(function (code) { return '<span class="status-badge warning">⚠ ' + (FAILURE_LABELS[code] || code) + '</span>'; }).join('')
-        : '<span class="status-badge">✓ Fabrication ' + processLabel + '</span>';
-    }
+    // La conformité vient d'UN SEUL endroit. Cette carte affichait « ✓ Précision
+    // OK » et « ✓ Dimensions OK » codés en dur — sans avoir rien vérifié — puis
+    // « ✓ SF 0.82 », une coche verte devant une sécurité insuffisante. Elle ne
+    // décide plus : elle peint des états déjà établis.
+    var asked = this._lastSearchParams || {};
+    var compliance = GearSolutionCompliance.evaluate(solution,
+      Object.assign({ tolerancePercent: Number.isFinite(asked.precision) ? asked.precision : null },
+        asked.constraints || {}));
 
     // Module retenu (fixe, automatique ou édité manuellement).
     var stats = solution.stats || {};
@@ -214,14 +238,27 @@
       '<div class="card-item"><span class="card-label">SF min</span><span class="card-value">' + (Number.isFinite(sf)?sf.toFixed(2):'—') + '</span></div>' +
       '<div class="card-item"><span class="card-label">SH min</span><span class="card-value">' + (Number.isFinite(sh)?sh.toFixed(2):'—') + '</span></div>' +
       '<div class="card-item" title="' + moduleTitle + '"><span class="card-label">Module</span><span class="card-value">' + moduleValue + moduleSuffix + '</span></div>' +
-      '<div class="status-badges"><span class="status-badge">✓ Précision OK</span><span class="status-badge">✓ Dimensions OK</span>' + manufacturingBadges + (Number.isFinite(sf)?'<span class="status-badge">✓ SF '+sf.toFixed(2)+'</span>':'') + (Number.isFinite(sh)?'<span class="status-badge">✓ SH '+sh.toFixed(2)+'</span>':'') + warnings.slice(0,3).map(function(w){var code=w&&w.code||'WARNING',message=w&&w.message||String(w);return '<span class="status-badge warning" title="'+(w&&w.recommendation||'')+'">⚠ '+code+' — '+message+'</span>';}).join('') + '</div>';
+      '<div class="status-badges">' +
+        GearSolutionCompliance.badges(compliance).map(function (badge) {
+          return '<span class="status-badge state-' + badge.state + '" data-compliance="' + badge.key +
+            '" title="' + escapeAttribute(badge.title) + '">' + badge.mark + ' ' + escapeText(badge.text) + '</span>';
+        }).join('') +
+        // Les alertes sont libellées en français par le moteur ; le code interne
+        // n'a jamais rien dit à personne et ne paraît plus à l'écran.
+        warnings.slice(0, 3).map(function (w) {
+          var text = (w && w.message) || GearSolutionCompliance.label(w && w.code);
+          return '<span class="status-badge state-' + ((w && w.level) || 'warning') + '" title="' +
+            escapeAttribute((w && w.recommendation) || '') + '">⚠ ' + escapeText(text) + '</span>';
+        }).join('') + '</div>';
 
     card.hidden = false;
   };
 
   UIController.prototype._hideSolutionCard = function () {
     var card = document.getElementById('solutionCard');
-    if (card) card.hidden = true;
+    // Vidée, pas seulement cachée : c'est une région `aria-live`, dont le
+    // contenu resterait annonçable après la disparition de la solution.
+    if (card) { card.textContent = ''; card.hidden = true; }
   };
 
   UIController.prototype._drawSVGSchematic = function (solution) {

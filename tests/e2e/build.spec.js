@@ -183,6 +183,45 @@ test('Étudier tells the truth about what it can and cannot compute (§2, §3)',
   expect(errors).toEqual([]);
 });
 
+test('editing a stage does not smuggle a regime back in', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  // Le contexte que l'éditeur rappellera pour ré-analyser. Il substituait
+  // 1500 rpm et 10 N·m dès qu'ils manquaient : l'analyse muette redevenait
+  // bavarde à la première modification, avec des efforts et des facteurs de
+  // sécurité tirés d'un régime que personne n'avait choisi.
+  const context = await page.evaluate(() => {
+    const options = GearApp._explorer.getContext().engineeringOptions;
+    return { speed: options.inputSpeedRpm, torque: options.inputTorqueNm, material: options.inputMaterial };
+  });
+  expect(context.speed).toBeNull();
+  expect(context.torque).toBeNull();
+  expect(context.material, 'les hypothèses matériau restent, elles').toBeTruthy();
+
+  // Et la ré-analyse faite avec ce contexte reste muette sur ce qu'elle ignore.
+  const reanalysed = await page.evaluate(() => {
+    const context = GearApp._explorer.getContext();
+    const stages = JSON.parse(JSON.stringify(GearApp._workbench.solutions[0].stages));
+    stages[0].output.teeth = 80;
+    const again = GearEngineering.analyzeSolution(stages, context.target, context.engineeringOptions);
+    return { ratio: again.ratio, speed: again.outputSpeedRpm, torque: again.outputTorqueNm,
+      power: again.inputPowerW, bending: again.mechanical[0].bending,
+      forces: again.mechanical[0].forces };
+  });
+  expect(reanalysed.ratio).toBeCloseTo(4, 6);   // la géométrie, elle, se recalcule
+  expect(reanalysed.speed).toBeNull();
+  expect(reanalysed.torque).toBeNull();
+  expect(reanalysed.power).toBeNull();
+  expect(reanalysed.bending).toBeNull();
+  expect(reanalysed.forces).toEqual({ tangentialN: null, radialN: null, axialN: null });
+  expect(errors).toEqual([]);
+});
+
 test('stating the regime restores the full analysis', async ({ page }) => {
   await page.goto('/');
   await chooseMode(page, 'analyze');

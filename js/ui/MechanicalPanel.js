@@ -1,5 +1,8 @@
-// Read-only view of the Engineering pipeline result; no mechanical recalculation here.
+// Vue en lecture seule du résultat du moteur : aucun recalcul mécanique ici.
 (function(GearApp){
+  // Les codes internes restent des identifiants dans le code et n'atteignent
+  // jamais l'écran : un même catalogue les nomme pour tous les panneaux.
+  var catalogue = GearSolutionCompliance;
   function MechanicalPanel(id){this._container=document.getElementById(id);}
   function n(v,d){return Number.isFinite(v)?v.toFixed(d==null?2:d):'—';}
   function familyName(type){return GearTransmissionRegistry.familyName(type,'short');}
@@ -36,19 +39,22 @@
       'C\'est elle qui donne le rapport, et non les seules dentures : à dentures égales, deux organes bloqués '+
       'différents donnent deux rapports différents.</p></details>';
   }
-  MechanicalPanel.prototype.hide=function(){if(this._container)this._container.style.display='none';};
-  MechanicalPanel.prototype.show=function(solution,unused,proMode){if(!this._container||!solution||!solution.mechanical)return null;var linear=solution.mode==='rotationTranslation',html='<h3>Analyse mécanique — Engineering estimate</h3><div class="mechanical-summary">'+
+  // Masquer ne suffit pas : ce panneau est une région `aria-live`, et son
+  // contenu d'hier resterait lisible par une synthèse vocale — et retrouvable
+  // dans le DOM — alors qu'aucune solution n'est sélectionnée.
+  MechanicalPanel.prototype.hide=function(){if(!this._container)return;this._container.innerHTML='';this._container.style.display='none';this._container.hidden=true;};
+  MechanicalPanel.prototype.show=function(solution,unused,proMode){if(!this._container||!solution||!solution.mechanical)return null;var linear=solution.mode==='rotationTranslation',html='<h3>Analyse mécanique — estimation d’ingénierie</h3><div class="mechanical-summary">'+
     (linear?'<div><strong>Course</strong> '+n(solution.travelPerRevolutionMm,2)+' mm/tr</div><div><strong>Vitesse linéaire</strong> '+n(solution.outputLinearSpeedMmMin,0)+' mm/min</div><div><strong>Effort sortie</strong> '+n(solution.outputForceN,1)+' N</div>':'<div><strong>Rapport</strong> '+n(solution.ratio,4)+'</div><div><strong>RPM</strong> '+n(solution.inputSpeedRpm,0)+' → '+n(solution.outputSpeedRpm,1)+'</div><div><strong>Couple</strong> '+n(solution.inputTorqueNm)+' → '+n(solution.outputTorqueNm)+' N·m</div>')+'<div><strong>Rendement</strong> '+n(solution.efficiency*100,1)+' %</div><div><strong>Puissance</strong> '+n(solution.outputPowerW,0)+' W</div><div><strong>Pertes</strong> '+n(solution.lossPowerW,0)+' W</div><div><strong>Dimensions</strong> '+n(solution.dimensions.length,0)+' × '+n(solution.dimensions.maxDiameter,0)+' × '+n(solution.dimensions.width,0)+' mm</div><div title="Coût pondéré : plus bas = mieux"><strong>Score (coût)</strong> '+n(solution.score.value,3)+'</div></div>';
     html+='<table class="stages-table"><thead><tr><th>Étage</th><th>Type</th><th>Rapport</th><th>η</th><th>Ft / Fr / Fa (N)</th><th>Lewis simplifié SF</th><th>Hertz simplifié SH</th><th>Conduite</th></tr></thead><tbody>';
     solution.mechanical.forEach(function(m,i){var f=m.forces||{},g=m.geometry||{};html+='<tr id="mechanical-stage-'+i+'"><td>'+(i+1)+'</td><td>'+familyName(m.type)+'</td><td>'+n(m.ratio,3)+'</td><td>'+n(m.efficiency*100,1)+'%</td><td>'+n(f.tangentialN,0)+' / '+n(f.radialN,0)+' / '+n(f.axialN,0)+'</td><td>'+n(m.bending&&m.bending.safetyFactor,2)+'</td><td>'+n(m.contact&&m.contact.safetyFactor,2)+'</td><td>'+n(g.totalContactRatio,2)+'</td></tr>';});html+='</tbody></table>';
     html+=planetaryBlock(solution);
     if(proMode)html+='<details open><summary>Détail du score</summary><pre>'+JSON.stringify(solution.score,null,2)+'</pre></details>';
-    if(proMode&&solution.fatigue)html+='<details><summary>Fatigue — Engineering estimate</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Cycles</th><th>Heures</th><th>Facteur usage</th></tr></thead><tbody>'+solution.fatigue.map(function(f,i){return '<tr><td>'+(i+1)+'</td><td>'+n(f.cycles,0)+'</td><td>'+n(f.operatingHours,0)+'</td><td>'+n(f.usageFactor,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation de fatigue, non conforme ISO 6336-6.</p></details>';
-    if(proMode&&solution.shaft)html+='<details><summary>Arbres — Engineering estimate</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Moment (N·mm)</th><th>Couple (N·mm)</th><th>Ø minimum (mm)</th></tr></thead><tbody>'+solution.shaft.map(function(s,i){return '<tr><td>'+(i+1)+'</td><td>'+n(s&&s.bendingMomentNmm,0)+'</td><td>'+n(s&&s.torqueNmm,0)+'</td><td>'+n(s&&s.minimumDiameterMm,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation combinée flexion/torsion.</p></details>';
+    if(proMode&&solution.fatigue)html+='<details><summary>Fatigue — estimation d’ingénierie</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Cycles</th><th>Heures</th><th>Facteur usage</th></tr></thead><tbody>'+solution.fatigue.map(function(f,i){return '<tr><td>'+(i+1)+'</td><td>'+n(f.cycles,0)+'</td><td>'+n(f.operatingHours,0)+'</td><td>'+n(f.usageFactor,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation de fatigue, non conforme ISO 6336-6.</p></details>';
+    if(proMode&&solution.shaft)html+='<details><summary>Arbres — estimation d’ingénierie</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Moment (N·mm)</th><th>Couple (N·mm)</th><th>Ø minimum (mm)</th></tr></thead><tbody>'+solution.shaft.map(function(s,i){return '<tr><td>'+(i+1)+'</td><td>'+n(s&&s.bendingMomentNmm,0)+'</td><td>'+n(s&&s.torqueNmm,0)+'</td><td>'+n(s&&s.minimumDiameterMm,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation combinée flexion/torsion.</p></details>';
     // Constructibilité : règles appliquées et sélection du module (mode standard, pas expert)
     if(solution.manufacturing){
-      var mf=solution.manufacturing,rules=mf.rules||{},REASONS={BENDING_SAFETY_TOO_LOW:'SF flexion insuffisant',CONTACT_SAFETY_TOO_LOW:'SH contact insuffisant',UNSUPPORTED_BENDING_CHECK:'contrôle flexion non supporté',UNSUPPORTED_CONTACT_CHECK:'contrôle contact non supporté'};
-      var fab='<p>'+(mf.valid?'✓ Règles du procédé « '+(rules.mode||'standard')+' » respectées.':'⚠ Échecs : '+(mf.failures||[]).join(', '))+'</p>';
+      var mf=solution.manufacturing,rules=mf.rules||{};
+      var fab='<p>'+(mf.valid?'✓ Règles du procédé « '+(rules.mode||'standard')+' » respectées.':'⚠ Échecs : '+(mf.failures||[]).map(catalogue.label).join(', '))+'</p>';
       fab+='<table class="stages-table"><tbody>';
       if(rules.minimumModule!=null)fab+='<tr><td>Module minimum</td><td>'+rules.minimumModule+' mm</td></tr>';
       if(rules.minimumTeeth!=null)fab+='<tr><td>Dents minimum</td><td>'+rules.minimumTeeth+'</td></tr>';
@@ -59,11 +65,11 @@
       var ms=solution.moduleSelection;
       if(ms&&ms.tested&&ms.tested.length){
         fab+='<p>Modules testés : '+ms.tested.join(', ')+' mm — retenu : '+(ms.selected!=null?ms.selected+' mm':'aucun')+'.</p>';
-        (ms.rejected||[]).forEach(function(item){var reasons=(item.reasons||[]).map(function(code){return REASONS[code];}).filter(Boolean);if(reasons.length)fab+='<p class="hint">Module '+item.module+' mm rejeté : '+reasons.join(', ')+'.</p>';});
+        (ms.rejected||[]).forEach(function(item){var reasons=(item.reasons||[]).map(catalogue.label).filter(Boolean);if(reasons.length)fab+='<p class="hint">Module '+item.module+' mm rejeté : '+reasons.join(', ')+'.</p>';});
       }
       html+='<details><summary>Fabrication — module &amp; règles</summary>'+fab+'</details>';
     }
-    if(solution.warnings.length)html+='<section class="warnings"><h4>Avertissements</h4>'+solution.warnings.map(function(w){return '<p class="warning"><strong>'+w.code+'</strong> — '+w.message+' <small>'+w.recommendation+'</small></p>';}).join('')+'</section>';
+    if(solution.warnings.length)html+='<section class="warnings"><h4>Avertissements</h4>'+solution.warnings.map(function(w){var scope=Number.isFinite(w.stageIndex)?'Étage '+(w.stageIndex+1):'Chaîne complète';return '<p class="warning" data-warning="'+w.code+'"'+(Number.isFinite(w.stageIndex)?' data-stage="'+w.stageIndex+'"':'')+'><strong>'+scope+'</strong> — '+(w.message||catalogue.label(w.code))+' <small>'+(w.recommendation||'')+'</small></p>';}).join('')+'</section>';
     this._container.innerHTML=html;
     var title=this._container.querySelector('h3'),summary=this._container.querySelector('.mechanical-summary'),stages=this._container.querySelector('.stages-table');
     var tabs=document.createElement('div');tabs.className='analysis-tabs';tabs.setAttribute('role','tablist');
@@ -73,6 +79,6 @@
     Array.from(this._container.querySelectorAll(':scope>details')).forEach(function(detail){addTab(detail.querySelector('summary').textContent.split('—')[0].trim(),detail);});
     addTab('Avertissements',this._container.querySelector('.warnings'));
     if(title)title.insertAdjacentElement('afterend',tabs);if(tabs.firstElementChild)tabs.firstElementChild.click();
-    this._container.style.display='block';return solution;};
+    this._container.hidden=false;this._container.style.display='block';return solution;};
   GearApp.ui.MechanicalPanel=MechanicalPanel;
 })(GearApp);

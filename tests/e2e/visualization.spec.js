@@ -847,3 +847,330 @@ test('the inspector is docked beside the drawing, never over it (§6)', async ({
   await expect(page.locator('#viewerFocus')).toBeDisabled();
   expect(errors).toEqual([]);
 });
+
+test('a filter that excludes everything leaves no solution on screen', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await search(page);
+  await page.locator('.solution-card').first().click();
+  await page.locator('#svgContainer svg').waitFor({ timeout: 20000 });
+  await page.locator('#svgContainer .train-stage .train-wheel').first().click();
+  await expect(page.locator('#stageInspector')).toBeVisible();
+
+  const shown = () => page.evaluate(() => ({
+    svg: document.querySelectorAll('#svgContainer svg').length,
+    identity: !document.getElementById('solutionIdentity').hidden,
+    stageNav: !document.getElementById('stageNav').hidden,
+    inspector: !document.getElementById('stageInspector').hidden,
+    fidelity: !document.getElementById('viewerFidelity').hidden,
+    // Régions `aria-live` : vidées, pas seulement masquées.
+    cardText: (document.getElementById('solutionCard').textContent || '').trim().length,
+    analysisText: (document.getElementById('mechanicalPanel').textContent || '').trim().length
+  }));
+  const before = await shown();
+  expect(before.svg).toBe(1);
+  expect(before.identity).toBe(true);
+  expect(before.cardText).toBeGreaterThan(0);
+
+  // Un diamètre d'un millimètre : aucune solution ne peut passer. Les filtres
+  // passent par le menu, comme pour un utilisateur.
+  await page.locator('#addFilterBtn').click();
+  await page.locator('#refineMenu [data-field="refine_diameter_max"]').click();
+  await page.locator('.constraint-chip[data-constraint="refine_diameter_max"] .constraint-chip-input').fill('1');
+  await expect(page.locator('.solution-card')).toHaveCount(0);
+  await expect(page.locator('#svgContainer svg')).toHaveCount(0);
+
+  const after = await shown();
+  expect(after, 'plus aucune trace de la solution disparue').toEqual({
+    svg: 0, identity: false, stageNav: false, inspector: false, fidelity: false,
+    cardText: 0, analysisText: 0
+  });
+
+  // Et le filtre levé la ramène : effacer n'est pas casser.
+  await page.locator('#refineResetBtn').click();
+  await expect(page.locator('.solution-card')).not.toHaveCount(0);
+  await expect(page.locator('#svgContainer svg')).toHaveCount(1);
+  await expect(page.locator('#solutionIdentity')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('the card never ticks what it has not checked (§ conformité)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await search(page);
+  await page.locator('.solution-card').first().click();
+  await expect(page.locator('#solutionCard')).toBeVisible();
+
+  const badges = () => page.evaluate(() => Array.from(document.querySelectorAll('#solutionCard .status-badge'))
+    .map(b => ({ key: b.dataset.compliance || null, state: (b.className.match(/state-(\w+)/) || [])[1],
+      text: b.textContent.trim(), title: b.title })));
+  const list = await badges();
+  expect(list.length).toBeGreaterThan(3);
+
+  list.forEach(badge => {
+    // Une coche verte suppose un contrôle : celles qui portent « non évalué »
+    // ou « aucune limite » doivent être sourdes.
+    if (/non évalué|non vérifié|Aucune/i.test(badge.text + ' ' + badge.title)) {
+      expect(badge.state, badge.text).toBe('unknown');
+      expect(badge.text.startsWith('✓'), badge.text).toBe(false);
+    }
+    // Aucun code interne à l'écran.
+    expect(badge.text).not.toMatch(/[A-Z]{3,}_[A-Z_]{3,}/);
+    expect(badge.text).not.toMatch(/NaN|undefined|null/);
+  });
+
+  // Un facteur de sécurité sous sa limite ne peut jamais porter de coche —
+  // c'était exactement « ✓ SF 0.82 ». On force ici une chaîne sous-dimensionnée
+  // plutôt que d'espérer que le solveur en renvoie une : sans cela le test
+  // passe sans avoir rien vérifié.
+  const weak = await page.evaluate(() => {
+    const under = GearEngineering.analyzeSolution([
+      { type: 'spur', input: { teeth: 14 }, output: { teeth: 42 },
+        parameters: { module: 0.6, pressureAngle: 20, faceWidth: 4 } }
+    ], 3, { inputSpeedRpm: 3000, inputTorqueNm: 120 });
+    GearApp._workbench && null;
+    GearApp.eventBus.emit('solution:selected', { index: 0, solution: under });
+    const limits = GearSolutionCompliance.LIMITS;
+    return { sf: under.mechanical[0].bending.safetyFactor, limit: limits.bendingSafety };
+  });
+  expect(weak.sf, 'la chaîne de contrôle doit être réellement sous-dimensionnée').toBeLessThan(weak.limit);
+
+  const safety = await page.evaluate(() => {
+    const limits = GearSolutionCompliance.LIMITS;
+    return Array.from(document.querySelectorAll('#solutionCard .status-badge'))
+      .filter(b => /SF |SH /.test(b.textContent))
+      .map(b => ({ text: b.textContent.trim(),
+        value: parseFloat((b.textContent.match(/(\d+\.\d+)/) || [])[1]),
+        ticked: b.textContent.trim().startsWith('✓'),
+        state: (b.className.match(/state-(\w+)/) || [])[1],
+        limit: /SF /.test(b.textContent) ? limits.bendingSafety : limits.contactSafety }));
+  });
+  const numeric = safety.filter(entry => Number.isFinite(entry.value));
+  expect(numeric.length, 'la carte doit afficher les facteurs chiffrés').toBeGreaterThan(0);
+  numeric.forEach(entry => {
+    if (entry.value < entry.limit) {
+      expect(entry.ticked, entry.text + ' est sous la limite et ne peut pas être coché').toBe(false);
+      expect(entry.state, entry.text).toBe('danger');
+    }
+  });
+  expect(errors).toEqual([]);
+});
+
+test('the drawing and the analysis report exactly the same warnings', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Un pignon de 12 dents au second étage : la sous-coupe concerne CET étage.
+  await mount(page, ['spur', 'spur']);
+  await page.evaluate(() => {
+    const stages = [
+      { type: 'spur', input: { teeth: 24 }, output: { teeth: 48 }, parameters: { module: 2, pressureAngle: 20, faceWidth: 20 } },
+      { type: 'spur', input: { teeth: 12 }, output: { teeth: 48 }, parameters: { module: 1, pressureAngle: 20, faceWidth: 6 } }
+    ];
+    window.__solution = GearEngineering.analyzeSolution(stages, 8, { inputSpeedRpm: 3000, inputTorqueNm: 40 });
+    window.__viewer.render(window.__solution);
+  });
+  await showView(page, 'teeth');
+
+  const drawn = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .mechanical-warning'))
+    .map(node => ({ code: node.dataset.warning, stage: Number(node.dataset.stage) })));
+  const emitted = await page.evaluate(() => window.__solution.warnings
+    .map(w => ({ code: w.code, stage: w.stageIndex })));
+
+  expect(drawn.length, 'le dessin doit porter des alertes').toBeGreaterThan(0);
+  // Tout badge dessiné correspond à une alerte émise par le moteur, sur son
+  // étage. Le viewer les recalculait auparavant, avec sa propre copie des seuils.
+  drawn.forEach(badge => {
+    expect(emitted, JSON.stringify(badge)).toContainEqual({ code: badge.code, stage: badge.stage });
+  });
+  // Et une alerte de chaîne ne se pose sur aucun étage.
+  const chainWide = emitted.filter(w => w.stage === null).map(w => w.code);
+  chainWide.forEach(code => expect(drawn.map(b => b.code)).not.toContain(code));
+  expect(errors).toEqual([]);
+});
+
+test('the inspector says what each family actually needs, forces included', async ({ page }) => {
+  const errors = watchErrors(page);
+  const families = ['spur', 'helical', 'internal', 'bevel', 'belt', 'chain'];
+  await mount(page, families);
+
+  const card = async index => page.evaluate(i => {
+    window.__viewer.inspector.show(i);
+    const host = document.getElementById('stageInspector');
+    return { groups: Array.from(host.querySelectorAll('.inspector-group')).map(h => h.textContent),
+      rows: Array.from(host.querySelectorAll('.inspector-grid div')).map(d => d.textContent) };
+  }, index);
+
+  // Chacune de ces grandeurs est calculée depuis toujours ; aucune n'était
+  // affichée. Ce sont pourtant celles qui font choisir la famille.
+  const expected = {
+    spur: [/Angle de pression/, /Rapport de conduite/],
+    helical: [/Angle d’hélice/, /Effort axial induit/],
+    internal: [/intérieure/],
+    bevel: [/Angle des arbres/, /Cône menant/, /Distance conique/],
+    belt: [/Profil/, /Longueur/, /Enroulement/],
+    chain: [/Maillons/, /Entraxe corrigé/]
+  };
+  for (let i = 0; i < families.length; i++) {
+    const family = families[i];
+    const shown = await card(i);
+    const text = shown.rows.join(' | ');
+    expected[family].forEach(pattern => expect(text, family).toMatch(pattern));
+    expect(text, family).not.toMatch(/NaN|undefined/);
+  }
+
+  // Les efforts chiffrés, là où le moteur les calcule. Un flexible n'en fournit
+  // pas : le bloc s'absente plutôt que d'afficher trois tirets.
+  const gear = await card(1);          // hélicoïdal
+  expect(gear.groups).toContain('Efforts');
+  const forces = gear.rows.filter(row => /^(Tangentiel|Radial|Axial)/.test(row));
+  expect(forces.length).toBe(3);
+  forces.forEach(row => expect(row).toMatch(/\d+ N$/));
+  // Une hélice pousse le long de l'arbre : cette valeur doit être non nulle.
+  const axial = Number((forces.find(r => r.startsWith('Axial')).match(/(\d+) N/) || [])[1]);
+  expect(axial).toBeGreaterThan(0);
+
+  const flexible = await card(4);      // courroie
+  expect(flexible.groups).not.toContain('Efforts');
+  expect(errors).toEqual([]);
+});
+
+test('each view keeps its own framing across view switches (§8)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'helical', 'planetary']);
+  const scale = () => page.evaluate(() => window.__viewer.renderer().viewport.getState().scale);
+
+  await showView(page, 'geometry');
+  await page.evaluate(() => window.__viewer.renderer().viewport.zoomAt(0, 0, 5));
+  const zoomed = await scale();
+  expect(zoomed).toBeGreaterThan(4);
+
+  // Une autre vue repart de son propre cadrage : les trois n'ont ni la même
+  // échelle ni la même disposition, partager un viewBox n'aurait aucun sens.
+  await showView(page, 'kinematic');
+  expect(await scale()).toBeCloseTo(1, 1);
+
+  // Et l'on retrouve le travail de cadrage en revenant.
+  await showView(page, 'geometry');
+  expect(await scale()).toBeCloseTo(zoomed, 1);
+
+  // Une AUTRE solution invalide les cadrages : un viewBox n'a de sens que pour
+  // le dessin qui l'a produit.
+  await page.evaluate(() => {
+    const other = GearEngineering.analyzeSolution([
+      { type: 'spur', input: { teeth: 11 }, output: { teeth: 88 }, parameters: { module: 3, pressureAngle: 20, faceWidth: 30 } }
+    ], 8, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+    window.__viewer.render(other);
+  });
+  expect(await scale()).toBeCloseTo(1, 1);
+  expect(errors).toEqual([]);
+});
+
+test('a preset takes you to the view that answers its question (§8)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'helical']);
+  await showView(page, 'teeth');
+
+  const state = () => page.evaluate(() => ({ view: window.__viewer.currentView,
+    pressed: Array.from(document.querySelectorAll('[data-preset][aria-pressed="true"]')).map(b => b.dataset.preset) }));
+
+  // Demander « Dimensionnement » en restant sur un schéma explicitement
+  // symbolique donnait des cotes dans la seule vue qui ne peut pas les porter.
+  await page.locator('[data-preset="sizing"]').click();
+  expect(await state()).toEqual({ view: 'geometry', pressed: ['sizing'] });
+  await expect(page.locator('#svgContainer')).not.toHaveClass(/hide-dimensions/);
+
+  await page.locator('[data-preset="motion"]').click();
+  expect(await state()).toEqual({ view: 'kinematic', pressed: ['motion'] });
+
+  await page.locator('[data-preset="mechanical"]').click();
+  expect(await state()).toEqual({ view: 'teeth', pressed: ['mechanical'] });
+  await expect(page.locator('#svgContainer')).not.toHaveClass(/hide-forces/);
+
+  // « Simple » est une question qu'on se pose dans n'importe quelle vue : il
+  // n'en impose aucune.
+  await showView(page, 'geometry');
+  await page.locator('[data-preset="simple"]').click();
+  expect(await state()).toEqual({ view: 'geometry', pressed: ['simple'] });
+  expect(errors).toEqual([]);
+});
+
+test('a warning badge leads to its cause, and every screen states it identically (§12)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'spur']);
+  await page.evaluate(() => {
+    // Second étage nettement sous-dimensionné : l'alerte porte sur LUI.
+    const stages = [
+      { type: 'spur', input: { teeth: 24 }, output: { teeth: 48 }, parameters: { module: 3, pressureAngle: 20, faceWidth: 25 } },
+      { type: 'spur', input: { teeth: 12 }, output: { teeth: 48 }, parameters: { module: 1, pressureAngle: 20, faceWidth: 5 } }
+    ];
+    window.__solution = GearEngineering.analyzeSolution(stages, 8, { inputSpeedRpm: 3000, inputTorqueNm: 60 });
+    window.__viewer.render(window.__solution);
+  });
+  await showView(page, 'teeth');
+
+  const badge = page.locator('#svgContainer .mechanical-warning[data-stage="1"]').first();
+  await expect(badge).toBeAttached();
+  await expect(badge).toHaveAttribute('role', 'button');
+
+  // Cliquer désigne l'étage : l'inspecteur docké s'ouvre sur lui, avec la cause.
+  await badge.click();
+  const inspector = page.locator('#stageInspector');
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toContainText('2 ·');
+  await expect(inspector.locator('.inspector-group', { hasText: 'Avertissements' })).toHaveCount(1);
+
+  // Le même défaut, dit de la même façon dans le dessin, la fiche et l'analyse.
+  const said = await page.evaluate(() => {
+    const engine = window.__solution.warnings.filter(w => w.stageIndex === 1);
+    const badges = Array.from(document.querySelectorAll('#svgContainer .mechanical-warning[data-stage="1"]'))
+      .map(node => node.dataset.warning);
+    const panel = Array.from(document.querySelectorAll('#stageInspector .inspector-grid div'))
+      .map(row => row.textContent);
+    return { codes: engine.map(w => w.code), messages: engine.map(w => w.message), badges: badges, panel: panel };
+  });
+  expect(said.codes.length).toBeGreaterThan(0);
+  // Le dessin ne montre que des alertes réellement émises pour cet étage…
+  said.badges.forEach(code => expect(said.codes).toContain(code));
+  // …et l'inspecteur reprend leur libellé, sans jamais montrer le code interne.
+  const text = said.panel.join(' | ');
+  said.messages.forEach(message => expect(text).toContain(message));
+  said.codes.forEach(code => expect(text).not.toContain(code));
+  expect(errors).toEqual([]);
+});
+
+test('the docked inspector hides nothing on a narrow screen', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.setViewportSize({ width: 640, height: 900 });
+  await mount(page, ['spur', 'helical']);
+  // Sous 900 px, l'espace de travail montre un volet à la fois : c'est celui du
+  // dessin qui nous intéresse ici.
+  await page.evaluate(() => {
+    const grid = document.querySelector('.design-workspace');
+    if (grid) grid.dataset.mobilePane = 'viewer';
+  });
+  await showView(page, 'teeth');
+  await page.evaluate(() => window.__viewer.renderer().selectStage(0));
+  await expect(page.locator('#stageInspector')).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const stage = document.querySelector('.viewer-stage');
+    const drawing = document.getElementById('svgContainer').getBoundingClientRect();
+    const panel = document.getElementById('stageInspector').getBoundingClientRect();
+    return { direction: getComputedStyle(stage).flexDirection,
+      // Empilé, l'inspecteur commence sous le dessin : il ne le recouvre pas.
+      below: panel.top >= drawing.bottom - 1,
+      drawingWidth: Math.round(drawing.width), panelWidth: Math.round(panel.width) };
+  });
+  expect(layout.direction, 'trop étroit pour deux colonnes').toBe('column');
+  expect(layout.below, 'l’inspecteur passe dessous, il ne se pose pas dessus').toBe(true);
+  // Et le dessin garde toute la largeur, au lieu d'en céder une colonne.
+  expect(layout.drawingWidth).toBeGreaterThan(300);
+
+  const reachable = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .train-stage'))
+    .map(stage => {
+      const b = stage.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.x + 4, b.y + b.height / 2);
+      return !(hit && hit.closest('#stageInspector'));
+    }));
+  expect(reachable.every(Boolean)).toBe(true);
+  expect(errors).toEqual([]);
+});

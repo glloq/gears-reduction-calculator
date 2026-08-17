@@ -1,34 +1,47 @@
 /* Badges graphiques discrets pour les alertes mécaniques structurées.
  *
- * Principe : pas de rouge partout. Un badge n'apparaît que si l'étage est
- * réellement problématique, et seuls les codes structurés connus sont rendus.
- * Comme les efforts, le groupe est ancré en monde mais dimensionné à l'écran
- * (data-viewer-scale) : un badge doit rester lisible sur un pignon de 10 mm
- * comme sur une couronne de 300 mm.
+ * Ce module NE DÉCIDE RIEN. Il posait ses propres seuils — rapport de conduite
+ * sous 1,2, SF sous 1,3, SH sous 1,1 — c'est-à-dire qu'il jugeait la mécanique
+ * pour son compte, avec une deuxième copie des limites du moteur. Deux copies
+ * divergent tôt ou tard, et le jour venu le dessin aurait dit « ! » là où
+ * l'analyse disait « conforme », sur le même réducteur.
+ *
+ * Il affiche donc les alertes que le moteur a émises, et rien d'autre. La
+ * portée vient de `stageIndex` : une alerte de chaîne — rendement global,
+ * échauffement — ne se pose sur aucun étage.
+ *
+ * Principe de rendu inchangé : pas de rouge partout, et comme les efforts le
+ * groupe est ancré en monde mais dimensionné à l'écran (data-viewer-scale),
+ * pour rester lisible sur un pignon de 10 mm comme sur une couronne de 300.
  */
 (function (root, factory) {
-  var api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.GearWarningOverlay = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+  var common = typeof module === 'object' && module.exports;
+  var api = factory(common ? require('../../core/SolutionCompliance.js') : root.GearSolutionCompliance);
+  if (common) module.exports = api; else root.GearWarningOverlay = api;
+})(typeof self !== 'undefined' ? self : this, function (catalogue) {
   'use strict';
-  var SUPPORTED = { LOW_CONTACT_RATIO: 1, UNDERCUT: 1, LOW_BENDING_SAFETY: 1, LOW_CONTACT_SAFETY: 1, HIGH_AXIAL_LOAD: 1 };
-  var LABELS = {
-    LOW_CONTACT_RATIO: 'Rapport de conduite faible',
-    UNDERCUT: 'Sous-coupe probable',
-    LOW_BENDING_SAFETY: 'Sécurité en flexion faible',
-    LOW_CONTACT_SAFETY: 'Sécurité au contact faible',
-    HIGH_AXIAL_LOAD: 'Effort axial élevé'
-  };
-
+  /**
+   * Les alertes d'un étage : celles dont la PORTÉE est cet étage. Une alerte
+   * sans portée vaut pour la chaîne entière et n'a rien à faire sur une roue —
+   * elle s'affichait pourtant sur toutes, faute de savoir où la mettre.
+   */
   function forStage(warnings, index) {
     return (warnings || []).filter(function (w) {
-      var stage = w && (w.stageIndex != null ? w.stageIndex : Number.isFinite(w.stage) ? w.stage - 1 : null);
-      return w && SUPPORTED[w.code] && (stage == null || stage === index);
+      if (!w || !w.code) return false;
+      var stage = Number.isFinite(w.stageIndex) ? w.stageIndex
+        : Number.isFinite(w.stage) ? w.stage - 1 : null;
+      return stage === index;
     });
   }
 
-  function render(create, host, warnings, index, origin) {
+  /**
+   * §12 : un badge « ! » qui n'est qu'une infobulle laisse le lecteur chercher
+   * lui-même l'étage concerné, puis la grandeur fautive. Il devient un chemin :
+   * cliquer désigne l'étage, et l'inspecteur docké en donne la cause chiffrée.
+   * @param {function(number)} [onSelect] désigne l'étage — fourni par le renderer,
+   *   qui reste seul maître de la sélection.
+   */
+  function render(create, host, warnings, index, origin, onSelect) {
     var list = forStage(warnings, index);
     if (!list.length) return null;
     var g = create('g', { class: 'warning-overlay', 'data-viewer-scale': '',
@@ -39,26 +52,28 @@
     var start = -(Math.min(list.length, 3) - 1) * 7.5;
     list.slice(0, 3).forEach(function (w, i) {
       var badge = create('g', { class: 'mechanical-warning warning-' + String(w.level || 'warning'),
+        'data-warning': w.code, 'data-stage': index,
         transform: 'translate(' + (start + i * 15) + ' -13)' });
       badge.appendChild(create('circle', { r: 6 }));
       badge.appendChild(create('text', { 'text-anchor': 'middle', dy: '.35em' }, '!'));
-      badge.appendChild(create('title', {}, w.code + ' — ' + (w.message || LABELS[w.code] || 'Avertissement mécanique')));
+      // Le message vient du moteur, déjà en français : le viewer ne le
+      // reformule pas, et n'affiche jamais le code interne.
+      badge.appendChild(create('title', {}, (w.message || catalogue.label(w.code)) +
+        (w.recommendation ? '\n' + w.recommendation : '')));
+      if (onSelect) {
+        badge.setAttribute('tabindex', '0');
+        badge.setAttribute('role', 'button');
+        badge.setAttribute('aria-label', 'Étage ' + (index + 1) + ' — ' + (w.message || catalogue.label(w.code)));
+        badge.addEventListener('click', function (event) { event.stopPropagation(); onSelect(index); });
+        badge.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(index); }
+        });
+      }
       g.appendChild(badge);
     });
     host.appendChild(g);
     return g;
   }
 
-  /** Dérive les alertes d'un étage à partir de sa géométrie et de son analyse. */
-  function derive(stage, mechanical) {
-    var g = stage && stage.geometry || {}, m = mechanical || {}, f = m.forces || {}, result = [];
-    if (Number.isFinite(g.totalContactRatio) && g.totalContactRatio < 1.2) result.push({ code: 'LOW_CONTACT_RATIO', message: LABELS.LOW_CONTACT_RATIO });
-    if (stage && stage.input && Number.isFinite(stage.input.teeth) && stage.input.teeth < 17 + ((stage.parameters && stage.parameters.profileShiftInput) || 0) * -10) result.push({ code: 'UNDERCUT', message: LABELS.UNDERCUT });
-    if (m.bending && m.bending.safetyFactor < 1.3) result.push({ code: 'LOW_BENDING_SAFETY', level: 'danger', message: LABELS.LOW_BENDING_SAFETY });
-    if (m.contact && m.contact.safetyFactor < 1.1) result.push({ code: 'LOW_CONTACT_SAFETY', level: 'danger', message: LABELS.LOW_CONTACT_SAFETY });
-    if (Math.abs(f.axialN || 0) > Math.abs(f.tangentialN || 0)) result.push({ code: 'HIGH_AXIAL_LOAD', message: LABELS.HIGH_AXIAL_LOAD });
-    return result;
-  }
-
-  return { supported: SUPPORTED, labels: LABELS, forStage: forStage, derive: derive, render: render };
+  return { forStage: forStage, render: render };
 });
