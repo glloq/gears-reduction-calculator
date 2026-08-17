@@ -93,4 +93,38 @@ async function search(page, spec) {
   await page.locator('.solution-card').first().waitFor({ timeout: 30000 });
 }
 
-module.exports = { openModal, setQuantity, defineSearch, search, openSetting, openOption };
+/**
+ * Bascule sur un mode de travail et rend la main sur le premier écran.
+ * @param {'design'|'build'|'analyze'|'explore'|'optimize'} mode
+ */
+async function chooseMode(page, mode) {
+  await openModal(page);
+  await page.locator('[data-step="type"]').click();
+  await page.locator(`#intentCards [data-workspace="${mode}"]`).click();
+  await page.locator('#intentCards').waitFor();
+}
+
+/**
+ * Ajoute un étage à la chaîne en construction.
+ * @param {string|null} family famille imposée, ou null pour la laisser libre
+ * @param {object} [values] valeurs épinglées, par chemin (`input.teeth`…)
+ */
+async function addBuildStage(page, family, values) {
+  const index = await page.locator('.build-stage').count();
+  await page.locator('#addBuildStageBtn').click();
+  await page.locator(`.build-stage[data-stage="${index}"]`).waitFor();
+  if (family) {
+    await page.locator('#buildFamily' + index).selectOption(family);
+    await page.locator(`.build-stage[data-stage="${index}"] .build-fields .build-field`).first().waitFor();
+  }
+  for (const [path, value] of Object.entries(values || {})) {
+    const field = page.locator('#buildStage' + index + '_' + path.replace(/\./g, '_'));
+    await field.fill(value == null ? '' : String(value));
+    await field.dispatchEvent('change');
+    await page.locator('#buildPlan').waitFor();
+  }
+  return index;
+}
+
+module.exports = { openModal, setQuantity, defineSearch, search, openSetting, openOption,
+  chooseMode, addBuildStage };

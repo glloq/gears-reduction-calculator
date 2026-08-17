@@ -109,6 +109,10 @@
     // Décrire ce qu'on a précède toute question sur ce qu'on veut : c'est la
     // machine décrite qui fixe le rapport à conserver.
     if (this.draft.intent.improves()) this._renderExisting();
+    // Construire ou étudier, c'est décrire une CHAÎNE. La technologie et la
+    // disposition n'ont alors plus de question à poser : elles sont écrites
+    // étage par étage juste en dessous.
+    if (this.draft.workspace.editsChain()) { this._renderBuild(); return this; }
 
     // §7, §8 : technologie et disposition sont d'excellentes fonctions, mais
     // quatre boutons et six cartes en permanence font payer à TOUS le prix
@@ -199,24 +203,32 @@
     };
   };
 
-  /** Première décision : que cherche-t-on ? */
+  /**
+   * Première décision : que veut-on FAIRE ? La question n'était pas celle-là —
+   * « que cherchez-vous ? » présuppose une recherche, et fermait la porte à la
+   * moitié des usages : décrire un mécanisme pour savoir ce qu'il fait, ou
+   * choisir soi-même ses étages, ne sont pas des recherches.
+   */
   TypeStep.prototype._renderIntent = function () {
-    var self = this, intent = this.draft.intent;
+    var self = this, workspace = this.draft.workspace, intent = this.draft.intent;
     var section = document.createElement('section');
     section.className = 'type-section';
-    section.innerHTML = '<h3>Que cherchez-vous&nbsp;?</h3>';
+    section.innerHTML = '<h3>Que voulez-vous faire&nbsp;?</h3>';
 
     var row = document.createElement('div');
     row.className = 'type-entries';
     row.id = 'intentCards';
-    GearApp.requirements.searchIntent.MODES.forEach(function (mode) {
-      var active = intent.mode === mode.id;
+    GearApp.requirements.workspace.MODES.forEach(function (mode) {
+      var active = workspace.mode === mode.id;
       var card = button('type-entry' + (active ? ' active' : ''), '');
-      card.dataset.intent = mode.id;
+      // `data-workspace`, et lui seul : la carte ne désigne plus une intention
+      // de recherche mais un mode de travail, et porter les deux noms pour la
+      // même valeur reviendrait à préparer la prochaine divergence.
+      card.dataset.workspace = mode.id;
       card.setAttribute('aria-pressed', String(active));
       card.innerHTML = '<span class="type-entry-icon" aria-hidden="true">' + mode.icon + '</span>' +
         '<strong>' + mode.label + '</strong><small>' + mode.help + '</small>';
-      card.addEventListener('click', function () { intent.setMode(mode.id); self._changed(); });
+      card.addEventListener('click', function () { self.draft.setWorkspaceMode(mode.id); self._changed(); });
       row.appendChild(card);
     });
     section.appendChild(row);
@@ -436,6 +448,236 @@
     }
     return wrap;
   }
+
+  // ===== Construire / étudier une chaîne =====
+
+  /**
+   * Familles proposées au constructeur. La crémaillère en est absente : elle
+   * relève du solveur linéaire, qui ne compose pas de chaîne — l'offrir ici
+   * promettrait un étage que rien ne saurait enchaîner.
+   */
+  function buildFamilies() {
+    return GearTransmissionRegistry.list()
+      .map(function (definition) { return definition.id; })
+      .filter(function (id) { return id !== 'rack'; });
+  }
+
+  /**
+   * Comment saisir un champ d'étage. Les libellés viennent d'où ils vivent
+   * déjà — l'éditeur du réducteur existant pour les dentures, le registre pour
+   * les organes d'un planétaire — plutôt que d'une table de plus (§19).
+   */
+  function fieldSpec(path) {
+    var existing = GearApp.requirements.existingReducer.FIELDS;
+    var found = null;
+    Object.keys(existing).forEach(function (key) {
+      existing[key].forEach(function (field) { if (field.path === path) found = field; });
+    });
+    if (found) return { label: found.label, unit: found.unit, min: found.min, max: found.max, step: found.step };
+    var definitions = GearTransmissionRegistry.parameterDefinitions.planetary || {};
+    var definition = definitions[path];
+    if (definition) {
+      return { label: definition.label, unit: '', min: definition.min, max: definition.max,
+        step: definition.step, options: definition.options, optionLabels: definition.optionLabels };
+    }
+    return { label: path, unit: '' };
+  }
+
+  /**
+   * Un champ de la chaîne en construction. Vider le champ ne le remet pas à sa
+   * valeur précédente : il REDEVIENT inconnu, et le solveur le cherchera. Sans
+   * cela, il serait impossible de dé-fixer une denture après l'avoir saisie —
+   * exactement le piège qu'on a déjà corrigé sur les priorités secondaires.
+   */
+  function buildField(path, value, spec, onCommit, id) {
+    var wrap = document.createElement('label');
+    wrap.className = 'build-field' + (value == null ? ' build-field-auto' : '');
+    wrap.appendChild(document.createTextNode(spec.label));
+    var input;
+    if (spec.options) {
+      input = document.createElement('select');
+      var empty = document.createElement('option');
+      empty.value = ''; empty.textContent = 'Automatique';
+      input.appendChild(empty);
+      spec.options.forEach(function (option) {
+        var node = document.createElement('option');
+        node.value = option;
+        node.textContent = (spec.optionLabels && spec.optionLabels[option]) || option;
+        input.appendChild(node);
+      });
+      input.value = value == null ? '' : String(value);
+    } else {
+      input = document.createElement('input');
+      input.type = 'number';
+      if (spec.min != null) input.min = spec.min;
+      if (spec.max != null) input.max = spec.max;
+      input.step = spec.step || 1;
+      input.placeholder = 'auto';
+      input.value = value == null ? '' : String(value);
+    }
+    input.id = id;
+    input.dataset.path = path;
+    input.addEventListener('change', function () {
+      var raw = String(input.value).trim();
+      if (raw === '') return onCommit(null);
+      if (spec.options) return onCommit(raw);
+      var parsed = parseFloat(raw);
+      onCommit(isFinite(parsed) ? parsed : null);
+    });
+    wrap.appendChild(input);
+    if (spec.unit) {
+      var suffix = document.createElement('span');
+      suffix.className = 'parts-unit';
+      suffix.textContent = spec.unit;
+      wrap.appendChild(suffix);
+    }
+    return wrap;
+  }
+
+  /**
+   * L'atelier : une chaîne d'étages, chacun connu au degré qu'on veut. C'est la
+   * capacité qui existait déjà — Technologie → Architecture — mais qui ne
+   * permettait de fixer que la FAMILLE de chaque étage, jamais ses dentures.
+   */
+  TypeStep.prototype._renderBuild = function () {
+    var self = this, build = this.draft.build;
+    var Levels = GearApp.requirements.build.LEVEL_LABELS;
+    var section = document.createElement('section');
+    section.className = 'type-section build-section';
+    section.innerHTML = '<h3>Votre transmission</h3>';
+
+    var plan = document.createElement('p');
+    plan.className = 'build-plan';
+    plan.id = 'buildPlan';
+    plan.textContent = this._buildPlanText();
+    section.appendChild(plan);
+
+    var list = document.createElement('ol');
+    list.className = 'build-stages';
+    list.id = 'buildStages';
+    build.stages.forEach(function (stage, index) {
+      list.appendChild(self._buildStage(stage, index, Levels));
+    });
+    section.appendChild(list);
+
+    var add = button('btn-small btn-primary', '+ Ajouter un étage', function () {
+      build.addStage(null);
+      self._changed();
+    });
+    add.id = 'addBuildStageBtn';
+    section.appendChild(add);
+
+    // Le moteur applique UN module à toute la chaîne : le proposer par étage
+    // serait une promesse que rien ne tient.
+    section.appendChild(buildField('module', build.module,
+      { label: 'Module de la chaîne', unit: 'mm', min: 0.1, step: 0.05 },
+      function (value) { build.setModule(value); self._changed(); }, 'buildModule'));
+
+    var errors = build.errors();
+    if (errors.length) {
+      var box = document.createElement('ul');
+      box.className = 'build-errors';
+      box.id = 'buildErrors';
+      errors.forEach(function (entry) {
+        var item = document.createElement('li');
+        item.textContent = 'Étage ' + entry.stage + ' : ' + entry.text;
+        box.appendChild(item);
+      });
+      section.appendChild(box);
+    }
+    this.host.appendChild(section);
+  };
+
+  /** Ce qui se passera au clic : le dire évite de faire deviner (§8). */
+  TypeStep.prototype._buildPlanText = function () {
+    var build = this.draft.build;
+    if (build.isEmpty()) return 'Ajoutez un étage pour commencer. Laissez vide ce que vous ne connaissez pas encore.';
+    var unknown = build.unknownCount();
+    if (!unknown) {
+      var ratio = build.ratio();
+      return 'Chaîne entièrement décrite' + (ratio ? ', rapport ' + (Math.round(ratio * 100) / 100) + ':1' : '') +
+        ' — elle sera calculée directement, sans recherche.';
+    }
+    return unknown + (unknown > 1 ? ' étages restent' : ' étage reste') + ' à compléter : le solveur ne cherchera qu’eux.';
+  };
+
+  TypeStep.prototype._buildStage = function (stage, index, Levels) {
+    var self = this, build = this.draft.build;
+    var level = stage.level(), badge = Levels[level];
+    var item = document.createElement('li');
+    item.className = 'build-stage';
+    item.dataset.stage = String(index);
+    item.dataset.level = level;
+
+    var head = document.createElement('header');
+    head.className = 'build-stage-head';
+    var title = document.createElement('strong');
+    title.textContent = 'Étage ' + (index + 1);
+    head.appendChild(title);
+
+    var mark = document.createElement('span');
+    mark.className = 'build-level';
+    mark.dataset.level = level;
+    mark.title = badge.help;
+    mark.textContent = badge.icon + ' ' + badge.label;
+    head.appendChild(mark);
+
+    var family = document.createElement('select');
+    family.className = 'build-family';
+    family.id = 'buildFamily' + index;
+    var free = document.createElement('option');
+    free.value = ''; free.textContent = 'Famille automatique';
+    family.appendChild(free);
+    buildFamilies().forEach(function (id) {
+      var option = document.createElement('option');
+      option.value = id;
+      option.textContent = GearTransmissionRegistry.familyName(id, 'short');
+      family.appendChild(option);
+    });
+    family.value = stage.family || '';
+    family.addEventListener('change', function () {
+      stage.setFamily(family.value || null);
+      self._changed();
+    });
+    head.appendChild(family);
+
+    [['↑', -1], ['↓', 1]].forEach(function (entry) {
+      var move = button('btn-small build-move', entry[0], function () {
+        build.moveStage(index, entry[1]);
+        self._changed();
+      });
+      move.dataset.move = String(entry[1]);
+      move.setAttribute('aria-label', entry[1] < 0 ? 'Monter l’étage' : 'Descendre l’étage');
+      move.disabled = index + entry[1] < 0 || index + entry[1] >= build.stages.length;
+      head.appendChild(move);
+    });
+
+    var remove = button('btn-small build-remove', '✕', function () {
+      build.removeStage(index);
+      self._changed();
+    });
+    remove.setAttribute('aria-label', 'Retirer l’étage ' + (index + 1));
+    head.appendChild(remove);
+    item.appendChild(head);
+
+    var fields = document.createElement('div');
+    fields.className = 'build-fields';
+    if (!stage.family) {
+      var hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = 'Choisissez une famille pour fixer des dentures, ou laissez le système décider de tout cet étage.';
+      fields.appendChild(hint);
+    } else {
+      stage.fields().forEach(function (field) {
+        fields.appendChild(buildField(field.path, field.value, fieldSpec(field.path), function (value) {
+          stage.set(field.path, value);
+          self._changed();
+        }, 'buildStage' + index + '_' + field.path.replace(/\./g, '_')));
+      });
+    }
+    item.appendChild(fields);
+    return item;
+  };
 
   /** Seconde décision, indépendante : comment choisir la technologie ? */
   TypeStep.prototype._renderPolicy = function (host) {

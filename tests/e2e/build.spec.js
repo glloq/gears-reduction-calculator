@@ -1,0 +1,177 @@
+const { test, expect } = require('@playwright/test');
+const { watchConsoleErrors } = require('./console-errors.js');
+const { openModal, setQuantity, chooseMode, addBuildStage } = require('./flow.js');
+
+// Le mode « Construire » : choisir soi-même les étages, et ne faire chercher
+// que ce qu'on n'a pas fixé. La capacité existait — Technologie → Architecture
+// — mais on n'y fixait que la FAMILLE de chaque étage, jamais ses dentures.
+
+test('the first screen asks what to do, not what to search for', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await expect(page.locator('#searchModal')).toBeVisible();
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(5);
+  await expect(page.locator('[data-workspace="build"]')).toContainText('Construire');
+  await expect(page.locator('[data-workspace="analyze"]')).toContainText('Étudier');
+  // Un mode sans effet n'est pas affiché : « Comparer » est déclaré dans le
+  // modèle, il n'a pas de carte tant qu'il ne fait rien.
+  await expect(page.locator('[data-workspace="compare"]')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('choosing Construire replaces the need questions with a chain editor', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  // La liste est vide au départ : c'est la section qui doit être là, pas une
+  // hauteur de liste.
+  await expect(page.locator('.build-section')).toBeVisible();
+  await expect(page.locator('#buildStages')).toBeAttached();
+  await expect(page.locator('#addBuildStageBtn')).toBeVisible();
+  // La technologie et la disposition n'ont plus de question à poser : elles
+  // s'écrivent étage par étage juste en dessous.
+  await expect(page.locator('.setting-toggle[data-setting="technology"]')).toHaveCount(0);
+  await expect(page.locator('#buildPlan')).toContainText('Ajoutez un étage');
+});
+
+test('the freedom of a stage is read from what it carries (🔒 ◐ ⚙)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, null);
+  const stage = page.locator('.build-stage[data-stage="0"]');
+  await expect(stage).toHaveAttribute('data-level', 'auto');
+
+  await page.locator('#buildFamily0').selectOption('spur');
+  await expect(stage).toHaveAttribute('data-level', 'auto');
+  await page.locator('#buildStage0_input_teeth').fill('20');
+  await page.locator('#buildStage0_input_teeth').dispatchEvent('change');
+  await expect(stage).toHaveAttribute('data-level', 'partial');
+  await page.locator('#buildStage0_output_teeth').fill('60');
+  await page.locator('#buildStage0_output_teeth').dispatchEvent('change');
+  await expect(stage).toHaveAttribute('data-level', 'fixed');
+  await expect(stage.locator('.build-level')).toContainText('Imposé');
+
+  // Vider un champ REDONNE la liberté : sans cela, une denture saisie par
+  // erreur ne pourrait plus jamais être rendue au solveur.
+  await page.locator('#buildStage0_output_teeth').fill('');
+  await page.locator('#buildStage0_output_teeth').dispatchEvent('change');
+  await expect(stage).toHaveAttribute('data-level', 'partial');
+});
+
+test('a fully described chain is computed, without any search', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await addBuildStage(page, 'planetary', { sunTeeth: 20, ringTeeth: 70 });
+  await page.locator('#buildModule').fill('1.5');
+  await page.locator('#buildModule').dispatchEvent('change');
+
+  // Le bouton dit ce qu'il va faire : « Rechercher les solutions » serait faux,
+  // rien ne sera cherché.
+  await expect(page.locator('#buildPlan')).toContainText('sans recherche');
+  await expect(page.locator('#searchModalSubmit')).toContainText('Analyser cette transmission');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  await expect(page.locator('.solution-architecture').first()).toContainText('Droit → Épicycloïdal');
+  // Le résultat est une vraie solution : viewer, analyse mécanique, inspecteur.
+  await expect(page.locator('#svgContainer svg')).toBeVisible();
+  await expect(page.locator('#mechanicalPanel')).toContainText('13.5');
+  expect(errors).toEqual([]);
+});
+
+test('a chain that cannot exist is named, not silently dropped', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  // (79 − 20) / 2 = 29,5 : le satellite devrait avoir une demi-dent.
+  await addBuildStage(page, 'planetary', { sunTeeth: 20, ringTeeth: 79 });
+  await expect(page.locator('#buildErrors')).toBeVisible();
+  await expect(page.locator('#buildErrors')).toContainText('Étage 1');
+  await expect(page.locator('#searchModalSubmit')).toBeDisabled();
+});
+
+test('the solver completes only the stages left open', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });   // 3:1 imposé
+  await addBuildStage(page, 'spur');                                              // à trouver
+  await expect(page.locator('#buildPlan')).toContainText('à compléter');
+  await expect(page.locator('#searchModalSubmit')).toContainText('Compléter (1 étage)');
+  // Compléter suppose une cible : sans rapport visé, le solveur n'a rien pour
+  // départager les chaînes qu'il pourrait former. Le bouton le dit.
+  await expect(page.locator('#searchModalSubmit')).toBeDisabled();
+  await expect(page.locator('#searchModalSubmit')).toHaveAttribute('title', /rapport visé/);
+
+  await setQuantity(page, 'ratio', 15);
+  await page.locator('[data-step="type"]').click();
+  await expect(page.locator('#searchModalSubmit')).toBeEnabled();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+
+  // L'étage imposé est resté exactement ce qu'il était, et la chaîne garde sa
+  // longueur : elle est une décision, pas une inconnue.
+  const found = await page.evaluate(() => {
+    const stages = window.GearApp._workbench.solutions[0].stages;
+    return stages.map(s => ({ type: s.type, input: s.input && s.input.teeth, output: s.output && s.output.teeth }));
+  });
+  expect(found.length).toBe(2);
+  expect(found[0]).toEqual({ type: 'spur', input: 20, output: 60 });
+  expect(found[1].type).toBe('spur');
+});
+
+test('imposing only the families dimensions the architecture', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  // « Je veux absolument deux étages droits, trouve les dentures. »
+  await addBuildStage(page, 'spur');
+  await addBuildStage(page, 'spur');
+  await setQuantity(page, 'ratio', 18);
+  await page.locator('[data-step="type"]').click();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+  const found = await page.evaluate(() => window.GearApp._workbench.solutions[0].stages.map(s => s.type));
+  expect(found).toEqual(['spur', 'spur']);
+});
+
+test('Étudier l’existant computes a described mechanism without searching', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 18, 'output.teeth': 72 });
+  await expect(page.locator('#searchModalSubmit')).toContainText('Analyser');
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  await expect(page.locator('#mechanicalPanel')).toContainText('4.0000');
+});
+
+test('a built chain survives a reload', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  await page.reload();
+  await expect(page.locator('#searchModal')).toBeVisible();
+  await expect(page.locator('[data-workspace="build"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#buildStage0_input_teeth')).toHaveValue('20');
+  await expect(page.locator('.build-stage[data-stage="0"]')).toHaveAttribute('data-level', 'fixed');
+});
+
+test('an abandoned chain edit leaves the displayed one untouched', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+
+  // §18 : le modal édite un BROUILLON. Ajouter un étage puis fermer ne doit
+  // rien changer à la transmission affichée.
+  await openModal(page);
+  await addBuildStage(page, 'spur', { 'input.teeth': 15, 'output.teeth': 45 });
+  await page.locator('#searchModalClose').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1);
+  const stages = await page.evaluate(() => window.GearApp._workbench.session.build.stages.length);
+  expect(stages).toBe(1);
+});

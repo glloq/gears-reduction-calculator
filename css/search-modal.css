@@ -532,3 +532,54 @@ body.modal-open { overflow: hidden; }
   background: var(--surface-2);
   font-size: var(--font-xs); color: var(--muted);
 }
+
+/* ----- Construire : une chaîne d'étages, connus au degré qu'on veut ----- */
+
+.build-plan {
+  margin: 0 0 var(--sp-2); padding: var(--sp-1) var(--sp-2);
+  font-size: var(--font-xs); color: var(--muted);
+  background: var(--surface-2); border-radius: var(--radius-sm);
+}
+.build-stages { list-style: none; margin: 0 0 var(--sp-2); padding: 0; display: grid; gap: var(--sp-1); }
+.build-stage {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+/* Le degré de liberté se voit d'un coup d'œil sur la colonne de gauche : on
+   doit pouvoir répondre à « qu'est-ce qui reste à trouver ? » sans lire. */
+.build-stage[data-level="fixed"] { border-left: 3px solid var(--success); }
+.build-stage[data-level="partial"] { border-left: 3px solid var(--warning); }
+.build-stage[data-level="auto"] { border-left: 3px solid var(--muted); }
+.build-stage-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.build-stage-head strong { font-size: var(--font-xs); }
+.build-level { font-size: var(--font-xs); color: var(--muted); white-space: nowrap; }
+.build-level[data-level="fixed"] { color: var(--success); }
+.build-level[data-level="partial"] { color: var(--warning); }
+.build-family { flex: 0 1 10rem; font-size: var(--font-xs); }
+.build-move, .build-remove {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-1); color: var(--muted);
+  width: 1.75rem; height: 1.75rem; line-height: 1; padding: 0;
+}
+.build-remove { margin-left: auto; }
+.build-remove:hover { border-color: var(--danger, #d33); color: var(--danger, #d33); }
+.build-move:disabled { opacity: .35; }
+.build-fields {
+  display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2);
+  margin-top: var(--sp-1);
+}
+.build-fields .hint { margin: 0; font-size: var(--font-xs); }
+.build-field {
+  display: flex; align-items: center; gap: 4px;
+  font-size: var(--font-xs); color: var(--muted);
+}
+.build-field input, .build-field select { flex: 0 0 5rem; }
+.build-field select { flex-basis: 9rem; }
+/* Un champ laissé vide n'est pas un oubli : c'est une inconnue assumée, et le
+   dire en gris évite de le lire comme un formulaire incomplet. */
+.build-field-auto input, .build-field-auto select { border-style: dashed; }
+.build-errors {
+  margin: var(--sp-1) 0 0; padding-left: 1.2rem;
+  font-size: var(--font-xs); color: var(--danger, #d33);
+}

@@ -506,9 +506,25 @@
    * reviendrait à cacher l'information au lieu de la résumer.
    */
   /** Ce qui partira au moteur, en une ligne, à côté du bouton. */
+  /** Ce que le bouton d'action va réellement déclencher. */
+  SearchModal.prototype._actionLabel = function () {
+    var draft = this.draft;
+    if (!draft.workspace.editsChain()) return 'Rechercher les solutions';
+    var unknown = draft.build.unknownCount();
+    if (!unknown) return 'Analyser cette transmission';
+    return 'Compléter (' + unknown + (unknown > 1 ? ' étages' : ' étage') + ')';
+  };
+
   /** Pourquoi la recherche ne peut pas partir, en une phrase. */
   SearchModal.prototype._blockedReason = function () {
-    var errors = this.draft.diagnose().filter(function (note) { return note.level === 'error'; });
+    var draft = this.draft;
+    if (draft.workspace.editsChain()) {
+      if (draft.build.isEmpty()) return 'Ajoutez au moins un étage';
+      var broken = draft.build.errors();
+      if (broken.length) return 'Étage ' + broken[0].stage + ' : ' + broken[0].text;
+      return 'Posez le rapport visé pour que le solveur puisse compléter la chaîne';
+    }
+    var errors = draft.diagnose().filter(function (note) { return note.level === 'error'; });
     return errors.length ? errors[0].text : 'Complétez le besoin pour lancer la recherche';
   };
 
@@ -925,6 +941,9 @@
     this.searchButton.disabled = !ready;
     // §28 : un bouton désactivé doit dire POURQUOI, et le dire au lecteur
     // d'écran — un `title` seul ne lui parvient pas.
+    // §8 : le bouton dit ce qu'il va faire. « Rechercher les solutions » sur
+    // une chaîne entièrement décrite serait faux — rien ne sera cherché.
+    this.searchButton.textContent = this._actionLabel();
     this.searchButton.title = ready ? '' : this._blockedReason();
     this.searchButton.setAttribute('aria-describedby', 'searchSummaryState');
     return this;

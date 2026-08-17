@@ -133,7 +133,13 @@
     seed = seed || {};
     this.requirement = new R.RequirementModel(seed.requirement || {});
     this.preferences = new R.PreferenceModel(seed.preferences || {});
+    // Ce que l'utilisateur est venu FAIRE. `intent` reste ce qu'on demande au
+    // solveur ; les deux ne se recouvrent pas, et la moitié des modes de
+    // travail ne lancent aucune recherche.
+    this.workspace = new R.WorkspaceModel(seed.workspace || {});
     this.intent = new R.SearchIntentModel(seed.intent || {});
+    // La chaîne qu'on construit soi-même, cran par cran.
+    this.build = new R.BuildModel(seed.build || {});
     this.technologySelection = new R.TechnologySelectionModel(seed.technologySelection || {});
     this.technical = new R.TechnicalSettingsModel(seed.technical || {});
     this.existing = new R.ExistingReducer(seed.existing || {});
@@ -257,6 +263,34 @@
     return allowed.length ? allowed : universe.slice(0, 1);
   };
 
+  // ===== Mode de travail =====
+
+  /**
+   * Changer de mode de travail aligne l'intention de recherche. C'est la seule
+   * direction autorisée : le mode décide, l'intention obéit — sinon deux
+   * réglages diraient la même chose et finiraient par se contredire.
+   */
+  SearchSession.prototype.setWorkspaceMode = function (id) {
+    this.workspace.setMode(id);
+    var intent = this.workspace.searchIntent();
+    if (intent) this.intent.setMode(intent);
+    this._advice = null;
+    return this;
+  };
+
+  /**
+   * Ce qui va réellement tourner au moment de valider : une recherche, une
+   * recherche restreinte aux inconnues, ou un simple calcul.
+   */
+  SearchSession.prototype.plannedEngine = function () {
+    return this.workspace.engineFor(this.workspace.editsChain() ? this.build.unknownCount() : 1);
+  };
+
+  /** La chaîne construite, analysée sans passer par le solveur. */
+  SearchSession.prototype.analyzeBuild = function () {
+    return this.build.analyze(this.engineeringOptions());
+  };
+
   // ===== Vers le moteur =====
 
   SearchSession.prototype.compile = function (overrides) {
@@ -269,6 +303,16 @@
     // « 4 par défaut » ferait chercher des trains que l'utilisateur a exclus.
     var imposed = this.technologySelection.stagesRequired();
     if (imposed) request.maxStages = imposed;
+    // Une chaîne construite l'impose encore plus directement : le nombre
+    // d'étages n'est plus une inconnue, c'est une décision déjà prise.
+    if (this.workspace.editsChain() && !this.build.isEmpty()) {
+      request.maxStages = this.build.stages.length;
+      // Les familles citées doivent être explorables, sinon aucun candidat
+      // n'est engendré et la recherche échoue sans dire pourquoi.
+      this.build.families().forEach(function (id) {
+        if (request.technologies.indexOf(id) === -1) request.technologies.push(id);
+      });
+    }
     // La méthode fixe la largeur de la fenêtre de rapport : « le meilleur
     // compromis » n'a pas de sens à 0,1 % près, et une cible n'en a pas à 5 %.
     // Une intention explicite sur la grandeur (« ≈ 12 ± 2 % ») reste prioritaire.
@@ -377,6 +421,14 @@
     var request = this.compile(overrides);
     var settings = this.technical.toAdapterSettings();
     settings.typeTemplate = this.technologySelection.toTemplate();
+    // Mode « Construire » : la chaîne décrite EST le gabarit, et elle impose
+    // aussi les dentures déjà connues. Elle prime sur le gabarit de familles,
+    // qu'elle contient de toute façon.
+    if (this.workspace.editsChain() && !this.build.isEmpty()) {
+      settings.stageConstraints = this.build.toStageConstraints();
+      settings.typeTemplate = this.build.toTemplate();
+      if (this.build.module != null) { settings.module = this.build.module; settings.moduleMode = 'fixed'; }
+    }
     var params = R.LegacySearchAdapter.toSearchParams(request, settings, GearApp.models.SearchParams);
     params.requestNotes = request.notes;
     return params;
@@ -468,6 +520,15 @@
     // Une exploration n'a pas de rapport à déterminer : c'est tout son objet.
     // Exiger un besoin « complet » lui interdirait de démarrer. Une
     // amélioration, elle, tire son rapport du réducteur décrit.
+    // Construire ou étudier : c'est la CHAÎNE qui doit tenir debout, pas le
+    // besoin. Exiger un rapport cible pour analyser un mécanisme qu'on décrit
+    // reviendrait à demander la réponse avant de poser la question.
+    if (this.workspace.editsChain()) {
+      if (this.build.isEmpty() || this.build.errors().length) return false;
+      // Compléter suppose une cible : sans rapport demandé, le solveur n'a
+      // rien pour choisir entre les chaînes qu'il pourrait former.
+      return this.build.unknownCount() === 0 || this.requirement.isComplete();
+    }
     var need = this.intent.explores() ? true
       : this.intent.improves() ? (!!this.existing.ratio() && !this.existing.errors().length)
       : this.requirement.isComplete();
@@ -602,7 +663,9 @@
 
   SearchSession.prototype.toJSON = function () {
     return {
+      workspace: this.workspace.toJSON(),
       intent: this.intent.toJSON(),
+      build: this.build.toJSON(),
       requirement: this.requirement.toJSON(),
       preferences: this.preferences.toJSON(),
       technologySelection: this.technologySelection.toJSON(),
@@ -618,6 +681,8 @@
 
   /** Promotion du brouillon : la session adopte son contenu, en place. */
   SearchSession.prototype.adopt = function (draft) {
+    this.workspace = draft.workspace;
+    this.build = draft.build;
     this.intent = draft.intent;
     this.requirement = draft.requirement;
     this.preferences = draft.preferences;
