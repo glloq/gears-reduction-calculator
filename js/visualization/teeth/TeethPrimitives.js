@@ -27,6 +27,9 @@
   function fixed(value, digits) { return finite(value, 0).toFixed(digits == null ? 2 : digits); }
   function node(tag, attrs, text) { return { tag: tag, attrs: attrs, text: text }; }
 
+  /** Groupe de descripteurs : le rendu le matérialise avec ses enfants. */
+  function group(attrs, children) { return { tag: 'g', attrs: attrs, children: children }; }
+
   /** level(diameterPx) → niveau de détail pour une roue de ce diamètre écran. */
   function level(diameterPx) {
     var size = finite(diameterPx, 0);
@@ -147,33 +150,70 @@
    * Vis sans fin : corps cylindrique + filet continu tracé à l'angle d'avance
    * réel, et axe matérialisé — c'est ce qui rend l'entraînement lisible.
    */
-  function wormBody(wheel, lod) {
+  /**
+   * §11 à §14 : une vis sans fin vue de côté tourne autour de son axe
+   * LONGITUDINAL. Son corps ne bouge donc pas d'un pixel — ce sont les filets
+   * hélicoïdaux qui défilent et donnent la phase. Le rendu translatait le
+   * groupe entier, corps et axe compris : la vis se promenait le long de son
+   * arbre à chaque tour.
+   *
+   * On sépare donc :
+   *   .worm-body / .stage-axis   FIXES
+   *   g.worm-thread-phase        SEUL animé, et clippé au corps
+   *
+   * Le motif déborde d'un pas de chaque côté : sans cela un filet disparaîtrait
+   * à une extrémité avant que le suivant n'entre par l'autre, et l'animation
+   * sauterait à chaque tour au lieu de boucler.
+   */
+  var WORM_MARGIN_PITCHES = 2;
+
+  function wormGeometry(wheel) {
     var r = radii(wheel);
     var radius = Math.max(2, r.pitch);
-    var length = Math.max(radius * 4, 24 * r.module);
+    var starts = Math.max(1, Math.round(finite(wheel.teeth, 1)));
+    return {
+      radius: radius,
+      length: Math.max(radius * 4, 24 * r.module),
+      module: r.module,
+      starts: starts,
+      // Le pas apparent d'UN filet. Avec n filets, ils sont déphasés de
+      // pitch/n : c'est ce qui distingue visuellement une vis 1 filet d'une
+      // vis 4 filets, et pas un pas dessiné plus grand.
+      pitch: Math.max(1.5 * r.module, Math.PI * r.module * starts),
+      lead: rad(finite(wheel.leadAngle, 20))
+    };
+  }
+
+  function wormBody(wheel, lod) {
+    var g = wormGeometry(wheel);
+    var radius = g.radius, length = g.length;
     var body = [node('rect', { class: 'tooth-profile worm-body', x: fixed(-length / 2), y: fixed(-radius),
       width: fixed(length), height: fixed(2 * radius), rx: fixed(radius) })];
     if (lod <= LEVELS.SILHOUETTE) return body;
-    var lead = rad(finite(wheel.leadAngle, 20));
-    var starts = Math.max(1, Math.round(finite(wheel.teeth, 1)));
-    var pitch = Math.max(1.5 * r.module, Math.PI * r.module * starts);
+
     var samples = lod >= LEVELS.INVOLUTE ? 12 : 5;
-    // Un filet = une sinusoïde apparente : le flanc visible du profil hélicoïdal.
-    for (var start = -length / 2; start < length / 2; start += pitch) {
-      var d = '';
-      for (var i = 0; i <= samples; i++) {
-        var t = i / samples;
-        var x = start + t * pitch;
-        if (x > length / 2) break;
-        var y = -radius * Math.cos(Math.PI * t) * Math.cos(lead);
-        d += (d ? ' L ' : 'M ') + fixed(x) + ' ' + fixed(y);
+    var margin = WORM_MARGIN_PITCHES * g.pitch;
+    var threadPaths = [];
+    // Un filet = une sinusoïde apparente : le flanc visible du profil
+    // hélicoïdal. Les n filets d'une vis multiple sont régulièrement déphasés.
+    for (var start = -length / 2 - margin; start < length / 2 + margin; start += g.pitch) {
+      for (var k = 0; k < g.starts; k++) {
+        var offset = start + k * g.pitch / g.starts;
+        var d = '';
+        for (var i = 0; i <= samples; i++) {
+          var t = i / samples;
+          var x = offset + t * g.pitch / g.starts;
+          var y = -radius * Math.cos(Math.PI * t) * Math.cos(g.lead);
+          d += (d ? ' L ' : 'M ') + fixed(x) + ' ' + fixed(y);
+        }
+        if (d) threadPaths.push(node('path', { class: 'worm-thread', d: d }));
       }
-      if (d) body.push(node('path', { class: 'worm-thread', d: d }));
     }
-    body.push(node('path', { class: 'stage-axis', d: 'M ' + fixed(-length / 2 - 3 * r.module) + ' 0 H ' + fixed(length / 2 + 3 * r.module) }));
+    body.push(group({ class: 'worm-thread-phase' }, threadPaths));
+    body.push(node('path', { class: 'stage-axis', d: 'M ' + fixed(-length / 2 - 3 * g.module) + ' 0 H ' + fixed(length / 2 + 3 * g.module) }));
     if (lod >= LEVELS.TECHNICAL) {
-      body.push(node('text', { class: 'worm-label', 'text-anchor': 'middle', y: fixed(-radius - 2 * r.module),
-        'font-size': fixed(Math.max(2.4, r.module * 2), 1) }, 'γ ' + fixed(finite(wheel.leadAngle, 20), 0) + '° · ' + starts + ' filet' + (starts > 1 ? 's' : '')));
+      body.push(node('text', { class: 'worm-label', 'text-anchor': 'middle', y: fixed(-radius - 2 * g.module),
+        'font-size': fixed(Math.max(2.4, g.module * 2), 1) }, 'γ ' + fixed(finite(wheel.leadAngle, 20), 0) + '° · ' + g.starts + ' filet' + (g.starts > 1 ? 's' : '')));
     }
     return body;
   }
@@ -267,5 +307,6 @@
   }
 
   return { LEVELS: LEVELS, THRESHOLDS: THRESHOLDS, level: level, levelFor: levelFor, build: build,
-    radii: radii, circlePath: circlePath, node: node };
+    radii: radii, circlePath: circlePath, node: node, group: group,
+    wormGeometry: wormGeometry, WORM_MARGIN_PITCHES: WORM_MARGIN_PITCHES };
 });

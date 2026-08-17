@@ -39,6 +39,65 @@
   Dimensions.prototype.exact = function (key) { return this.provenance[key] === 'engine'; };
   Dimensions.prototype.result = function () { return { geometry: compact(this.values), provenance: this.provenance }; };
 
+  /**
+   * §6, §7 : QUEL membre est l'entrée, la sortie, l'organe fixé. La question se
+   * reposait dans chaque vue, à partir de l'ordre des roues ou d'un `role`
+   * codant la position — si bien qu'un planétaire dont l'entrée est la couronne
+   * était dessiné, inspecté et coté comme si le solaire menait. La scène
+   * répond une fois pour toutes ; aucun renderer ne redéduit.
+   *
+   * `role` reste la POSITION dans l'étage (S/R/P/C, input/output, rack). C'est
+   * `functionalRole` qui dit la FONCTION.
+   */
+  var MEMBER_NAMES = { S: 'Solaire', R: 'Couronne', P: 'Satellite', C: 'Porte-satellites',
+    input: 'Menant', output: 'Mené', rack: 'Crémaillère', pinion: 'Pignon' };
+
+  var FUNCTION_NAMES = { input: 'Entrée', output: 'Sortie', fixed: 'Fixe', intermediate: 'Intermédiaire' };
+
+  /** Les trois organes d'un planétaire, tels que l'étage les déclare. */
+  function planetaryTopology(stage) {
+    return {
+      input: stage.inputMember || 'S',
+      output: stage.outputMember || 'C',
+      fixed: stage.fixed || 'R'
+    };
+  }
+
+  /**
+   * Fonction de chaque position, pour un étage donné.
+   * @returns {object} position → 'input' | 'output' | 'fixed' | 'intermediate'
+   */
+  function functionalRoles(stage) {
+    if (stage.type === 'planetary' || stage.type === 'epicyclic') {
+      var topology = planetaryTopology(stage);
+      var out = { S: 'intermediate', R: 'intermediate', P: 'intermediate', C: 'intermediate' };
+      // Une position ne peut pas tenir deux fonctions : si l'étage est
+      // incohérent, la dernière écrite gagne et la validation le signalera
+      // ailleurs — la scène ne corrige pas, elle décrit.
+      if (out[topology.fixed] !== undefined) out[topology.fixed] = 'fixed';
+      if (out[topology.output] !== undefined) out[topology.output] = 'output';
+      if (out[topology.input] !== undefined) out[topology.input] = 'input';
+      return out;
+    }
+    if (stage.type === 'rack') return { input: 'input', rack: 'output' };
+    return { input: 'input', output: 'output' };
+  }
+
+  /**
+   * Comment la rotation de ce membre doit être REPRÉSENTÉE. C'est une décision
+   * graphique, distincte du mouvement physique que calcule la cinématique :
+   * une vis sans fin tourne bel et bien sur son axe, mais la dessiner en
+   * tournant dans le plan de l'écran serait faux.
+   */
+  function rotationDisplayMode(stage, position, functional) {
+    if (functional === 'fixed') return 'fixed';
+    if (stage.type === 'rack') return position === 'rack' ? 'linear' : 'inPlane';
+    if (stage.type === 'worm') return position === 'input' ? 'axialThreadPhase' : 'inPlane';
+    if (stage.type === 'bevel') return 'facePhase';
+    if ((stage.type === 'planetary' || stage.type === 'epicyclic') && position === 'P') return 'orbitAndSpin';
+    return 'inPlane';
+  }
+
   function member(id, stageIndex, role, kind, dims, kinematic, extra) {
     var built = dims.result();
     return Object.assign({ id: id, stageIndex: stageIndex, role: role, kind: kind,
@@ -47,6 +106,19 @@
       isExact: function (key) { return built.provenance[key] === 'engine'; },
       schematic: Object.keys(built.provenance).some(function (k) { return built.provenance[k] === 'derived'; }),
       mechanical: compact(kinematic || {}) }, extra || {});
+  }
+
+  /** Ajoute à chaque membre sa fonction, son nom lisible et son mode d'animation. */
+  function describeRoles(stage, list) {
+    var roles = functionalRoles(stage);
+    list.forEach(function (entry) {
+      var functional = roles[entry.role] || 'intermediate';
+      entry.functionalRole = functional;
+      entry.memberName = MEMBER_NAMES[entry.role] || entry.role;
+      entry.localizedRole = FUNCTION_NAMES[functional];
+      entry.rotationDisplayMode = rotationDisplayMode(stage, entry.role, functional);
+    });
+    return list;
   }
 
   /** Vitesses d'un membre, relatives à l'entrée, telles que le moteur les donne. */
@@ -186,7 +258,10 @@
       // Le membre menant appartient à l'arbre précédent, le membre mené au nouveau.
       var members = membersByStage[index] || [];
       members.forEach(function (entry) {
-        var driving = entry.role === 'input' || entry.role === 'S';
+        // Le membre MENANT est celui qui porte la fonction d'entrée, quelle
+        // que soit sa position : une couronne menante appartient à l'arbre
+        // amont exactement comme un solaire menant.
+        var driving = entry.functionalRole === 'input';
         (driving ? shafts[shafts.length - 1] : shaft).memberIds.push(entry.id);
       });
       shafts.push(shaft);
@@ -200,7 +275,7 @@
     var stages = solution.stages || [];
     var kinematics = Kinematics.build(solution);
     var membersByStage = stages.map(function (stage, index) {
-      return stageMembers(stage, index, kinematics, (solution.mechanical || [])[index] || {});
+      return describeRoles(stage, stageMembers(stage, index, kinematics, (solution.mechanical || [])[index] || {}));
     });
     var members = membersByStage.reduce(function (list, group) { return list.concat(group); }, []);
     var byId = {};
@@ -237,9 +312,26 @@
       /** Membres d'un étage, dans l'ordre de rendu. */
       stageMembers: function (index) { return membersByStage[index] || []; },
       /** Arbre porteur de la sortie d'un étage. */
-      shaftFor: function (index) { return this.shafts[index + 1] || this.shafts[0]; }
+      shaftFor: function (index) { return this.shafts[index + 1] || this.shafts[0]; },
+      /**
+       * §7 : LE point d'accès aux rôles. Un renderer qui veut « l'entrée de
+       * l'étage 2 » la demande ici et ne la devine jamais depuis l'ordre des
+       * roues ni depuis un code de position.
+       * @param {number} index étage
+       * @param {'input'|'output'|'fixed'} functional
+       */
+      functionalMember: function (index, functional) {
+        var list = membersByStage[index] || [];
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].functionalRole === functional) return list[i];
+        }
+        return null;
+      }
     };
   }
 
-  return { build: build, stageMembers: stageMembers, Dimensions: Dimensions };
+  return { build: build, stageMembers: stageMembers, Dimensions: Dimensions,
+    functionalRoles: functionalRoles, planetaryTopology: planetaryTopology,
+    rotationDisplayMode: rotationDisplayMode, describeRoles: describeRoles,
+    MEMBER_NAMES: MEMBER_NAMES, FUNCTION_NAMES: FUNCTION_NAMES };
 });

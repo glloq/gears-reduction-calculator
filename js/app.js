@@ -41,14 +41,31 @@
 
     ui.paramForm.initSliders();
 
-    // Restaurer depuis l'URL d'abord, sinon depuis localStorage.
+    // D'où vient la recherche affichée au démarrage ? La question n'était pas
+    // posée, et la réponse changeait le comportement en silence : une vieille
+    // configuration rangée dans le localStorage par une version précédente
+    // suffisait à faire croire à une session « non vide », donc à sauter le
+    // modal — alors que l'utilisateur ouvrait l'application pour chercher.
     var hasURLParams = GearApp.models.SearchParams.fromURL();
-    var restored = hasURLParams || ui.paramForm.restore();
-    // La restauration modifie les miroirs après le premier rendu : la session
-    // les adopte alors. Sans restauration, ses propres valeurs font foi.
-    workbench.refreshAfterRestore(!!restored);
-    // §24.1 : sans besoin défini, le modal est le point d'entrée.
-    workbench.openSearchModalIfEmpty();
+    var source = 'fresh';
+    if (hasURLParams) {
+      source = 'sharedUrl';
+      workbench.refreshAfterRestore(true);
+    } else {
+      // §2 : la session rangée sous son propre schéma prime sur l'ancien
+      // format plat — elle porte le MODÈLE, pas le reflet des champs.
+      var stored = GearApp.ui.SessionStore.load();
+      if (stored) {
+        source = 'localStorage';
+        workbench.adoptStoredSession(stored.session);
+      } else if (ui.paramForm.restore()) {
+        source = 'localStorage';
+        workbench.refreshAfterRestore(true);
+      } else {
+        workbench.refreshAfterRestore(false);
+      }
+    }
+    workbench.openInitialSearchModal(source);
 
     ui.paramForm.restoreTheme();
 
@@ -135,6 +152,9 @@
     }
 
     // Persistance automatique : chaque lancement mémorise la configuration.
+    // La session part sous son schéma versionné ; les champs continuent d'aller
+    // dans l'ancien format tant que les miroirs existent.
+    if (session) GearApp.ui.SessionStore.save(session);
     searchParams.save();
     _saveToHistory(searchParams);
     _renderHistory();

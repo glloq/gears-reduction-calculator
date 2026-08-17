@@ -79,7 +79,13 @@ test('a new search imposes no value the user never chose', () => {
   // ressusciterait au premier chargement.
   const mirrors = html.slice(html.indexOf('id="legacyMirrors"'), html.indexOf('id="technologyPanel"'));
   assert.doesNotMatch(mirrors, /value="\d/, 'aucune valeur d’usine dans les miroirs');
-  assert.match(app, /openSearchModalIfEmpty/);
+  // §1 : ouvrir l'application, c'est vouloir chercher. Le modal ne dépend plus
+  // de l'apparente vacuité de la session — une vieille configuration rangée
+  // suffisait à la remplir, donc à sauter le point d'entrée sans rien demander.
+  assert.match(app, /workbench\.openInitialSearchModal\(source\)/);
+  assert.match(workbench, /Workbench\.prototype\.openInitialSearchModal = function/);
+  assert.match(workbench, /if \(source === 'sharedUrl'\) return this;/);
+  assert.doesNotMatch(workbench, /openSearchModalIfEmpty/);
 });
 
 // ===== §18 : brouillon =====

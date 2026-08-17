@@ -26,7 +26,16 @@
     if (text != null) el.textContent = text;
     return el;
   }
-  function materialize(descriptor) { return n(descriptor.tag, descriptor.attrs, descriptor.text); }
+  /**
+   * Les primitives décrivent le SVG sans le construire — elles restent ainsi
+   * testables hors navigateur. Un descripteur peut porter des enfants : c'est
+   * ce qui permet à la vis sans fin de grouper ses filets à part de son corps.
+   */
+  function materialize(descriptor) {
+    var element = n(descriptor.tag, descriptor.attrs, descriptor.text);
+    (descriptor.children || []).forEach(function (child) { element.appendChild(materialize(child)); });
+    return element;
+  }
   function appendAll(host, descriptors) { (descriptors || []).forEach(function (d) { host.appendChild(materialize(d)); }); }
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
   function rad(deg) { return deg * Math.PI / 180; }
@@ -537,10 +546,20 @@
         return;
       }
       if (wheel.kind === 'worm') {
-        // Le filet avance axialement d'un pas par tour : c'est ce défilement qui
-        // donne la sensation d'entraînement de la roue.
-        var lead = Math.max(1e-6, Math.PI * finite(wheel.module, 1) * Math.max(1, finite(wheel.teeth, 1)));
-        record.rotor.setAttribute('transform', 'translate(' + ((own / 360 * lead) % lead).toFixed(2) + ' 0)');
+        // §11 : le groupe ENTIER était translaté — corps, axe et filets — donc
+        // la vis se déplaçait le long de son arbre. Elle tourne autour de son
+        // axe : le corps ne bouge pas, seuls les filets défilent.
+        var geometry = GearTeethPrimitives.wormGeometry ? GearTeethPrimitives.wormGeometry(wheel) : null;
+        var pitch = geometry ? geometry.pitch
+          : Math.max(1e-6, Math.PI * finite(wheel.module, 1) * Math.max(1, finite(wheel.teeth, 1)));
+        var threads = record.rotor.querySelector('.worm-thread-phase');
+        record.rotor.removeAttribute('transform');
+        if (threads) {
+          // Modulo le pas : la phase revient exactement sur elle-même à
+          // chaque tour, sans saut, grâce aux filets dessinés en débord.
+          var phase = ((own / 360 * pitch) % pitch + pitch) % pitch;
+          threads.setAttribute('transform', 'translate(' + phase.toFixed(3) + ' 0)');
+        }
         return;
       }
       record.rotor.setAttribute('transform', 'rotate(' + own.toFixed(2) + ')');

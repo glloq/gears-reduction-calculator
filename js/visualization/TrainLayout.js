@@ -242,6 +242,29 @@
 
     var wheels = [];
     out.forEach(function (entry) { entry.wheels.forEach(function (w) { wheels.push(w); }); });
+
+    // §17 : les puces Entrée/Sortie se posaient sur wheels[0] et wheels[1],
+    // c'est-à-dire sur l'ORDRE de dessin. Pour un planétaire, wheels[1] est la
+    // couronne : la sortie était donc affichée sur l'organe FIXE, y compris
+    // dans la configuration par défaut. La scène sait quel membre porte quelle
+    // fonction — on le lui demande.
+    function anchorFor(stageIndex, functional, fallback) {
+      var wanted = scene.functionalMember ? scene.functionalMember(stageIndex, functional) : null;
+      if (!wanted) return fallback || null;
+      for (var i = 0; i < wheels.length; i++) {
+        if (wheels[i].memberId === wanted.id) return wheels[i];
+      }
+      // Le porte-satellites n'est pas une roue : il n'a pas de denture, donc
+      // pas de `wheel`. Il peut pourtant parfaitement porter l'entrée ou la
+      // sortie, et c'est même la configuration planétaire la plus courante.
+      var stage = out[stageIndex];
+      if (stage && stage.carrier && stage.carrier.memberId === wanted.id) {
+        return { memberId: wanted.id, cx: stage.carrier.cx, cy: stage.carrier.cy,
+          chipR: finite(stage.carrier.chipR, finite(stage.carrier.orbit, 10) * 1.15) };
+      }
+      return fallback || null;
+    }
+
     var first = out[0], last = out[out.length - 1];
     return {
       stages: out,
@@ -249,9 +272,8 @@
       scene: scene,
       kinematics: scene.kinematics,
       io: {
-        input: first ? first.wheels[0] : null,
-        // Pour un planétaire, wheels[1] est la couronne (repère visuel de sortie).
-        output: last ? (last.wheels[1] || last.wheels[0]) : null
+        input: anchorFor(0, 'input', first ? first.wheels[0] : null),
+        output: anchorFor(out.length - 1, 'output', last ? last.wheels[0] : null)
       }
     };
   }

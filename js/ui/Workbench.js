@@ -163,9 +163,35 @@
     this._refreshConfigurationFlow();
   };
 
-  /** Le modal s'ouvre de lui-même quand il n'y a rien à chercher (§24.1). */
-  Workbench.prototype.openSearchModalIfEmpty = function () {
-    if (this.session && this.session.isEmpty() && this.modal) this.modal.open(0);
+  /**
+   * Reprend une session rangée sous son schéma : elle remplace le modèle, et
+   * les miroirs sont réécrits depuis lui — l'inverse du chemin historique.
+   */
+  Workbench.prototype.adoptStoredSession = function (data) {
+    if (!this.session || !data) return this.refreshAfterRestore(false);
+    this.session.adopt(new GearApp.ui.SearchSession(data));
+    this._restored = true;
+    this._refreshConfigurationFlow();
+    return this;
+  };
+
+  /**
+   * §1 : ouvrir l'application, c'est vouloir chercher. Le modal ne s'ouvrait
+   * que si la session semblait VIDE — et une configuration rangée dans le
+   * localStorage par une version précédente suffisait à la remplir, donc à
+   * sauter le point d'entrée sans rien demander à personne.
+   *
+   * Un lien partagé est la seule exception : il désigne explicitement une
+   * recherche, et l'ouvrir sur un modal reviendrait à ignorer le lien.
+   * Une recherche relue du stockage n'est pas une demande : c'est un
+   * PRÉREMPLISSAGE, et le modal s'ouvre par-dessus.
+   *
+   * @param {'fresh'|'localStorage'|'sharedUrl'} source
+   */
+  Workbench.prototype.openInitialSearchModal = function (source) {
+    if (!this.modal) return this;
+    if (source === 'sharedUrl') return this;
+    this.modal.open(0);
     return this;
   };
 
