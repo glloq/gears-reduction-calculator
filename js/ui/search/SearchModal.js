@@ -477,9 +477,15 @@
     }
   };
 
+  /**
+   * §8 : l'étape d'ouverture vient du MODE DE TRAVAIL, pas de l'intention de
+   * recherche. C'était un reliquat : « Étudier l'existant » n'a pas d'intention
+   * de recherche du tout, et ouvrait donc sur l'étape de l'ancien mode par
+   * défaut au lieu de celle qui porte sa chaîne.
+   */
   SearchModal.prototype._focusStep = function () {
     if (!this.draft || this.draft.isEmpty()) return 0;
-    var id = this.draft.intent.focusStep();
+    var id = this.draft.workspace.focusStep();
     for (var i = 0; i < STEPS.length; i++) if (STEPS[i].id === id) return i;
     return 0;
   };

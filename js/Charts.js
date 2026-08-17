@@ -365,8 +365,29 @@ class GearCharts {
   }
 
   drawStructuredLosses(canvasId, solution) {
+    // Une chaîne analysée sans régime n'a pas de puissance d'entrée : il n'y a
+    // alors pas de pertes à répartir. Tracer des zéros laisserait croire à un
+    // rendement parfait ; on dit que la donnée manque.
+    if (!Number.isFinite(solution.inputPowerW)) return this._placeholder(canvasId,
+      'Pertes par étage — couple ou puissance d’entrée non renseigné');
     var power = solution.inputPowerW, losses = solution.mechanical.map(function (stage) { var loss = power * (1 - stage.efficiency); power *= stage.efficiency; return loss; });
     this._updateOrCreate(canvasId, { type: 'bar', data: { labels: losses.map(function (_, i) { return 'Étage ' + (i + 1); }), datasets: [{ label: 'Pertes (W)', data: losses, backgroundColor: '#f59e0b' }] }, options: { responsive: true, plugins: { title: { display: true, text: 'Pertes par étage — total ' + solution.lossPowerW.toFixed(1) + ' W' } }, scales: { y: { beginAtZero: true } } } });
+  }
+
+  /** Un graphique qu'on ne peut pas tracer : dire pourquoi, plutôt qu'un vide. */
+  _placeholder(canvasId, text) {
+    if (this.charts && this.charts[canvasId]) { this.charts[canvasId].destroy(); delete this.charts[canvasId]; }
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    var context = canvas.getContext && canvas.getContext('2d');
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.save();
+    context.fillStyle = getComputedStyle(document.body).getPropertyValue('--muted').trim() || '#5d6b81';
+    context.font = '13px system-ui, sans-serif';
+    context.textAlign = 'center';
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
+    context.restore();
   }
 
   drawStructuredSafety(canvasId, solution) {

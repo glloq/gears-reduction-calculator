@@ -59,12 +59,12 @@
       help: 'Choisir moi-même les étages, et laisser le système compléter ce que je ne fixe pas.',
       // Compléter par défaut ; une chaîne entièrement décrite bascule d'elle-
       // même en simple calcul (voir `engineFor`).
-      engine: ENGINES.complete, intent: 'design', focus: 'build'
+      engine: ENGINES.complete, intent: 'design', focus: 'type', chain: true
     },
     {
       id: 'analyze', label: 'Étudier l’existant', icon: '◉',
       help: 'Décrire un mécanisme et savoir ce qu’il fait, et s’il tient.',
-      engine: ENGINES.analyze, intent: null, focus: 'build'
+      engine: ENGINES.analyze, intent: null, focus: 'type', chain: true
     },
     {
       id: 'explore', label: 'Explorer', icon: '↗',
@@ -133,8 +133,13 @@
 
   WorkspaceModel.prototype.runsSearch = function () { return this.engine() !== ENGINES.analyze; };
 
-  /** Le mode décrit-il une chaîne d'étages plutôt qu'un besoin ? */
-  WorkspaceModel.prototype.editsChain = function () { return this.descriptor().focus === 'build'; };
+  /**
+   * Le mode décrit-il une chaîne d'étages plutôt qu'un besoin ? C'est une
+   * NATURE de parcours, distincte de l'étape d'ouverture : les deux étaient
+   * portées par le même champ, si bien qu'on ne pouvait pas dire « ce mode
+   * édite une chaîne » sans inventer une étape « build » qui n'existe pas.
+   */
+  WorkspaceModel.prototype.editsChain = function () { return !!this.descriptor().chain; };
 
   /**
    * L'intention à donner au solveur, ou null quand rien n'est cherché.
@@ -145,7 +150,7 @@
     return this.runsSearch() ? this.descriptor().intent : null;
   };
 
-  /** Étape sur laquelle ouvrir le modal. */
+  /** Étape sur laquelle ouvrir le modal — un identifiant d'étape réel. */
   WorkspaceModel.prototype.focusStep = function () { return this.descriptor().focus; };
 
   WorkspaceModel.prototype.describe = function () { return this.descriptor().label; };

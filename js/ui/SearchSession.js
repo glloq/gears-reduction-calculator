@@ -195,11 +195,25 @@
    * la main. Le réducteur existant DOIT être mesuré avec les mêmes hypothèses
    * que ses remplaçants, sinon la comparaison compare deux mondes.
    */
-  SearchSession.prototype.engineeringOptions = function () {
+  /**
+   * Conditions de service passées à l'ingénierie. Elles ne sont PAS inventées :
+   * ce qui n'est pas renseigné part à `null`, et l'analyse laisse alors non
+   * évalué tout ce qui en dépend. Substituer 1500 rpm et 10 N·m rendait un
+   * rendement, des efforts et des facteurs de sécurité d'apparence sérieuse,
+   * tirés d'un régime que personne n'avait choisi.
+   *
+   * `fallback` sert au seul cas où une hypothèse est nécessaire : la référence
+   * d'une comparaison doit être mesurée sous le MÊME régime nominal que les
+   * solutions auxquelles on la compare, sinon le « avant / après » ne compare
+   * plus rien.
+   */
+  SearchSession.prototype.engineeringOptions = function (options) {
+    var fallback = (options && options.fallback) || null;
     var torque = this.requirement.inputTorqueRequirement().nominal();
+    var speed = this.requirement.input.speed.nominal();
     return {
-      inputSpeedRpm: this.requirement.input.speed.nominal() || 1500,
-      inputTorqueNm: torque == null ? 10 : torque,
+      inputSpeedRpm: Number.isFinite(speed) ? speed : (fallback ? fallback.inputSpeedRpm : null),
+      inputTorqueNm: Number.isFinite(torque) ? torque : (fallback ? fallback.inputTorqueNm : null),
       inputMaterial: this.technical.materials.input,
       outputMaterial: this.technical.materials.output,
       additiveDerating: this.technical.manufacturing.additiveDerating,
@@ -226,7 +240,9 @@
   /** Le réducteur existant, analysé — la référence de toute comparaison. */
   SearchSession.prototype.baseline = function () {
     if (!this.intent.improves() || !this.existing.isDescribed()) return null;
-    return this.existing.analyze(this.engineeringOptions());
+    // La référence est comparée à des solutions que le moteur aura calculées
+    // sous son régime nominal : elle doit l'être sous le même.
+    return this.existing.analyze(this.engineeringOptions({ fallback: R.LegacySearchAdapter.SERVICE_DEFAULTS }));
   };
 
   // ===== Conseiller, mémorisé par état =====
@@ -439,7 +455,49 @@
   // On n'oblige jamais à tout remplir : on dit ce qui sera calculable, et ce
   // qui manque pour aller plus loin.
 
+  /**
+   * §3 : ce qui sera réellement calculable. En mode Construire ou Étudier, la
+   * question ne se posait pas au bon endroit : le niveau était déduit du
+   * BESOIN (`inferProblem`), si bien qu'une chaîne entièrement décrite —
+   * dont le rapport et la géométrie se calculent sans rien demander à
+   * personne — s'annonçait « besoin incomplet » à côté d'un bouton
+   * « Analyser » parfaitement actif.
+   */
   SearchSession.prototype.analysisLevels = function () {
+    return this.workspace.editsChain() ? this._chainLevels() : this._searchLevels();
+  };
+
+  /**
+   * Niveaux d'une chaîne décrite. La géométrie et le rapport ne dépendent
+   * d'AUCUNE condition de service : ils tiennent dès que la chaîne est
+   * complète. Tout le reste demande de savoir sous quel régime elle tourne.
+   */
+  SearchSession.prototype._chainLevels = function () {
+    var complete = this.build.isComplete(), technical = this.technical;
+    var missingChain = this.build.isEmpty() ? 'aucun étage décrit'
+      : (this.build.unknownCount() + ' étage(s) à compléter');
+    var speed = this.requirement.input.speed.isKnown();
+    var torque = this.requirement.inputTorqueRequirement().isKnown();
+    var levels = [
+      { id: 'geometry', label: 'Géométrie et rapport', available: complete,
+        missing: complete ? null : missingChain },
+      { id: 'kinematics', label: 'Cinématique', available: complete && speed,
+        missing: !complete ? missingChain : speed ? null : 'vitesse d’entrée non renseignée' },
+      { id: 'forces', label: 'Efforts mécaniques', available: complete && torque,
+        missing: !complete ? missingChain : torque ? null : 'couple ou puissance d’entrée non renseigné' }
+    ];
+    levels.push({ id: 'strength', label: 'Résistance',
+      available: complete && torque && technical.isCustomised('materials'),
+      missing: !complete ? missingChain : !torque ? 'couple ou puissance d’entrée non renseigné'
+        : technical.isCustomised('materials') ? null : 'matériaux laissés par défaut' });
+    levels.push({ id: 'fatigue', label: 'Fatigue',
+      available: complete && torque && technical.fatigue.enabled,
+      missing: !complete ? missingChain : !technical.fatigue.enabled ? 'cycle de service non renseigné'
+        : torque ? null : 'couple ou puissance d’entrée non renseigné' });
+    return levels;
+  };
+
+  SearchSession.prototype._searchLevels = function () {
     var requirement = this.requirement, technical = this.technical;
     var problem = requirement.inferProblem();
     var levels = [];
@@ -467,7 +525,54 @@
     return levels;
   };
 
+  /**
+   * §4 : les remarques dépendent du parcours. Décrire une chaîne ne demandait
+   * rien au conseiller, ni aux familles explorées, ni au rapport visé — et le
+   * modal annonçait pourtant « 8 technologies explorées » et « besoin
+   * incomplet » à côté d'un bouton actif. Chaque mode dit ce qui le concerne.
+   */
   SearchSession.prototype.diagnose = function () {
+    return this.workspace.editsChain() ? this._diagnoseChain() : this._diagnoseSearch();
+  };
+
+  /** Remarques d'un parcours qui décrit une chaîne : Construire et Étudier. */
+  SearchSession.prototype._diagnoseChain = function () {
+    var notes = [], build = this.build, analysing = !build.unknownCount();
+    if (build.isEmpty()) {
+      notes.push({ level: 'error', code: 'no-stage', section: 'type',
+        text: 'Ajoutez au moins un étage pour décrire votre transmission.' });
+      return notes;
+    }
+    build.errors().forEach(function (entry) {
+      notes.push({ level: 'error', code: 'build-stage', section: 'type',
+        text: 'Étage ' + entry.stage + ' : ' + entry.text });
+    });
+    var counts = { fixed: 0, partial: 0, auto: 0 };
+    build.levels().forEach(function (level) { counts[level] += 1; });
+    var detail = [];
+    if (counts.fixed) detail.push(counts.fixed + ' imposé' + (counts.fixed > 1 ? 's' : ''));
+    if (counts.partial) detail.push(counts.partial + ' partiel' + (counts.partial > 1 ? 's' : ''));
+    if (counts.auto) detail.push(counts.auto + ' automatique' + (counts.auto > 1 ? 's' : ''));
+    notes.unshift({ level: 'ok', code: 'build-chain', section: 'type',
+      text: build.stages.length + (build.stages.length > 1 ? ' étages' : ' étage') +
+        (detail.length ? ' · ' + detail.join(' · ') : '') + '.' });
+
+    // Compléter suppose une cible ; analyser n'en a aucun besoin.
+    if (!analysing && !this.requirement.isComplete()) {
+      notes.push({ level: 'error', code: 'no-target', section: 'need',
+        text: 'Posez le rapport ou les vitesses visés : sans cible, le solveur ne peut pas choisir ce qu’il complète.' });
+    }
+    // Ce qui ne sera PAS évalué, et pourquoi. Dit ici plutôt que deviné à la
+    // lecture de cases vides dans l'analyse.
+    this._chainLevels().filter(function (level) { return !level.available && level.missing; })
+      .forEach(function (level) {
+        notes.push({ level: 'warn', code: 'not-evaluated-' + level.id, section: 'need',
+          text: level.label + ' non évalué' + (level.id === 'fatigue' ? 'e' : '') + ' : ' + level.missing + '.' });
+      });
+    return notes;
+  };
+
+  SearchSession.prototype._diagnoseSearch = function () {
     var notes = this.requirement.diagnose().slice();
     if (this.intent.explores()) {
       var span = this.explorationSpan();
@@ -541,6 +646,67 @@
    * n'informe pas, il occupe.
    */
   SearchSession.prototype.brief = function () {
+    return this.workspace.editsChain() ? this._briefChain() : this._briefSearch();
+  };
+
+  /**
+   * §5 : le résumé d'un parcours qui décrit une chaîne. « Méthode : concevoir »
+   * et « 8 familles explorées » n'y voulaient rien dire — rien n'est exploré.
+   * On y lit ce qu'on a construit, ce qu'il en résulte, et ce qui sera calculé.
+   */
+  SearchSession.prototype._briefChain = function () {
+    var sections = [], build = this.build, requirement = this.requirement;
+    var analysing = !build.unknownCount();
+    function section(title, lines) {
+      var kept = lines.filter(Boolean);
+      if (kept.length) sections.push({ title: title, lines: kept });
+    }
+    section(this.workspace.describe(), [this.workspace.descriptor().help]);
+
+    var counts = { fixed: 0, partial: 0, auto: 0 };
+    build.levels().forEach(function (level) { counts[level] += 1; });
+    var LABELS = R.build.LEVEL_LABELS;
+    section('Transmission', [
+      build.isEmpty() ? 'aucun étage décrit'
+        : build.stages.length + (build.stages.length > 1 ? ' étages' : ' étage'),
+      Object.keys(counts).filter(function (key) { return counts[key]; })
+        .map(function (key) { return counts[key] + ' ' + LABELS[key].label.toLowerCase(); }).join(' · ') || null,
+      build.families().length
+        ? build.stages.map(function (stage) {
+          return stage.family ? GearTransmissionRegistry.familyName(stage.family, 'short') : '?';
+        }).join(' → ')
+        : null,
+      build.module != null ? 'module ' + build.module + ' mm' : null
+    ]);
+
+    function say(quantity, suffix) {
+      return quantity.isKnown() ? quantity.describe() + (suffix ? ' ' + suffix : '') : null;
+    }
+    section('Conditions de service', [
+      say(requirement.input.speed),
+      requirement.input.torque.isKnown() ? say(requirement.input.torque)
+        : say(requirement.inputTorqueRequirement(), 'calculés')
+    ]);
+
+    var ratio = build.ratio();
+    if (analysing) {
+      section('Rapport calculé', [ratio ? round(ratio) + ':1' : 'chaîne non calculable en l’état']);
+    } else {
+      var wanted = requirement.ratioRequirement();
+      section('Objectif', [wanted.isKnown() ? 'rapport ' + wanted.describe() : 'rapport visé non renseigné']);
+    }
+
+    section('Données disponibles', this._chainLevels().map(function (level) {
+      return (level.available ? '✓ ' : '△ ') + level.label + (level.missing ? ' — ' + level.missing : '');
+    }));
+
+    section('Calcul prévu', [analysing
+      ? 'analyse directe, sans recherche'
+      : 'compléter ' + build.unknownCount() + (build.unknownCount() > 1 ? ' étages' : ' étage')]);
+    return sections;
+  };
+
+  SearchSession.prototype._briefSearch = function () {
     var requirement = this.requirement, sections = [];
     var names = {};
     Object.keys(R.TransmissionAdvisor.KNOWLEDGE).forEach(function (id) {
@@ -631,6 +797,29 @@
 
   /** Résumé d'une ligne du cahier des charges, pour le bandeau (§16). */
   SearchSession.prototype.summarise = function () {
+    if (this.workspace.editsChain()) return this._summariseChain();
+    return this._summariseSearch();
+  };
+
+  /** Une ligne pour une chaîne décrite : ce qu'elle est, et ce qu'elle donne. */
+  SearchSession.prototype._summariseChain = function () {
+    var build = this.build, bits = [this.workspace.describe()];
+    if (build.isEmpty()) return bits.concat(['aucun étage décrit']);
+    bits.push(build.stages.map(function (stage) {
+      return stage.family ? GearTransmissionRegistry.familyName(stage.family, 'short') : '?';
+    }).join(' → '));
+    bits.push(build.stages.length + (build.stages.length > 1 ? ' étages' : ' étage'));
+    var unknown = build.unknownCount();
+    if (unknown) bits.push(unknown + ' à compléter');
+    else {
+      var ratio = build.ratio();
+      if (ratio) bits.push('i = ' + round(ratio));
+    }
+    if (this.requirement.input.speed.isKnown()) bits.push(this.requirement.input.speed.describe());
+    return bits.filter(Boolean);
+  };
+
+  SearchSession.prototype._summariseSearch = function () {
     var requirement = this.requirement, bits = [this.intent.describe()];
     var problem = requirement.inferProblem();
     // `describe()` porte déjà l'unité : la répéter donnait « 1500 rpm rpm ».
@@ -695,8 +884,17 @@
     return this;
   };
 
+  /**
+   * §9 : un projet vide. « Aucun besoin renseigné » ne suffisait plus : une
+   * transmission entièrement construite, sans qu'aucune grandeur de besoin
+   * n'ait été saisie, se voyait déclarée vide — donc résumée par « Aucune
+   * recherche définie » alors qu'elle existait bel et bien.
+   */
   SearchSession.prototype.isEmpty = function () {
-    return !this.requirement.known().length;
+    return !this.requirement.known().length &&
+      this.build.isEmpty() &&
+      !this.existing.isDescribed() &&
+      this.workspace.mode === R.workspace.MODES[0].id;
   };
 
   // ===== Miroirs de compatibilité =====

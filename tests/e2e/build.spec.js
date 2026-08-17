@@ -145,6 +145,73 @@ test('Étudier l’existant computes a described mechanism without searching', a
   await expect(page.locator('#mechanicalPanel')).toContainText('4.0000');
 });
 
+test('Étudier tells the truth about what it can and cannot compute (§2, §3)', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+
+  // §3 : une chaîne complète fournit son rapport et sa géométrie sans rien
+  // demander à personne. Le résumé annonçait « besoin incomplet » à côté d'un
+  // bouton « Analyser » parfaitement actif.
+  const levels = page.locator('#analysisLevels');
+  await expect(levels.locator('[data-level="geometry"]')).toHaveText(/^✓/);
+  await expect(levels.locator('[data-level="kinematics"]')).toContainText('vitesse d’entrée non renseignée');
+  await expect(levels.locator('[data-level="forces"]')).toContainText('couple ou puissance');
+
+  // §4 : plus de remarque sur des technologies « explorées » — rien ne l'est.
+  await expect(page.locator('#searchModalSummary')).not.toContainText('technologie explorée');
+  await expect(page.locator('#searchModalSummary')).not.toContainText('technologies explorées');
+  // §5 : le résumé parle de la transmission décrite, pas d'une méthode.
+  await expect(page.locator('#searchModalSummary')).toContainText('Transmission');
+  await expect(page.locator('#searchModalSummary')).toContainText('Rapport calculé');
+  await expect(page.locator('#searchModalSummary')).not.toContainText('Méthode');
+
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  // §2 : ni 1500 rpm ni 10 N·m inventés. Ce qui n'est pas connu reste vide.
+  const panel = page.locator('#mechanicalPanel .mechanical-summary');
+  await expect(panel).toContainText('3.0000');
+  await expect(panel).toContainText('— → —');
+  const values = await page.evaluate(() => {
+    const s = window.GearApp._workbench.solutions[0];
+    return { speed: s.outputSpeedRpm, torque: s.outputTorqueNm, power: s.inputPowerW,
+      thermal: s.thermalRisk, bending: s.mechanical[0].bending, status: s.mechanical[0].bendingStatus };
+  });
+  expect(values).toEqual({ speed: null, torque: null, power: null, thermal: null,
+    bending: null, status: 'not-evaluated' });
+  expect(errors).toEqual([]);
+});
+
+test('stating the regime restores the full analysis', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'analyze');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await setQuantity(page, 'input.speed', 900);
+  await setQuantity(page, 'input.torque', 25);
+  await page.locator('[data-step="type"]').click();
+  await expect(page.locator('#analysisLevels [data-level="kinematics"]')).toHaveText(/^✓/);
+  await expect(page.locator('#analysisLevels [data-level="forces"]')).toHaveText(/^✓/);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  await expect(page.locator('#mechanicalPanel .mechanical-summary')).toContainText('900 → 300.0');
+});
+
+test('a built chain is a project, not an empty session (§9, §10)', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur', { 'input.teeth': 20, 'output.teeth': 60 });
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  // Une transmission construite sans aucune grandeur de besoin finissait sous
+  // « Aucune recherche définie », alors qu'elle existait bel et bien.
+  const banner = page.locator('#requirementBannerText');
+  await expect(banner).not.toContainText('Aucune recherche définie');
+  await expect(banner).toContainText('Construire');
+  await expect(banner).toContainText('Droit');
+  await expect(banner).toContainText('i = 3');
+});
+
 test('a built chain survives a reload', async ({ page }) => {
   await page.goto('/');
   await chooseMode(page, 'build');

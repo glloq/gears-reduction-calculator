@@ -215,3 +215,71 @@ test('an unconstrained search is untouched by the new filter', () => {
   assert.ok(result.solutions.some(s => s.stages.length === 1) ||
     result.solutions.every(s => s.stages.length <= 4));
 });
+
+// ===== §2 : rien n'est inventé quand rien n'est renseigné =====
+
+const Engineering = require('../js/core/Engineering.js');
+
+test('a chain analysed without service conditions leaves them unevaluated', () => {
+  const stages = [{ type: 'spur', input: { teeth: 20 }, output: { teeth: 60 },
+    parameters: { module: 1.5, pressureAngle: 20 } }];
+  const blind = Engineering.analyzeSolution(JSON.parse(JSON.stringify(stages)), 3, {});
+  // Rapport et géométrie ne dépendent d'aucun régime : ils tiennent.
+  assert.equal(blind.ratio, 3);
+  assert.equal(blind.mechanical[0].geometry.pitchDiameterInput, 30);
+  assert.ok(blind.efficiency > 0);
+  // Tout le reste était rempli avec 1500 rpm et 10 N·m — un régime que
+  // personne n'avait choisi, d'où des facteurs de sécurité d'apparence sérieuse.
+  assert.equal(blind.inputSpeedRpm, null);
+  assert.equal(blind.outputSpeedRpm, null);
+  assert.equal(blind.inputTorqueNm, null);
+  assert.equal(blind.outputTorqueNm, null);
+  assert.equal(blind.inputPowerW, null);
+  assert.equal(blind.outputPowerW, null);
+  assert.equal(blind.lossPowerW, null);
+  assert.equal(blind.thermalRisk, null, 'un risque thermique « faible » serait tiré de rien');
+  assert.equal(blind.mechanical[0].bending, null);
+  assert.equal(blind.mechanical[0].contact, null);
+  assert.deepEqual(blind.mechanical[0].forces, { tangentialN: null, radialN: null, axialN: null });
+  // « Je ne sais pas » n'est pas « c'est impossible » : les deux n'appellent
+  // pas la même action de l'utilisateur.
+  assert.equal(blind.mechanical[0].bendingStatus, 'not-evaluated');
+  assert.notEqual(blind.mechanical[0].bendingStatus, 'unsupported');
+  // Aucun avertissement tiré d'un effort qu'on n'a pas calculé.
+  assert.equal(blind.warnings.filter(w => /AXIAL|THERMAL|SAFETY/.test(w.code)).length, 0);
+});
+
+test('stating the regime restores every level', () => {
+  const stages = [{ type: 'spur', input: { teeth: 20 }, output: { teeth: 60 },
+    parameters: { module: 1.5, pressureAngle: 20 } }];
+  const known = Engineering.analyzeSolution(JSON.parse(JSON.stringify(stages)), 3,
+    { inputSpeedRpm: 900, inputTorqueNm: 25 });
+  assert.equal(known.outputSpeedRpm, 300);
+  assert.ok(known.outputTorqueNm > 70 && known.outputTorqueNm < 75);
+  assert.ok(Number.isFinite(known.mechanical[0].bending.safetyFactor));
+  assert.equal(known.mechanical[0].bendingStatus, 'evaluated');
+  assert.ok(known.thermalRisk);
+});
+
+test('a fatigue or shaft estimate is skipped rather than guessed', () => {
+  const stages = [{ type: 'spur', input: { teeth: 20 }, output: { teeth: 60 },
+    parameters: { module: 1.5, pressureAngle: 20 } }];
+  const blind = Engineering.analyzeSolution(JSON.parse(JSON.stringify(stages)), 3,
+    { fatigue: { enabled: true, hoursPerDay: 8 }, shaft: { supportDistanceMm: 40 } });
+  assert.equal(blind.fatigue, undefined, 'pas de cycles sans vitesse');
+  assert.equal(blind.shaft, undefined, 'pas de diamètre d’arbre sans couple');
+});
+
+test('the nominal regime assumed by the solver is named in exactly one place', () => {
+  const Adapter = require('../js/requirements/LegacySearchAdapter.js');
+  // Une recherche ne peut pas dimensionner sans un régime quelconque : celui-ci
+  // est une HYPOTHÈSE, et la référence d'une comparaison doit être mesurée sous
+  // la même, sinon le « avant / après » ne compare plus rien.
+  assert.deepEqual(Adapter.SERVICE_DEFAULTS, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+  const engineering = fs.readFileSync('js/core/Engineering.js', 'utf8');
+  assert.doesNotMatch(engineering, /inputTorqueNm==null\?10/);
+  assert.doesNotMatch(engineering, /inputSpeedRpm==null\?1500/);
+  const session = fs.readFileSync('js/ui/SearchSession.js', 'utf8');
+  assert.doesNotMatch(session, /speed\.nominal\(\) \|\| 1500/);
+  assert.match(session, /SERVICE_DEFAULTS/, 'la référence doit réclamer l’hypothèse explicitement');
+});
