@@ -15,8 +15,9 @@ test('the app opens on the modal, not on a configuration panel', async ({ page }
   // §17 : plus de barre latérale de configuration, ni de tiroir mobile.
   await expect(page.locator('#sidebar')).toHaveCount(0);
   await expect(page.locator('#mobileMenuBtn')).toHaveCount(0);
-  // Trois points de départ, pas six : le reste se déduit de la saisie.
-  await expect(page.locator('#intentCards .type-entry')).toHaveCount(3);
+  // Cinq modes de travail : concevoir, construire, étudier, explorer,
+  // optimiser. Ce sont cinq ACTIONS différentes, pas cinq façons de chercher.
+  await expect(page.locator('#intentCards .type-entry')).toHaveCount(5);
   // §7, §8 : technologie et disposition ne prennent plus qu'une ligne chacune
   // tant qu'on ne les touche pas. Le premier écran ne montre donc ni les
   // quatre politiques ni les six dispositions.
@@ -647,7 +648,7 @@ test('an exploration answers « how much can I get » instead of « find me 12:1
   await page.locator('[data-step="type"]').click();
   // La performance à pousser n'existe pas tant que la méthode ne l'appelle pas.
   await expect(page.locator('#intentObjectives')).toHaveCount(0);
-  await page.locator('#intentCards [data-intent="maximize"]').click();
+  await page.locator('#intentCards [data-workspace="explore"]').click();
   await expect(page.locator('.intent-objective')).toHaveCount(5);
   await expect(page.locator('.intent-objective.active')).toHaveText('Couple de sortie');
   // L'espace balayé est ANNONCÉ : une plage par défaut muette serait imposée.
@@ -716,7 +717,7 @@ test('an existing reducer becomes the reference, and better is found at its rati
   const errors = watchErrors(page);
   await page.goto('/');
   await page.locator('[data-step="type"]').click();
-  await page.locator('#intentCards [data-intent="improve"]').click();
+  await page.locator('#intentCards [data-workspace="optimize"]').click();
   await expect(page.locator('#existingSummary')).toContainText('Décrivez au moins un étage');
 
   // « J'ai : étage 1 = 20 → 60 module 1, étage 2 = 15 → 45 module 1,5. »

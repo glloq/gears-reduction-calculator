@@ -224,11 +224,14 @@ test('the mandatory path is three steps, the technical part is optional', () => 
 
 test('the first step asks two independent questions', () => {
   const Intent = require('../js/requirements/SearchIntentModel.js');
-  // Ce qu'on cherche…
-  assert.match(typeStep, /Que cherchez-vous/);
-  // Trois points de départ, pas six : « meilleur compromis », « contraintes »
-  // et « pièces existantes » n'étaient pas des méthodes mais, respectivement,
-  // une stratégie de classement et deux jeux de données déjà saisis.
+  const Workspace = require('../js/requirements/WorkspaceModel.js');
+  // Ce qu'on veut FAIRE. La question était « que cherchez-vous ? », ce qui
+  // présupposait une recherche et fermait la porte à la moitié des usages :
+  // décrire un mécanisme pour savoir ce qu'il fait n'est pas une recherche.
+  assert.match(typeStep, /Que voulez-vous faire/);
+  assert.deepEqual(Workspace.MODES.map(m => m.id), ['design', 'build', 'analyze', 'explore', 'optimize']);
+  // L'intention de recherche reste ce qu'elle est : ce qu'on demande AU
+  // SOLVEUR, et elle n'est plus le point d'entrée.
   assert.deepEqual(Intent.MODES.map(m => m.id), ['design', 'maximize', 'improve']);
   // …et, séparément, comment choisir la technologie.
   assert.match(typeStep, /Comment choisir la technologie/);

@@ -260,6 +260,7 @@
       ,manufacturing: this.manufacturing
       ,objectiveMode: this.objectiveMode
       ,typeTemplate: this.typeTemplate||null
+      ,stageConstraints: this.stageConstraints||null
       ,linearTravelPerRevolutionMm: this.linearTravelPerRevolutionMm
       ,fatigue: this.fatigue
       ,shaft: this.shaft

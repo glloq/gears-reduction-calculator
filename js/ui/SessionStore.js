@@ -26,7 +26,10 @@
   'use strict';
 
   /** Version du schéma. À incrémenter dès qu'une forme rangée change de sens. */
-  var SCHEMA_VERSION = 3;
+  // 4 : la session porte un mode de travail et une chaîne construite. Une
+  // session v3 relue telle quelle repartirait sans mode, donc en « Concevoir »
+  // silencieusement — mieux vaut la laisser et rouvrir un modal vide.
+  var SCHEMA_VERSION = 4;
   var KEY = 'gearLastSearch';
   /** L'ancienne clé, à ne plus qu'effacer. */
   var LEGACY_KEY = 'gearCalcParams';

@@ -28,7 +28,7 @@
     dentMenanteFixe: null, dentMeneeFixe: null,
     maxSolutions: 100, maxIterations: 500000,
     module: 1, moduleMode: 'fixed', moduleMin: null, moduleMax: null,
-    reductionOnly: true, typeParameters: null, typeTemplate: null,
+    reductionOnly: true, typeParameters: null, typeTemplate: null, stageConstraints: null,
     teethInventory: null, moduleList: null,
     inputMaterial: 'C45', outputMaterial: 'C45', additiveDerating: 1,
     manufacturing: null, fatigue: null, shaft: null
@@ -89,6 +89,9 @@
     if (settings.shaft) params.shaft = settings.shaft;
     // L'architecture imposée n'a de sens que pour un train rotatif.
     params.typeTemplate = request.linear ? null : settings.typeTemplate;
+    // Chaîne construite à la main : familles ET dentures déjà décidées, cran
+    // par cran. Le solveur ne complète que le reste.
+    params.stageConstraints = request.linear ? null : (settings.stageConstraints || null);
 
     params.weights = normalizeWeights(request.weights);
     params.constraints = Object.assign({}, request.constraints);

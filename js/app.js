@@ -30,6 +30,9 @@
     });
     explorer.bind();
     GearApp._explorer = explorer;
+    // Poignée d'inspection, au même titre que `_explorer` : les tests de bout
+    // en bout vérifient ainsi le MODÈLE, et pas seulement ce que le DOM affiche.
+    GearApp._workbench = workbench;
 
     // Éditeur d'étages : ré-analyse locale d'une solution sélectionnée.
     var stageEditor = new GearApp.ui.StageEditor(GearApp.eventBus, 'stageEditor', explorer);
@@ -128,6 +131,15 @@
     // Choix 20C : la recherche part du MODÈLE, plus du formulaire. Le
     // formulaire n'est plus qu'un reflet, écrit par la session.
     var session = workbench && workbench.session;
+
+    // Une chaîne entièrement décrite n'a rien à faire chercher : elle se
+    // CALCULE. Lancer le solveur pour retrouver ce que l'utilisateur vient
+    // d'écrire serait à la fois lent et absurde — et le vivier retournerait
+    // des variantes que personne n'a demandées.
+    if (session && session.plannedEngine() === 'analyze') {
+      _analyzeBuiltChain(session);
+      return;
+    }
     // Une exploration ne lance pas UNE recherche mais une série de recherches
     // bornées, dont on réunit les viviers. Les paramètres validés sont ceux de
     // la première bande : ce sont eux qui partiront réellement au moteur.
@@ -213,6 +225,39 @@
       console.error(err);
       _resetButton();
     });
+  }
+
+  /**
+   * Modes « Construire » et « Étudier l'existant », chaîne complète : on
+   * analyse ce qui est décrit, avec exactement le même code d'ingénierie que
+   * pour une solution trouvée. Deux jeux de formules donneraient deux vérités,
+   * et « ce que fait mon mécanisme » ne serait plus comparable à « ce que ferait
+   * son remplaçant ».
+   */
+  function _analyzeBuiltChain(session) {
+    var progressBar = document.getElementById('progress-bar');
+    var solution = null;
+    try { solution = session.analyzeBuild(); } catch (error) { solution = null; }
+    if (progressBar) progressBar.style.width = '100%';
+    GearApp.ui.SessionStore.save(session);
+    GearApp.ui.SessionStore.dropLegacy();
+    if (!solution) {
+      var errors = session.build.errors();
+      explorer.setPool([], session.toSearchParams(), ui.lastStats(), {
+        status: 'client-filtered', blocker: null, candidates: [],
+        text: errors.length
+          ? 'La chaîne décrite n’est pas réalisable : ' + errors.map(function (entry) {
+            return 'étage ' + entry.stage + ', ' + entry.text.toLowerCase();
+          }).join(' ; ') + '.'
+          : 'La chaîne décrite n’a pas pu être analysée. Vérifiez les dentures et le module.'
+      });
+      ui.logger.setStatus('Chaîne non analysable');
+      _resetButton();
+      return;
+    }
+    explorer.setPool([solution], session.toSearchParams(), ui.lastStats(), null, { sort: null });
+    ui.logger.setStatus('Transmission analysée');
+    _resetButton();
   }
 
   /** Vivier maximal d'une exploration : au-delà, la barre d'affinage trie du bruit. */
