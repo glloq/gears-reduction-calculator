@@ -66,7 +66,7 @@ test('selection survives all three visualization views', async ({ page }) => {
   // On clique une roue de l'étage, pas le centre de son cadre : sur un train
   // composé, les cadres d'étages se recouvrent.
   await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
-  await page.getByRole('button', { name: 'Géométrie 2D' }).click();
+  await page.getByRole('button', { name: 'Dimensions', exact: true }).click();
   await expect(page.locator('.geometry-layer .geometry-stage').first()).toHaveClass(/selected/);
   await page.getByRole('button', { name: 'Cinématique' }).click();
   await expect(page.locator('.kinematic-stage').first()).toHaveClass(/selected/);
@@ -546,7 +546,12 @@ test('the display menu adapts to the current view and toggles overlays', async (
   await expect(page.locator('#svgContainer')).toHaveClass(/hide-dimensions/);
 
   await showView(page, 'kinematic');
-  expect(await offered()).toEqual(['rpm', 'ratios', 'powerFlow', 'spatialAxes', 'labels']);
+  // §18 : les flux physiques sont groupés — mouvement, puissance, efforts —
+  // avant les repères de lecture. L'ordre suit la question posée, plus la
+  // donnée tracée.
+  expect(await offered()).toEqual(['rpm', 'powerFlow', 'ratios', 'spatialAxes', 'labels']);
+  // Le menu est replié : on vérifie l'attribut, comme `offered()` juste au-dessus.
+  await expect(page.locator('#viewerDisplayMenu .display-menu-group')).not.toHaveAttribute('hidden', '');
 
   await showView(page, 'teeth');
   expect(await offered()).toEqual(['autoDetails', 'pitchCircles', 'lineOfAction', 'forces', 'labels']);

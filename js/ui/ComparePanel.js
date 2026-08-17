@@ -128,6 +128,23 @@
 
   function finite(value, digits) { return Number.isFinite(value) ? value.toFixed(digits) : '—'; }
 
+  /**
+   * L'écart face à la référence, dans le même langage visuel que les cartes :
+   * une seule logique pour une seule notion, sinon « mieux » finirait par
+   * changer de couleur d'un écran à l'autre.
+   */
+  function deltaFor(value, reference, row) {
+    if (!Number.isFinite(value) || !Number.isFinite(reference)) return null;
+    var digits = row.digits == null ? 2 : row.digits;
+    var gap = Math.round((value - reference) * Math.pow(10, digits)) / Math.pow(10, digits);
+    if (!gap) return null;
+    var good = row.direction === 'max' ? gap > 0 : gap < 0;
+    var mark = document.createElement('span');
+    mark.className = 'metric-delta ' + (good ? 'delta-better' : 'delta-worse');
+    mark.textContent = (gap > 0 ? '+' : '−') + Math.abs(gap).toFixed(digits) + (row.unit || '');
+    return mark;
+  }
+
   function ComparePanel(eventBus, hostId, explorer) {
     this.bus = eventBus || GearApp.eventBus;
     this.host = document.getElementById(hostId);
@@ -202,12 +219,20 @@
       tr.appendChild(th);
       var numeric = row.values.map(function (value) { return typeof value === 'number' ? value : NaN; });
       var best = row.direction ? H.bestIndices(numeric, row.direction) : [];
+      // §26 : la première colonne sert de RÉFÉRENCE, et les autres disent ce
+      // qu'elles gagnent ou perdent — exactement comme les cartes. « 94 mm » et
+      // « 72 mm » côte à côte obligeaient à faire la soustraction de tête.
+      var reference = numeric[0];
       row.values.forEach(function (value, column) {
         var td = document.createElement('td');
         if (value && typeof value === 'object') {
-          td.innerHTML = '<span class="type-badge ' + value.type + '">' + value.type + '</span> ' + value.label;
+          // §21 : le nom de la famille, pas son identifiant interne.
+          td.innerHTML = '<span class="type-badge ' + value.type + '">' +
+            GearTransmissionRegistry.familyName(value.type, 'short') + '</span> ' + value.label;
         } else {
           td.textContent = finite(value, row.digits == null ? 2 : row.digits) + (Number.isFinite(value) ? row.unit : '');
+          var delta = column > 0 && row.direction ? deltaFor(numeric[column], reference, row) : null;
+          if (delta) td.appendChild(delta);
         }
         if (best.indexOf(column) !== -1) td.classList.add('best');
         tr.appendChild(td);

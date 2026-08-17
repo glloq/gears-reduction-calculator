@@ -791,8 +791,10 @@
             '<small>' + metric[0] + '</small><strong>' + metric[1] + '</strong>' +
             (deltas[metric[0]] || '') + '</span>';
         }).join('') + '</div>' +
-        (why ? '<p class="solution-why">' + why + '</p>' : '') +
-        '<footer class="solution-card-actions"><button type="button" class="btn-small solution-view">Voir</button></footer>';
+        // §22 : la carte est entièrement cliquable, au clavier compris. Un
+        // bouton « Voir » en pied faisait exactement la même chose, et une
+        // seconde action pour un seul geste se lit comme deux choix possibles.
+        (why ? '<p class="solution-why">' + why + '</p>' : '');
 
       function select() {
         self.selected = index;

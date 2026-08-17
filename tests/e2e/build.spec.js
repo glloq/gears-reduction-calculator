@@ -425,6 +425,56 @@ test('an unreachable chain blames the range, not the decisions', async ({ page }
   await expect(hint).not.toContainText('nombre d’étages');
 });
 
+test('the finishing touches: names, deltas, no duplicate action (§19, §21, §22, §26)', async ({ page }) => {
+  test.setTimeout(90000);
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+
+  // §22 : la carte est entièrement cliquable ; un bouton « Voir » en pied
+  // faisait exactement la même chose.
+  await expect(page.locator('.solution-view')).toHaveCount(0);
+  await expect(page.locator('.solution-card-actions')).toHaveCount(0);
+  await page.locator('.solution-card').first().click();
+  await expect(page.locator('#svgContainer svg')).toBeVisible();
+
+  // §19 : le nom de la vue dit ce qu'on y cherche, pas la technique du dessin.
+  await expect(page.locator('.view-mode[data-view="geometry"]')).toHaveText('Dimensions');
+  await expect(page.locator('.view-mode[data-view="geometry"]')).toHaveAttribute('title', /cotes/);
+
+  // §21 : plus aucun identifiant interne dans les textes du viewer.
+  const markup = await page.locator('#svgContainer svg').innerHTML();
+  expect(markup).not.toMatch(/Étage \d+ · (planetary|spur|worm|helical|bevel|internal|belt|chain)/);
+
+  // §18 : les flux physiques sont nommés par la question à laquelle ils répondent.
+  await page.locator('#viewerDisplayMenu > summary').click();
+  await expect(page.locator('#viewerDisplayMenu')).toContainText('Flux physiques');
+  await expect(page.locator('#viewerDisplayMenu')).toContainText('Efforts — Ft / Fr / Fa');
+  expect(errors).toEqual([]);
+});
+
+test('two pinned solutions are compared with deltas, not raw columns (§26)', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await setQuantity(page, 'ratio', 12);
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').nth(1)).toBeVisible({ timeout: 40000 });
+  await page.locator('.solution-card').nth(0).locator('.tile-pin').click();
+  await page.locator('.solution-card').nth(1).locator('.tile-pin').click();
+  await page.locator('.detail-tabs [data-detail="comparer"]').click();
+
+  const table = page.locator('.compare-table');
+  await expect(table).toBeVisible();
+  // « 94 mm » et « 72 mm » côte à côte obligeaient à faire la soustraction de
+  // tête : la première colonne sert de référence, les autres disent l'écart.
+  await expect(table.locator('.metric-delta').first()).toBeVisible();
+  // §21 : la famille est nommée, pas identifiée.
+  const architecture = await table.locator('.type-badge').first().textContent();
+  expect(architecture).not.toMatch(/^(spur|planetary|worm|helical|bevel|internal|belt|chain)$/);
+});
+
 test('a built chain survives a reload', async ({ page }) => {
   await page.goto('/');
   await chooseMode(page, 'build');

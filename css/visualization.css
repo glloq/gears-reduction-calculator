@@ -287,3 +287,9 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 /* §24 : d'où vient chaque valeur d'une chaîne complétée. */
 .value-origin { font-size: .85em; margin-left: 2px; }
 .inspector-grid [data-origin="found"] strong { color: var(--accent); }
+
+/* §18 : les flux physiques groupés sous un intertitre. */
+.display-menu-group {
+  margin: var(--sp-1) 0 2px; font-size: var(--font-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+}

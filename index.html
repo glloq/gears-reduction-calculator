@@ -515,9 +515,11 @@
       <section class="hero-viewer viz-section" aria-label="Visualisation de la transmission">
         <div class="viz-controls">
           <div class="segmented view-switch">
-            <button class="view-mode active" data-view="teeth" title="Profils de denture en développante, animables — crémaillère comprise">Denture</button>
-            <button class="view-mode" data-view="geometry">Géométrie 2D</button>
-            <button class="view-mode" data-view="kinematic">Cinématique</button>
+            <!-- §19 : le nom dit ce qu'on y voit. « Géométrie 2D » décrivait la
+                 technique du dessin, pas ce qu'on y cherche : des cotes. -->
+            <button class="view-mode active" data-view="teeth" title="Forme et engrènement : profils en développante, animables">Denture</button>
+            <button class="view-mode" data-view="geometry" title="Encombrement et cotes : diamètres, entraxes, courses">Dimensions</button>
+            <button class="view-mode" data-view="kinematic" title="Arbres, sens et vitesses : schéma symbolique">Cinématique</button>
           </div>
           <span class="kinematic-projections">
             <button class="btn-small active" data-projection="auto">Vue auto</button>
@@ -546,10 +548,14 @@
               <label data-views="geometry"><input type="checkbox" data-overlay="dimensions" checked> Dimensions</label>
               <label data-views="geometry"><input type="checkbox" data-overlay="axes" checked> Axes</label>
               <label data-views="geometry"><input type="checkbox" data-overlay="envelope"> Enveloppe</label>
-              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> RPM</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports</label>
-              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Flux de puissance</label>
+              <!-- §18 : trois flux physiques, nommés par ce qu'ils montrent.
+                   « RPM » et « Flux de puissance » décrivaient la donnée tracée,
+                   pas la question à laquelle elle répond. -->
+              <p class="display-menu-group" data-views="teeth geometry kinematic">Flux physiques</p>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="rpm" checked> Mouvement — vitesses et sens</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="powerFlow" checked> Puissance — chemin de l’énergie</label>
+              <label data-views="teeth geometry"><input type="checkbox" data-overlay="forces"> Efforts — Ft / Fr / Fa</label>
+              <label data-views="kinematic"><input type="checkbox" data-overlay="ratios" checked> Rapports par étage</label>
               <label data-views="kinematic"><input type="checkbox" data-overlay="spatialAxes" checked> Axes spatiaux</label>
               <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
             </div>

@@ -92,6 +92,10 @@
     var derived = scene && scene.members
       ? scene.members.filter(function (member) { return member.schematic; })
       : [];
+    // §20 : cote par cote, ce qui est calculé et ce qui est reconstruit. La
+    // phrase générale dit le statut de la VUE ; le détail dit celui de chaque
+    // grandeur, ce qui est la question d'un ingénieur devant un plan.
+    host.title = this._fidelityDetail(scene);
     if (derived.length) {
       var names = derived.map(function (member) { return member.memberName || member.role; });
       var unique = names.filter(function (name, i) { return names.indexOf(name) === i; });
@@ -146,8 +150,51 @@
     document.querySelectorAll('#viewerDisplayMenu [data-views]').forEach(function (label) {
       label.hidden = label.dataset.views.split(' ').indexOf(name) < 0;
     });
+    // Un intertitre sans ligne en dessous n'annonce rien : il se retire avec
+    // elles quand la vue courante n'en propose aucune.
+    document.querySelectorAll('#viewerDisplayMenu .display-menu-group').forEach(function (heading) {
+      var next = heading.nextElementSibling, visible = false;
+      while (next && !next.classList.contains('display-menu-group')) {
+        if (!next.hidden) visible = true;
+        next = next.nextElementSibling;
+      }
+      heading.hidden = !visible;
+    });
     if (this.solution) this.render(this.solution);
     this.container.dispatchEvent(new CustomEvent('viewer:view-changed', { detail: { view: name } }));
+  };
+
+  /** Libellés des cotes, pour un détail lisible plutôt qu'un nom de champ. */
+  var DIMENSION_LABELS = {
+    pitchDiameter: 'Diamètre primitif', outsideDiameter: 'Diamètre extérieur',
+    rootDiameter: 'Diamètre de pied', baseDiameter: 'Diamètre de base',
+    centerDistance: 'Entraxe', width: 'Largeur', module: 'Module',
+    teeth: 'Nombre de dents', orbitRadius: 'Rayon d’orbite',
+    travelPerRevolution: 'Course par tour', coneAngleDeg: 'Angle de cône',
+    leadAngleDeg: 'Angle d’avance', helixAngleDeg: 'Angle d’hélice'
+  };
+
+  /**
+   * §20 : ● calculé, ○ déduit. Une cote reconstruite faute de mieux ne se lit
+   * pas comme une cote calculée — sur un outil d'ingénierie, c'est la première
+   * chose à savoir avant de reporter une valeur sur un plan.
+   */
+  ViewerToolbar.prototype._fidelityDetail = function (scene) {
+    if (!scene || !scene.members) return '';
+    var engine = {}, derived = {};
+    scene.members.forEach(function (member) {
+      Object.keys(member.provenance || {}).forEach(function (key) {
+        (member.provenance[key] === 'engine' ? engine : derived)[key] = true;
+      });
+    });
+    function list(marks, bucket) {
+      return Object.keys(bucket).map(function (key) {
+        return marks + ' ' + (DIMENSION_LABELS[key] || key);
+      });
+    }
+    var lines = list('●', engine).concat(list('○', derived));
+    if (!lines.length) return '';
+    return '● calculé par le moteur · ○ reconstruit faute de mieux\n' + lines.join('\n');
   };
 
   ViewerToolbar.prototype.toggleAnimation = function () {

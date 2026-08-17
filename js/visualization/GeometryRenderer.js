@@ -158,7 +158,7 @@
       var self = this;
       group.setAttribute('tabindex', '0');
       group.setAttribute('role', 'button');
-      group.setAttribute('aria-label', 'Étage ' + (item.index + 1) + ' · ' + item.type);
+      group.setAttribute('aria-label', 'Étage ' + (item.index + 1) + ' · ' + GearTransmissionRegistry.familyName(item.type));
       group.addEventListener('click', function () {
         if (self.viewport && self.viewport.dragged) { self.viewport.dragged = false; return; }
         self.selectStage(item.index);
@@ -218,7 +218,7 @@
       GearWarningOverlay.render(p.node, labels, GearWarningOverlay.derive(item.stage, mech), item.index,
         { x: item.x + item.diameter / 2 + fontSize, y: item.y - item.diameter / 2 });
       p.label(labels, item.x - item.diameter / 2, self.layout.margin * 0.7,
-        'Étage ' + (item.index + 1) + ' · ' + item.type, 'stage-label', { scale: unit, anchor: 'start', fontSize: 13 });
+        'Étage ' + (item.index + 1) + ' · ' + GearTransmissionRegistry.familyName(item.type, 'short'), 'stage-label', { scale: unit, anchor: 'start', fontSize: 13 });
     });
 
     var box = '0 0 ' + this.layout.bounds.width.toFixed(1) + ' ' + this.layout.bounds.height.toFixed(1);

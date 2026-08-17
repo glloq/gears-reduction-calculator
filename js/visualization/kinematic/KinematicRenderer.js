@@ -205,7 +205,7 @@
     } else {
       metadata = 'rapport ' + (mechanical && Number.isFinite(mechanical.ratio) ? mechanical.ratio.toFixed(3) : 'indisponible');
     }
-    g.appendChild(KinematicPrimitives.element('title', {}, 'Étage ' + (node.index + 1) + ' — ' + type + ' — ' + metadata));
+    g.appendChild(KinematicPrimitives.element('title', {}, 'Étage ' + (node.index + 1) + ' — ' + GearTransmissionRegistry.familyName(type) + ' — ' + metadata));
     g.addEventListener('click', function () {
       if (self.viewport && self.viewport.dragged) { self.viewport.dragged = false; return; }
       self.selectStage(node.index);

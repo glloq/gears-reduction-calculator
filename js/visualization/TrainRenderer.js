@@ -130,7 +130,7 @@
       'data-type': entry.type,
       tabindex: 0,
       role: 'button',
-      'aria-label': 'Étage ' + (index + 1) + ' · ' + entry.type + ' — rapport ' + fmt(mech.ratio, 3)
+      'aria-label': 'Étage ' + (index + 1) + ' · ' + GearTransmissionRegistry.familyName(entry.type) + ' — rapport ' + fmt(mech.ratio, 3)
     });
     if (Number.isFinite(entry.centerDistance)) group.setAttribute('data-center-distance-mm', entry.centerDistance.toFixed(2));
     if (Number.isFinite(mech.ratio)) group.setAttribute('data-ratio', mech.ratio.toFixed(4));
@@ -165,14 +165,16 @@
     // et cote d'entraxe.
     var decor = n('g', { class: 'stage-decor' });
     var ratioText = Number.isFinite(mech.ratio) ? ' — i=' + fmt(mech.ratio, 2) : '';
-    var label = n('text', { class: 'train-label', 'data-label-stage': index }, 'Étage ' + (index + 1) + ' · ' + entry.type + ratioText);
+    // §21 : tout texte du viewer passe par le registre. « Étage 2 · planetary »
+    // laissait un identifiant interne à l'écran.
+    var label = n('text', { class: 'train-label', 'data-label-stage': index }, 'Étage ' + (index + 1) + ' · ' + GearTransmissionRegistry.familyName(entry.type, 'short') + ratioText);
     decor.appendChild(label);
     if (Number.isFinite(entry.centerDistance) && entry.wheels.length >= 2 && entry.type !== 'planetary') {
       this._drawDim(decor, entry);
     }
     group.appendChild(decor);
 
-    var title = 'Étage ' + (index + 1) + ' · ' + entry.type +
+    var title = 'Étage ' + (index + 1) + ' · ' + GearTransmissionRegistry.familyName(entry.type) +
       (Number.isFinite(mech.ratio) ? '\nRapport : ' + fmt(mech.ratio, 4) : '') +
       (Number.isFinite(entry.centerDistance) ? '\nEntraxe : ' + fmt(entry.centerDistance, 2) + ' mm' : '');
     group.appendChild(n('title', {}, title));
