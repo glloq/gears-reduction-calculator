@@ -50,6 +50,9 @@
       profileShift: finite(g.profileShift, 0),
       faceWidth: finite(g.width, 10 * m),
       helixAngle: Number.isFinite(g.helixAngleDeg) ? g.helixAngleDeg : undefined,
+      // Le sens vient de la scène, sous son nom canonique : la primitive lisait
+      // `helixHand`, que personne ne posait.
+      handedness: entry ? entry.handedness : undefined,
       leadAngle: Number.isFinite(g.leadAngleDeg) ? g.leadAngleDeg : undefined,
       coneAngleDeg: Number.isFinite(g.coneAngleDeg) ? g.coneAngleDeg : undefined,
       schematic: !!(entry && entry.schematic),

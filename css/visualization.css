@@ -123,6 +123,28 @@
 .train-stage:focus, .train-stage:focus-visible { outline: none; }
 .train-stage:hover .tooth-profile { stroke-width: 1; }
 
+/* Corps vus de CÔTÉ ou obliquement. Un cercle affirme qu'on regarde le long de
+   l'axe ; dès que l'axe est dans le plan de l'écran, une roue est un cylindre
+   de largeur b, et les traits conventionnels — surface primitive, fond de
+   denture — remplacent la denture dessinée. */
+.gear-profile, .pulley-profile, .ring-profile-top, .ring-profile-bottom {
+  fill: color-mix(in srgb, var(--accent) 14%, var(--surface-1));
+  stroke: var(--ink); stroke-width: .6; stroke-linejoin: round;
+}
+.pitch-line { stroke: var(--muted); stroke-width: .5; stroke-dasharray: 4 3; fill: none; }
+.root-line { stroke: var(--muted); stroke-width: .35; opacity: .7; fill: none; }
+/* Le vide central d'une couronne : un trait conventionnel, pas une coupe. */
+.bore-line { stroke: var(--muted); stroke-width: .4; stroke-dasharray: 2 2; fill: none; }
+.pulley-flange { stroke: var(--ink); stroke-width: .7; fill: none; }
+.gear-profile.output-member, .pulley-profile.output-member {
+  fill: color-mix(in srgb, var(--success) 14%, var(--surface-1));
+}
+.worm-end { fill: color-mix(in srgb, var(--muted) 12%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; }
+.cone-face { fill: color-mix(in srgb, var(--accent) 12%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; }
+.oblique-body { fill: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); stroke: var(--ink); stroke-width: .5; }
+.oblique-face { fill: color-mix(in srgb, var(--accent) 18%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; }
+.oblique-back { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 3 2; opacity: .7; }
+
 /* ===================== Geometry ===================== */
 
 /* Les millimètres calculés sont les unités SVG. */

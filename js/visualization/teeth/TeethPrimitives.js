@@ -38,9 +38,24 @@
     return LEVELS.TECHNICAL;
   }
 
-  /** Niveau appliqué à une roue : diamètre monde × pixels par unité. */
-  function levelFor(wheel, pixelsPerUnit) {
-    return level(finite(wheel && (wheel.outsideD || wheel.pitchD), 0) * finite(pixelsPerUnit, 1));
+  /**
+   * Niveau appliqué à une roue : sa taille APPARENTE, en pixels.
+   *
+   * Le calcul prenait toujours le diamètre. Une roue vue presque en bout occupe
+   * pourtant une bande de quelques millimètres : elle déclenchait un niveau de
+   * détail maximal pour dessiner une développante haute de trois pixels.
+   */
+  function levelFor(wheel, pixelsPerUnit, options) {
+    var diameter = finite(wheel && (wheel.outsideD || wheel.pitchD), 0);
+    var presentation = options && options.presentation;
+    var apparent = diameter;
+    if (presentation === 'profile') {
+      apparent = Math.min(diameter, Math.max(finite(wheel && wheel.faceWidth, 0), diameter * 0.15));
+    } else if (presentation === 'oblique') {
+      var squeeze = Math.min(1, Math.max(0.05, finite(options && options.foreshortening, 0.5)));
+      apparent = diameter * squeeze;
+    }
+    return level(apparent * finite(pixelsPerUnit, 1));
   }
 
   function radii(wheel) {
@@ -82,7 +97,9 @@
     if (lod <= LEVELS.SILHOUETTE) return [];
     var r = radii(wheel);
     var beta = rad(finite(wheel.helixAngle, 20));
-    var hand = wheel.helixHand === 'left' ? -1 : 1;
+    // `handedness` est le nom du registre et de la scène. `helixHand` est
+    // accepté par compatibilité, mais rien ne l'a jamais posé.
+    var hand = handOf(wheel);
     var count = Math.max(4, Math.min(16, Math.round(finite(wheel.teeth, 12) / 3)));
     var marks = [];
     for (var i = 0; i < count; i++) {
@@ -130,6 +147,12 @@
     return [node('path', { class: 'tooth-profile ring-profile', 'fill-rule': 'evenodd',
       d: circlePath(rim) + ' ' + inner }),
       node('circle', { class: 'ring-rim', r: fixed(root + r.module * 0.35) })];
+  }
+
+  /** −1 pour une hélice ou un filet à gauche, +1 à droite. */
+  function handOf(wheel) {
+    var declared = wheel && (wheel.handedness || wheel.helixHand);
+    return declared === 'left' ? -1 : 1;
   }
 
   function circlePath(radius) {
@@ -213,6 +236,7 @@
     if (lod <= LEVELS.SILHOUETTE) return body;
 
     var samples = lod >= LEVELS.INVOLUTE ? 12 : 5;
+    var hand = handOf(wheel);
     var margin = WORM_MARGIN_PITCHES * g.pitch;
     var threadPaths = [];
     // Un filet = une sinusoïde apparente : le flanc visible du profil
@@ -224,7 +248,10 @@
         for (var i = 0; i <= samples; i++) {
           var t = i / samples;
           var x = offset + t * g.pitch / g.starts;
-          var y = -radius * Math.cos(Math.PI * t) * Math.cos(g.lead);
+          // §39 : la pente du filet suit le sens déclaré. Sans cela une vis à
+          // gauche se dessinait exactement comme une vis à droite, alors que
+          // c'est ce sens qui décide de la rotation de la roue.
+          var y = -hand * radius * Math.cos(Math.PI * t) * Math.cos(g.lead);
           d += (d ? ' L ' : 'M ') + fixed(x) + ' ' + fixed(y);
         }
         if (d) threadPaths.push(node('path', { class: 'worm-thread', d: d }));
@@ -306,8 +333,169 @@
     return [node('path', { class: 'tooth-profile rack-teeth', d: d })];
   }
 
+  // ===== Corps par ORIENTATION =====
+  //
+  // Une roue était dessinée en cercle quelle que soit la vue. Or un cercle
+  // affirme qu'on regarde LE LONG de l'axe. Dès que l'axe est dans le plan de
+  // l'écran — ce qui est le cas de tout train déplié — la roue doit devenir un
+  // cylindre vu de côté, de largeur b. Sans cela deux roues d'un même arbre,
+  // pourtant écartées de leur écart axial réel, se recouvrent quand même, et un
+  // pignon placé après un planétaire tombe dans sa couronne.
+  //
+  // Convention du repère local, la même que celle de la vis depuis toujours :
+  // X porte l'AXE de la pièce, Y lui est perpendiculaire. C'est le renderer qui
+  // oriente ensuite le groupe suivant l'axe projeté.
+
+  /** Largeur dessinée d'une pièce vue de côté : sa largeur de denture. */
+  function faceWidthOf(wheel, r) {
+    return Math.max(2 * r.module, finite(wheel.faceWidth, 10 * r.module));
+  }
+
+  /**
+   * Roue vue de côté : un cylindre. Le diamètre extérieur donne la hauteur, la
+   * largeur de denture donne la longueur — les deux cotes que la vue de face ne
+   * pouvait pas montrer.
+   */
+  function gearProfile(wheel, lod) {
+    var r = radii(wheel);
+    var b = faceWidthOf(wheel, r);
+    var shapes = [node('rect', { class: 'tooth-profile gear-profile', x: fixed(-b / 2), y: fixed(-r.tip),
+      width: fixed(b), height: fixed(2 * r.tip) })];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    // Surface primitive et fond de denture : les deux traits conventionnels qui
+    // distinguent une roue d'un simple cylindre.
+    shapes.push(node('path', { class: 'pitch-line',
+      d: 'M ' + fixed(-b / 2) + ' ' + fixed(-r.pitch) + ' H ' + fixed(b / 2) +
+         ' M ' + fixed(-b / 2) + ' ' + fixed(r.pitch) + ' H ' + fixed(b / 2) }));
+    if (lod >= LEVELS.INVOLUTE) {
+      shapes.push(node('path', { class: 'root-line',
+        d: 'M ' + fixed(-b / 2) + ' ' + fixed(-r.root) + ' H ' + fixed(b / 2) +
+           ' M ' + fixed(-b / 2) + ' ' + fixed(r.root) + ' H ' + fixed(b / 2) }));
+      // Un repère d'indexation : la silhouette d'un cylindre qui tourne ne
+      // change pas, il faut donc autre chose pour voir qu'il tourne.
+      shapes.push(node('path', { class: 'index-mark', d: 'M 0 ' + fixed(-r.root) + ' V ' + fixed(r.root) }));
+    }
+    if (lod >= LEVELS.TECHNICAL && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
+      // Les flancs d'une denture hélicoïdale sont obliques, et leur pente donne
+      // le sens de l'hélice.
+      var shear = handOf(wheel) * Math.tan(rad(wheel.helixAngle)) * r.tip;
+      var stripes = '';
+      for (var i = -1; i <= 1; i++) {
+        var x = i * b / 3;
+        stripes += ' M ' + fixed(x - shear / 4) + ' ' + fixed(-r.tip) + ' L ' + fixed(x + shear / 4) + ' ' + fixed(r.tip);
+      }
+      shapes.push(node('path', { class: 'helix-stripe', d: stripes.trim() }));
+    }
+    return shapes;
+  }
+
+  /**
+   * Couronne intérieure de côté : deux jantes, pas un rectangle plein qu'on
+   * confondrait avec une roue. Ce n'est pas une coupe — on ne prétend pas
+   * montrer l'intérieur —, seulement le volume annulaire.
+   */
+  function ringProfile(wheel, lod) {
+    var r = radii(wheel);
+    var b = faceWidthOf(wheel, r);
+    var rim = r.pitch + 3 * r.module;
+    var bore = Math.min(r.tip, r.pitch - r.module);
+    var shapes = [node('rect', { class: 'tooth-profile ring-profile-top', x: fixed(-b / 2), y: fixed(-rim),
+      width: fixed(b), height: fixed(rim - bore) }),
+      node('rect', { class: 'tooth-profile ring-profile-bottom', x: fixed(-b / 2), y: fixed(bore),
+        width: fixed(b), height: fixed(rim - bore) })];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    // Le vide central est marqué en trait conventionnel : il n'est pas dessiné
+    // comme une matière qu'on aurait coupée.
+    shapes.push(node('path', { class: 'bore-line',
+      d: 'M ' + fixed(-b / 2) + ' ' + fixed(-bore) + ' H ' + fixed(b / 2) +
+         ' M ' + fixed(-b / 2) + ' ' + fixed(bore) + ' H ' + fixed(b / 2) }));
+    return shapes;
+  }
+
+  /** Poulie ou pignon de chaîne de côté : largeur réelle, sans dents de face. */
+  function flexibleProfile(wheel, lod) {
+    var r = radii(wheel);
+    var b = faceWidthOf(wheel, r);
+    var shapes = [node('rect', { class: 'tooth-profile pulley-profile', x: fixed(-b / 2), y: fixed(-r.tip),
+      width: fixed(b), height: fixed(2 * r.tip) })];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    // Les joues d'une poulie : ce qui la distingue d'une roue pleine.
+    shapes.push(node('path', { class: 'pulley-flange',
+      d: 'M ' + fixed(-b / 2) + ' ' + fixed(-r.tip) + ' V ' + fixed(r.tip) +
+         ' M ' + fixed(b / 2) + ' ' + fixed(-r.tip) + ' V ' + fixed(r.tip) }));
+    return shapes;
+  }
+
+  /**
+   * Vis vue EN BOUT : son axe pointe vers l'œil. Un cylindre couché n'aurait
+   * aucun sens dans cette vue — et surtout aucune translation longitudinale ne
+   * doit y apparaître, puisque le mouvement se fait dans la profondeur.
+   */
+  function wormEnd(wheel, lod) {
+    var g = wormGeometry(wheel);
+    var shapes = [node('circle', { class: 'tooth-profile worm-end', r: fixed(g.radius) })];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    shapes.push(node('circle', { class: 'gear-hub', r: fixed(Math.max(1.2, g.radius * 0.3)) }));
+    // Un repère de phase par filet : c'est ce qui rend la rotation visible.
+    var marks = '';
+    for (var k = 0; k < g.starts; k++) {
+      var a = 2 * Math.PI * k / g.starts;
+      marks += ' M 0 0 L ' + fixed(Math.cos(a) * g.radius) + ' ' + fixed(Math.sin(a) * g.radius);
+    }
+    shapes.push(group({ class: 'worm-end-phase' }, [node('path', { class: 'index-mark', d: marks.trim() })]));
+    return shapes;
+  }
+
+  /** Cône vu de face : la grande face, avec la trace du cône primitif. */
+  function coneFace(wheel, lod) {
+    var r = radii(wheel);
+    var shapes = [node('circle', { class: 'tooth-profile cone-face', r: fixed(r.tip) })];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    shapes.push(node('circle', { class: 'pitch-circle', r: fixed(r.pitch) }));
+    shapes.push(node('circle', { class: 'gear-hub', r: fixed(Math.max(1.2, r.pitch * 0.25)) }));
+    return shapes;
+  }
+
+  /**
+   * Vue oblique : ni un disque, ni un rectangle.
+   *
+   * On ne prétend pas faire de la 3D. Une ellipse dont le petit axe vaut le
+   * raccourci réel, épaissie le long de l'axe, suffit à montrer immédiatement
+   * qu'une pièce n'est ni de face ni de profil — c'est tout ce qu'on lui
+   * demande.
+   */
+  function obliqueBody(wheel, lod, foreshortening) {
+    var r = radii(wheel);
+    var squeeze = Math.min(1, Math.max(0.05, finite(foreshortening, 0.5)));
+    var b = faceWidthOf(wheel, r);
+    // L'épaisseur apparente d'une pièce est ce qui reste de sa largeur quand on
+    // ne la voit plus tout à fait de face.
+    var thickness = b * Math.sqrt(Math.max(0, 1 - squeeze * squeeze));
+    var rx = r.tip * squeeze;
+    var shapes = [
+      node('path', { class: 'tooth-profile oblique-body',
+        d: 'M ' + fixed(-thickness / 2) + ' ' + fixed(-r.tip) + ' h ' + fixed(thickness) +
+           ' v ' + fixed(2 * r.tip) + ' h ' + fixed(-thickness) + ' Z' }),
+      node('ellipse', { class: 'tooth-profile oblique-face', cx: fixed(thickness / 2), cy: '0',
+        rx: fixed(Math.max(0.4, rx)), ry: fixed(r.tip) })
+    ];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    shapes.push(node('ellipse', { class: 'oblique-back', cx: fixed(-thickness / 2), cy: '0',
+      rx: fixed(Math.max(0.4, rx)), ry: fixed(r.tip) }));
+    shapes.push(node('path', { class: 'index-mark',
+      d: 'M ' + fixed(thickness / 2) + ' ' + fixed(-r.tip) + ' V ' + fixed(r.tip) }));
+    return shapes;
+  }
+
   var BODIES = { gear: gearBody, 'internal-ring': internalRingBody, pulley: flexibleBody, sprocket: flexibleBody,
     worm: wormBody, cone: coneBody, rack: rackBody };
+
+  /** Corps de côté, par famille. La vis et la crémaillère l'étaient déjà. */
+  var PROFILES = { gear: gearProfile, 'internal-ring': ringProfile, pulley: flexibleProfile,
+    sprocket: flexibleProfile, worm: wormBody, cone: coneBody, rack: rackBody };
+
+  /** Corps vus dans l'axe. La plupart des familles y gardent leur dessin de face. */
+  var FACES = { worm: wormEnd, cone: coneFace };
 
   /**
    * build(wheel, options) → { rotor, fixed }
@@ -316,15 +504,31 @@
   function build(wheel, options) {
     options = options || {};
     var lod = finite(options.lod, LEVELS.INVOLUTE);
-    var body = (BODIES[wheel.kind] || gearBody)(wheel, lod);
-    if (wheel.kind === 'gear' && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
+    // L'orientation se DEMANDE. Sans elle, on rend exactement le dessin
+    // historique : une vis y était déjà couchée, un cône déjà en trapèze, et
+    // faire de `face` un défaut aurait retourné ces deux familles en silence.
+    var asked = options.presentation;
+    var presentation = asked === 'profile' || asked === 'oblique' || asked === 'face' ? asked : null;
+    var body;
+    if (presentation === 'oblique') {
+      body = obliqueBody(wheel, lod, options.foreshortening);
+    } else if (presentation === 'profile') {
+      body = (PROFILES[wheel.kind] || gearProfile)(wheel, lod);
+    } else if (presentation === 'face') {
+      body = (FACES[wheel.kind] || BODIES[wheel.kind] || gearBody)(wheel, lod);
+    } else {
+      body = (BODIES[wheel.kind] || gearBody)(wheel, lod);
+    }
+    // Les stries d'hélice décrivent une denture vue de FACE : de profil, c'est
+    // la pente des flancs qui porte l'information, et elle est déjà tracée.
+    if (presentation !== 'profile' && presentation !== 'oblique' && wheel.kind === 'gear' && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
       body = body.concat(helicalMarks(wheel, lod));
     }
     var labels = [];
     var r = radii(wheel);
     // Z=n reste hors du rotor (il ne doit pas tourner) et disparaît quand la
     // roue est trop petite pour rester lisible.
-    if (lod >= LEVELS.SIMPLIFIED && wheel.teeth > 0 && wheel.kind !== 'worm') {
+    if (lod >= LEVELS.SIMPLIFIED && wheel.teeth > 0 && wheel.kind !== 'worm' && presentation !== 'profile') {
       var y = wheel.kind === 'internal-ring' ? -(r.pitch + 2.6 * r.module) : -r.root * 0.5;
       var size = Math.max(2.6, Math.min(r.root * 0.3, 10));
       if (wheel.kind === 'internal-ring' || r.root > 6) {
@@ -336,7 +540,7 @@
     if (wheel.functionalRole === 'fixed' && Ground) {
       labels = labels.concat(Ground.ring(0, 0, groundRadius(wheel, r), { length: r.module * 1.6 }));
     }
-    return { rotor: body, fixed: labels, lod: lod };
+    return { rotor: body, fixed: labels, lod: lod, presentation: presentation };
   }
 
   /**

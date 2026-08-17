@@ -110,12 +110,25 @@
   /** Ajoute à chaque membre sa fonction, son nom lisible et son mode d'animation. */
   function describeRoles(stage, list) {
     var roles = functionalRoles(stage);
+    var declared = (stage.parameters && stage.parameters.handedness) === 'left' ? 'left' : 'right';
     list.forEach(function (entry) {
       var functional = roles[entry.role] || 'intermediate';
       entry.functionalRole = functional;
       entry.memberName = MEMBER_NAMES[entry.role] || entry.role;
       entry.localizedRole = FUNCTION_NAMES[functional];
       entry.rotationDisplayMode = rotationDisplayMode(stage, entry.role, functional);
+      // Le SENS de l'hélice ou du filet n'atteignait aucun dessin : la
+      // primitive lisait `helixHand`, que rien ne posait jamais — une hélice à
+      // gauche se dessinait donc à droite. Ce n'est pas une cote, c'est une
+      // qualité de la pièce : elle voyage avec son nom et sa fonction.
+      if (stage.type === 'helical') {
+        // La roue porte l'hélice OPPOSÉE à son pignon : c'est la condition
+        // pour qu'un couple hélicoïdal engrène.
+        entry.handedness = entry.role === 'output'
+          ? (declared === 'left' ? 'right' : 'left') : declared;
+      } else if (stage.type === 'worm') {
+        entry.handedness = declared;
+      }
     });
     return list;
   }
@@ -214,6 +227,7 @@
     input.fallback('baseDiameter', finite(input.values.pitchDiameter, 0) * Math.cos(alpha * Math.PI / 180));
     if (stage.type === 'helical') input.take('helixAngleDeg', finite(p.helixAngle, 20));
     if (stage.type === 'worm') input.take('leadAngleDeg', finite(p.leadAngle, 20));
+
     list.push(member(prefix + 'input', index, 'input', pairKinds[stage.type] === 'internal-ring' ? 'gear' : (pairKinds[stage.type] || 'gear'),
       input, speeds(kinematics, prefix + 'input'), { torque: mech.inputTorqueNm }));
 
@@ -228,6 +242,7 @@
     }
     output.fallback('baseDiameter', finite(output.values.pitchDiameter, 0) * Math.cos(alpha * Math.PI / 180));
     if (stage.type === 'helical') output.take('helixAngleDeg', finite(p.helixAngle, 20));
+
     list.push(member(prefix + 'output', index, 'output',
       stage.type === 'internal' ? 'internal-ring' : (pairKinds[stage.type] === 'worm' ? 'gear' : pairKinds[stage.type] || 'gear'),
       output, speeds(kinematics, prefix + 'output'), { torque: torque }));
