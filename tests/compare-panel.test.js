@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const H = require('../js/ui/ComparePanel.js');
+const H = require("../js/ui/ComparePanel.js");
+const ComparePanel = H;
 
 function solution(uid, overrides = {}) {
   const s = Object.assign({
@@ -62,4 +63,27 @@ test('buildRows blanks inapplicable cells when rotary and linear pins are mixed'
   assert.equal(course.values[1], 62.8);
   const stage1 = rows.find(r => r.label === 'Étage 1');
   assert.equal(stage1.values[1].label, 'pignon 20');
+});
+
+test('two planetaries with the same teeth but different roles never look alike', () => {
+  // « S20 / R80 » désignait indifféremment deux mécanismes sans rien de commun :
+  // à dentures identiques, deux organes bloqués différents donnent deux
+  // rapports différents — parfois de signe opposé.
+  const teeth = { type: 'planetary', sunTeeth: 20, planetTeeth: 30, planetCount: 3, ringTeeth: 80 };
+  const first = ComparePanel.stageLabel(Object.assign({}, teeth, { inputMember: 'S', fixed: 'R', outputMember: 'C' }));
+  const second = ComparePanel.stageLabel(Object.assign({}, teeth, { inputMember: 'C', fixed: 'S', outputMember: 'R' }));
+  assert.notEqual(first, second, 'la comparaison doit les distinguer');
+
+  // Les satellites comptent aussi : ils décident du montage et de la répartition.
+  assert.match(first, /S20/);
+  assert.match(first, /P30×3/);
+  assert.match(first, /R80/);
+  // Les organes sont nommés en français, jamais par leur code seul.
+  assert.match(first, /Solaire entrée/);
+  assert.match(first, /Couronne fixe/);
+  assert.match(second, /Porte-satellites entrée/);
+  assert.doesNotMatch(first, /NaN|undefined/);
+
+  // Une topologie inconnue se réduit aux dentures plutôt que d'inventer des rôles.
+  assert.equal(ComparePanel.stageLabel(teeth), 'S20 / P30×3 / R80');
 });

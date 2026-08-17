@@ -4,10 +4,10 @@
 // retiennent l'objet solution et survivent aux re-recherches).
 // Les aides pures sont exportées en UMD pour les tests Node.
 (function (root, factory) {
-  var api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.GearComparePanelHelpers = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+  var common = typeof module === 'object' && module.exports;
+  var api = factory(common ? require('../transmissions/TransmissionRegistry.js') : root.GearTransmissionRegistry);
+  if (common) module.exports = api; else root.GearComparePanelHelpers = api;
+})(typeof self !== 'undefined' ? self : this, function (Registry) {
   'use strict';
 
   var PIN_CAP = 4;
@@ -56,10 +56,36 @@
     return out;
   }
 
+  /**
+   * Un planétaire ne se compare pas à ses seules dentures.
+   *
+   * « S20 / R80 » désignait indifféremment deux mécanismes qui n'ont rien de
+   * commun : solaire menant et couronne bloquée d'un côté, porte-satellites
+   * menant et solaire bloqué de l'autre. À dentures identiques, les rapports
+   * diffèrent — et parfois de signe. Comparer sans dire qui mène et qui est
+   * tenu, c'est comparer deux lignes qui se ressemblent.
+   */
+  function planetaryLabel(stage) {
+    var teeth = 'S' + stage.sunTeeth +
+      (Number.isFinite(stage.planetTeeth) ? ' / P' + stage.planetTeeth +
+        (Number.isFinite(stage.planetCount) ? '×' + Math.round(stage.planetCount) : '') : '') +
+      ' / R' + stage.ringTeeth;
+    var roles = [];
+    if (stage.inputMember) roles.push(memberName(stage.inputMember) + ' entrée');
+    if (stage.fixed) roles.push(memberName(stage.fixed) + ' fixe');
+    if (stage.outputMember) roles.push(memberName(stage.outputMember) + ' sortie');
+    return roles.length ? teeth + '\n' + roles.join(' · ') : teeth;
+  }
+
+  /** Le nom d'un organe vient du registre : cette vue ne traduit rien. */
+  function memberName(code) {
+    return Registry && Registry.memberName ? Registry.memberName(code) : code;
+  }
+
   function stageLabel(stage) {
     if (!stage) return '—';
     if (stage.type === 'worm') return 'vis ' + stage.wormStarts + ' → ' + stage.wheelTeeth;
-    if (stage.type === 'planetary' || stage.type === 'epicyclic') return 'S' + stage.sunTeeth + ' / R' + stage.ringTeeth;
+    if (stage.type === 'planetary' || stage.type === 'epicyclic') return planetaryLabel(stage);
     if (stage.type === 'rack') return 'pignon ' + stage.pinionTeeth;
     return stage.input.teeth + ' → ' + stage.output.teeth;
   }
@@ -116,7 +142,7 @@
     return rows;
   }
 
-  return { PIN_CAP: PIN_CAP, togglePin: togglePin, isPinned: isPinned, bestIndices: bestIndices, buildRows: buildRows, stageLabel: stageLabel, minFactor: minFactor };
+  return { PIN_CAP: PIN_CAP, togglePin: togglePin, isPinned: isPinned, bestIndices: bestIndices, buildRows: buildRows, stageLabel: stageLabel, planetaryLabel: planetaryLabel, minFactor: minFactor };
 });
 
 // ===== Classe DOM (navigateur uniquement) =====

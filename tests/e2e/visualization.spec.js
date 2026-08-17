@@ -986,3 +986,109 @@ test('the drawing and the analysis report exactly the same warnings', async ({ p
   chainWide.forEach(code => expect(drawn.map(b => b.code)).not.toContain(code));
   expect(errors).toEqual([]);
 });
+
+test('the inspector says what each family actually needs, forces included', async ({ page }) => {
+  const errors = watchErrors(page);
+  const families = ['spur', 'helical', 'internal', 'bevel', 'belt', 'chain'];
+  await mount(page, families);
+
+  const card = async index => page.evaluate(i => {
+    window.__viewer.inspector.show(i);
+    const host = document.getElementById('stageInspector');
+    return { groups: Array.from(host.querySelectorAll('.inspector-group')).map(h => h.textContent),
+      rows: Array.from(host.querySelectorAll('.inspector-grid div')).map(d => d.textContent) };
+  }, index);
+
+  // Chacune de ces grandeurs est calculée depuis toujours ; aucune n'était
+  // affichée. Ce sont pourtant celles qui font choisir la famille.
+  const expected = {
+    spur: [/Angle de pression/, /Rapport de conduite/],
+    helical: [/Angle d’hélice/, /Effort axial induit/],
+    internal: [/intérieure/],
+    bevel: [/Angle des arbres/, /Cône menant/, /Distance conique/],
+    belt: [/Profil/, /Longueur/, /Enroulement/],
+    chain: [/Maillons/, /Entraxe corrigé/]
+  };
+  for (let i = 0; i < families.length; i++) {
+    const family = families[i];
+    const shown = await card(i);
+    const text = shown.rows.join(' | ');
+    expected[family].forEach(pattern => expect(text, family).toMatch(pattern));
+    expect(text, family).not.toMatch(/NaN|undefined/);
+  }
+
+  // Les efforts chiffrés, là où le moteur les calcule. Un flexible n'en fournit
+  // pas : le bloc s'absente plutôt que d'afficher trois tirets.
+  const gear = await card(1);          // hélicoïdal
+  expect(gear.groups).toContain('Efforts');
+  const forces = gear.rows.filter(row => /^(Tangentiel|Radial|Axial)/.test(row));
+  expect(forces.length).toBe(3);
+  forces.forEach(row => expect(row).toMatch(/\d+ N$/));
+  // Une hélice pousse le long de l'arbre : cette valeur doit être non nulle.
+  const axial = Number((forces.find(r => r.startsWith('Axial')).match(/(\d+) N/) || [])[1]);
+  expect(axial).toBeGreaterThan(0);
+
+  const flexible = await card(4);      // courroie
+  expect(flexible.groups).not.toContain('Efforts');
+  expect(errors).toEqual([]);
+});
+
+test('each view keeps its own framing across view switches (§8)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'helical', 'planetary']);
+  const scale = () => page.evaluate(() => window.__viewer.renderer().viewport.getState().scale);
+
+  await showView(page, 'geometry');
+  await page.evaluate(() => window.__viewer.renderer().viewport.zoomAt(0, 0, 5));
+  const zoomed = await scale();
+  expect(zoomed).toBeGreaterThan(4);
+
+  // Une autre vue repart de son propre cadrage : les trois n'ont ni la même
+  // échelle ni la même disposition, partager un viewBox n'aurait aucun sens.
+  await showView(page, 'kinematic');
+  expect(await scale()).toBeCloseTo(1, 1);
+
+  // Et l'on retrouve le travail de cadrage en revenant.
+  await showView(page, 'geometry');
+  expect(await scale()).toBeCloseTo(zoomed, 1);
+
+  // Une AUTRE solution invalide les cadrages : un viewBox n'a de sens que pour
+  // le dessin qui l'a produit.
+  await page.evaluate(() => {
+    const other = GearEngineering.analyzeSolution([
+      { type: 'spur', input: { teeth: 11 }, output: { teeth: 88 }, parameters: { module: 3, pressureAngle: 20, faceWidth: 30 } }
+    ], 8, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+    window.__viewer.render(other);
+  });
+  expect(await scale()).toBeCloseTo(1, 1);
+  expect(errors).toEqual([]);
+});
+
+test('a preset takes you to the view that answers its question (§8)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'helical']);
+  await showView(page, 'teeth');
+
+  const state = () => page.evaluate(() => ({ view: window.__viewer.currentView,
+    pressed: Array.from(document.querySelectorAll('[data-preset][aria-pressed="true"]')).map(b => b.dataset.preset) }));
+
+  // Demander « Dimensionnement » en restant sur un schéma explicitement
+  // symbolique donnait des cotes dans la seule vue qui ne peut pas les porter.
+  await page.locator('[data-preset="sizing"]').click();
+  expect(await state()).toEqual({ view: 'geometry', pressed: ['sizing'] });
+  await expect(page.locator('#svgContainer')).not.toHaveClass(/hide-dimensions/);
+
+  await page.locator('[data-preset="motion"]').click();
+  expect(await state()).toEqual({ view: 'kinematic', pressed: ['motion'] });
+
+  await page.locator('[data-preset="mechanical"]').click();
+  expect(await state()).toEqual({ view: 'teeth', pressed: ['mechanical'] });
+  await expect(page.locator('#svgContainer')).not.toHaveClass(/hide-forces/);
+
+  // « Simple » est une question qu'on se pose dans n'importe quelle vue : il
+  // n'en impose aucune.
+  await showView(page, 'geometry');
+  await page.locator('[data-preset="simple"]').click();
+  expect(await state()).toEqual({ view: 'geometry', pressed: ['simple'] });
+  expect(errors).toEqual([]);
+});

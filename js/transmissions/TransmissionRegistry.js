@@ -48,11 +48,27 @@
       transverseContactRatio: transverse, overlapContactRatio: overlap, totalContactRatio: transverse + overlap,
       maxDiameter: Math.max(outside1, outside2), width: p.faceWidth || 10 * m,axisRelation:axisRelation(stage) };
   }
+  /**
+   * Efforts d'un engrènement cylindrique OU conique.
+   *
+   * Le cas conique était traité comme un cylindrique : hélice nulle, donc
+   * effort axial nul. C'est faux, et faux dans le sens dangereux — un renvoi
+   * d'angle pousse le pignon hors de son engrènement, et c'est exactement
+   * l'effort qui dimensionne son roulement. Le cône décompose l'effort normal
+   * en Fr = Ft·tanα·cosδ et Fa = Ft·tanα·sinδ ; à δ = 0 on retrouve le
+   * cylindrique, si bien qu'une seule formule couvre les deux.
+   */
   function gearForces(stage, torqueNm) {
-    var g = pairGeometry(stage), p = stage.parameters || {}, alpha = radians(p.pressureAngle || 20);
-    var beta = radians(stage.type === 'helical' ? (p.helixAngle || 20) : 0),alphaT=Math.atan(Math.tan(alpha)/Math.cos(beta));
-    var ft = 2000 * torqueNm / g.pitchDiameterInput; // N: diameter is mm
-    return { tangentialN: ft, radialN: ft * Math.tan(alphaT), axialN: ft * Math.tan(beta) };
+    var p = stage.parameters || {}, alpha = radians(p.pressureAngle || 20);
+    var beta = radians(stage.type === 'helical' ? (p.helixAngle || 20) : 0), alphaT = Math.atan(Math.tan(alpha) / Math.cos(beta));
+    var g = stage.type === 'bevel' ? types.bevel.calculateGeometry(stage) : pairGeometry(stage);
+    var delta = stage.type === 'bevel' && Number.isFinite(g.pitchConeAngleInput) ? radians(g.pitchConeAngleInput) : 0;
+    var ft = 2000 * torqueNm / g.pitchDiameterInput; // N : le diamètre est en mm
+    return { tangentialN: ft,
+      radialN: ft * Math.tan(alphaT) * Math.cos(delta),
+      // Une hélice et un cône poussent tous deux le long de l'arbre ; aucune
+      // famille ne combine les deux ici, la somme reste donc exacte.
+      axialN: ft * Math.tan(beta) + ft * Math.tan(alphaT) * Math.sin(delta) };
   }
   function candidatePair(type, a, b, parameters) { return { type: type, input: { teeth: a }, output: { teeth: b }, parameters: parameters || {} }; }
   function pairCandidates(type, options, constraints) {

@@ -14,3 +14,32 @@ test('fatigue and shaft estimates are explicitly estimates',()=>{assert.ok(E.fat
 test('material selection changes bending and contact safety factors',()=>{const stage=R.createLegacyStage(20,60,'spur',{module:2,faceWidth:20});const steel=E.analyzeSolution([JSON.parse(JSON.stringify(stage))],3,{inputTorqueNm:20,inputMaterial:'steel42CrMo4',outputMaterial:'steel42CrMo4'});const plastic=E.analyzeSolution([JSON.parse(JSON.stringify(stage))],3,{inputTorqueNm:20,inputMaterial:'PLA',outputMaterial:'PLA'});assert.ok(steel.mechanical[0].bending.safetyFactor>plastic.mechanical[0].bending.safetyFactor);assert.ok(steel.mechanical[0].contact.safetyFactor>plastic.mechanical[0].contact.safetyFactor);});
 
 test('solution conditionally includes per-stage fatigue and shaft estimates',()=>{const stages=[stage(20,40,'spur',{module:2}),stage(20,60,'spur',{module:2})];const solution=E.analyzeSolution(stages,6,{inputTorqueNm:10,inputSpeedRpm:1200,fatigue:{enabled:true,hoursPerDay:4,daysPerYear:200,years:5,loadType:'heavy'},shaft:{supportDistanceMm:100,allowableShearMPa:70}});assert.equal(solution.fatigue.length,2);assert.equal(solution.shaft.length,2);assert.equal(solution.fatigue[0].operatingHours,4000);assert.ok(solution.fatigue[0].cycles>solution.fatigue[1].cycles);assert.ok(solution.shaft.every(x=>x.minimumDiameterMm>0));const disabled=E.analyzeSolution([stage(20,40,'spur',{module:2})],2,{});assert.equal(disabled.fatigue,undefined);assert.equal(disabled.shaft,undefined);});
+
+test('a bevel gear pushes along its shaft; a spur one does not', () => {
+  // Le conique était calculé comme un cylindrique : hélice nulle, donc effort
+  // axial nul. C'est faux dans le sens dangereux — c'est précisément l'effort
+  // qui chasse le pignon de son engrènement et dimensionne son roulement.
+  const Registry = require('../js/transmissions/TransmissionRegistry.js');
+  const bevel = { type: 'bevel', input: { teeth: 20 }, output: { teeth: 40 },
+    parameters: { module: 2, shaftAngle: 90, pressureAngle: 20, faceWidth: 15 } };
+  const forces = Registry.get('bevel').calculateForces(bevel, 10);
+  assert.ok(forces.axialN > 0, 'un renvoi d’angle pousse le long de l’arbre');
+
+  // À 1:1 sous 90°, le demi-angle vaut 45° : les deux composantes s'égalisent.
+  const square = { type: 'bevel', input: { teeth: 20 }, output: { teeth: 20 },
+    parameters: { module: 2, shaftAngle: 90, pressureAngle: 20, faceWidth: 15 } };
+  const balanced = Registry.get('bevel').calculateForces(square, 10);
+  assert.ok(Math.abs(balanced.axialN - balanced.radialN) < 1e-6);
+
+  // Fr² + Fa² retrouve l'effort de séparation Ft·tanα : la décomposition est
+  // une rotation, elle ne crée ni ne perd d'effort.
+  const separation = forces.tangentialN * Math.tan(20 * Math.PI / 180);
+  assert.ok(Math.abs(Math.hypot(forces.radialN, forces.axialN) - separation) < 1e-6);
+
+  // Le cylindrique reste inchangé : δ = 0 redonne exactement l'ancien calcul.
+  const spur = { type: 'spur', input: { teeth: 20 }, output: { teeth: 60 },
+    parameters: { module: 2, pressureAngle: 20, faceWidth: 20 } };
+  const flat = Registry.get('spur').calculateForces(spur, 10);
+  assert.equal(flat.axialN, 0);
+  assert.ok(Math.abs(flat.radialN - flat.tangentialN * Math.tan(20 * Math.PI / 180)) < 1e-9);
+});
