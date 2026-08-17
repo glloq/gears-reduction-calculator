@@ -573,6 +573,14 @@
                ne disait pas sur quoi ; « Tout voir » le dit. « 1:1 » n'a de sens
                que si le dessin est en millimètres, donc pas en Cinématique :
                le bouton s'y désactive plutôt que de mentir sur l'échelle. -->
+          <!-- Le point de vue est une propriété du DESSIN, pas du mécanisme :
+               les pièces ne bougent pas, seule leur image change. Il n'a de
+               sens que là où le dessin est spatial — la Cinématique est un
+               schéma, elle n'a pas de point de vue à offrir. -->
+          <label class="viewer-projection-label" for="viewerProjection">Point de vue</label>
+          <select id="viewerProjection" class="viewer-speed" title="D’où l’on regarde la transmission : les pièces ne bougent pas, seule leur image change">
+            <option value="">Automatique</option>
+          </select>
           <div class="segmented view-framing" role="group" aria-label="Cadrage">
             <button id="viewerReset" type="button" class="btn-small" title="Cadrer la transmission entière">Tout voir</button>
             <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>

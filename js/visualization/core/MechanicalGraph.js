@@ -99,10 +99,12 @@
    * se retrouvaient au même point, donc superposées : le dessin montrait une
    * roue là où il y en a deux, et l'arbre n'avait pas de longueur.
    */
-  function place(shaft, member, gap) {
+  function place(shaft, member, gap, at) {
     var width = finite(member.geometry && member.geometry.width, 0);
     var position = 0;
-    if (shaft.members.length) {
+    if (Number.isFinite(at)) {
+      position = at;
+    } else if (shaft.members.length) {
       var last = shaft.members[shaft.members.length - 1];
       position = last.axialPosition + last.width / 2 + gap + width / 2;
     }
@@ -139,6 +141,25 @@
   }
 
   /**
+   * L'écart, le long de l'axe, entre le point de référence d'un organe et le
+   * point où son axe rencontre celui de son partenaire.
+   *
+   * Il est nul pour tout ce qui est cylindrique — le plan d'engrènement passe
+   * par le milieu de la denture. Un cône est l'exception : ses génératrices se
+   * rejoignent en un SOMMET, situé à (d/2)/tan δ de sa grande face. Ignorer cet
+   * écart posait les deux cônes d'un renvoi au même endroit, l'un dans l'autre.
+   */
+  function apexOffset(member) {
+    if (!member || member.kind !== 'cone') return 0;
+    var geometry = member.geometry || {};
+    var delta = finite(geometry.coneAngleDeg, null);
+    var diameter = finite(geometry.pitchDiameter, 0);
+    if (delta === null || !(diameter > 0)) return 0;
+    var slope = Math.tan(delta * Math.PI / 180);
+    return Math.abs(slope) < 1e-6 ? 0 : (diameter / 2) / slope;
+  }
+
+  /**
    * Un étage à deux corps : engrenages, courroies, chaînes, vis sans fin.
    * Le membre menant reste sur l'arbre amont, le membre mené prend un arbre
    * neuf, sur un axe déduit de la relation d'axes de la famille.
@@ -152,26 +173,35 @@
     var azimuth = stage.parameters && stage.parameters.azimuthDeg;
     var distance = finite(stage.geometry && stage.geometry.centerDistance, 0);
 
-    var axis;
+    // Le membre MENANT est posé d'abord, parce que c'est son abscisse qui dit
+    // OÙ l'engrènement a lieu. Partir de l'abscisse du membre précédent — ce
+    // que faisait `context.cursor` — plaçait la roue d'une vis sans fin en
+    // face de l'entrée de l'arbre plutôt qu'en face du filet, et laissait deux
+    // roues d'un même engrènement dans deux plans différents.
+    var seated = place(context.shaft, driving, context.gap);
+    var seat = seated.axialPosition + apexOffset(driving);
+    var contact = add(inputAxis.origin, scale(inputAxis.direction, seat));
+
+    var axis, drivenAt = apexOffset(driven);
     if (relation === 'coaxial') {
+      // Même axe, autre corps tournant : le mené est concentrique au menant.
       axis = inputAxis;
+      drivenAt = seat;
     } else if (relation === 'perpendicular') {
       // Le renvoi part du point de contact, sur l'axe d'entrée, et repart
       // perpendiculairement : c'est ce qui fait qu'un engrenage placé APRÈS un
       // renvoi n'est plus dans le plan du précédent.
       var turn = perpendicularDirection(inputAxis.direction, azimuth);
-      var contact = add(inputAxis.origin, scale(inputAxis.direction, context.cursor));
       axis = makeAxis(graph, add(contact, scale(turn, distance)), cross(inputAxis.direction, turn));
     } else {
-      // Parallèle : même direction, décalé de l'entraxe.
-      axis = makeAxis(graph, add(inputAxis.origin, axisOffset(inputAxis.direction, distance, azimuth)), inputAxis.direction);
+      // Parallèle : même direction, décalé de l'entraxe, à la même abscisse.
+      axis = makeAxis(graph, add(contact, axisOffset(inputAxis.direction, distance, azimuth)), inputAxis.direction);
     }
 
-    place(context.shaft, driving, context.gap);
     var next = makeShaft(graph, axis, { angularSpeed: speedOf(driven) });
     members.forEach(function (member) {
       if (member === driving) return;
-      place(next, member, context.gap);
+      place(next, member, context.gap, member === driven ? drivenAt : undefined);
     });
 
     graph.mechanisms.push({ id: 'mesh-' + index, stageIndex: index, type: stage.type,
@@ -226,7 +256,10 @@
       var shaft = makeShaft(graph, orbit, { id: 'shaft-' + graph.shafts.length + '-planet-' + n,
         role: 'planet', angularSpeed: speedOf(planet) });
       shaft.carriedBy = carrier.id;
-      shaft.orbitRadius = finite(planet.geometry && planet.geometry.orbitRadius, null);
+      // Le rayon d'orbite est une propriété du MEMBRE, telle que la scène
+      // l'établit — pas une cote de denture. Le chercher dans `geometry` le
+      // rendait toujours nul, et les satellites se retrouvaient tous au centre.
+      shaft.orbitRadius = finite(planet.orbitRadius, finite(planet.geometry && planet.geometry.orbitRadius, null));
       // La scène décrit les satellites par UN membre : le nombre réel est une
       // propriété du corps, que le renderer instanciera autant de fois.
       shaft.count = Math.max(2, Math.round(finite(stage.planetCount, 3)));

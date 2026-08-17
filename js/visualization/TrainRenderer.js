@@ -89,13 +89,18 @@
     this.scene = GearSceneBuilder.build(solution);
     this.animation.setScene(this.scene);
 
-    var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || [], { scene: this.scene });
+    var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || [],
+      { scene: this.scene, solution: solution, view: this.projection });
     this.model = model;
-    var svg = n('svg', { class: 'train-svg', role: 'img', 'aria-label': 'Denture réaliste — ' + (solution.stages || []).length + ' étage(s)' });
+    var svg = n('svg', { class: 'train-svg', role: 'img',
+      'data-view': model.view.id,
+      'aria-label': 'Denture réaliste, ' + model.view.label.toLowerCase() + ' — ' + (solution.stages || []).length + ' étage(s)' });
     var viewport = n('g', { class: 'train-viewport' });
     svg.appendChild(viewport);
     var self = this;
 
+    // Les arbres se peignent SOUS les dentures : ils les traversent.
+    this._drawShafts(viewport, model);
     model.stages.forEach(function (entry, index) {
       viewport.appendChild(self._buildStage(entry, solution, index));
     });
@@ -244,9 +249,20 @@
     record.lod = lod;
     record.rotor.textContent = '';
     record.construction.textContent = '';
-    var built = GearTeethPrimitives.build(record.wheel, { lod: lod });
+    // La PRÉSENTATION vient du modèle spatial, pas d'une supposition : une roue
+    // n'est un disque que lorsque son axe pointe vers l'œil. Le dessin faisait
+    // partout l'hypothèse inverse, ce qui interdisait de montrer un engrenage et
+    // une vis sur le même arbre.
+    var built = GearTeethPrimitives.build(record.wheel, { lod: lod,
+      presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening });
     appendAll(record.rotor, built.rotor);
-    appendAll(record.construction, GearTeethOverlay.circles(record.wheel, lod));
+    // Les cercles de construction — primitif, base, pied — sont des CERCLES :
+    // ils n'ont de sens que sur une roue vue de face. Tracés sur un organe vu
+    // par la tranche, ils dessinaient une ellipse fantôme autour d'un
+    // rectangle, sans rien coter.
+    if (record.wheel.presentation !== 'profile') {
+      appendAll(record.construction, GearTeethOverlay.circles(record.wheel, lod));
+    }
     appendAll(record.construction, built.fixed);
     // Les textes portés par la roue sont plafonnés à la taille d'écran commune :
     // ils restent proportionnés à la roue, sans jamais devenir illisibles.
@@ -258,6 +274,41 @@
       });
     }
     record.seat.setAttribute('data-lod', lod);
+  };
+
+  /**
+   * Les arbres, avec leur longueur réelle.
+   *
+   * Le dessin n'en avait pas : deux roues solidaires partageaient un point, et
+   * un trait de liaison muni d'une double barre disait « la suite est ailleurs »
+   * sans jamais dire de quoi elle descendait. Un arbre est ici un segment porté
+   * par son axe — et quand cet axe pointe vers l'œil, ce n'est plus un segment
+   * mais un point : on le marque alors d'une croix d'axe, comme le veut le
+   * dessin technique, plutôt que de tracer un trait de longueur nulle.
+   */
+  TrainRenderer.prototype._drawShafts = function (viewport, model) {
+    var host = n('g', { class: 'train-shafts' });
+    (model.shafts || []).forEach(function (shaft) {
+      var group = n('g', { class: 'train-shaft' + (shaft.grounded ? ' grounded' : ''),
+        'data-shaft': shaft.id, 'data-role': shaft.role });
+      if (shaft.endOn) {
+        var reach = 0;
+        (shaft.memberIds || []).forEach(function (id) {
+          var wheel = (model.wheels || []).filter(function (w) { return w.memberId === id; })[0];
+          if (wheel) reach = Math.max(reach, finite(wheel.outsideD, 0) / 2);
+        });
+        var arm = Math.max(2, reach * 0.16);
+        group.appendChild(n('path', { class: 'shaft-centre',
+          d: 'M ' + (shaft.x1 - arm).toFixed(2) + ' ' + shaft.y1.toFixed(2) + ' H ' + (shaft.x1 + arm).toFixed(2) +
+            ' M ' + shaft.x1.toFixed(2) + ' ' + (shaft.y1 - arm).toFixed(2) + ' V ' + (shaft.y1 + arm).toFixed(2) }));
+      } else {
+        group.appendChild(n('line', { class: 'shaft-body',
+          x1: shaft.x1.toFixed(2), y1: shaft.y1.toFixed(2), x2: shaft.x2.toFixed(2), y2: shaft.y2.toFixed(2) }));
+      }
+      host.appendChild(group);
+    });
+    viewport.appendChild(host);
+    return host;
   };
 
   /** Porte-satellites : bras reliant le centre à chaque satellite. */
@@ -298,20 +349,17 @@
       var markers = n('g', { class: link.kind === 'belt-span' ? 'belt-markers' : 'chain-markers' });
       host.appendChild(markers);
       this._flexible.push({ link: link, entry: entry, path: span, markers: markers, built: 0 });
-    } else if (link.kind === 'shaft-break') {
-      // Continuité d'arbre : trait + double barre oblique.
-      var midX = (link.x1 + link.x2) / 2;
-      host.appendChild(n('path', { class: 'shaft-link', d: 'M ' + link.x1 + ' ' + link.y1 + ' H ' + link.x2 }));
-      host.appendChild(n('path', { class: 'shaft-link', d: 'M ' + (midX - 3) + ' ' + (link.y1 + 5) + ' l 6 -10 M ' + (midX + 3) + ' ' + (link.y1 + 5) + ' l 6 -10' }));
     } else if (link.kind === 'bevel-axes') {
-      // Les deux axes se coupent au sommet commun des cônes : on les trace en
-      // entier, avec le point d'intersection matérialisé.
+      // Les deux axes se coupent au sommet commun des cônes. Leurs directions
+      // ne sont plus déduites de l'angle d'arbre — elles viennent du modèle
+      // spatial, qui les a projetées : un renvoi à 60° se dessine à 60°.
       var span2 = finite(link.span, 40);
-      var out = rad(180 - finite(link.shaftAngleDeg, 90));
-      host.appendChild(n('path', { class: 'stage-axis', d: 'M ' + (link.x - span2).toFixed(2) + ' ' + link.y.toFixed(2) + ' H ' + (link.x + span2 * 0.25).toFixed(2) }));
-      host.appendChild(n('path', { class: 'stage-axis',
-        d: 'M ' + (link.x - Math.cos(out) * span2 * 0.25).toFixed(2) + ' ' + (link.y - Math.sin(out) * span2 * 0.25).toFixed(2) +
-          ' L ' + (link.x + Math.cos(out) * span2).toFixed(2) + ' ' + (link.y + Math.sin(out) * span2).toFixed(2) }));
+      [link.inAlong, link.outAlong].forEach(function (along) {
+        if (!along || !Math.hypot(along[0], along[1])) return;
+        host.appendChild(n('path', { class: 'stage-axis',
+          d: 'M ' + (link.x - along[0] * span2).toFixed(2) + ' ' + (link.y - along[1] * span2).toFixed(2) +
+            ' L ' + (link.x + along[0] * span2).toFixed(2) + ' ' + (link.y + along[1] * span2).toFixed(2) }));
+      });
       host.appendChild(n('circle', { class: 'cone-apex-point', cx: link.x.toFixed(2), cy: link.y.toFixed(2), r: 1.2 }));
     }
   };
@@ -343,6 +391,9 @@
 
   TrainRenderer.prototype._drawDim = function (host, entry) {
     var a = entry.wheels[0], b = entry.wheels[1];
+    // Un entraxe vu en bout se projette en un point : la cote n'aurait ni
+    // longueur ni sens, et deux traits de rappel superposés ne diraient rien.
+    if (Math.hypot(b.cx - a.cx, b.cy - a.cy) < 1e-6) return;
     var below = Math.max(a.cy + a.outsideD / 2, b.cy + b.outsideD / 2) + Math.max(6, 3 * a.module);
     var g = n('g', { class: 'train-dim' });
     g.appendChild(n('line', { x1: a.cx, y1: a.cy, x2: a.cx, y2: below, class: 'dim-leader' }));
@@ -494,7 +545,10 @@
     var ppu = this.viewport ? this.viewport.pixelsPerUnit() : 1;
     var self = this;
     this._wheels.forEach(function (record) {
-      var lod = GearTeethPrimitives.levelFor(record.wheel, ppu);
+      // Le niveau de détail suit la taille APPARENTE : une roue vue par la
+      // tranche n'a pas besoin d'une développante exacte pour trente pixels.
+      var lod = GearTeethPrimitives.levelFor(record.wheel, ppu,
+        { presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening });
       // « Détails automatiques » désactivé : on plafonne à la développante nue.
       if (!self._autoDetails) lod = Math.min(lod, LEVELS.INVOLUTE);
       if (force || lod !== record.lod) self._paintWheel(record, lod, force);
@@ -512,7 +566,10 @@
       if (!force && lod === record.lod) return;
       record.lod = lod;
       record.host.textContent = '';
-      appendAll(record.host, GearTeethOverlay.mesh(record.entry, lod));
+      // La ligne d'action se lit dans le plan de l'engrènement. Vue par la
+      // tranche, elle traverserait le dessin en diagonale sans rien montrer.
+      var flat = record.entry.wheels.some(function (wheel) { return wheel.presentation === 'profile'; });
+      if (!flat) appendAll(record.host, GearTeethOverlay.mesh(record.entry, lod));
     });
     this.setAnimationAngle(this._angle);
   };
@@ -559,10 +616,18 @@
         return;
       }
       if (wheel.kind === 'rack') {
-        // La translation vient de la pose, en millimètres réels.
+        // La translation vient de la pose, en millimètres réels, et se fait le
+        // long de la GLISSIÈRE. Elle se faisait suivant l'axe horizontal de
+        // l'écran, et cette transformation écrasait au passage l'orientation
+        // du profil : une crémaillère verticale glissait donc de travers, à
+        // plat, au travers de son pignon.
         var travel = finite((linear[wheel.linearId] || {}).position, 0);
+        var slide = wheel.slideAlong || [1, 0];
+        var turn = Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg
+          ? ' rotate(' + wheel.axisAngleDeg.toFixed(2) + ')' : '';
         record.group.setAttribute('transform',
-          'translate(' + (finite(wheel.cx, 0) + travel).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')');
+          'translate(' + (finite(wheel.cx, 0) + slide[0] * travel).toFixed(2) + ' ' +
+          (finite(wheel.cy, 0) + slide[1] * travel).toFixed(2) + ')' + turn);
         return;
       }
       if (wheel.kind === 'cone') {
@@ -663,9 +728,34 @@
     if (!silent) this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: index } }));
   };
 
-  /** Cadrage sur un étage : utilisé par la sélection croisée entre vues. */
+  /**
+   * Cadrage sur un étage : utilisé par la sélection croisée entre vues.
+   *
+   * Cadrer un étage, c'est cadrer ses PIÈCES. Son étiquette, elle, est posée
+   * en marge du dessin entier, et sa ligne de rappel court jusque-là : les
+   * compter revenait à demander le dessin entier. Tant que les étages étaient
+   * rangés côte à côte, cela restait sans conséquence visible ; depuis qu'ils
+   * s'empilent sur leurs axes réels, c'est exactement ce qu'on obtenait — un
+   * double-clic qui ne rapprochait de rien.
+   */
   TrainRenderer.prototype.focusStage = function (index) {
-    return !!this.viewport && this.viewport.focusElement(this.getStageElement(index));
+    if (!this.viewport) return false;
+    var entry = this.model && this.model.stages && this.model.stages[index];
+    if (!entry || !entry.wheels.length) return this.viewport.focusElement(this.getStageElement(index));
+    var box = null;
+    entry.wheels.forEach(function (wheel) {
+      // L'encombrement d'un organe est celui de sa denture ; une crémaillère
+      // occupe sa course, qui n'a rien d'un diamètre.
+      var reach = Math.max(finite(wheel.length, 0) / 2,
+        Math.max(finite(wheel.outsideD, 0), finite(wheel.pitchD, 0)) / 2, 2);
+      var x = finite(wheel.cx, 0), y = finite(wheel.cy, 0);
+      var own = { left: x - reach, top: y - reach, right: x + reach, bottom: y + reach };
+      box = box ? { left: Math.min(box.left, own.left), top: Math.min(box.top, own.top),
+        right: Math.max(box.right, own.right), bottom: Math.max(box.bottom, own.bottom) } : own;
+    });
+    this.viewport.focus({ x: box.left, y: box.top,
+      width: box.right - box.left, height: box.bottom - box.top });
+    return true;
   };
 
   // ===== Exports autonomes (jetons résolus) =====
@@ -683,9 +773,18 @@
       '.root-circle,.tip-circle,.ring-rim{fill:none;stroke:' + muted + ';stroke-width:.35;opacity:.7}' +
       '.gear-hub{fill:' + surface + ';stroke:' + ink + ';stroke-width:.5}' +
       '.hub-cross,.shaft-link,.stage-axis,.dim-leader,.label-leader,.cone-apex{stroke:' + muted + ';stroke-width:.5;fill:none}' +
+      '.shaft-body{stroke:' + muted + ';stroke-width:1.1;fill:none;stroke-linecap:round;opacity:.85}' +
+      '.shaft-centre{stroke:' + muted + ';stroke-width:.5;fill:none;stroke-dasharray:5 2 1 2}' +
+      '.train-shaft.grounded .shaft-body,.train-shaft.grounded .shaft-centre{stroke:' + warning + '}' +
+      '.gear-profile,.pulley-profile,.ring-profile-top,.ring-profile-bottom,.oblique-body{' +
+      'fill:' + accent + '22;stroke:' + ink + ';stroke-width:.6}' +
+      '.oblique-face,.oblique-back{fill:' + surface + ';stroke:' + ink + ';stroke-width:.5}' +
+      '.pitch-line{stroke:' + muted + ';stroke-width:.5;stroke-dasharray:4 3;fill:none}' +
+      '.root-line,.bore-line,.pulley-flange{stroke:' + muted + ';stroke-width:.4;fill:none;opacity:.7}' +
+      '.worm-end,.cone-face{fill:' + accent + '18;stroke:' + ink + ';stroke-width:.6}' +
       '.cone-apex{stroke-dasharray:6 2 1 2}' +
       '.cone-apex-point{fill:' + muted + '}' +
-      '.worm-thread,.cone-tip,.cone-teeth{stroke:' + ink + ';stroke-width:.5;fill:none}' +
+      '.worm-thread,.cone-tip,.cone-teeth,.cone-front{stroke:' + ink + ';stroke-width:.5;fill:none}' +
       '.helix-stripe{stroke:' + ink + ';stroke-width:.35;fill:none;opacity:.65}' +
       '.helix-hand{stroke:' + accent + ';stroke-width:.7;fill:none}' +
       '.helix-label,.worm-label{fill:' + muted + ';font:600 3px system-ui,sans-serif}' +

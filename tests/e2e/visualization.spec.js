@@ -780,12 +780,36 @@ test('a double-click frames the stage it points at, in all three views (§7)', a
   const selector = { teeth: '.train-stage', geometry: '.geometry-layer .geometry-stage',
     kinematic: '.kinematic-stage' };
 
+  // Un point du dessin qui répond effectivement l'étage visé. Viser le centre
+  // de sa boîte englobante ne suffit pas : celle-ci englobe aussi son
+  // étiquette, posée en marge du dessin entier, et un trait ne se clique pas
+  // en son milieu.
+  const aim = sel => page.evaluate(selector => {
+    const stage = document.querySelector(`#svgContainer ${selector}[data-stage="2"]`);
+    for (const part of stage.querySelectorAll('path, circle, rect, polygon, ellipse')) {
+      const box = part.getBoundingClientRect();
+      if (!box.width || !box.height) continue;
+      const x = box.x + box.width / 2, y = box.y + box.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && stage.contains(hit)) return { x, y };
+    }
+    return null;
+  }, sel);
+
   for (const view of ['teeth', 'geometry', 'kinematic']) {
     await showView(page, view);
     const width = () => page.evaluate(() => Number(document.querySelector('#svgContainer svg')
       .getAttribute('viewBox').split(/\s+/)[2]));
+    // Le premier clic ouvre l'inspecteur, donc redispose la page : on le donne
+    // AVANT de viser, sans quoi le second clic d'un double-clic tomberait à
+    // côté et le navigateur enverrait son `dblclick` à un ancêtre commun.
+    const first = await aim(selector[view]);
+    expect(first, view + ' : l’étage doit être cliquable').not.toBeNull();
+    await page.mouse.click(first.x, first.y);
     const whole = await width();
-    await page.locator(`#svgContainer ${selector[view]}[data-stage="2"]`).dblclick();
+    const spot = await aim(selector[view]);
+    expect(spot, view + ' : l’étage doit rester cliquable').not.toBeNull();
+    await page.mouse.dblclick(spot.x, spot.y);
     expect(await width(), view).toBeLessThan(whole);
     // Le double-clic sélectionne aussi : cadrer sans sélectionner laisserait
     // l'inspecteur parler d'un autre étage que celui qu'on regarde.
@@ -1227,5 +1251,123 @@ test('worm threads never leave the body, in either view or in the export', async
     expect((exported.match(/clip-path="url\(#/g) || []).length, view).toBe(shape.refs.length);
     expect(exported, view + ' : pas de capsule dans l’export').not.toMatch(/class="[^"]*worm-(body|member)[^"]*"[^>]*\srx=/);
   }
+  expect(errors).toEqual([]);
+});
+
+test('a chain that changes axis is drawn as one, not as a row of front views', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Un engrenage et une vis sur le même arbre : le cas que l'ancien placement
+  // ne pouvait pas représenter, parce qu'il dessinait toute roue en cercle,
+  // c'est-à-dire « vue suivant son axe » — ce qui ne peut pas être vrai des
+  // deux à la fois.
+  await mount(page, ['spur', 'worm', 'spur']);
+  await showView(page, 'teeth');
+
+  const drawing = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const model = window.__viewer.renderer().model;
+    return {
+      view: svg.dataset.view,
+      // Ce que le MODÈLE dit de chaque organe…
+      presentations: model.wheels.map(w => w.presentation),
+      // …et ce que le DESSIN en fait réellement.
+      profiles: svg.querySelectorAll('.gear-profile, .worm-body').length,
+      discs: svg.querySelectorAll('.tooth-profile').length,
+      pitchLines: svg.querySelectorAll('.pitch-line').length,
+      shafts: svg.querySelectorAll('.train-shaft').length,
+      lengths: Array.from(svg.querySelectorAll('.shaft-body')).map(line =>
+        Math.hypot(line.getAttribute('x2') - line.getAttribute('x1'),
+          line.getAttribute('y2') - line.getAttribute('y1'))),
+      // Un cercle de construction n'a de sens que sur une roue vue de face :
+      // tracé sur un organe vu par la tranche, il ne cote rien.
+      strayCircles: Array.from(svg.querySelectorAll('.train-wheel')).filter(host => {
+        const flat = host.querySelector('.gear-profile, .worm-body');
+        return flat && host.querySelector('.pitch-circle, .base-circle');
+      }).length
+    };
+  });
+
+  // Les deux modes de représentation coexistent dans le même dessin.
+  expect(new Set(drawing.presentations).size).toBeGreaterThan(1);
+  expect(drawing.profiles, 'des corps vus par la tranche').toBeGreaterThan(0);
+  expect(drawing.discs, 'des dentures vues de face').toBeGreaterThan(0);
+  expect(drawing.pitchLines, 'la surface primitive des corps de profil').toBeGreaterThan(0);
+  expect(drawing.strayCircles, 'aucun cercle de construction sur un corps vu de côté').toBe(0);
+
+  // Les arbres ont une longueur : deux roues solidaires ne partagent plus un point.
+  expect(drawing.shafts).toBeGreaterThanOrEqual(3);
+  expect(drawing.lengths.every(l => l > 0), 'aucun arbre de longueur nulle').toBe(true);
+
+  // Changer de point de vue change le dessin, jamais la mécanique.
+  const seen = {};
+  for (const view of ['front', 'top', 'side', 'iso']) {
+    seen[view] = await page.evaluate(v => {
+      const renderer = window.__viewer.renderer();
+      renderer.projection = v;
+      renderer.render(renderer.solution);
+      const model = renderer.model;
+      return { view: model.view.id,
+        drawing: model.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'),
+        world: model.spatial.members.map(m => m.id + ':' + m.position.join(',')).join('|'),
+        centres: model.stages.filter(s => Number.isFinite(s.centerDistance)).map(s =>
+          Math.hypot(s.wheels[1].cx - s.wheels[0].cx, s.wheels[1].cy - s.wheels[0].cy) - s.centerDistance) };
+    }, view);
+    expect(seen[view].view, 'la vue demandée est celle qui est rendue').toBe(view);
+    // Dans chaque vue, chaque engrènement reste à son entraxe calculé.
+    seen[view].centres.forEach(gap => expect(Math.abs(gap)).toBeLessThan(1e-6));
+  }
+  const worlds = new Set(Object.values(seen).map(s => s.world));
+  expect(worlds.size, 'aucune pièce ne bouge quand on change de vue').toBe(1);
+  const drawings = new Set(Object.values(seen).map(s => s.drawing));
+  expect(drawings.size, 'les vues doivent différer, sinon elles ne servent à rien').toBeGreaterThan(1);
+
+  expect(errors).toEqual([]);
+});
+
+test('the point of view is a control, not a decoration (§28)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'worm', 'spur']);
+  await showView(page, 'teeth');
+
+  const select = page.locator('#viewerProjection');
+  await expect(select).toBeEnabled();
+  await expect(select).toHaveValue('');
+  // La liste vient du moteur de projection : rien n'est réécrit dans l'UI.
+  const offered = await select.locator('option').evaluateAll(list => list.map(o => o.value));
+  const known = await page.evaluate(() => GearProjectionEngine.VIEWS.map(v => v.id));
+  expect(offered).toEqual([''].concat(known));
+
+  const shot = () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const model = window.__viewer.renderer().model;
+    return { announced: svg.dataset.view,
+      drawing: model.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'),
+      world: model.spatial.members.map(m => m.id + ':' + m.position.join(',')).join('|') };
+  });
+
+  const automatic = await shot();
+  const drawings = new Set([automatic.drawing]);
+  for (const id of known) {
+    await select.selectOption(id);
+    const seen = await shot();
+    // Ce que la commande promet : le dessin change, la mécanique non.
+    expect(seen.announced, id).toBe(id);
+    expect(seen.world, id + ' : aucune pièce ne bouge').toBe(automatic.world);
+    drawings.add(seen.drawing);
+  }
+  expect(drawings.size, 'chaque point de vue doit donner un dessin distinct').toBeGreaterThan(1);
+
+  // Retour à l'automatique : on retrouve exactement le dessin de départ.
+  await select.selectOption('');
+  expect((await shot()).drawing).toBe(automatic.drawing);
+
+  // La Cinématique est un schéma : elle n'a pas de point de vue à offrir, et
+  // le dit au lieu de laisser croire qu'on a mal cliqué.
+  await showView(page, 'kinematic');
+  await expect(select).toBeDisabled();
+  await expect(select).toHaveAttribute('title', /pas de point de vue/);
+  await showView(page, 'teeth');
+  await expect(select).toBeEnabled();
+
   expect(errors).toEqual([]);
 });

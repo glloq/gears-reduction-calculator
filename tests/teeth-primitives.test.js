@@ -190,3 +190,140 @@ test('the meshing overlay is limited to real meshes and stays finite', () => {
     assert.equal(Overlay.mesh({ ...entry, type }, LEVELS.TECHNICAL).length, 0, type);
   });
 });
+
+// ===== Une pièce se dessine selon l'ANGLE SOUS LEQUEL on la voit =====
+
+const GEAR = () => wheel({ kind: 'gear', teeth: 20, pitchD: 40, module: 2, faceWidth: 20 });
+function classesOf(built) {
+  return built.rotor.map(s => (s.attrs && s.attrs.class) || s.tag);
+}
+
+test('a gear seen along its axis keeps the drawing it always had', () => {
+  const face = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'face' });
+  assert.equal(face.presentation, 'face');
+  // La vue de face fonctionne : profil réel, moyeu, développante. On n'y touche pas.
+  assert.ok(face.rotor.some(s => s.tag === 'path' && s.attrs.class === 'tooth-profile' && s.attrs.d));
+  assert.ok(face.rotor.some(s => s.attrs.class === 'gear-hub'));
+  // Et c'est le défaut : une primitive appelée sans orientation dessine comme avant.
+  assert.deepEqual(classesOf(Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE })), classesOf(face));
+});
+
+test('a gear seen edge-on is a cylinder of width b, never a circle', () => {
+  // Un cercle affirme qu'on regarde LE LONG de l'axe. Dès que l'axe est dans le
+  // plan de l'écran, deux roues d'un même arbre se recouvriraient malgré leur
+  // écart axial réel, et un pignon après un planétaire tomberait dans sa couronne.
+  const wide = wheel({ kind: 'gear', teeth: 20, pitchD: 40, module: 2, outsideD: 44, faceWidth: 30 });
+  const built = Primitives.build(wide, { lod: LEVELS.INVOLUTE, presentation: 'profile' });
+  assert.equal(built.presentation, 'profile');
+
+  const body = built.rotor.find(s => s.attrs && /gear-profile/.test(s.attrs.class || ''));
+  assert.ok(body, 'un corps de profil');
+  assert.equal(body.tag, 'rect');
+  // Les deux cotes que la vue de face ne pouvait pas montrer.
+  assert.equal(Number(body.attrs.width), 30, 'largeur de denture');
+  assert.equal(Number(body.attrs.height), 44, 'diamètre extérieur');
+
+  // Aucune denture dessinée de face, et aucun disque.
+  assert.ok(!built.rotor.some(s => s.tag === 'circle'), 'pas de cercle de profil');
+  // Les traits conventionnels remplacent la denture.
+  assert.ok(classesOf(built).includes('pitch-line'));
+  // Un cylindre qui tourne ne change pas de silhouette : il lui faut un repère.
+  assert.ok(classesOf(built).includes('index-mark'));
+  // Z=n n'a pas de sens sur une tranche.
+  assert.ok(!built.fixed.some(s => s.attrs && s.attrs.class === 'tooth-count'));
+});
+
+test('an internal ring seen edge-on stays recognisable as a ring', () => {
+  const ring = wheel({ kind: 'internal-ring', teeth: 54, pitchD: 108, module: 2, faceWidth: 20 });
+  const built = Primitives.build(ring, { lod: LEVELS.INVOLUTE, presentation: 'profile' });
+  const classes = classesOf(built);
+  // Deux jantes, pas un rectangle plein qu'on confondrait avec une roue.
+  assert.ok(classes.some(c => /ring-profile-top/.test(c)));
+  assert.ok(classes.some(c => /ring-profile-bottom/.test(c)));
+  // Le vide central est un trait conventionnel : ce n'est pas une coupe.
+  assert.ok(classes.includes('bore-line'));
+  const rims = built.rotor.filter(s => /ring-profile/.test((s.attrs && s.attrs.class) || ''));
+  assert.equal(rims.length, 2);
+  rims.forEach(rim => assert.ok(Number(rim.attrs.height) > 0));
+});
+
+test('a pulley seen edge-on shows its width, not circular teeth', () => {
+  const pulley = wheel({ kind: 'pulley', teeth: 20, pitchD: 40, module: 2, faceWidth: 12 });
+  const built = Primitives.build(pulley, { lod: LEVELS.INVOLUTE, presentation: 'profile' });
+  const body = built.rotor.find(s => /pulley-profile/.test((s.attrs && s.attrs.class) || ''));
+  assert.equal(body.tag, 'rect');
+  assert.equal(Number(body.attrs.width), 12);
+  assert.ok(classesOf(built).includes('pulley-flange'), 'les joues distinguent une poulie');
+  assert.ok(!built.rotor.some(s => s.tag === 'path' && /toothed/i.test(s.attrs.d || '')));
+});
+
+test('a worm is a cylinder from the side and a disc end-on', () => {
+  const worm = wheel({ kind: 'worm', teeth: 2, pitchD: 20, module: 2, leadAngle: 20, id: 's0-input' });
+  const side = Primitives.build(worm, { lod: LEVELS.INVOLUTE, presentation: 'profile' });
+  assert.ok(classesOf(side).some(c => /worm-body/.test(c)), 'le corps couché');
+  assert.ok(classesOf(side).includes('worm-thread-clip'), 'les filets clippés');
+
+  const end = Primitives.build(worm, { lod: LEVELS.INVOLUTE, presentation: 'face' });
+  assert.ok(classesOf(end).some(c => /worm-end/.test(c)));
+  // Aucune translation longitudinale en bout : le mouvement est dans la
+  // profondeur, il se montre par une phase.
+  assert.ok(!classesOf(end).includes('worm-thread-phase'));
+  assert.ok(classesOf(end).includes('worm-end-phase'));
+  assert.ok(!classesOf(end).some(c => /worm-body/.test(c)));
+});
+
+test('a bevel keeps its cone from the side and shows its face end-on', () => {
+  const cone = wheel({ kind: 'cone', teeth: 20, pitchD: 40, module: 2, coneAngleDeg: 26.6, faceWidth: 15 });
+  const side = Primitives.build(cone, { lod: LEVELS.INVOLUTE, presentation: 'profile' });
+  assert.ok(classesOf(side).some(c => /cone-body/.test(c)), 'le cône primitif reste un cône');
+  const end = Primitives.build(cone, { lod: LEVELS.INVOLUTE, presentation: 'face' });
+  assert.ok(classesOf(end).some(c => /cone-face/.test(c)));
+  // Le conique ne retombe jamais dans un cercle générique de roue droite.
+  assert.ok(!classesOf(end).includes('tooth-profile'));
+});
+
+test('an oblique part is neither a disc nor a rectangle', () => {
+  const built = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'oblique', foreshortening: 0.5 });
+  assert.equal(built.presentation, 'oblique');
+  const face = built.rotor.find(s => s.tag === 'ellipse' && /oblique-face/.test(s.attrs.class));
+  assert.ok(face, 'une face elliptique');
+  // Le petit axe EST le raccourci réel : c'est ce qui montre l'orientation.
+  assert.ok(Math.abs(Number(face.attrs.rx) / Number(face.attrs.ry) - 0.5) < 0.02);
+
+  // De plus en plus de face : l'ellipse tend vers le cercle.
+  const flat = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'oblique', foreshortening: 0.95 });
+  const nearlyFace = flat.rotor.find(s => s.tag === 'ellipse' && /oblique-face/.test(s.attrs.class));
+  assert.ok(Number(nearlyFace.attrs.rx) > Number(face.attrs.rx));
+});
+
+test('the level of detail follows the apparent size, not the true diameter', () => {
+  // Une roue vue presque en bout occupe une bande de quelques millimètres :
+  // elle déclenchait un niveau maximal pour dessiner une développante haute de
+  // trois pixels.
+  const big = wheel({ kind: 'gear', teeth: 60, pitchD: 200, outsideD: 208, module: 2, faceWidth: 12 });
+  const face = Primitives.levelFor(big, 1.6, { presentation: 'face' });
+  const profile = Primitives.levelFor(big, 1.6, { presentation: 'profile' });
+  const oblique = Primitives.levelFor(big, 1.6, { presentation: 'oblique', foreshortening: 0.1 });
+  assert.ok(profile < face, 'de profil, elle mérite moins de détail');
+  assert.ok(oblique < face, 'presque en bout aussi');
+  // Sans orientation, le comportement historique est conservé.
+  assert.equal(Primitives.levelFor(big, 1.6), face);
+});
+
+test('the helix hand reaches the drawing, for gears and for worms', () => {
+  // La primitive lisait `helixHand`, que rien ne posait jamais : une hélice à
+  // gauche se dessinait exactement comme une hélice à droite.
+  const helical = hand => wheel({ kind: 'gear', teeth: 20, pitchD: 40, module: 2,
+    faceWidth: 20, helixAngle: 25, handedness: hand });
+  const stripe = built => built.rotor.filter(s => s.attrs && s.attrs.class === 'helix-stripe')[0].attrs.d;
+  assert.notEqual(stripe(Primitives.build(helical('right'), { lod: LEVELS.TECHNICAL })),
+    stripe(Primitives.build(helical('left'), { lod: LEVELS.TECHNICAL })));
+
+  const worm = hand => wheel({ kind: 'worm', teeth: 2, pitchD: 20, module: 2, leadAngle: 20,
+    handedness: hand, id: 's0-input' });
+  const thread = built => built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-clip')
+    .children[0].children[0].attrs.d;
+  // §39 : le sens du filet ne doit pas changer que la cinématique.
+  assert.notEqual(thread(Primitives.build(worm('right'), { lod: LEVELS.INVOLUTE })),
+    thread(Primitives.build(worm('left'), { lod: LEVELS.INVOLUTE })));
+});

@@ -43,12 +43,16 @@
    * L'écran a son Y vers le bas : `v` porte donc l'opposé de la verticale
    * monde, sans quoi tout serait dessiné à l'envers.
    */
+  // Les libellés disent ce que la vue MONTRE, et non un numéro de face. Le
+  // regard de `front` est perpendiculaire à l'arbre d'entrée : cette vue en
+  // donne la longueur, pas l'engrènement — ce que son ancien nom, « Entrée »
+  // avec pour aide « suivant les axes », affirmait exactement à l'envers.
   var VIEWS = [
-    { id: 'front', label: 'Entrée', help: 'De face, suivant les axes : c’est la vue de l’engrènement.',
+    { id: 'front', label: 'De face', help: 'Le regard coupe les arbres : on y lit leur longueur et l’empilement axial.',
       u: [1, 0, 0], v: [0, -1, 0], w: [0, 0, 1] },
-    { id: 'top', label: 'Dessus', help: 'Vue de dessus : les décalages en profondeur deviennent visibles.',
+    { id: 'top', label: 'De dessus', help: 'Même chose vue du dessus : les décalages en profondeur deviennent visibles.',
       u: [1, 0, 0], v: [0, 0, 1], w: [0, 1, 0] },
-    { id: 'side', label: 'Côté', help: 'Vue de côté : la longueur des arbres et l’empilement axial.',
+    { id: 'side', label: 'En bout', help: 'Le regard suit l’arbre d’entrée : c’est la vue des dentures et des entraxes.',
       u: [0, 0, -1], v: [0, -1, 0], w: [1, 0, 0] },
     { id: 'iso', label: 'Iso', help: 'Projection axonométrique : les changements d’axe se lisent d’un coup.',
       u: [ISO, 0, -ISO], v: [-ISO_V, -2 * ISO_V, -ISO_V], w: unit([1, -1, 1]) }
@@ -145,8 +149,42 @@
     return best || view('front');
   }
 
+  /**
+   * La vue qui montre le plus de DENTURE — une autre question qu'`auto`.
+   *
+   * `auto` répond « d'où perd-on le moins du mécanisme ? », et compte l'axe vu
+   * en bout comme une perte, ce qu'il est : on n'y lit plus la longueur des
+   * arbres. Pour un train à axes parallèles, cela élit la coupe — toutes les
+   * roues en rectangles. C'est un dessin d'ensemble correct, et exactement ce
+   * qu'une vue nommée « denture réaliste » ne doit pas montrer.
+   *
+   * On note donc ce que le DESSIN pourra affirmer. Une roue vue de face ou de
+   * profil se trace exactement ; obliquement, elle n'est qu'approchée par une
+   * ellipse. On compte d'abord les organes tracés exactement, puis ceux dont
+   * la denture est visible, et l'on départage par ce qu'`auto` sait déjà : ne
+   * rien confondre.
+   */
+  function engagement(axes) {
+    var list = (axes || []).filter(Boolean);
+    if (!list.length) return view('front');
+    var best = null, score = null;
+    VIEWS.forEach(function (candidate) {
+      var exact = 0, faces = 0;
+      list.forEach(function (axis) {
+        var how = presentation(axis.direction || axis, candidate);
+        if (how !== 'oblique') exact++;
+        if (how === 'face') faces++;
+      });
+      var value = [exact, faces, penalty(list, candidate)];
+      if (!score || value[0] > score[0] ||
+        (value[0] === score[0] && (value[1] > score[1] ||
+          (value[1] === score[1] && value[2] > score[2])))) { score = value; best = candidate; }
+    });
+    return best || view('front');
+  }
+
   return { VIEWS: VIEWS, view: view, project: project, presentation: presentation,
-    foreshortening: foreshortening, auto: auto,
+    foreshortening: foreshortening, auto: auto, engagement: engagement, penalty: penalty,
     FACE_LIMIT: FACE_LIMIT, PROFILE_LIMIT: PROFILE_LIMIT,
     vector: { dot: dot, cross: cross, unit: unit, norm: norm } };
 });

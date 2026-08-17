@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Layout = require('../js/visualization/TrainLayout.js');
 const Registry = require('../js/transmissions/TransmissionRegistry.js');
+const Projection = require('../js/visualization/core/ProjectionEngine.js');
 
 // Construit un étage avec sa géométrie calculée, comme Engineering le fait.
 function stage(type, config) {
@@ -48,13 +49,34 @@ test('mixed 8-type chain lays out with finite coordinates everywhere', () => {
   assert.equal(planetary.wheels.filter(w => w.role === 'planet').length, 4);
 });
 
-test('consecutive external pairs are compound: input(i+1) concentric with output(i)', () => {
+test('consecutive external pairs are compound: one shaft, two wheels, one truth per view', () => {
+  // L'ancienne version exigeait que les deux roues soient AU MÊME POINT. Elles
+  // n'y sont que vues de bout : sur un arbre qui a une longueur, elles sont
+  // séparées de leur écart axial. Exiger la superposition, c'était interdire
+  // qu'un arbre en ait une — et c'est ce qui empêchait de montrer un engrenage
+  // et une vis sur le même arbre.
   const stages = [pair('spur', 12, 36), pair('spur', 12, 36)];
   const model = Layout.layout(stages, [mech(3), mech(3)]);
   const out0 = model.stages[0].wheels[1];
   const in1 = model.stages[1].wheels[0];
-  assert.equal(in1.cx, out0.cx);
-  assert.equal(in1.cy, out0.cy);
+
+  // Ce qui doit être vrai dans TOUTES les vues : les deux roues sont solidaires.
+  const body = model.graph.rigidBodyOf(out0.memberId);
+  assert.ok(body.includes(in1.memberId), 'les deux roues appartiennent au même corps');
+
+  ['front', 'top', 'side', 'iso'].forEach(view => {
+    const seen = Layout.layout(stages, [mech(3), mech(3)], { view });
+    const [a, b] = [seen.stages[0].wheels[1], seen.stages[1].wheels[0]];
+    const shaft = seen.shafts.find(s => s.memberIds.includes(a.memberId));
+    const drawn = Math.hypot(b.cx - a.cx, b.cy - a.cy);
+    const axial = Math.abs(seen.spatial.byId[b.memberId].axialPosition
+      - seen.spatial.byId[a.memberId].axialPosition);
+    assert.ok(axial > 0, 'les deux roues occupent deux places sur l’arbre');
+    // Vu en bout, l'arbre est un point et les roues sont concentriques : c'est
+    // ce que cette vue montre. Vu de côté, elles sont à leur écart réel.
+    assert.ok(Math.abs(drawn - (shaft.endOn ? 0 : axial)) < 1e-6,
+      `${view} : ${drawn.toFixed(2)} dessiné, ${shaft.endOn ? 0 : axial.toFixed(2)} attendu`);
+  });
 });
 
 test('mesh distance equals the real calculated center distance', () => {
@@ -74,17 +96,38 @@ test('belt and chain advance by the corrected center distance with real pitch di
   assert.equal(model.stages[0].links[0].kind, 'belt-span');
 });
 
-test('planetary and bevel break the axis before the next stage', () => {
+test('what continues after a planetary is the member that carries the output', () => {
+  // L'ancienne version demandait un symbole de RUPTURE d'arbre et exigeait que
+  // l'étage suivant soit dessiné au-delà de la couronne. C'était une
+  // convention de mise en page : elle disait « la suite est ailleurs » sans
+  // jamais dire de QUOI elle descend. Un arbre a maintenant une longueur, et
+  // le pignon suivant est posé dessus — celui du porte-satellites, ici.
   const stages = [
     stage('planetary', { sunTeeth: 12, ringTeeth: 48, planetTeeth: 18, planetCount: 3, inputMember: 'S', outputMember: 'C', fixed: 'R' }),
     pair('spur', 12, 36)
   ];
   const model = Layout.layout(stages, [mech(5, 5), mech(3)]);
   assert.equal(model.stages[0].attach, 'coaxial');
-  assert.ok(model.stages[0].links.some(l => l.kind === 'shaft-break'));
-  const ring = model.stages[0].wheels[1];
+
+  // Le pignon de l'étage suivant est solidaire du porte-satellites, et de lui
+  // seul : ni du solaire menant, ni de la couronne bloquée.
   const nextIn = model.stages[1].wheels[0];
-  assert.ok(nextIn.cx - nextIn.outsideD / 2 > ring.cx + ring.outsideD / 2 - 1e-6, 'next stage placed beyond the ring');
+  const body = model.graph.rigidBodyOf(nextIn.memberId);
+  assert.ok(body.includes('s0-C'), 'le pignon suivant tourne avec le porte-satellites');
+  assert.ok(!body.includes('s0-R') && !body.includes('s0-S'), 'et avec rien d’autre');
+
+  // Un satellite n'est sur aucun des trois corps coaxiaux, et il orbite.
+  const planets = model.stages[0].wheels.filter(w => w.role === 'planet');
+  assert.equal(planets.length, 3);
+  planets.forEach(planet => assert.ok(planet.orbit > 0, 'rayon d’orbite réel'));
+  const carrier = model.stages[0].carrier;
+  planets.forEach(planet => {
+    const reach = Math.hypot(planet.cx - carrier.cx, planet.cy - carrier.cy);
+    assert.ok(reach <= carrier.orbit + 1e-6, 'aucun satellite au-delà de son orbite');
+  });
+  // Vus de face, les trois satellites sont bien répartis autour du solaire.
+  assert.ok(new Set(planets.map(p => p.cx.toFixed(3) + ',' + p.cy.toFixed(3))).size >= 2,
+    'les satellites ne sont pas tous au même endroit');
 });
 
 test('speeds cascade and direction alternates through external pairs', () => {
@@ -121,6 +164,99 @@ test('worm places the wheel perpendicular below the screw', () => {
   assert.equal(worm.kind, 'worm');
   assert.ok(wheel.cy > worm.cy, 'wheel below the worm');
   assert.ok(Math.abs(wheel.cy - worm.cy - s.geometry.centerDistance) < 1e-6);
+});
+
+// ===== Le dessin consomme le modèle spatial =====
+
+test('a worm and a gear on the same shaft are not drawn the same way', () => {
+  // C'est le cas que l'ancien placement ne pouvait pas représenter : il posait
+  // toutes les roues en cercles, donc « vues suivant leur axe ». Une vis et un
+  // engrenage solidaires ne peuvent pas l'être en même temps.
+  const stages = [
+    pair('spur', 12, 36),
+    stage('worm', { wormStarts: 2, wheelTeeth: 40, parameters: { module: 1, leadAngle: 20, diameterQuotient: 10 } }),
+    pair('spur', 12, 36)
+  ];
+  const model = Layout.layout(stages, [mech(3), mech(20), mech(3)]);
+  const byId = Object.fromEntries(model.wheels.map(w => [w.memberId, w]));
+
+  // La roue de l'étage 1 et la vis de l'étage 2 sont sur le même arbre…
+  assert.ok(model.graph.rigidBodyOf('s0-output').includes('s1-input'));
+  // …et se présentent toutes deux de profil dans cette vue : c'est cohérent.
+  assert.equal(byId['s1-input'].presentation, 'profile');
+  // La roue de la vis, elle, est sur un axe perpendiculaire : vue de face.
+  assert.equal(byId['s1-output'].presentation, 'face');
+  // Deux présentations DIFFÉRENTES coexistent dans le même dessin.
+  assert.ok(new Set(model.wheels.map(w => w.presentation)).size > 1,
+    'un seul mode de représentation pour toute la chaîne');
+});
+
+test('how a part is drawn follows the projection of its axis, and nothing else', () => {
+  const stages = [pair('spur', 12, 36),
+    stage('worm', { wormStarts: 2, wheelTeeth: 40, parameters: { module: 1, leadAngle: 20, diameterQuotient: 10 } })];
+  ['front', 'top', 'side', 'iso'].forEach(view => {
+    const model = Layout.layout(stages, [mech(3), mech(20)], { view });
+    assert.equal(model.view.id, view, 'la vue demandée est celle qui est rendue');
+    model.wheels.forEach(wheel => {
+      const placed = model.spatial.byId[wheel.memberId];
+      if (!placed) return;                       // la crémaillère glisse, elle n'a pas d'arbre
+      assert.equal(wheel.presentation, Projection.presentation(placed.axis, view), wheel.memberId);
+      assert.ok(wheel.foreshortening >= 0 && wheel.foreshortening <= 1 + 1e-9, wheel.memberId);
+      // Un organe vu de face n'a pas d'inclinaison à l'écran : son axe pointe
+      // vers l'œil. Lui en donner une ferait tourner ses étiquettes pour rien.
+      if (wheel.presentation === 'face') assert.equal(wheel.axisAngleDeg, undefined, wheel.memberId);
+    });
+  });
+});
+
+test('changing the view changes the drawing, never the mechanism', () => {
+  const stages = [pair('spur', 12, 36), pair('spur', 15, 45)];
+  const views = ['front', 'top', 'side', 'iso'].map(view => Layout.layout(stages, [mech(3), mech(3)], { view }));
+  const reference = views[0].spatial.members.map(m => m.id + ':' + m.position.join(','));
+  views.forEach(model => {
+    assert.deepEqual(model.spatial.members.map(m => m.id + ':' + m.position.join(',')), reference,
+      model.view.id + ' : aucune pièce ne bouge dans l’espace');
+    // Et dans chaque vue, l'entraxe dessiné reste l'entraxe calculé.
+    model.stages.forEach((entry, index) => {
+      if (!Number.isFinite(entry.centerDistance)) return;
+      const [a, b] = entry.wheels;
+      const drawn = Math.hypot(b.cx - a.cx, b.cy - a.cy);
+      assert.ok(Math.abs(drawn - entry.centerDistance) < 1e-6,
+        `${model.view.id} / étage ${index} : ${drawn.toFixed(2)} pour ${entry.centerDistance.toFixed(2)}`);
+    });
+  });
+  // Les dessins ne sont pas tous identiques : sinon la vue ne servirait à rien.
+  const drawings = views.map(m => m.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'));
+  assert.ok(new Set(drawings).size > 1, 'toutes les vues donnent le même dessin');
+});
+
+test('a shaft has a length, or says it is seen end-on', () => {
+  const stages = [pair('spur', 12, 36),
+    stage('worm', { wormStarts: 2, wheelTeeth: 40, parameters: { module: 1, leadAngle: 20, diameterQuotient: 10 } })];
+  const model = Layout.layout(stages, [mech(3), mech(20)]);
+  assert.ok(model.shafts.length >= 3, 'un arbre par corps tournant');
+  model.shafts.forEach(shaft => {
+    const drawn = Math.hypot(shaft.x2 - shaft.x1, shaft.y2 - shaft.y1);
+    assert.ok(Number.isFinite(drawn));
+    // Un arbre vu de côté a une longueur ; vu en bout, il n'en a pas — et le
+    // dit, pour qu'on trace une croix d'axe plutôt qu'un segment nul.
+    assert.equal(shaft.endOn, drawn < 1e-9, shaft.id);
+    if (!shaft.endOn) assert.ok(drawn > 0, shaft.id);
+  });
+});
+
+test('the default view of the teeth drawing is the one that shows teeth', () => {
+  // `auto` choisit la vue qui perd le moins du MÉCANISME, et compte l'axe vu
+  // en bout comme une perte : pour un train à axes parallèles, elle élit donc
+  // la coupe — toutes les roues en rectangles. C'est un dessin d'ensemble
+  // correct, et exactement ce qu'une vue « denture réaliste » ne doit pas être.
+  const stages = [pair('spur', 12, 36), pair('spur', 12, 36)];
+  const model = Layout.layout(stages, [mech(3), mech(3)]);
+  assert.ok(model.wheels.every(w => w.presentation === 'face'),
+    'les roues d’un train parallèle se voient de face par défaut');
+  // La vue « la moins perdante » reste accessible, et elle est différente.
+  const auto = Layout.layout(stages, [mech(3), mech(3)], { view: 'auto' });
+  assert.notEqual(auto.view.id, model.view.id);
 });
 
 test('rack is available in the teeth layout with real pinion and travel geometry', () => {

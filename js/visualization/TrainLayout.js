@@ -1,23 +1,37 @@
-// TrainLayout.js - Placement pur de la vue « Denture réaliste ».
+// TrainLayout.js - La vue « Denture réaliste », lue sur le modèle spatial.
 //
-// TrainLayout ne fait QUE du placement. Il ne lit pas `stage.geometry` et ne
-// calcule aucun rapport : il consomme la SCÈNE (SceneBuilder), qui porte la
-// géométrie de chaque membre et sa vitesse relative. Produit des positions
-// monde en millimètres réels, sans DOM. UMD : testable sous Node.
+// Ce module ne place plus rien. Il l'a fait longtemps, et c'est précisément ce
+// qui rendait le dessin faux dès qu'une chaîne changeait d'axe : un curseur 2D
+// avançait d'étage en étage, une table d'angles candidats cherchait où poser la
+// roue menée sans collision, et une vis sans fin inclinait son couple de 90°
+// avant de repartir du centre de la roue comme si de rien n'était. Cela dessine
+// correctement un couple isolé et ment sur toute suite, parce qu'un engrenage
+// vu de face et une vis vue de profil ne peuvent pas être sur le même arbre.
+//
+// Les positions viennent maintenant d'un seul endroit :
+//
+//     MechanicalGraph  axes, arbres, membres, mécanismes — dans l'espace
+//     SpatialLayout    chaque membre sur son axe, à son abscisse
+//     ProjectionEngine d'où on regarde, et comment chaque organe se présente
+//
+// Il reste ici ce qui est propre au DESSIN de cette vue et à rien d'autre :
+// instancier les satellites en autant d'exemplaires que le porte-satellites en
+// porte, dérouler la courroie, et donner à chaque roue les cotes dont la
+// primitive a besoin. Aucun mm n'y est décidé.
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('./core/SceneBuilder.js') : root.GearSceneBuilder,
-    common ? require('./core/GeometryUtils.js') : root.GearGeometryUtils);
+    common ? require('./core/GeometryUtils.js') : root.GearGeometryUtils,
+    common ? require('./core/MechanicalGraph.js') : root.GearMechanicalGraph,
+    common ? require('./core/SpatialLayout.js') : root.GearSpatialLayout,
+    common ? require('./core/ProjectionEngine.js') : root.GearProjectionEngine);
   if (common) module.exports = api; else root.GearTrainLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, GeometryUtils) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, GeometryUtils, MechanicalGraph, SpatialLayout, Projection) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
   function rad(deg) { return deg * Math.PI / 180; }
-
-  // Angles candidats pour poser la roue de sortie autour de la roue d'entrée :
-  // horizontal d'abord, puis zigzag alterné pour éviter les collisions.
-  var MESH_ANGLES = [0, 35, -35, 65, -65, 90, -90];
+  function deg(radians) { return radians * 180 / Math.PI; }
 
   /**
    * Roue de rendu construite à partir d'un MEMBRE DE LA SCÈNE. Les cotes
@@ -50,6 +64,9 @@
       profileShift: finite(g.profileShift, 0),
       faceWidth: finite(g.width, 10 * m),
       helixAngle: Number.isFinite(g.helixAngleDeg) ? g.helixAngleDeg : undefined,
+      // Le sens vient de la scène, sous son nom canonique : la primitive lisait
+      // `helixHand`, que personne ne posait.
+      handedness: entry ? entry.handedness : undefined,
       leadAngle: Number.isFinite(g.leadAngleDeg) ? g.leadAngleDeg : undefined,
       coneAngleDeg: Number.isFinite(g.coneAngleDeg) ? g.coneAngleDeg : undefined,
       schematic: !!(entry && entry.schematic),
@@ -58,36 +75,230 @@
     }, overrides || {});
   }
 
-  /** Rayon d'encombrement du premier membre d'un étage (pose après rupture). */
-  function inputRadius(scene, index) {
-    var members = scene.stageMembers(index);
-    return members.reduce(function (max, entry) {
-      var g = entry.geometry;
-      var d = Math.max(finite(g.outsideDiameter, 0), finite(g.pitchDiameter, 0), finite(g.rootDiameter, 0));
-      return Math.max(max, d / 2);
-    }, 10);
-  }
-
-  function collides(cx, cy, r, placed, clearance) {
-    return placed.some(function (w) {
-      var dx = cx - w.cx, dy = cy - w.cy;
-      var minD = r + w.outsideD / 2 + clearance;
-      return dx * dx + dy * dy < minD * minD;
-    });
-  }
-
   function sceneFor(stages, options) {
     if (options.scene && options.scene.member) return options.scene;
     return SceneBuilder.build({ inputRpm: 1, stages: stages });
   }
 
   /**
+   * Le repère du dessin : où chaque membre tombe, et comment il se présente.
+   *
+   * `unfold` conserve les directions que la projection donne et les longueurs
+   * vraies — c'est la convention du dessin d'ensemble de réducteur. La
+   * PRÉSENTATION, elle, vient de la projection seule : elle dit si l'organe se
+   * voit en disque, en rectangle, ou entre les deux.
+   */
+  function frameOf(solution, scene, options) {
+    var graph = MechanicalGraph.build(solution, scene);
+    var spatial = SpatialLayout.build(graph);
+    var axes = graph.axes;
+    var view = options.view && options.view !== 'auto' ? Projection.view(options.view)
+      : options.view === 'auto' ? SpatialLayout.autoView(spatial) : Projection.engagement(axes);
+    return { graph: graph, spatial: spatial, view: view, seats: SpatialLayout.unfold(spatial, view.id) };
+  }
+
+  /** Le vecteur unitaire de l'écran qui porte l'arbre de ce membre. */
+  function alongOf(frame, memberId) {
+    var seat = frame.seats.byId[memberId];
+    var shaft = seat && frame.seats.shafts[seat.shaftId];
+    return shaft ? shaft.along : [1, 0];
+  }
+
+  /**
+   * Ce qu'il faut dire à la primitive pour qu'elle dessine cet organe tel qu'il
+   * se voit : sa présentation, son raccourci, et l'inclinaison de son axe à
+   * l'écran. Un organe vu de face n'a pas d'inclinaison — son axe pointe vers
+   * l'œil — et lui en donner une ferait tourner ses étiquettes pour rien.
+   */
+  function orientation(frame, member) {
+    var placed = frame.spatial.byId[member.id];
+    if (!placed) return {};
+    var presentation = Projection.presentation(placed.axis, frame.view);
+    var along = alongOf(frame, member.id);
+    var out = { presentation: presentation,
+      foreshortening: Projection.foreshortening(placed.axis, frame.view) };
+    if (presentation !== 'face' && Math.hypot(along[0], along[1]) > 1e-9) {
+      out.axisAngleDeg = deg(Math.atan2(along[1], along[0]));
+    }
+    return out;
+  }
+
+  function seatOf(frame, memberId) {
+    return frame.seats.byId[memberId] || { x: 0, y: 0 };
+  }
+
+  /** Roue complète : cotes de la scène, place et orientation du modèle spatial. */
+  function wheelAt(frame, member, overrides) {
+    if (!member) return wheelFromMember(null, overrides);
+    var seat = seatOf(frame, member.id);
+    return wheelFromMember(member, Object.assign({ cx: seat.x, cy: seat.y },
+      orientation(frame, member), overrides || {}));
+  }
+
+  /**
+   * Les deux directions de l'écran qui portent le plan perpendiculaire à un
+   * axe : c'est dans ce plan que les satellites tournent. Vu de face l'orbite
+   * est un cercle ; vue en coupe elle se réduit à un segment, et deux
+   * satellites se retrouvent l'un derrière l'autre — ce que cette vue montre.
+   */
+  function orbitBasis(frame, axisDirection) {
+    var vector = MechanicalGraph.vector;
+    var e1 = vector.perpendicularDirection(axisDirection, 0);
+    var e2 = vector.cross(axisDirection, e1);
+    return [Projection.project(e1, frame.view), Projection.project(e2, frame.view)];
+  }
+
+  // ===== Étages =====
+
+  function planetaryStage(frame, scene, stage, index, byRole, entry) {
+    var m = finite((byRole.S || { geometry: {} }).geometry.module, 1);
+    var count = Math.max(2, Math.round(finite(byRole.P && byRole.P.count, 3)));
+    entry.attach = 'coaxial';
+
+    // Les rôles de rendu restent parlants (sun/ring/planet) : ce sont eux que
+    // portent les classes CSS et la sélection.
+    var sun = wheelAt(frame, byRole.S, { role: 'sun' });
+    var ring = wheelAt(frame, byRole.R, { role: 'ring' });
+    // La couronne enveloppe l'étage : sa jante fixe l'encombrement.
+    ring.outsideD = Math.max(ring.pitchD + 6 * m, finite(byRole.R && byRole.R.geometry.rootDiameter, 0) + 2 * m);
+    sun.chipR = ring.chipR = ring.outsideD / 2 + m;
+    entry.wheels.push(sun, ring);
+
+    var planetShaft = null;
+    frame.graph.shafts.forEach(function (shaft) {
+      if (!planetShaft && shaft.role === 'planet' && shaft.members.some(function (member) {
+        return member.id === (byRole.P && byRole.P.id);
+      })) planetShaft = shaft;
+    });
+    var orbit = finite(planetShaft && planetShaft.orbitRadius,
+      finite(byRole.P && byRole.P.orbitRadius, 0));
+    var centre = seatOf(frame, (byRole.C || byRole.S || {}).id);
+    var orbitAxis = planetShaft && frame.graph.byAxis[planetShaft.axisId];
+    var basis = orbitBasis(frame, orbitAxis ? orbitAxis.direction : [1, 0, 0]);
+    for (var pi = 0; pi < count; pi++) {
+      var a = 2 * Math.PI * pi / count;
+      entry.wheels.push(wheelAt(frame, byRole.P, {
+        role: 'planet',
+        cx: centre.x + orbit * (Math.cos(a) * basis[0][0] + Math.sin(a) * basis[1][0]),
+        cy: centre.y + orbit * (Math.cos(a) * basis[0][1] + Math.sin(a) * basis[1][1]),
+        orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y,
+        orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
+      }));
+    }
+
+    // La topologie est celle que la scène a établie, pas une relecture de
+    // `stage.inputMember` : la vue n'a plus à savoir lire un étage (§31).
+    entry.members = {};
+    ['input', 'output', 'fixed'].forEach(function (functional) {
+      var member = scene.functionalMember ? scene.functionalMember(index, functional) : null;
+      if (member) entry.members[functional] = member.role;
+    });
+    entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
+    entry.carrier = { memberId: 's' + index + '-C', cx: centre.x, cy: centre.y, orbit: orbit, count: count,
+      speed: entry.carrierSpeed, basis: basis,
+      functionalRole: byRole.C ? byRole.C.functionalRole : null,
+      memberName: byRole.C ? byRole.C.memberName : null,
+      localizedRole: byRole.C ? byRole.C.localizedRole : null };
+    entry.stageRadius = ring.outsideD / 2;
+  }
+
+  function rackStage(frame, stage, index, byRole, entry) {
+    var m = finite((byRole.input || { geometry: {} }).geometry.module, 1);
+    var pinion = wheelAt(frame, byRole.input);
+    var travel = finite(byRole.rack && byRole.rack.geometry.travelPerRevolution, Math.PI * pinion.pitchD);
+    // La crémaillère n'est portée par aucun arbre : elle GLISSE. Sa ligne
+    // primitive est tangente au cercle primitif du pignon, du côté que le
+    // modèle donne à la glissière.
+    var slide = (frame.graph.slides || []).filter(function (s) { return s.stageIndex === index; })[0];
+    var direction = slide ? Projection.project(slide.direction, frame.view) : [0, 1];
+    var length = Math.hypot(direction[0], direction[1]) || 1;
+    var along = [direction[0] / length, direction[1] / length];
+    var normal = [-along[1], along[0]];
+    var rack = wheelFromMember(byRole.rack, {
+      cx: pinion.cx + normal[0] * pinion.pitchD / 2,
+      cy: pinion.cy + normal[1] * pinion.pitchD / 2,
+      axisAngleDeg: deg(Math.atan2(along[1], along[0])),
+      pitchD: 0, outsideD: 4 * m, rootD: m, module: m,
+      teeth: Math.max(6, Math.round(travel / (Math.PI * m))), length: travel,
+      // Le pignon entraîne la crémaillère : mm parcourus par radian d'entrée.
+      mmPerRadian: finite(byRole.rack && byRole.rack.mechanical.mmPerRadian, pinion.pitchD / 2),
+      pinionSpeed: pinion.speed, linearId: 's' + index + '-rack',
+      slideAlong: along,
+      // La puce SORTIE s'écarte de toute la demi-course, pas du seul profil.
+      chipR: travel / 2 });
+    entry.attach = 'linear';
+    entry.wheels.push(pinion, rack);
+    entry.stageRadius = Math.max(pinion.pitchD, travel) / 2;
+  }
+
+  function pairStage(frame, connection, stage, index, byRole, entry) {
+    var isBeltLike = stage.type === 'belt' || stage.type === 'chain';
+    var m = finite((byRole.input || { geometry: {} }).geometry.module, 1);
+    entry.centerDistance = finite(connection.centerDistance, null);
+    entry.exactCenterDistance = !!connection.exactCenterDistance;
+
+    var wIn = wheelAt(frame, byRole.input);
+    var wOut = wheelAt(frame, byRole.output);
+    if (isBeltLike) {
+      wIn.outsideD = wIn.pitchD + m; wOut.outsideD = wOut.pitchD + m;
+      wIn.rootD = wIn.pitchD - m; wOut.rootD = wOut.pitchD - m;
+    }
+    // L'angle n'est plus CHOISI : c'est celui que la projection donne au
+    // segment qui joint les deux centres. Une table d'angles candidats
+    // rangeait les étages pour éviter les collisions du dessin ; elle
+    // décidait donc de la géométrie d'un réducteur d'après son encombrement.
+    entry.angleDeg = deg(Math.atan2(wOut.cy - wIn.cy, wOut.cx - wIn.cx));
+    entry.attach = connection.axisRelation === 'coaxial' ? 'coaxial'
+      : connection.axisRelation === 'perpendicular' ? 'break' : 'mesh';
+
+    entry.wheels.push(wIn, wOut);
+    if (isBeltLike) entry.links.push(flexibleLink(connection, wIn, wOut, 's' + index + '-drive'));
+    if (stage.type === 'bevel') {
+      // Les deux axes se coupent en un POINT unique : le sommet commun des
+      // cônes primitifs. Le modèle spatial le connaît — c'est lui qui a servi
+      // à placer les deux roues.
+      var apex = apexOf(frame, byRole);
+      if (apex) {
+        entry.apex = apex;
+        entry.links.push({ kind: 'bevel-axes', x: apex.x, y: apex.y,
+          shaftAngleDeg: finite(connection.shaftAngleDeg, 90),
+          inAlong: alongOf(frame, byRole.input.id), outAlong: alongOf(frame, byRole.output.id),
+          span: Math.max(apex.back1, apex.back2) + Math.max(wIn.pitchD, wOut.pitchD) / 2 });
+      }
+    }
+    entry.stageRadius = Math.max(wIn.outsideD, wOut.outsideD) / 2;
+  }
+
+  /** Le sommet commun de deux cônes primitifs, dans le repère du dessin. */
+  function apexOf(frame, byRole) {
+    var input = byRole.input, output = byRole.output;
+    if (!input || !output) return null;
+    function back(member) {
+      var delta = finite(member.geometry.coneAngleDeg, null);
+      var d = finite(member.geometry.pitchDiameter, 0);
+      if (delta === null || !(d > 0)) return null;
+      var slope = Math.tan(rad(delta));
+      return Math.abs(slope) < 1e-6 ? null : (d / 2) / slope;
+    }
+    var back1 = back(input), back2 = back(output);
+    if (back1 === null || back2 === null) return null;
+    var seat = seatOf(frame, input.id), along = alongOf(frame, input.id);
+    return { x: seat.x + along[0] * back1, y: seat.y + along[1] * back1, back1: back1, back2: back2 };
+  }
+
+  // ===== Assemblage =====
+
+  /**
    * layout(stages, mechanical, options) → {
    *   stages: [{ index, type, attach, angleDeg, centerDistance, wheels[], links[] }],
-   *   wheels: toutes les roues à plat (collisions/fit),
+   *   wheels: toutes les roues à plat,
+   *   shafts: les arbres, avec leur longueur réelle,
+   *   view: la projection retenue,
    *   io: { input: wheel, output: wheel }
    * }
-   * `options.scene` injecte la scène déjà construite par le renderer.
+   * `options.scene` injecte la scène déjà construite par le renderer ;
+   * `options.view` impose une projection ('front' | 'top' | 'side' | 'iso' |
+   * 'auto'), à défaut de quoi on prend celle qui montre le plus de denture.
    * Toutes les coordonnées sont finies (les NaN dans les attributs SVG
    * produisent des erreurs console, fatales pour les e2e).
    */
@@ -95,164 +306,24 @@
     stages = stages || [];
     options = options || {};
     var scene = sceneFor(stages, options);
-    var placed = [];
+    var solution = options.solution || { stages: stages, mechanical: mechanical || [] };
+    var frame = frameOf(solution, scene, options);
     var out = [];
-    var cursor = { x: 0, y: 0 };
-    var preferSign = 1;
-    var maxX = 0;
 
     stages.forEach(function (stage, index) {
-      var prefix = 's' + index + '-';
       var connection = scene.connections[index] || {};
       var byRole = {};
-      scene.stageMembers(index).forEach(function (entry) { byRole[entry.role] = entry; });
-      var m = finite((byRole.input || byRole.S || {}).geometry && (byRole.input || byRole.S).geometry.module, 1);
+      scene.stageMembers(index).forEach(function (member) { byRole[member.role] = member; });
       var inSpeed = (byRole.input || byRole.S || { mechanical: {} }).mechanical.relativeSpeed;
       var outSpeed = (byRole.output || byRole.C || { mechanical: {} }).mechanical.relativeSpeed;
       var entry = { index: index, type: stage.type, attach: 'mesh', angleDeg: 0, centerDistance: null,
         inputSpeed: finite(inSpeed, 1), outputSpeed: finite(outSpeed, 0),
-        schematic: scene.stageMembers(index).some(function (e) { return e.schematic; }),
+        schematic: scene.stageMembers(index).some(function (member) { return member.schematic; }),
         wheels: [], links: [] };
 
-      if (stage.type === 'rack') {
-        var pinion = wheelFromMember(byRole.input, { cx: cursor.x, cy: cursor.y });
-        pinion.cy = cursor.y - pinion.pitchD / 2;
-        var travel = finite(byRole.rack && byRole.rack.geometry.travelPerRevolution, Math.PI * pinion.pitchD);
-        var rack = wheelFromMember(byRole.rack, {
-          cx: cursor.x, cy: cursor.y, pitchD: 0, outsideD: 4 * m, rootD: m, module: m,
-          teeth: Math.max(6, Math.round(travel / (Math.PI * m))), length: travel,
-          // Le pignon entraîne la crémaillère : mm parcourus par radian d'entrée.
-          mmPerRadian: finite(byRole.rack && byRole.rack.mechanical.mmPerRadian, pinion.pitchD / 2),
-          pinionSpeed: pinion.speed, linearId: prefix + 'rack',
-          // La puce SORTIE s'écarte de toute la demi-course, pas du seul profil.
-          chipR: travel / 2 });
-        entry.attach = 'linear';
-        entry.wheels.push(pinion, rack);
-        entry.stageRadius = Math.max(pinion.pitchD, travel) / 2;
-        placed.push(pinion);
-        maxX = Math.max(maxX, cursor.x + travel / 2);
-        cursor = { x: cursor.x + travel / 2, y: pinion.cy };
-      } else if (stage.type === 'planetary' || stage.type === 'epicyclic') {
-        // Étage coaxial complet centré au curseur, aux diamètres réels.
-        var count = Math.max(2, Math.round(finite(byRole.P && byRole.P.count, 3)));
-        var orbit = finite(byRole.P && byRole.P.orbitRadius, 0);
-        entry.attach = 'coaxial';
-
-        // Les rôles de rendu restent parlants (sun/ring/planet) : ce sont eux
-        // que portent les classes CSS et la sélection.
-        var sun = wheelFromMember(byRole.S, { role: 'sun', cx: cursor.x, cy: cursor.y });
-        var ring = wheelFromMember(byRole.R, { role: 'ring', cx: cursor.x, cy: cursor.y });
-        // La couronne enveloppe l'étage : sa jante fixe l'encombrement.
-        ring.outsideD = Math.max(ring.pitchD + 6 * m, finite(byRole.R && byRole.R.geometry.rootDiameter, 0) + 2 * m);
-        sun.chipR = ring.chipR = ring.outsideD / 2 + m;
-        entry.wheels.push(sun, ring);
-        for (var pi = 0; pi < count; pi++) {
-          var a = 2 * Math.PI * pi / count;
-          entry.wheels.push(wheelFromMember(byRole.P, {
-            role: 'planet',
-            cx: cursor.x + Math.cos(a) * orbit, cy: cursor.y + Math.sin(a) * orbit,
-            orbit: orbit, orbitCenterX: cursor.x, orbitCenterY: cursor.y,
-            orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
-          }));
-        }
-        // La topologie est celle que la scène a établie, pas une relecture de
-        // `stage.inputMember` : la vue n'a plus à savoir lire un étage (§31).
-        entry.members = {};
-        ['input', 'output', 'fixed'].forEach(function (functional) {
-          var member = scene.functionalMember ? scene.functionalMember(index, functional) : null;
-          if (member) entry.members[functional] = member.role;
-        });
-        entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
-        entry.carrier = { memberId: prefix + 'C', cx: cursor.x, cy: cursor.y, orbit: orbit, count: count,
-          speed: entry.carrierSpeed,
-          functionalRole: byRole.C ? byRole.C.functionalRole : null,
-          memberName: byRole.C ? byRole.C.memberName : null,
-          localizedRole: byRole.C ? byRole.C.localizedRole : null };
-        entry.stageRadius = ring.outsideD / 2;
-        placed.push(ring);
-        maxX = Math.max(maxX, cursor.x + ring.outsideD / 2);
-
-        if (index < stages.length - 1) {
-          var nextR = inputRadius(scene, index + 1);
-          var gap = Math.max(20, 6 * m);
-          entry.links.push({ kind: 'shaft-break', x1: cursor.x + ring.outsideD / 2, y1: cursor.y,
-            x2: maxX + gap, y2: cursor.y });
-          cursor = { x: maxX + gap + nextR, y: cursor.y };
-        }
-      } else if (stage.type === 'bevel') {
-        // Deux cônes primitifs aux angles réels, dont les axes se croisent en un
-        // POINT unique : c'est ce sommet commun qui rend le montage lisible.
-        var sigma = finite(connection.shaftAngleDeg, 90);
-        var input = wheelFromMember(byRole.input, { cx: cursor.x, cy: cursor.y, axisAngleDeg: 0 });
-        var output = wheelFromMember(byRole.output);
-        var delta1 = finite(input.coneAngleDeg, 45), delta2 = finite(output.coneAngleDeg, 45);
-        // Distance de la grande face au sommet, le long de chaque axe.
-        var back1 = (input.pitchD / 2) / Math.max(1e-6, Math.tan(rad(delta1)));
-        var back2 = (output.pitchD / 2) / Math.max(1e-6, Math.tan(rad(delta2)));
-        var apexX = cursor.x + back1, apexY = cursor.y;
-        var outAxis = rad(180 - sigma);
-        output.cx = apexX + Math.cos(outAxis) * back2;
-        output.cy = apexY + Math.sin(outAxis) * back2;
-        output.axisAngleDeg = (outAxis * 180 / Math.PI) + 180;   // pointe vers le sommet
-
-        entry.attach = 'break';
-        entry.angleDeg = sigma;
-        entry.apex = { x: apexX, y: apexY };
-        entry.wheels.push(input, output);
-        entry.links.push({ kind: 'bevel-axes', x: apexX, y: apexY, shaftAngleDeg: sigma,
-          span: Math.max(back1, back2) + Math.max(input.pitchD, output.pitchD) / 2 });
-        placed.push(input, output);
-        maxX = Math.max(maxX, output.cx + output.outsideD / 2, cursor.x + input.outsideD / 2);
-        if (index < stages.length - 1) {
-          var nextR2 = inputRadius(scene, index + 1);
-          var gap2 = Math.max(20, 6 * m);
-          entry.links.push({ kind: 'shaft-break', x1: maxX, y1: output.cy, x2: maxX + gap2, y2: output.cy });
-          cursor = { x: maxX + gap2 + nextR2, y: output.cy };
-        } else {
-          cursor = { x: output.cx, y: output.cy };
-        }
-      } else {
-        // Paires : droit/hélicoïdal (externe), interne, vis sans fin,
-        // courroie/chaîne — entraxe RÉEL porté par la connexion de la scène.
-        var isBeltLike = stage.type === 'belt' || stage.type === 'chain';
-        var isInternal = stage.type === 'internal';
-        var isWorm = stage.type === 'worm';
-        var c = finite(connection.centerDistance, 40);
-        entry.centerDistance = c;
-        entry.exactCenterDistance = !!connection.exactCenterDistance;
-
-        var wIn = wheelFromMember(byRole.input, { cx: cursor.x, cy: cursor.y });
-        var wOut = wheelFromMember(byRole.output);
-        if (isBeltLike) {
-          wIn.outsideD = wIn.pitchD + m; wOut.outsideD = wOut.pitchD + m;
-          wIn.rootD = wIn.pitchD - m; wOut.rootD = wOut.pitchD - m;
-        }
-
-        var angle = 0;
-        if (isWorm) {
-          angle = 90; // roue sous la vis (axes perpendiculaires)
-        } else if (!isBeltLike) {
-          // Premier angle candidat sans collision, préférence alternée.
-          var rOut = wOut.outsideD / 2;
-          var clearance = Math.max(4, 2 * m);
-          for (var ai = 0; ai < MESH_ANGLES.length; ai++) {
-            var candidate = MESH_ANGLES[ai] * preferSign;
-            var cxTry = cursor.x + Math.cos(rad(candidate)) * c;
-            var cyTry = cursor.y + Math.sin(rad(candidate)) * c;
-            if (!collides(cxTry, cyTry, isInternal ? 0 : rOut, placed, isInternal ? 0 : clearance)) { angle = candidate; break; }
-          }
-          preferSign = -preferSign;
-        }
-        entry.angleDeg = angle;
-        wOut.cx = cursor.x + Math.cos(rad(angle)) * c;
-        wOut.cy = cursor.y + Math.sin(rad(angle)) * c;
-
-        entry.wheels.push(wIn, wOut);
-        if (isBeltLike) entry.links.push(flexibleLink(connection, wIn, wOut, prefix + 'drive'));
-        placed.push(wIn, wOut);
-        maxX = Math.max(maxX, wIn.cx + wIn.outsideD / 2, wOut.cx + wOut.outsideD / 2);
-        cursor = { x: wOut.cx, y: wOut.cy };
-      }
+      if (stage.type === 'rack') rackStage(frame, stage, index, byRole, entry);
+      else if (stage.type === 'planetary' || stage.type === 'epicyclic') planetaryStage(frame, scene, stage, index, byRole, entry);
+      else pairStage(frame, connection, stage, index, byRole, entry);
 
       out.push(entry);
     });
@@ -286,6 +357,10 @@
     return {
       stages: out,
       wheels: wheels,
+      shafts: shaftSegments(frame),
+      view: frame.view,
+      graph: frame.graph,
+      spatial: frame.spatial,
       scene: scene,
       kinematics: scene.kinematics,
       io: {
@@ -293,6 +368,30 @@
         output: anchorFor(out.length - 1, 'output', last ? last.wheels[0] : null)
       }
     };
+  }
+
+  /**
+   * Les arbres, avec leur LONGUEUR. Le dessin n'en avait pas : il posait un
+   * trait de liaison entre deux centres, et deux roues d'un même arbre
+   * partageaient un point. Un arbre est ici un segment porté par son axe, qui
+   * dépasse de part et d'autre des organes qu'il porte — et sur lequel on peut
+   * enfin voir que deux roues sont solidaires.
+   */
+  function shaftSegments(frame) {
+    return frame.spatial.shafts.map(function (shaft) {
+      var drawn = frame.seats.shafts[shaft.id] || { origin: [0, 0], along: [1, 0] };
+      var first = frame.spatial.byId[shaft.memberIds[0]];
+      var last = frame.spatial.byId[shaft.memberIds[shaft.memberIds.length - 1]];
+      var from = first.axialPosition - first.width / 2 - SpatialLayout.SHAFT_OVERHANG;
+      var to = last.axialPosition + last.width / 2 + SpatialLayout.SHAFT_OVERHANG;
+      return { id: shaft.id, role: shaft.role, grounded: !!shaft.grounded,
+        memberIds: shaft.memberIds.slice(),
+        x1: drawn.origin[0] + drawn.along[0] * from, y1: drawn.origin[1] + drawn.along[1] * from,
+        x2: drawn.origin[0] + drawn.along[0] * to, y2: drawn.origin[1] + drawn.along[1] * to,
+        // Un arbre vu en bout n'est pas un trait : c'est un point, et le
+        // dessiner comme un segment de longueur nulle serait une trace muette.
+        endOn: Math.hypot(drawn.along[0], drawn.along[1]) < 1e-9 };
+    });
   }
 
   /**
@@ -325,5 +424,5 @@
     return link;
   }
 
-  return { layout: layout, inputRadius: inputRadius, wheelFromMember: wheelFromMember, MESH_ANGLES: MESH_ANGLES };
+  return { layout: layout, wheelFromMember: wheelFromMember, frameOf: frameOf };
 });

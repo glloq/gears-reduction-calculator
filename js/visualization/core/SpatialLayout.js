@@ -149,12 +149,32 @@
     var graph = layout && layout.graph;
     if (!graph) return { view: view, byId: {}, shafts: {} };
 
+    // Un axe vu en bout n'a pas de direction à l'écran : ses organes se
+    // superposent, ce qui est la VÉRITÉ de cette vue et non un défaut. Deux
+    // roues solidaires vues de face sont concentriques ; les écarter le long
+    // d'une direction inventée pour qu'on les distingue mieux reviendrait à
+    // dessiner un arbre là où on n'en voit pas la longueur.
     function direction2d(vector, fallback) {
       var xy = Projection.project(vector, view);
       var length = Math.hypot(xy[0], xy[1]);
-      // Un axe vu en bout n'a pas de direction à l'écran : ses organes se
-      // superposent, ce qui est la vérité de cette vue et non un défaut.
       return length < 1e-9 ? (fallback || [0, 0]) : [xy[0] / length, xy[1] / length];
+    }
+
+    /**
+     * La direction de repli d'un axe vu en bout.
+     *
+     * Un axe qui pointe vers l'œil n'a plus de direction à l'écran : il faut
+     * bien en choisir une pour ranger les organes qu'il porte. Reprendre celle
+     * de l'arbre amont, comme on le faisait, fait lire un renvoi à 90° comme
+     * un montage coaxial — le pignon et sa roue conique s'alignaient. On
+     * conserve donc l'ANGLE que les deux axes font réellement : deux axes
+     * parallèles restent parallèles, un renvoi reste un renvoi.
+     */
+    function turned(along, fromAxis, toAxis) {
+      var cosine = Math.max(-1, Math.min(1, fromAxis.direction[0] * toAxis.direction[0]
+        + fromAxis.direction[1] * toAxis.direction[1] + fromAxis.direction[2] * toAxis.direction[2]));
+      var sine = Math.sqrt(Math.max(0, 1 - cosine * cosine));
+      return [along[0] * cosine - along[1] * sine, along[0] * sine + along[1] * cosine];
     }
 
     var shafts = {}, byId = {};
@@ -168,40 +188,66 @@
 
     var first = graph.shafts[0];
     if (!first) return { view: view, byId: byId, shafts: shafts };
-    draw(first, [0, 0], direction2d(graph.byAxis[first.axisId].direction, [1, 0]));
+    draw(first, [0, 0], direction2d(graph.byAxis[first.axisId].direction));
 
     graph.mechanisms.forEach(function (mechanism) {
       var input = mechanism.inputPort, output = mechanism.outputPort;
       if (!input || !output || !output.shaftId) return;
-      var source = byId[input.memberId], host = shafts[input.shaftId];
+      var host = shafts[input.shaftId];
       var target = graph.byShaft[output.shaftId];
-      if (!source || !host || !target || shafts[target.id]) return;
+      if (!host || !target || shafts[target.id]) return;
 
       var inAxis = graph.byAxis[graph.byShaft[input.shaftId].axisId];
       var outAxis = graph.byAxis[target.axisId];
-      var along = direction2d(outAxis.direction, host.along);
+      // Si l'axe mené est vu en bout, ses organes se superposent ; s'il est
+      // visible mais que l'axe MENANT ne l'est pas, on garde tout de même
+      // l'angle vrai entre les deux, faute de quoi un renvoi à 90° se lirait
+      // comme un montage coaxial.
+      var along = direction2d(outAxis.direction, turned(host.along, inAxis, outAxis));
 
-      // La direction de l'engrènement est celle que la projection donne à
-      // l'écart entre les deux axes ; sa longueur reste l'entraxe vrai.
+      // L'écart entre les deux axes se lit en DEUX termes, et les confondre
+      // était une erreur : l'un dit à quelle hauteur de l'arbre amont le
+      // mécanisme se trouve, l'autre est l'entraxe. Les additionner en une
+      // seule distance dessinait la roue d'une vis sans fin trop loin, et
+      // écartait deux cônes qui, eux, partagent leur sommet.
       var offset = [outAxis.origin[0] - inAxis.origin[0], outAxis.origin[1] - inAxis.origin[1],
         outAxis.origin[2] - inAxis.origin[2]];
-      var span = Math.sqrt(offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]);
-      var toward = direction2d(offset, [-host.along[1], host.along[0]]);
-      var driven = graph.byId[output.memberId];
-      var seat = [source.x + toward[0] * span, source.y + toward[1] * span];
-      draw(target, [seat[0] - along[0] * (driven ? driven.axialPosition : 0),
-        seat[1] - along[1] * (driven ? driven.axialPosition : 0)], along);
+      var axial = offset[0] * inAxis.direction[0] + offset[1] * inAxis.direction[1] + offset[2] * inAxis.direction[2];
+      var across = [offset[0] - inAxis.direction[0] * axial, offset[1] - inAxis.direction[1] * axial,
+        offset[2] - inAxis.direction[2] * axial];
+      var span = Math.sqrt(across[0] * across[0] + across[1] * across[1] + across[2] * across[2]);
+      // La direction de l'engrènement est celle que la projection donne à
+      // l'entraxe ; sa longueur reste vraie.
+      var toward = direction2d(across, [-host.along[1], host.along[0]]);
+      draw(target, [host.origin[0] + host.along[0] * axial + toward[0] * span,
+        host.origin[1] + host.along[1] * axial + toward[1] * span], along);
     });
 
     // Les corps qu'aucun mécanisme ne relie — couronne bloquée, satellites —
     // partagent l'axe de leur étage : ils se dessinent sur le même tracé.
+    function sameLine(a, b) {
+      if (!a || !b) return false;
+      for (var i = 0; i < 3; i++) {
+        if (Math.abs(a.origin[i] - b.origin[i]) > 1e-6) return false;
+        if (Math.abs(a.direction[i] - b.direction[i]) > 1e-6) return false;
+      }
+      return true;
+    }
     graph.shafts.forEach(function (shaft) {
       if (shafts[shaft.id]) return;
+      var axis = graph.byAxis[shaft.axisId];
+      // Comparer les IDENTIFIANTS d'axes ne suffit pas : un satellite tourne
+      // autour d'un axe qui lui est propre, mais confondu avec celui de son
+      // étage. Faute de le reconnaître, il se rangeait le long d'une direction
+      // inventée, et son arbre traversait un dessin où tous les autres étaient
+      // vus en bout.
       var sibling = null;
       graph.shafts.forEach(function (other) {
-        if (!sibling && other.axisId === shaft.axisId && shafts[other.id]) sibling = other;
+        if (!sibling && shafts[other.id] && sameLine(graph.byAxis[other.axisId], axis)) sibling = other;
       });
-      var host = sibling ? shafts[sibling.id] : { origin: [0, 0], along: [1, 0] };
+      var host = sibling ? shafts[sibling.id]
+        : shaft.carriedBy && shafts[shaft.carriedBy] ? shafts[shaft.carriedBy]
+          : { origin: [0, 0], along: direction2d(axis && axis.direction ? axis.direction : [1, 0, 0]) };
       draw(shaft, host.origin, host.along);
     });
 
