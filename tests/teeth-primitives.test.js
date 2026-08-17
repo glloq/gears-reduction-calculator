@@ -78,11 +78,17 @@ test('a bevel gear exposes its pitch cone and the intersection of the axes', () 
   assert.ok(built.rotor.some(s => s.attrs.class === 'cone-apex-point'), 'point d\'intersection des axes');
 });
 
+/** Le groupe de phase, désormais niché dans le groupe masqué. */
+function threadPhase(built) {
+  const clip = built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-clip');
+  return clip && clip.children.find(s => s.attrs && s.attrs.class === 'worm-thread-phase');
+}
+
 test('a worm keeps its body still and groups the threads that move', () => {
   const built = Primitives.build(wheel({ kind: 'worm', teeth: 3, pitchD: 20, leadAngle: 18 }), { lod: LEVELS.TECHNICAL });
   // §11 : corps et axe ne sont PAS dans le groupe animé — c'est tout l'objet
   // de la séparation, la vis tournait en se déplaçant le long de son arbre.
-  const phase = built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-phase');
+  const phase = threadPhase(built);
   assert.ok(phase, 'les filets doivent former un groupe à part');
   assert.ok(phase.children.length >= 2);
   assert.ok(phase.children.every(s => s.attrs.class === 'worm-thread'));
@@ -91,22 +97,57 @@ test('a worm keeps its body still and groups the threads that move', () => {
   assert.ok(built.rotor.some(s => s.text && s.text.includes('γ 18°')));
 });
 
-test('the thread pattern overruns the body so the animation loops without a jump', () => {
-  const w = wheel({ kind: 'worm', teeth: 1, pitchD: 20, module: 2, leadAngle: 18 });
+test('the thread pattern is really clipped to the body, not merely said to be', () => {
+  const w = wheel({ kind: 'worm', teeth: 1, pitchD: 20, module: 2, leadAngle: 18, id: 's0-input' });
   const geometry = Primitives.wormGeometry(w);
   const built = Primitives.build(w, { lod: LEVELS.INVOLUTE });
-  const phase = built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-phase');
-  const xs = phase.children.flatMap(p => p.attrs.d.match(/-?\d+(\.\d+)?(?= )/g).map(Number));
-  // §13 : sans débord, un filet disparaîtrait à une extrémité avant que le
-  // suivant n'entre par l'autre, et la boucle sauterait à chaque tour.
+
+  // Le commentaire annonçait un clip que le code ne créait pas : les filets,
+  // dessinés deux pas plus loin, débordaient du corps et défilaient dans le
+  // vide devant l'arbre.
+  const clip = built.rotor.find(s => s.tag === 'clipPath');
+  assert.ok(clip, 'le masque doit exister');
+  const window = clip.children[0];
+  assert.equal(Number(window.attrs.width), Number(geometry.length.toFixed(2)));
+  assert.equal(Number(window.attrs.height), Number((2 * geometry.radius).toFixed(2)));
+
+  // …et le groupe des filets doit RÉELLEMENT le référencer.
+  const clipped = built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-clip');
+  assert.equal(clipped.attrs['clip-path'], 'url(#' + clip.attrs.id + ')');
+  assert.ok(threadPhase(built), 'la phase animée vit dans le groupe masqué');
+
+  // Le débord reste nécessaire : sans lui, un filet disparaîtrait d'un bord
+  // avant que le suivant n'entre par l'autre, et la boucle sauterait.
+  const xs = threadPhase(built).children.flatMap(p => p.attrs.d.match(/-?\d+(\.\d+)?(?= )/g).map(Number));
   assert.ok(Math.min(...xs) < -geometry.length / 2, 'motif débordant à gauche');
   assert.ok(Math.max(...xs) > geometry.length / 2, 'motif débordant à droite');
+});
+
+test('two worms in one chain never share a mask', () => {
+  // Un masque partagé serait dimensionné pour l'une des deux vis, et
+  // tronquerait la seconde aux bornes de la première.
+  const first = Primitives.build(wheel({ kind: 'worm', teeth: 2, pitchD: 20, module: 2, id: 's0-input' }), { lod: LEVELS.INVOLUTE });
+  const second = Primitives.build(wheel({ kind: 'worm', teeth: 1, pitchD: 30, module: 3, id: 's1-input' }), { lod: LEVELS.INVOLUTE });
+  const idOf = built => built.rotor.find(s => s.tag === 'clipPath').attrs.id;
+  assert.notEqual(idOf(first), idOf(second));
+  // Et l'identifiant est STABLE : tiré d'un compteur, il changerait à chaque
+  // rendu et casserait les exports.
+  assert.equal(idOf(first), idOf(Primitives.build(wheel({ kind: 'worm', teeth: 2, pitchD: 20, module: 2, id: 's0-input' }), { lod: LEVELS.INVOLUTE })));
+  assert.match(idOf(first), /^[A-Za-z][A-Za-z0-9_-]*$/, 'identifiant utilisable dans une URL de fragment');
+});
+
+test('a worm body is a cylinder seen from the side, not a capsule', () => {
+  const built = Primitives.build(wheel({ kind: 'worm', teeth: 2, pitchD: 20, module: 2 }), { lod: LEVELS.INVOLUTE });
+  const body = built.rotor.find(s => s.attrs && s.attrs.class && s.attrs.class.includes('worm-body'));
+  // `rx = radius` en faisait une capsule à extrémités hémisphériques.
+  assert.equal(body.attrs.rx, undefined, 'aucun arrondi d’extrémité');
+  assert.equal(body.tag, 'rect');
 });
 
 test('the number of starts changes the pattern, not just the visual pitch', () => {
   const one = Primitives.build(wheel({ kind: 'worm', teeth: 1, pitchD: 20, module: 2 }), { lod: LEVELS.INVOLUTE });
   const four = Primitives.build(wheel({ kind: 'worm', teeth: 4, pitchD: 20, module: 2 }), { lod: LEVELS.INVOLUTE });
-  const count = built => built.rotor.find(s => s.attrs && s.attrs.class === 'worm-thread-phase').children.length;
+  const count = built => threadPhase(built).children.length;
   // §14 : quatre filets déphasés, pas un pas dessiné quatre fois plus grand.
   assert.ok(count(four) > count(one), 'une vis à 4 filets montre plus de traits');
   assert.equal(Primitives.wormGeometry(wheel({ kind: 'worm', teeth: 4, module: 2, pitchD: 20 })).starts, 4);

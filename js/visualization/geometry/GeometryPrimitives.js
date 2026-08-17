@@ -124,8 +124,10 @@
       : { radius: Math.max(2, finite(pitchDiameter, 10) / 2), length: Math.max(4 * finite(pitchDiameter, 10) / 2, 20 * m),
         module: m, starts: 1, pitch: Math.PI * m, lead: 0 };
     var r = g.radius, length = g.length;
+    // Cylindre vu de côté : un rectangle. `rx = r` en faisait une capsule à
+    // extrémités hémisphériques, une forme qu'aucune vis n'a.
     group.appendChild(node('rect', { class: className || 'geometry-member worm-member',
-      x: (x - length / 2).toFixed(2), y: (y - r).toFixed(2), width: length.toFixed(2), height: (2 * r).toFixed(2), rx: r.toFixed(2) }));
+      x: (x - length / 2).toFixed(2), y: (y - r).toFixed(2), width: length.toFixed(2), height: (2 * r).toFixed(2) }));
     group.appendChild(node('line', { class: 'shaft-axis construction-axis',
       x1: (x - length / 2 - 3 * m).toFixed(2), y1: y, x2: (x + length / 2 + 3 * m).toFixed(2), y2: y }));
 
@@ -133,6 +135,18 @@
     // filet disparaîtrait d'un bord avant que le suivant n'entre par l'autre,
     // et la boucle sauterait à chaque tour.
     var margin = (typeof GearTeethPrimitives !== 'undefined' && GearTeethPrimitives.WORM_MARGIN_PITCHES ? GearTeethPrimitives.WORM_MARGIN_PITCHES : 2) * g.pitch;
+    // Le débord doit être MASQUÉ, pas seulement dessiné : sans clip les filets
+    // défilaient hors du corps, flottant devant l'arbre.
+    // L'identifiant doit être unique PAR VIS : deux vis dans la même chaîne
+    // partageaient sinon un masque dimensionné pour l'une des deux, et la
+    // seconde se voyait tronquer aux bornes de la première.
+    var clipId = (typeof GearTeethPrimitives !== 'undefined' && GearTeethPrimitives.wormClipId
+      ? GearTeethPrimitives.wormClipId({ id: options.memberId }) : 'worm-clip') + '-geometry';
+    var clip = node('clipPath', { id: clipId });
+    clip.appendChild(node('rect', { x: (x - length / 2).toFixed(2), y: (y - r).toFixed(2),
+      width: length.toFixed(2), height: (2 * r).toFixed(2) }));
+    group.appendChild(clip);
+    var clipped = node('g', { class: 'worm-thread-clip', 'clip-path': 'url(#' + clipId + ')' });
     var phase = node('g', { class: 'worm-thread-phase' });
     for (var start = -length / 2 - margin; start < length / 2 + margin; start += g.pitch) {
       for (var k = 0; k < g.starts; k++) {
@@ -147,7 +161,8 @@
         phase.appendChild(node('path', { class: 'worm-thread', d: d }));
       }
     }
-    group.appendChild(phase);
+    clipped.appendChild(phase);
+    group.appendChild(clipped);
     phase.dataset.pitch = g.pitch.toFixed(4);
     return phase;
   }

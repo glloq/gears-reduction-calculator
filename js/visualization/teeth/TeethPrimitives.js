@@ -160,13 +160,32 @@
    *
    * On sépare donc :
    *   .worm-body / .stage-axis   FIXES
-   *   g.worm-thread-phase        SEUL animé, et clippé au corps
+   *   g.worm-thread-phase        SEUL animé, DANS un groupe clippé au corps
    *
-   * Le motif déborde d'un pas de chaque côté : sans cela un filet disparaîtrait
-   * à une extrémité avant que le suivant n'entre par l'autre, et l'animation
-   * sauterait à chaque tour au lieu de boucler.
+   * Le clip était annoncé par ce commentaire et n'existait pas : aucun
+   * `clipPath` n'était créé. Le motif, volontairement dessiné deux pas plus
+   * loin de chaque côté, débordait donc du corps — et l'animation le faisait
+   * défiler dans le vide, filets flottant devant l'arbre. Ce débord reste
+   * nécessaire (sans lui un filet disparaîtrait d'un côté avant que le suivant
+   * n'entre par l'autre, et la boucle sauterait à chaque tour) : il faut donc
+   * bel et bien le masquer, pas le supprimer.
+   *
+   * Le corps, lui, est un CYLINDRE vu de côté : un rectangle. Il portait
+   * `rx = radius`, ce qui en faisait une capsule à extrémités hémisphériques —
+   * une forme qu'aucune vis n'a.
    */
   var WORM_MARGIN_PITCHES = 2;
+
+  /**
+   * Un identifiant de clip stable et unique par vis. Stable, parce qu'un
+   * identifiant tiré d'un compteur changerait à chaque rendu et casserait les
+   * exports ; unique, parce que deux vis dans la même chaîne partageraient
+   * sinon le même masque, dimensionné pour l'une des deux.
+   */
+  function wormClipId(wheel) {
+    var key = (wheel && (wheel.id || wheel.memberId)) || 'worm';
+    return 'worm-clip-' + String(key).replace(/[^A-Za-z0-9_-]/g, '-');
+  }
 
   function wormGeometry(wheel) {
     var r = radii(wheel);
@@ -188,8 +207,9 @@
   function wormBody(wheel, lod) {
     var g = wormGeometry(wheel);
     var radius = g.radius, length = g.length;
+    // Cylindre vu de côté : pas de `rx`, donc pas d'extrémités arrondies.
     var body = [node('rect', { class: 'tooth-profile worm-body', x: fixed(-length / 2), y: fixed(-radius),
-      width: fixed(length), height: fixed(2 * radius), rx: fixed(radius) })];
+      width: fixed(length), height: fixed(2 * radius) })];
     if (lod <= LEVELS.SILHOUETTE) return body;
 
     var samples = lod >= LEVELS.INVOLUTE ? 12 : 5;
@@ -210,7 +230,14 @@
         if (d) threadPaths.push(node('path', { class: 'worm-thread', d: d }));
       }
     }
-    body.push(group({ class: 'worm-thread-phase' }, threadPaths));
+    // Le masque a exactement les bornes du corps : ce qui déborde pour la
+    // continuité de l'animation ne sort jamais de la pièce.
+    var clipId = wormClipId(wheel);
+    body.push({ tag: 'clipPath', attrs: { id: clipId }, children: [
+      node('rect', { x: fixed(-length / 2), y: fixed(-radius), width: fixed(length), height: fixed(2 * radius) })
+    ] });
+    body.push(group({ class: 'worm-thread-clip', 'clip-path': 'url(#' + clipId + ')' },
+      [group({ class: 'worm-thread-phase' }, threadPaths)]));
     body.push(node('path', { class: 'stage-axis', d: 'M ' + fixed(-length / 2 - 3 * g.module) + ' 0 H ' + fixed(length / 2 + 3 * g.module) }));
     if (lod >= LEVELS.TECHNICAL) {
       body.push(node('text', { class: 'worm-label', 'text-anchor': 'middle', y: fixed(-radius - 2 * g.module),
@@ -325,5 +352,6 @@
 
   return { LEVELS: LEVELS, THRESHOLDS: THRESHOLDS, level: level, levelFor: levelFor, build: build,
     radii: radii, circlePath: circlePath, node: node, group: group,
-    wormGeometry: wormGeometry, WORM_MARGIN_PITCHES: WORM_MARGIN_PITCHES, groundRadius: groundRadius };
+    wormGeometry: wormGeometry, wormClipId: wormClipId, WORM_MARGIN_PITCHES: WORM_MARGIN_PITCHES,
+    groundRadius: groundRadius };
 });

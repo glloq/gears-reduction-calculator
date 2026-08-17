@@ -1174,3 +1174,58 @@ test('the docked inspector hides nothing on a narrow screen', async ({ page }) =
   expect(reachable.every(Boolean)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('worm threads never leave the body, in either view or in the export', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Deux vis dans la même chaîne : leurs masques doivent être distincts.
+  await mount(page, ['worm', 'worm']);
+
+  for (const view of ['teeth', 'geometry']) {
+    await showView(page, view);
+    const shape = await page.evaluate(() => {
+      const svg = document.querySelector('#svgContainer svg');
+      const bodies = Array.from(svg.querySelectorAll('.worm-body, .worm-member'));
+      const ids = Array.from(svg.querySelectorAll('clipPath')).map(c => c.id);
+      const refs = Array.from(svg.querySelectorAll('.worm-thread-clip')).map(c => c.getAttribute('clip-path'));
+      return { bodies: bodies.length, rounded: bodies.filter(b => b.getAttribute('rx')).length,
+        ids: ids, refs: refs, unique: new Set(ids).size === ids.length,
+        resolve: refs.every(r => ids.some(id => r === 'url(#' + id + ')')) };
+    });
+    // Un cylindre vu de côté est un rectangle : `rx` en faisait une capsule.
+    expect(shape.rounded, view + ' : aucune extrémité arrondie').toBe(0);
+    expect(shape.refs.length, view).toBeGreaterThan(0);
+    expect(shape.unique, view + ' : un masque par vis').toBe(true);
+    expect(shape.resolve, view + ' : chaque référence trouve son masque').toBe(true);
+
+    // Le clip est une propriété de RENDU : on interroge le rendu, pas la boîte
+    // géométrique — getBoundingClientRect ignore le masque et ne prouverait rien.
+    const leaks = await page.evaluate(() => {
+      const svg = document.querySelector('#svgContainer svg');
+      const body = svg.querySelector('.worm-body, .worm-member');
+      const found = [];
+      [0, 90, 180, 359, 360, -120].forEach(angle => {
+        window.__viewer.renderer().setAnimationAngle(angle);
+        const box = body.getBoundingClientRect();
+        let escaped = 0;
+        [-14, -9, -5, -2, 2, 5, 9, 14].forEach(dx => {
+          const x = dx < 0 ? box.left + dx : box.right + dx;
+          for (let f = 0.15; f <= 0.85; f += 0.1) {
+            const hit = document.elementFromPoint(x, box.top + box.height * f);
+            if (hit && hit.classList && hit.classList.contains('worm-thread')) escaped++;
+          }
+        });
+        if (escaped) found.push({ angle: angle, escaped: escaped });
+      });
+      return found;
+    });
+    expect(leaks, view + ' : aucun filet hors du corps').toEqual([]);
+
+    // L'export emporte ses masques : un SVG dont le clip serait perdu
+    // montrerait les filets débordants hors de l'application.
+    const exported = await page.evaluate(() => window.__viewer.renderer().exportSVG());
+    expect((exported.match(/<clipPath/g) || []).length, view).toBe(shape.ids.length);
+    expect((exported.match(/clip-path="url\(#/g) || []).length, view).toBe(shape.refs.length);
+    expect(exported, view + ' : pas de capsule dans l’export').not.toMatch(/class="[^"]*worm-(body|member)[^"]*"[^>]*\srx=/);
+  }
+  expect(errors).toEqual([]);
+});
