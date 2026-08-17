@@ -1092,3 +1092,85 @@ test('a preset takes you to the view that answers its question (§8)', async ({ 
   expect(await state()).toEqual({ view: 'geometry', pressed: ['simple'] });
   expect(errors).toEqual([]);
 });
+
+test('a warning badge leads to its cause, and every screen states it identically (§12)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'spur']);
+  await page.evaluate(() => {
+    // Second étage nettement sous-dimensionné : l'alerte porte sur LUI.
+    const stages = [
+      { type: 'spur', input: { teeth: 24 }, output: { teeth: 48 }, parameters: { module: 3, pressureAngle: 20, faceWidth: 25 } },
+      { type: 'spur', input: { teeth: 12 }, output: { teeth: 48 }, parameters: { module: 1, pressureAngle: 20, faceWidth: 5 } }
+    ];
+    window.__solution = GearEngineering.analyzeSolution(stages, 8, { inputSpeedRpm: 3000, inputTorqueNm: 60 });
+    window.__viewer.render(window.__solution);
+  });
+  await showView(page, 'teeth');
+
+  const badge = page.locator('#svgContainer .mechanical-warning[data-stage="1"]').first();
+  await expect(badge).toBeAttached();
+  await expect(badge).toHaveAttribute('role', 'button');
+
+  // Cliquer désigne l'étage : l'inspecteur docké s'ouvre sur lui, avec la cause.
+  await badge.click();
+  const inspector = page.locator('#stageInspector');
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toContainText('2 ·');
+  await expect(inspector.locator('.inspector-group', { hasText: 'Avertissements' })).toHaveCount(1);
+
+  // Le même défaut, dit de la même façon dans le dessin, la fiche et l'analyse.
+  const said = await page.evaluate(() => {
+    const engine = window.__solution.warnings.filter(w => w.stageIndex === 1);
+    const badges = Array.from(document.querySelectorAll('#svgContainer .mechanical-warning[data-stage="1"]'))
+      .map(node => node.dataset.warning);
+    const panel = Array.from(document.querySelectorAll('#stageInspector .inspector-grid div'))
+      .map(row => row.textContent);
+    return { codes: engine.map(w => w.code), messages: engine.map(w => w.message), badges: badges, panel: panel };
+  });
+  expect(said.codes.length).toBeGreaterThan(0);
+  // Le dessin ne montre que des alertes réellement émises pour cet étage…
+  said.badges.forEach(code => expect(said.codes).toContain(code));
+  // …et l'inspecteur reprend leur libellé, sans jamais montrer le code interne.
+  const text = said.panel.join(' | ');
+  said.messages.forEach(message => expect(text).toContain(message));
+  said.codes.forEach(code => expect(text).not.toContain(code));
+  expect(errors).toEqual([]);
+});
+
+test('the docked inspector hides nothing on a narrow screen', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.setViewportSize({ width: 640, height: 900 });
+  await mount(page, ['spur', 'helical']);
+  // Sous 900 px, l'espace de travail montre un volet à la fois : c'est celui du
+  // dessin qui nous intéresse ici.
+  await page.evaluate(() => {
+    const grid = document.querySelector('.design-workspace');
+    if (grid) grid.dataset.mobilePane = 'viewer';
+  });
+  await showView(page, 'teeth');
+  await page.evaluate(() => window.__viewer.renderer().selectStage(0));
+  await expect(page.locator('#stageInspector')).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const stage = document.querySelector('.viewer-stage');
+    const drawing = document.getElementById('svgContainer').getBoundingClientRect();
+    const panel = document.getElementById('stageInspector').getBoundingClientRect();
+    return { direction: getComputedStyle(stage).flexDirection,
+      // Empilé, l'inspecteur commence sous le dessin : il ne le recouvre pas.
+      below: panel.top >= drawing.bottom - 1,
+      drawingWidth: Math.round(drawing.width), panelWidth: Math.round(panel.width) };
+  });
+  expect(layout.direction, 'trop étroit pour deux colonnes').toBe('column');
+  expect(layout.below, 'l’inspecteur passe dessous, il ne se pose pas dessus').toBe(true);
+  // Et le dessin garde toute la largeur, au lieu d'en céder une colonne.
+  expect(layout.drawingWidth).toBeGreaterThan(300);
+
+  const reachable = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .train-stage'))
+    .map(stage => {
+      const b = stage.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.x + 4, b.y + b.height / 2);
+      return !(hit && hit.closest('#stageInspector'));
+    }));
+  expect(reachable.every(Boolean)).toBe(true);
+  expect(errors).toEqual([]);
+});

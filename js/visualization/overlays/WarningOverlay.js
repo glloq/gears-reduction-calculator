@@ -34,7 +34,14 @@
     });
   }
 
-  function render(create, host, warnings, index, origin) {
+  /**
+   * §12 : un badge « ! » qui n'est qu'une infobulle laisse le lecteur chercher
+   * lui-même l'étage concerné, puis la grandeur fautive. Il devient un chemin :
+   * cliquer désigne l'étage, et l'inspecteur docké en donne la cause chiffrée.
+   * @param {function(number)} [onSelect] désigne l'étage — fourni par le renderer,
+   *   qui reste seul maître de la sélection.
+   */
+  function render(create, host, warnings, index, origin, onSelect) {
     var list = forStage(warnings, index);
     if (!list.length) return null;
     var g = create('g', { class: 'warning-overlay', 'data-viewer-scale': '',
@@ -53,6 +60,15 @@
       // reformule pas, et n'affiche jamais le code interne.
       badge.appendChild(create('title', {}, (w.message || catalogue.label(w.code)) +
         (w.recommendation ? '\n' + w.recommendation : '')));
+      if (onSelect) {
+        badge.setAttribute('tabindex', '0');
+        badge.setAttribute('role', 'button');
+        badge.setAttribute('aria-label', 'Étage ' + (index + 1) + ' — ' + (w.message || catalogue.label(w.code)));
+        badge.addEventListener('click', function (event) { event.stopPropagation(); onSelect(index); });
+        badge.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(index); }
+        });
+      }
       g.appendChild(badge);
     });
     host.appendChild(g);

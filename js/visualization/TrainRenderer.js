@@ -161,7 +161,8 @@
     // Les alertes viennent du moteur, pas d'un calcul local : le dessin dit
     // exactement ce que dit l'analyse.
     GearWarningOverlay.render(n, group, (this.solution || {}).warnings, index,
-      { x: middle, y: Number.isFinite(top) ? top : anchor.cy });
+      { x: middle, y: Number.isFinite(top) ? top : anchor.cy },
+      function (stageIndex) { self.selectStage(stageIndex); });
 
     // Décor : libellé d'étage (couloirs anti-collision posés dans _placeLabels)
     // et cote d'entraxe.

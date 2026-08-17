@@ -313,6 +313,12 @@
       { title: 'Rendement', rows: [
         ['Étage', finite(data.efficiency) ? format(data.efficiency * 100, 1, ' %') : null]
       ] },
+      // §12 : la cause, à l'endroit où le badge « ! » conduit. Sans cela il
+      // désignait un étage sans dire ce qu'on lui reprochait.
+      data.warnings && data.warnings.length ? { title: 'Avertissements', rows:
+        data.warnings.map(function (w) {
+          return [w.message || w.code, w.recommendation || '—'];
+        }) } : null,
       { title: 'Sécurité', rows: [
         ['SF flexion', format(data.bendingSafety, 2)],
         ['SH contact', format(data.contactSafety, 2)]

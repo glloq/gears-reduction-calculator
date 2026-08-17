@@ -218,6 +218,11 @@
 .warning-overlay circle { fill: var(--warning); stroke: var(--surface-1); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .warning-overlay text { fill: var(--surface-1); font: 700 8px system-ui, sans-serif; pointer-events: none; }
 .warning-overlay .warning-danger circle { fill: var(--danger); }
+/* §12 : le badge mène à sa cause — il doit s'annoncer comme cliquable. */
+.warning-overlay .mechanical-warning { cursor: pointer; }
+.warning-overlay .mechanical-warning:hover circle,
+.warning-overlay .mechanical-warning:focus-visible circle { stroke: var(--ink); stroke-width: 2; }
+.warning-overlay .mechanical-warning:focus { outline: none; }
 .mechanical-warning { color: var(--warning); }
 
 /* ===================== Selection ===================== */
