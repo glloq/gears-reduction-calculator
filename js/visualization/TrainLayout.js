@@ -131,8 +131,13 @@
   function wheelAt(frame, member, overrides) {
     if (!member) return wheelFromMember(null, overrides);
     var seat = seatOf(frame, member.id);
-    return wheelFromMember(member, Object.assign({ cx: seat.x, cy: seat.y },
-      orientation(frame, member), overrides || {}));
+    var placed = frame.spatial.byId[member.id];
+    return wheelFromMember(member, Object.assign({ cx: seat.x, cy: seat.y,
+      // Le CORPS auquel l'organe appartient : tout ce qui est sur cet arbre
+      // tourne d'un bloc. C'est la question qu'un train composé pose sans
+      // arrêt, et à laquelle le dessin ne répondait pas.
+      bodyId: placed ? placed.shaftId : null },
+    orientation(frame, member), overrides || {}));
   }
 
   /**
@@ -196,6 +201,7 @@
     entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
     entry.carrier = { memberId: 's' + index + '-C', cx: centre.x, cy: centre.y, orbit: orbit, count: count,
       speed: entry.carrierSpeed, basis: basis,
+      bodyId: byRole.C && frame.spatial.byId[byRole.C.id] ? frame.spatial.byId[byRole.C.id].shaftId : null,
       functionalRole: byRole.C ? byRole.C.functionalRole : null,
       memberName: byRole.C ? byRole.C.memberName : null,
       localizedRole: byRole.C ? byRole.C.localizedRole : null };
@@ -357,7 +363,7 @@
     return {
       stages: out,
       wheels: wheels,
-      shafts: shaftSegments(frame),
+      shafts: shaftSegments(frame, scene),
       view: frame.view,
       graph: frame.graph,
       spatial: frame.spatial,
@@ -377,7 +383,7 @@
    * dépasse de part et d'autre des organes qu'il porte — et sur lequel on peut
    * enfin voir que deux roues sont solidaires.
    */
-  function shaftSegments(frame) {
+  function shaftSegments(frame, scene) {
     return frame.spatial.shafts.map(function (shaft) {
       var drawn = frame.seats.shafts[shaft.id] || { origin: [0, 0], along: [1, 0] };
       var first = frame.spatial.byId[shaft.memberIds[0]];
@@ -386,6 +392,11 @@
       var to = last.axialPosition + last.width / 2 + SpatialLayout.SHAFT_OVERHANG;
       return { id: shaft.id, role: shaft.role, grounded: !!shaft.grounded,
         memberIds: shaft.memberIds.slice(),
+        // Les noms viennent de la scène : le dessin ne nomme rien lui-même.
+        memberNames: shaft.memberIds.map(function (id) {
+          var member = scene && scene.member ? scene.member(id) : null;
+          return member ? (member.memberName || member.role) : id;
+        }),
         x1: drawn.origin[0] + drawn.along[0] * from, y1: drawn.origin[1] + drawn.along[1] * from,
         x2: drawn.origin[0] + drawn.along[0] * to, y2: drawn.origin[1] + drawn.along[1] * to,
         // Un arbre vu en bout n'est pas un trait : c'est un point, et le

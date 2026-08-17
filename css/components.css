@@ -284,3 +284,9 @@ body.linear-objective .transmission-filters { display: none; }
   color: var(--muted);
 }
 .configuration-summary strong { font-size: var(--font-lg); color: var(--ink); }
+
+/* Ø primitif éditable : le message dit quel nombre de dents entier porte le
+   diamètre demandé, et lequel est réellement atteignable — plutôt que
+   d'arrondir en silence. */
+.sizing-note { display: block; margin-top: .2rem; font-size: .72rem; color: var(--muted); }
+.sizing-note.is-conflict { color: var(--warning); }

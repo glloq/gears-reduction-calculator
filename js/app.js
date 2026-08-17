@@ -37,6 +37,7 @@
     // Éditeur d'étages : ré-analyse locale d'une solution sélectionnée.
     var stageEditor = new GearApp.ui.StageEditor(GearApp.eventBus, 'stageEditor', explorer);
     stageEditor.bind();
+    GearApp._stageEditor = stageEditor;
 
     // Comparaison de solutions épinglées (onglet Comparer).
     var comparePanel = new GearApp.ui.ComparePanel(GearApp.eventBus, 'compareSolutionsPanel', explorer);

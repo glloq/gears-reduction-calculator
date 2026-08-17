@@ -1371,3 +1371,60 @@ test('the point of view is a control, not a decoration (§28)', async ({ page })
 
   expect(errors).toEqual([]);
 });
+
+test('what turns as one block lights up as one block (§ corps rigides)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Train composé : la roue menée de l'étage 1 et le pignon menant de l'étage 2
+  // sont sur le même arbre. Rien de visible ne le disait.
+  await mount(page, ['spur', 'helical']);
+  await showView(page, 'teeth');
+
+  const bodies = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    return Array.from(svg.querySelectorAll('.train-wheel'))
+      .map(g => g.dataset.member + '→' + g.dataset.body);
+  });
+  expect(bodies.length).toBe(4);
+  // Deux organes partagent un corps, les deux autres non.
+  const perBody = bodies.reduce((count, entry) => {
+    const body = entry.split('→')[1];
+    count[body] = (count[body] || 0) + 1;
+    return count;
+  }, {});
+  expect(Object.values(perBody).filter(n => n === 2).length, 'un arbre porte deux roues').toBe(1);
+
+  // Survoler l'un éclaire l'autre, ainsi que leur arbre — et rien d'autre.
+  const shared = Object.keys(perBody).find(body => perBody[body] === 2);
+  const lit = await page.evaluate(body => {
+    const svg = document.querySelector('#svgContainer svg');
+    const part = svg.querySelector(`.train-wheel[data-body="${body}"] path, .train-wheel[data-body="${body}"] circle`);
+    const box = part.getBoundingClientRect();
+    part.dispatchEvent(new MouseEvent('mousemove', { bubbles: true,
+      clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }));
+    return {
+      wheels: Array.from(svg.querySelectorAll('.train-wheel.rigid-highlight')).map(g => g.dataset.member),
+      shafts: Array.from(svg.querySelectorAll('.train-shaft.rigid-highlight')).map(g => g.dataset.shaft)
+    };
+  }, shared);
+  expect(lit.wheels.length, 'les deux roues solidaires').toBe(2);
+  expect(lit.shafts, 'et leur arbre, lui seul').toEqual([shared]);
+
+  // Quitter le dessin éteint tout : un surlignage qui reste allumé ment.
+  const after = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    svg.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
+    return svg.querySelectorAll('.rigid-highlight').length;
+  });
+  expect(after).toBe(0);
+
+  // Et le texte le dit aussi, pour qui ne survole pas : la solidarité est une
+  // information, pas seulement un effet visuel.
+  const said = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    return Array.from(svg.querySelectorAll('.train-wheel [data-hud], .train-wheel'))
+      .map(g => g.dataset.hud || '').filter(Boolean).join('\n---\n');
+  });
+  expect(said).toMatch(/Solidaire de/);
+
+  expect(errors).toEqual([]);
+});

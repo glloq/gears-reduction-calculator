@@ -394,3 +394,20 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .viewer-projection-label { font-size: var(--font-sm); color: var(--muted); align-self: center; }
 .viewer-projection-label.is-disabled { opacity: .5; }
 #viewerProjection:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Ce qui tourne d'un bloc. Deux roues montées sur le même arbre n'étaient
+   reliées par rien de visible ; le survol les éclaire ensemble, arbre compris.
+   C'est une aide à la lecture, pas une sélection : le trait s'épaissit, la
+   couleur ne change pas. */
+.train-wheel.rigid-highlight .tooth-profile,
+.train-wheel.rigid-highlight .gear-profile,
+.train-wheel.rigid-highlight .pulley-profile,
+.train-wheel.rigid-highlight .ring-profile-top,
+.train-wheel.rigid-highlight .ring-profile-bottom,
+.train-wheel.rigid-highlight .worm-body,
+.train-wheel.rigid-highlight .cone-body,
+.train-wheel.rigid-highlight .cone-face,
+.train-wheel.rigid-highlight .oblique-body { stroke-width: 1.1; }
+.planet-carrier.rigid-highlight path { stroke-width: 1.8; }
+.train-shaft.rigid-highlight .shaft-body { stroke-width: 1.8; opacity: 1; }
+.train-shaft.rigid-highlight .shaft-centre { stroke-width: .9; opacity: 1; }

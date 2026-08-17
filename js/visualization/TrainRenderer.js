@@ -117,6 +117,7 @@
     this._fit(keepView);
     this._bindViewport();
     this._bindStageInteractions();
+    this._bindRigidBodies();
     this._refreshDetail(true);
     this.setAnimationAngle(0);
     if (this._animating) { this._animating = false; this.toggleAnimation(); }
@@ -195,6 +196,8 @@
     // porte-satellites) puis rotation propre.
     var orbit = null;
     var host = n('g', { class: 'train-wheel ' + roleClass, 'data-role': wheel.role });
+    if (wheel.memberId) host.setAttribute('data-member', wheel.memberId);
+    if (wheel.bodyId) host.setAttribute('data-body', wheel.bodyId);
     if (Number.isFinite(wheel.orbit) && wheel.orbit > 0) {
       orbit = n('g', { class: 'planet-orbit' });
       orbit.appendChild(n('g', { class: 'planet-seat', transform: 'translate(' + finite(wheel.cx, 0).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')' }));
@@ -224,7 +227,8 @@
       (wheel.teeth ? ' — Z=' + wheel.teeth : '') +
       '\nØ primitif ' + fmt(wheel.pitchD, 2) + ' mm' +
       (wheel.kind === 'gear' ? '\nØ tête ' + fmt(wheel.outsideD, 2) + ' mm · Ø pied ' + fmt(wheel.rootD, 2) + ' mm' : '') +
-      '\nVitesse relative ' + fmt(wheel.speed, 3) + '×'));
+      '\nVitesse relative ' + fmt(wheel.speed, 3) + '×' +
+      this._solidarity(wheel)));
 
     // Un cône ne peut pas tourner dans le plan du dessin, mais son mouvement
     // doit rester visible : un repère de phase tourne sur sa grande face.
@@ -241,6 +245,23 @@
     if (wheel.kind === 'rack') this._linear.push(record);
     this._wheels.push(record);
     return host;
+  };
+
+  /**
+   * « Solidaire de : … ». Un train composé pose sans arrêt la question de
+   * savoir ce qui tourne d'un bloc, et le dessin n'y répondait pas : deux
+   * roues montées sur le même arbre n'étaient reliées par rien de visible.
+   * La réponse existe dans le graphe mécanique — on ne fait que la dire.
+   */
+  TrainRenderer.prototype._solidarity = function (wheel) {
+    var body = (this.model && this.model.shafts || []).filter(function (shaft) {
+      return shaft.id === wheel.bodyId;
+    })[0];
+    if (!body || body.memberIds.length < 2) return '';
+    var others = body.memberNames.filter(function (name, index) {
+      return body.memberIds[index] !== wheel.memberId;
+    });
+    return others.length ? '\nSolidaire de ' + others.join(', ') : '';
   };
 
   /** (Re)construit le corps d'une roue pour un niveau de détail donné. */
@@ -315,6 +336,8 @@
   TrainRenderer.prototype._drawCarrier = function (group, entry) {
     var carrier = entry.carrier;
     var host = n('g', { class: 'planet-carrier' });
+    if (carrier.bodyId) host.setAttribute('data-body', carrier.bodyId);
+    if (carrier.memberId) host.setAttribute('data-member', carrier.memberId);
     var d = '';
     for (var i = 0; i < carrier.count; i++) {
       var a = 2 * Math.PI * i / carrier.count;
@@ -713,6 +736,39 @@
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); self.selectStage(index); }
       });
     });
+  };
+
+  /**
+   * Éclairer ce qui tourne d'un bloc.
+   *
+   * Deux roues montées sur le même arbre n'étaient reliées par rien de
+   * visible : sur un train composé, savoir laquelle entraîne laquelle demandait
+   * de relire les étages un à un. Le graphe mécanique connaît les corps
+   * rigides ; il suffit de les rendre lisibles au survol, sans rien recalculer.
+   *
+   * Le surlignage est purement visuel et ne remplace pas la sélection : on
+   * survole pour comprendre, on clique pour choisir.
+   */
+  TrainRenderer.prototype._bindRigidBodies = function () {
+    var self = this;
+    function light(bodyId) {
+      if (self._litBody === bodyId) return;
+      self._litBody = bodyId;
+      Array.prototype.forEach.call(self.svg.querySelectorAll('[data-body]'), function (part) {
+        part.classList.toggle('rigid-highlight', !!bodyId && part.dataset.body === bodyId);
+      });
+      Array.prototype.forEach.call(self.svg.querySelectorAll('.train-shaft'), function (shaft) {
+        shaft.classList.toggle('rigid-highlight', !!bodyId && shaft.dataset.shaft === bodyId);
+      });
+    }
+    // Un seul écouteur sur le SVG : un par organe ne survivrait pas au re-rendu
+    // et coûterait cher sur un train de six étages.
+    this.svg.addEventListener('mousemove', function (event) {
+      var owner = event.target.closest ? event.target.closest('[data-body], .train-shaft') : null;
+      light(owner ? (owner.dataset.body || owner.dataset.shaft) : null);
+    });
+    this.svg.addEventListener('mouseleave', function () { light(null); });
+    this._litBody = null;
   };
 
   TrainRenderer.prototype.getStageElement = function (index) {
