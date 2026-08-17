@@ -190,9 +190,12 @@
         if (self.viewport && self.viewport.dragged) { self.viewport.dragged = false; return; }
         self.selectStage(item.index);
       });
+      // §7 : le double-clic cadre l'étage, dans les trois vues (voir
+      // TrainRenderer). L'édition reste accessible depuis l'inspecteur.
       group.addEventListener('dblclick', function (event) {
         event.stopPropagation();
-        self.container.dispatchEvent(new CustomEvent('viewer:stage-edit', { detail: { index: item.index } }));
+        self.selectStage(item.index);
+        self.focusStage(item.index);
       });
       group.addEventListener('keydown', function (event) {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); self.selectStage(item.index); }
@@ -323,6 +326,11 @@
 
   GeometryRenderer.prototype.getStageElement = function (index) {
     return this.svg ? this.svg.querySelector('.geometry-layer .geometry-stage[data-stage="' + index + '"]') : null;
+  };
+
+  /** §7 : cadrer un étage se fait pareil dans les trois vues. */
+  GeometryRenderer.prototype.focusStage = function (index) {
+    return !!this.viewport && this.viewport.focusElement(this.getStageElement(index));
   };
 
   GeometryRenderer.prototype._resolvedStyle = function () {

@@ -228,21 +228,28 @@
 .geometry-stage.selected .stage-label { fill: var(--accent); }
 .train-stage.selected, .kinematic-stage.selected, .geometry-stage.selected { filter: drop-shadow(0 0 4px var(--accent)); }
 
-/* Carte d'inspection d'étage (coin du conteneur), partagée par les trois vues */
+/* §6 : l'inspecteur d'étage est DOCKÉ à côté du dessin, partagé par les trois
+   vues. Il était posé dessus, en haut à droite : sur un train composé il
+   masquait des étages — parfois celui qu'on venait de choisir — et absorbait
+   les clics destinés au dessin. Docké, il rétrécit le dessin au lieu de le
+   cacher, et le dessin reprend toute la largeur dès qu'on le referme. */
 .svg-container { position: relative; }
+.viewer-stage { display: flex; align-items: stretch; gap: var(--sp-3); }
+.viewer-stage > .svg-container { flex: 1 1 auto; min-width: 0; }
 .stage-inspector {
-  position: absolute;
-  top: var(--sp-3);
-  right: var(--sp-3);
-  z-index: 5;
-  max-width: 250px;
+  flex: 0 0 clamp(210px, 22%, 270px);
+  align-self: stretch;
+  overflow-y: auto;
   padding: var(--sp-3);
   background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
   font-size: var(--font-sm);
 }
+/* Refermé, il ne doit pas garder sa colonne : `hidden` seul serait annulé par
+   une règle d'affichage plus spécifique. */
+.stage-inspector[hidden] { display: none; }
 .stage-inspector header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .stage-inspector header .btn-small { padding: 0 6px; min-height: 22px; }
 .inspector-grid { display: grid; gap: 3px; margin-bottom: var(--sp-2); }
@@ -272,7 +279,10 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 /* ===================== Responsive ===================== */
 
 @media (max-width: 700px) {
-  .stage-inspector { max-width: calc(100vw - 24px); }
+  /* Trop étroit pour deux colonnes : l'inspecteur passe sous le dessin, où il
+     reste lu d'un coup d'œil sans lui voler sa largeur. */
+  .viewer-stage { flex-direction: column; }
+  .stage-inspector { flex: 0 0 auto; max-height: 40vh; }
   .train-svg, .geometry-svg, .kinematic-svg { min-height: 300px; }
   .display-menu-panel { right: auto; left: 0; }
 }
@@ -299,6 +309,11 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .display-presets button.active {
   background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;
 }
+
+/* §7 : les trois cadrages. Un bouton désactivé reste lisible — il annonce ce
+   qui manque (un étage sélectionné, une vue à l'échelle), et son title le dit. */
+.view-framing button:disabled { opacity: .45; cursor: not-allowed; }
+.view-framing button:disabled:hover { color: var(--muted); }
 
 /* ----- §4 : le HUD de survol, commun aux trois vues ----- */
 

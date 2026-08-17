@@ -569,7 +569,15 @@
               <label data-views="teeth geometry kinematic"><input type="checkbox" data-overlay="labels" checked> Labels</label>
             </div>
           </details>
-          <button id="viewerReset" class="btn-small" title="Réinitialiser la vue" aria-label="Recentrer">Recentrer</button>
+          <!-- §7 : les trois cadrages nommés par ce qu'ils donnent. « Recentrer »
+               ne disait pas sur quoi ; « Tout voir » le dit. « 1:1 » n'a de sens
+               que si le dessin est en millimètres, donc pas en Cinématique :
+               le bouton s'y désactive plutôt que de mentir sur l'échelle. -->
+          <div class="segmented view-framing" role="group" aria-label="Cadrage">
+            <button id="viewerReset" type="button" class="btn-small" title="Cadrer la transmission entière">Tout voir</button>
+            <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>
+            <button id="viewerActualSize" type="button" class="btn-small" title="Échelle réelle : un millimètre dessiné occupe un millimètre d’écran">1:1</button>
+          </div>
           <details class="export-menu">
             <summary>Exporter</summary>
             <div>
@@ -586,7 +594,14 @@
              une roue à la souris — impossible au clavier. -->
         <p id="solutionIdentity" class="solution-identity" aria-live="polite" hidden></p>
         <div id="stageNav" class="stage-nav" role="group" aria-label="Étage à inspecter" hidden></div>
-        <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+        <!-- §6 : l'inspecteur est DOCKÉ à côté du dessin. Posé dessus, il
+             masquait la pièce qu'on venait de choisir, et sur un train
+             composé il recouvrait les étages voisins — jusqu'à intercepter
+             le clic suivant. -->
+        <div class="viewer-stage">
+          <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+          <aside id="stageInspector" class="stage-inspector" aria-live="polite" hidden></aside>
+        </div>
         <!-- §22, §23 : ce que la vue courante montre à l'échelle, et ce qu'elle
              ne fait que suggérer. Un schéma symbolique lu comme un plan coté
              est une source d'erreur ; la vue le dit elle-même. -->

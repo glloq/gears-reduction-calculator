@@ -127,6 +127,46 @@
     return rect.width / this.state[2];
   };
 
+  /**
+   * §7 : cadrer un élément du dessin, sans que le renderer ait à convertir des
+   * boîtes lui-même. Les trois vues appellent la même chose, si bien qu'un
+   * étage se cadre pareil en Denture, en Géométrie et en Cinématique.
+   *
+   * `getBBox()` échoue sur un élément non mesurable (détaché, display:none) :
+   * on renvoie simplement `false` plutôt que d'interrompre l'interaction.
+   */
+  ViewportController.prototype.focusElement = function (element, padding) {
+    if (!element || !element.getBBox) return false;
+    var box;
+    try { box = element.getBBox(); } catch (error) { return false; }
+    if (!box || !(box.width > 0) || !(box.height > 0)) return false;
+    this.focus(box, padding);
+    return true;
+  };
+
+  /** Un millimètre CSS, en pixels : 96 dpi est la définition de référence. */
+  var PX_PER_MM = 96 / 25.4;
+
+  /**
+   * §7 : échelle réelle — un millimètre dessiné occupe un millimètre d'écran.
+   *
+   * Cela n'a de sens que si le dessin est EN millimètres : c'est le cas de la
+   * Denture et de la Géométrie, pas de la vue Cinématique, qui est symbolique.
+   * L'appelant décide donc de l'offrir ou non ; ce contrôleur, lui, ne peut pas
+   * savoir ce que vaut son unité. On garde le centre du cadrage courant, parce
+   * que passer à l'échelle réelle sert à juger une taille, pas à se déplacer.
+   */
+  ViewportController.prototype.actualSize = function () {
+    var rect = this.svg ? this.svg.getBoundingClientRect() : null;
+    if (!rect || !rect.width || !rect.height) return false;
+    var width = this._clampWidth(rect.width / PX_PER_MM);
+    var height = width * this.state[3] / this.state[2];
+    this.state = [this.state[0] + (this.state[2] - width) / 2,
+      this.state[1] + (this.state[3] - height) / 2, width, height];
+    this._apply();
+    return true;
+  };
+
   ViewportController.prototype._on = function (target, type, handler, options) {
     target.addEventListener(type, handler, options);
     this._listeners.push([target, type, handler, options]);

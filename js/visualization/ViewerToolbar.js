@@ -84,7 +84,7 @@
     this.inspector = new GearStageInspector.Inspector(container, {
       registry: GearTransmissionRegistry,
       onEdit: function (index) { self.container.dispatchEvent(new CustomEvent('viewer:stage-edit', { detail: { index: index } })); },
-      onClose: function () { self.selectedStage = -1; }
+      onClose: function () { self.selectedStage = -1; self._syncFraming(); }
     });
   }
 
@@ -103,7 +103,36 @@
     this._applyState(rendered);
     this._renderFidelity(rendered);
     this._syncZoomTier();
+    this._syncFraming();
     return rendered;
+  };
+
+  /**
+   * §7 : les trois cadrages disent ce qu'ils peuvent faire, à l'instant présent.
+   *
+   * « Cadrer l'étage » sans étage sélectionné, et « 1:1 » sur un schéma
+   * symbolique, sont deux boutons qui ne peuvent pas tenir leur promesse. Les
+   * laisser cliquables et sans effet serait la même faute que les cartes sans
+   * effet déjà retirées ailleurs : ils se désactivent, en disant pourquoi.
+   */
+  ViewerToolbar.prototype._syncFraming = function () {
+    var focus = document.getElementById('viewerFocus');
+    if (focus) {
+      var selected = this.selectedStage >= 0;
+      focus.disabled = !selected;
+      focus.title = selected ? 'Cadrer l’étage ' + (this.selectedStage + 1)
+        : 'Sélectionnez d’abord un étage sur le dessin';
+    }
+    var actual = document.getElementById('viewerActualSize');
+    if (actual) {
+      // La Cinématique n'est pas en millimètres : « 1:1 » n'y voudrait rien dire.
+      var metric = this.currentView !== 'kinematic';
+      actual.disabled = !metric;
+      actual.title = metric
+        ? 'Échelle réelle : un millimètre dessiné occupe un millimètre d’écran'
+        : 'Le schéma cinématique est symbolique : il n’a pas d’échelle réelle';
+    }
+    return this;
   };
 
   /**
@@ -357,6 +386,8 @@
         self.container.dispatchEvent(new CustomEvent('viewer:animation-changed', { detail: { mode: self.animationMode } }));
       }
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();
+      if (event.target.id === 'viewerFocus' && renderer.focusStage) renderer.focusStage(self.selectedStage);
+      if (event.target.id === 'viewerActualSize' && renderer.viewport) renderer.viewport.actualSize();
     });
     controls.addEventListener('change', function (event) {
       if (event.target.id === 'viewerSpeed') {
@@ -374,6 +405,7 @@
     this.container.addEventListener('viewer:stage-selected', function (event) {
       self.selectedStage = event.detail.index;
       self.inspector.show(event.detail.index);
+      self._syncFraming();
     });
     this._applyOverlayClasses();
   };

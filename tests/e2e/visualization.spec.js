@@ -724,3 +724,126 @@ test('no member of the Geometry view stays mute, and no decoration steals the ho
   expect(throughDecoration.read.length).toBeGreaterThan(2);
   expect(errors).toEqual([]);
 });
+
+test('the three framings do what they promise, and say so when they cannot (§7)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'helical', 'worm']);
+  await showView(page, 'geometry');
+  const width = () => page.evaluate(() => Number(document.querySelector('#svgContainer svg')
+    .getAttribute('viewBox').split(/\s+/)[2]));
+
+  const whole = await width();
+
+  // « Cadrer l'étage » ne promet rien tant qu'aucun étage n'est choisi.
+  const focus = page.locator('#viewerFocus');
+  await expect(focus).toBeDisabled();
+  await expect(focus).toHaveAttribute('title', /Sélectionnez/);
+
+  await page.locator('#svgContainer .geometry-layer .geometry-stage[data-stage="1"]').click();
+  await expect(focus).toBeEnabled();
+  await expect(focus).toHaveAttribute('title', /étage 2/);
+  await focus.click();
+  const framed = await width();
+  expect(framed, 'cadrer un étage rapproche').toBeLessThan(whole);
+
+  await page.locator('#viewerReset').click();
+  expect(await width()).toBeCloseTo(whole, 1);
+
+  // 1:1 : un millimètre dessiné pour un millimètre d'écran, dans les vues
+  // métriques seulement.
+  const actual = page.locator('#viewerActualSize');
+  await expect(actual).toBeEnabled();
+  await actual.click();
+  const real = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const drawn = Number(svg.getAttribute('viewBox').split(/\s+/)[2]);
+    return { drawn, px: svg.getBoundingClientRect().width };
+  });
+  expect(real.px / real.drawn).toBeCloseTo(96 / 25.4, 1);
+
+  // La Cinématique est symbolique : le bouton s'y désactive plutôt que de
+  // prétendre une échelle que le schéma n'a pas.
+  await showView(page, 'kinematic');
+  await expect(actual).toBeDisabled();
+  await expect(actual).toHaveAttribute('title', /symbolique/);
+  await showView(page, 'teeth');
+  await expect(actual).toBeEnabled();
+
+  expect(errors).toEqual([]);
+});
+
+test('a double-click frames the stage it points at, in all three views (§7)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'helical', 'planetary']);
+  // Le même étage apparaît dans plusieurs couches de la vue Géométrie (dessin,
+  // cotes, alertes) : on visait ici la pièce, pas ses annotations.
+  const selector = { teeth: '.train-stage', geometry: '.geometry-layer .geometry-stage',
+    kinematic: '.kinematic-stage' };
+
+  for (const view of ['teeth', 'geometry', 'kinematic']) {
+    await showView(page, view);
+    const width = () => page.evaluate(() => Number(document.querySelector('#svgContainer svg')
+      .getAttribute('viewBox').split(/\s+/)[2]));
+    const whole = await width();
+    await page.locator(`#svgContainer ${selector[view]}[data-stage="2"]`).dblclick();
+    expect(await width(), view).toBeLessThan(whole);
+    // Le double-clic sélectionne aussi : cadrer sans sélectionner laisserait
+    // l'inspecteur parler d'un autre étage que celui qu'on regarde.
+    await expect(page.locator(`#svgContainer ${selector[view]}[data-stage="2"]`)).toHaveClass(/selected/);
+    await page.locator('#viewerReset').click();
+  }
+  expect(errors).toEqual([]);
+});
+
+test('the inspector is docked beside the drawing, never over it (§6)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mount(page, ['spur', 'helical', 'planetary']);
+  await showView(page, 'teeth');
+
+  const layout = () => page.evaluate(() => {
+    const drawing = document.getElementById('svgContainer').getBoundingClientRect();
+    const panel = document.getElementById('stageInspector');
+    const box = panel.getBoundingClientRect();
+    return { hidden: panel.hidden, host: panel.parentElement.className,
+      drawingWidth: Math.round(drawing.width), panelWidth: Math.round(box.width),
+      // Un panneau docké commence là où le dessin s'arrête ; posé dessus, il
+      // empiéterait.
+      overlaps: !panel.hidden && box.x < drawing.x + drawing.width - 1 };
+  });
+
+  const closed = await layout();
+  expect(closed.hidden).toBe(true);
+  expect(closed.host, 'l’inspecteur vit à côté du dessin, pas dedans').toContain('viewer-stage');
+
+  await page.locator('#svgContainer .train-stage[data-stage="1"] .train-wheel').first().click();
+  await expect(page.locator('#stageInspector')).toBeVisible();
+  const open = await layout();
+  expect(open.overlaps, 'l’inspecteur ne doit rien recouvrir').toBe(false);
+  expect(open.panelWidth).toBeGreaterThan(150);
+  expect(open.drawingWidth, 'le dessin rétrécit au lieu d’être caché')
+    .toBeLessThan(closed.drawingWidth);
+
+  // Le dessin reste entièrement cliquable pendant que l'inspecteur est ouvert :
+  // c'est ce qui manquait quand la carte flottait par-dessus.
+  const reachable = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .train-stage'))
+    .map(stage => {
+      const b = stage.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.x + 4, b.y + b.height / 2);
+      return !(hit && hit.closest('#stageInspector'));
+    }));
+  expect(reachable.every(Boolean), 'aucun étage masqué par l’inspecteur').toBe(true);
+
+  // Il survit à un changement de vue et à un nouveau rendu — les renderers
+  // vident le conteneur SVG, mais l'inspecteur n'y est plus.
+  await showView(page, 'geometry');
+  await expect(page.locator('#stageInspector')).toBeVisible();
+  await expect(page.locator('#stageInspector')).toHaveCount(1);
+
+  // Refermé, il rend sa colonne au dessin.
+  await page.locator('#stageInspector button[aria-label="Fermer"]').click();
+  expect((await layout()).drawingWidth).toBe(closed.drawingWidth);
+  // Et « Cadrer l'étage » redevient une promesse qu'on ne peut plus tenir.
+  await expect(page.locator('#viewerFocus')).toBeDisabled();
+  expect(errors).toEqual([]);
+});

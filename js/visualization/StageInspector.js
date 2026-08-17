@@ -122,9 +122,16 @@
   Inspector.prototype.setSolution = function (solution, scene) { this.solution = solution; this.scene = scene || null; return this; };
   Inspector.prototype._element = function () {
     if (this.element && this.element.isConnected) return this.element;
+    // §6 : la page fournit un emplacement DOCKÉ, à côté du dessin. L'inspecteur
+    // s'y installe plutôt que de se créer dans le conteneur SVG : une carte
+    // flottante masquait la pièce qu'on venait de choisir, et le conteneur est
+    // vidé à chaque rendu, ce qui obligeait à la rattacher sans cesse.
+    var docked = typeof document !== 'undefined' ? document.getElementById('stageInspector') : null;
+    if (docked) { this.element = docked; return docked; }
     if (this.element) { this.container.appendChild(this.element); return this.element; }
-    // L'identifiant est un contrat public : les e2e et les scripts d'intégration
-    // ciblent #stageInspector / #stageInspectorEdit, quelle que soit la vue.
+    // Repli : monté sur un conteneur nu (harnais de test, intégration), il se
+    // crée son propre panneau. L'identifiant est un contrat public — les e2e et
+    // les scripts ciblent #stageInspector / #stageInspectorEdit.
     var card = document.createElement('aside'); card.id = 'stageInspector'; card.className = 'stage-inspector';
     card.hidden = true; card.setAttribute('aria-live', 'polite');
     this.container.appendChild(card); this.element = card; return card;

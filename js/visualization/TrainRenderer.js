@@ -632,9 +632,14 @@
         event.stopPropagation();
         self.selectStage(index);
       });
+      // §7 : le double-clic CADRE l'étage. C'était le geste d'édition, mais
+      // dans un dessin qu'on explore c'est « montre-moi ça de plus près » qui
+      // revient à chaque instant, alors que modifier un étage est un acte
+      // délibéré — et l'inspecteur porte déjà le bouton qui le fait.
       group.addEventListener('dblclick', function (event) {
         event.stopPropagation();
-        self._requestEdit(index);
+        self.selectStage(index);
+        self.focusStage(index);
       });
       group.addEventListener('keydown', function (event) {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); self.selectStage(index); }
@@ -657,13 +662,7 @@
 
   /** Cadrage sur un étage : utilisé par la sélection croisée entre vues. */
   TrainRenderer.prototype.focusStage = function (index) {
-    var element = this.getStageElement(index);
-    if (!element || !this.viewport) return;
-    try { this.viewport.focus(element.getBBox()); } catch (e) { /* garde : élément non mesurable */ }
-  };
-
-  TrainRenderer.prototype._requestEdit = function (index) {
-    this.container.dispatchEvent(new CustomEvent('viewer:stage-edit', { detail: { index: index } }));
+    return !!this.viewport && this.viewport.focusElement(this.getStageElement(index));
   };
 
   // ===== Exports autonomes (jetons résolus) =====
