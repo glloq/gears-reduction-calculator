@@ -798,6 +798,72 @@ test('the force arrows come from the mesh, not from a fixed rosette (§9 de l’
   expect(errors).toEqual([]);
 });
 
+test('the drawing is painted from the back, and can be seen from the other side (§10)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'spur', 'bevel']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+  const flip = page.locator('#viewerOpposite');
+
+  // Peinture du fond vers l'avant : les positions 3D étaient justes, mais le
+  // SVG était peint dans l'ordre des étages — de biais, une roue du fond
+  // pouvait recouvrir celle qui est devant elle.
+  await select.selectOption('iso');
+  const painted = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    const depthOf = element => {
+      const record = renderer._wheels.filter(w => w.group === element)[0];
+      return record ? record.wheel.depth : null;
+    };
+    const stages = Array.from(document.querySelectorAll('#svgContainer .train-stage'));
+    return stages.map(stage => ({
+      wheels: Array.from(stage.querySelectorAll(':scope > .train-wheel')).map(depthOf),
+      nearest: Math.min.apply(null, Array.from(stage.querySelectorAll(':scope > .train-wheel')).map(depthOf))
+    }));
+  });
+  painted.forEach((stage, index) => {
+    stage.wheels.forEach((depth, i) => {
+      if (i === 0) return;
+      expect(depth, 'étage ' + index + ' : roue peinte devant une plus proche')
+        .toBeLessThanOrEqual(stage.wheels[i - 1] + 1e-9);
+    });
+  });
+  // Les étages, eux, gardent leur ordre : ils portent leurs alertes et leurs
+  // libellés, et les réordonner enterrerait le badge d'un étage sous la
+  // denture du voisin.
+  expect(painted.length).toBeGreaterThan(1);
+
+  // L'autre bord : le même mécanisme, regardé de l'autre côté.
+  const drawingOf = () => page.evaluate(() =>
+    window.__viewer.renderer().model.wheels.map(w => w.cx.toFixed(3) + ',' + w.cy.toFixed(3)).join('|'));
+  const before = await drawingOf();
+  await expect(flip).toHaveAttribute('aria-pressed', 'false');
+  await flip.click();
+  await expect(flip).toHaveAttribute('aria-pressed', 'true');
+  // La liste montre toujours la vue de référence : « Iso » et « Iso opposée »
+  // sont la même vue, prise des deux bords.
+  await expect(select).toHaveValue('iso');
+  const after = await drawingOf();
+  expect(after).not.toBe(before);
+  // Gauche et droite s'échangent, le haut ne bouge pas.
+  const mirrored = before.split('|').map((seat, index) => {
+    const [x, y] = seat.split(',').map(Number);
+    const [ox, oy] = after.split('|')[index].split(',').map(Number);
+    return Math.abs(x + ox) < 1e-3 && Math.abs(y - oy) < 1e-3;
+  });
+  expect(mirrored.every(Boolean), 'le dessin ne s’est pas retourné : ' + after).toBe(true);
+
+  // Et l'on revient d'où l'on vient.
+  await flip.click();
+  await expect(flip).toHaveAttribute('aria-pressed', 'false');
+  expect(await drawingOf()).toBe(before);
+
+  // La vue dépliée n'est pas une projection : elle n'a pas de bord.
+  await select.selectOption('unfolded');
+  await expect(flip).toBeDisabled();
+  expect(errors).toEqual([]);
+});
+
 test('the animation cadence follows the mode, the poses never do', async ({ page }) => {
   await mount(page, ['spur']);
   await showView(page, 'teeth');
@@ -838,12 +904,15 @@ test('the three views share one animation clock across view switches', async ({ 
   await mount(page, ['spur', 'helical']);
   await showView(page, 'teeth');
   await page.evaluate(() => { window.__viewer.renderer().setAnimationAngle(90); window.__viewer.animationAngle = 90; });
-  const teeth = await page.locator('.train-wheel .rotor').first().getAttribute('transform');
+  // La roue d'ENTRÉE, désignée par son membre : les roues sont peintes du fond
+  // vers l'avant, et « la première du document » n'est plus la première du
+  // mécanisme — c'était même une roue menée, qui tourne trois fois moins vite.
+  const teeth = await page.locator('.train-wheel[data-member="s0-input"] .rotor').getAttribute('transform');
   // Même horloge, donc même amplitude. Le signe, lui, dit de quel bout on
   // regarde l'axe, et n'a pas à être le même dans deux vues différentes.
   expect(teeth).toMatch(/^rotate\(-?90/);
   await showView(page, 'geometry');
-  expect(await page.locator('.index-rotor').first().getAttribute('transform')).toMatch(/rotate\(-?90/);
+  expect(await page.locator('.index-rotor[data-member="s0-input"]').getAttribute('transform')).toMatch(/rotate\(-?90/);
   await showView(page, 'kinematic');
   expect(await page.locator('.spin-mark').first().getAttribute('transform')).toMatch(/rotate\(90/);
 });
@@ -1875,8 +1944,11 @@ test('a wheel seen edge-on does not spin like a disc (§4 de l’audit)', async 
     renderer.projection = v;
     renderer.render(renderer.solution);
     const out = [];
-    Array.from(document.querySelectorAll('#svgContainer .train-wheel')).forEach((host, index) => {
-      const wheel = renderer.model.wheels[index];
+    // Les roues sont peintes du fond vers l'avant : leur ordre dans le document
+    // n'est plus celui du modèle. On les apparie donc par leur identifiant.
+    Array.from(document.querySelectorAll('#svgContainer .train-wheel')).forEach(host => {
+      const wheel = renderer.model.wheels.filter(w => w.memberId === host.dataset.member)[0];
+      if (!wheel) return;
       const rotor = host.querySelector('.rotor');
       const mark = host.querySelector('.phase-mark');
       const frames = [0, 90, 180, 270].map(angle => {
@@ -1936,8 +2008,10 @@ test('a wheel seen edge-on does not spin like a disc (§4 de l’audit)', async 
     renderer.setAnimationAngle(90);
     const pose = GearKinematicsEngine.pose(renderer.scene.kinematics, 90);
     return Array.from(document.querySelectorAll('#svgContainer .train-wheel'))
-      .map((host, index) => {
-        const wheel = renderer.model.wheels[index];
+      .map(host => {
+        // Appariement par identifiant : les roues sont peintes par profondeur.
+        const wheel = renderer.model.wheels.filter(w => w.memberId === host.dataset.member)[0];
+        if (!wheel) return {};
         const drawn = host.querySelector('.rotor').getAttribute('transform');
         return { presentation: wheel.presentation,
           spin: wheel.phaseBasis ? wheel.phaseBasis.spin : null,

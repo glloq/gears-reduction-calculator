@@ -110,6 +110,9 @@
     model.stages.forEach(function (entry, index) {
       viewport.appendChild(self._buildStage(entry, solution, index));
     });
+    // Du plus lointain au plus proche : le SVG peint dans l'ordre du document,
+    // qui était celui des étages — un ordre qui ne dit rien de la profondeur.
+    this._sortByDepth(viewport);
     this._drawIOChips(viewport, model);
 
     this.container.innerHTML = '';
@@ -371,6 +374,45 @@
       d += ' M 0 0 L ' + point[0].toFixed(2) + ' ' + point[1].toFixed(2);
     }
     return d.trim();
+  };
+
+  /**
+   * L'ordre de peinture, du plus lointain au plus proche.
+   *
+   * Les positions 3D étaient justes, mais le SVG était peint dans l'ordre des
+   * étages : de biais, une roue du fond pouvait recouvrir celle qui est devant
+   * elle, et le dessin devenait indéchiffrable dès qu'un train se croisait.
+   *
+   * Le tri se fait À L'INTÉRIEUR de chaque étage, entre ses roues. Les étages,
+   * eux, gardent leur ordre — celui du mécanisme —, parce qu'ils portent aussi
+   * leurs annotations : badges d'alerte, libellés, cotes. Les réordonner
+   * enterrerait l'alerte d'un étage sous la denture du voisin, et une alerte
+   * qu'on ne peut pas atteindre ne sert à rien. Les faire remonter dans un
+   * calque d'annotations propre reste à faire ; d'ici là, le tri s'arrête où
+   * il commencerait à cacher ce qui doit se lire.
+   */
+  TrainRenderer.prototype._sortByDepth = function (viewport) {
+    function reorder(host, list, depthOf) {
+      if (list.length < 2) return;
+      // Les éléments triés sont contigus : on les réinsère devant leur suivant,
+      // pour ne pas les faire passer par-dessus les calques posés après eux.
+      var after = list[list.length - 1].nextSibling;
+      list.slice().sort(function (a, b) { return depthOf(b) - depthOf(a); })
+        .forEach(function (element) { host.insertBefore(element, after); });
+    }
+    var byElement = new Map();
+    this._wheels.forEach(function (record) { byElement.set(record.group, finite(record.wheel.depth, 0)); });
+
+    var stages = [];
+    Array.prototype.forEach.call(viewport.childNodes, function (node) {
+      if (node.classList && node.classList.contains('train-stage')) stages.push(node);
+    });
+    stages.forEach(function (stage) {
+      var wheels = Array.prototype.filter.call(stage.childNodes, function (node) {
+        return node.classList && node.classList.contains('train-wheel');
+      });
+      reorder(stage, wheels, function (element) { return byElement.get(element) || 0; });
+    });
   };
 
   /** Porte-satellites : bras reliant le centre à chaque satellite. */

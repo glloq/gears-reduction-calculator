@@ -437,10 +437,27 @@ test('an isometric view really is isometric', () => {
     assert.ok(Math.abs(angle(a, b) - 120) < 1e-6, 'paire ' + index + ' : ' + angle(a, b).toFixed(3) + '°');
   });
 
-  // Le regard suit la diagonale du cube, et le trièdre reste direct.
+  // Le regard suit la diagonale du cube…
   const gaze = unit([1, 1, 1]);
   gaze.forEach((c, i) => assert.ok(Math.abs(c - iso.w[i]) < 1e-9));
-  cross(iso.u, iso.v).forEach((c, i) => assert.ok(Math.abs(c - iso.w[i]) < 1e-9, 'trièdre direct'));
+});
+
+test('no view is the mirror image of another', () => {
+  // `v` porte le BAS de l'écran : la droite de l'écran croisée avec le HAUT
+  // doit donner le regard, donc u × v = −w. L'isométrie portait l'opposé — une
+  // image miroir du mécanisme, où les longueurs et les angles restaient justes
+  // mais où le sens apparent de rotation s'inversait et une hélice à droite se
+  // lisait à gauche. C'est invisible sur une roue seule, et faux dès qu'on
+  // compare deux vues.
+  Projection.VIEWS.forEach(view => {
+    const handed = cross(view.u, view.v);
+    const alignment = handed[0] * view.w[0] + handed[1] * view.w[1] + handed[2] * view.w[2];
+    assert.ok(alignment < -0.999, view.id + ' est une image miroir : u × v · w = ' + alignment.toFixed(3));
+    // Et la base reste orthonormée : une projection, pas une déformation.
+    assert.ok(Math.abs(Math.hypot(view.u[0], view.u[1], view.u[2]) - 1) < 1e-9, view.id + ' u');
+    assert.ok(Math.abs(Math.hypot(view.v[0], view.v[1], view.v[2]) - 1) < 1e-9, view.id + ' v');
+    assert.ok(Math.abs(view.u[0] * view.v[0] + view.u[1] * view.v[1] + view.u[2] * view.v[2]) < 1e-9, view.id + ' u·v');
+  });
 });
 
 test('a projection projects, and only the unfolded view restores lengths', () => {

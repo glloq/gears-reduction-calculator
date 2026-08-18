@@ -278,7 +278,25 @@
         select.appendChild(option);
       });
     }
-    select.value = this.projection || 'unfolded';
+    // Une vue opposée n'a pas d'entrée à elle : la liste montre sa vue de
+    // référence, et le bouton « autre bord » dit de quel côté on se trouve.
+    var current = this.projection || 'unfolded';
+    var known = typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine.view(current) : null;
+    var reversed = !!(known && known.id === current && (GearProjectionEngine.OPPOSITES || []).some(function (view) {
+      return view.id === current;
+    }));
+    select.value = reversed ? known.opposite : current;
+    var flip = document.getElementById('viewerOpposite');
+    if (flip) {
+      var flippable = this.currentView !== 'kinematic' && current !== 'unfolded';
+      flip.disabled = !flippable;
+      flip.setAttribute('aria-pressed', String(reversed));
+      flip.classList.toggle('active', reversed);
+      flip.title = !flippable
+        ? 'La vue dépliée n’a pas de bord : elle n’est pas une projection'
+        : reversed ? 'Revenir du côté ' + GearProjectionEngine.view(known.opposite).label.toLowerCase()
+          : 'Regarder le mécanisme de l’autre bord : l’autre extrémité des arbres, et les sens apparents de rotation inversés';
+    }
     // La Cinématique n'a pas de point de vue à choisir : elle est un schéma,
     // et le dire vaut mieux que de laisser croire qu'on a mal cliqué.
     var spatial = this.currentView !== 'kinematic';
@@ -622,6 +640,11 @@
         event.target.setAttribute('aria-pressed', String(self.animationMode === 'relative'));
         event.target.textContent = self.animationMode === 'relative' ? 'Cadence réelle' : 'Cadence pédagogique';
         self.container.dispatchEvent(new CustomEvent('viewer:animation-changed', { detail: { mode: self.animationMode } }));
+      }
+      if (event.target.id === 'viewerOpposite' && typeof GearProjectionEngine !== 'undefined') {
+        // Un seul bouton plutôt que huit entrées dans la liste : « De face » et
+        // « De derrière » sont la même coupe, prise de l'autre bord.
+        self.setProjection(GearProjectionEngine.opposite(self.projection));
       }
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();
       if (event.target.id === 'viewerFocus' && renderer.focusStage) renderer.focusStage(self.selectedStage);

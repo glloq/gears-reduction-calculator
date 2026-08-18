@@ -61,12 +61,58 @@
     // une axonométrie quelconque, où X et Z n'étaient pas interchangeables et
     // où deux directions se ressemblaient trop pour se distinguer.
     { id: 'iso', label: 'Iso', help: 'Projection isométrique : les trois axes se valent, et les changements d’axe se lisent d’un coup.',
-      u: [-ISO, 0, ISO], v: [ISO_V, -2 * ISO_V, ISO_V], w: unit([1, 1, 1]) }
+      // `u` portait l'opposé de la droite de l'écran : l'isométrie était une
+      // IMAGE MIROIR des trois vues orthographiques. Les longueurs et les
+      // angles y étaient justes — c'est bien une isométrie —, mais le sens
+      // apparent de rotation s'y inversait, et une hélice à droite s'y lisait
+      // à gauche. Le critère est le même pour les quatre vues : u × v = −w,
+      // parce que `v` porte le BAS de l'écran et non le haut.
+      u: [ISO, 0, -ISO], v: [ISO_V, -2 * ISO_V, ISO_V], w: unit([1, 1, 1]) }
   ];
 
+  /**
+   * Les vues opposées : le même mécanisme, regardé de l'autre bord.
+   *
+   * On ne les obtient pas en tournant le dessin : `u` — la droite de l'écran —
+   * change de sens en même temps que le regard, sans quoi on obtiendrait une
+   * image miroir plutôt que l'autre face. C'est ce qui rend ces vues utiles :
+   * elles montrent l'autre extrémité des arbres, et le sens apparent de
+   * rotation s'y inverse, comme il le fait dans la réalité.
+   */
+  var OPPOSITES = [
+    { id: 'rear', label: 'De derrière', opposite: 'front',
+      help: 'La même coupe, prise de l’autre bord : les sens apparents de rotation s’y inversent.',
+      u: [-1, 0, 0], v: [0, -1, 0], w: [0, 0, -1] },
+    { id: 'bottom', label: 'De dessous', opposite: 'top',
+      help: 'Le dessous du réducteur : ce que la vue de dessus cache.',
+      u: [-1, 0, 0], v: [0, 0, 1], w: [0, -1, 0] },
+    { id: 'side-far', label: 'En bout (autre extrémité)', opposite: 'side',
+      help: 'Le regard suit l’arbre d’entrée, mais depuis son autre extrémité.',
+      u: [0, 0, 1], v: [0, -1, 0], w: [-1, 0, 0] },
+    { id: 'iso-rear', label: 'Iso opposée', opposite: 'iso',
+      help: 'La même isométrie, prise du coin opposé du cube.',
+      u: [-ISO, 0, ISO], v: [ISO_V, -2 * ISO_V, ISO_V], w: unit([-1, -1, -1]) }
+  ];
+  VIEWS[0].opposite = 'rear';
+  VIEWS[1].opposite = 'bottom';
+  VIEWS[2].opposite = 'side-far';
+  VIEWS[3].opposite = 'iso-rear';
+
+  /** Toutes les vues, opposées comprises : `VIEWS` reste la liste proposée. */
+  var ALL = VIEWS.concat(OPPOSITES);
+
   function view(id) {
-    for (var i = 0; i < VIEWS.length; i++) if (VIEWS[i].id === id) return VIEWS[i];
+    for (var i = 0; i < ALL.length; i++) if (ALL[i].id === id) return ALL[i];
     return VIEWS[0];
+  }
+
+  /**
+   * L'autre bord de la même vue, ou l'identifiant reçu s'il n'y en a pas — la
+   * vue dépliée n'est pas une projection : elle n'a pas de bord à changer.
+   */
+  function opposite(id) {
+    for (var i = 0; i < ALL.length; i++) if (ALL[i].id === id) return ALL[i].opposite || id;
+    return id;
   }
 
   /** project(point, view) → [x, y] écran. */
@@ -212,7 +258,8 @@
     return best || view('front');
   }
 
-  return { VIEWS: VIEWS, view: view, project: project, presentation: presentation,
+  return { VIEWS: VIEWS, OPPOSITES: OPPOSITES, ALL: ALL, opposite: opposite,
+    view: view, project: project, presentation: presentation,
     foreshortening: foreshortening, facing: facing, depth: depth,
     auto: auto, engagement: engagement, penalty: penalty,
     FACE_LIMIT: FACE_LIMIT, PROFILE_LIMIT: PROFILE_LIMIT,
