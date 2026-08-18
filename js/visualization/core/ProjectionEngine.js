@@ -54,8 +54,14 @@
       u: [1, 0, 0], v: [0, 0, 1], w: [0, 1, 0] },
     { id: 'side', label: 'En bout', help: 'Le regard suit l’arbre d’entrée : c’est la vue des dentures et des entraxes.',
       u: [0, 0, -1], v: [0, -1, 0], w: [1, 0, 0] },
-    { id: 'iso', label: 'Iso', help: 'Projection axonométrique : les changements d’axe se lisent d’un coup.',
-      u: [ISO, 0, -ISO], v: [-ISO_V, -2 * ISO_V, -ISO_V], w: unit([1, -1, 1]) }
+    // ISOMÉTRIQUE au sens propre : le regard suit la diagonale du cube, si bien
+    // que les trois axes du monde se projettent à 120° les uns des autres et
+    // subissent le MÊME raccourcissement. La base précédente était orthonormée
+    // — donc une projection valable — mais séparait deux paires d'axes de 60° :
+    // une axonométrie quelconque, où X et Z n'étaient pas interchangeables et
+    // où deux directions se ressemblaient trop pour se distinguer.
+    { id: 'iso', label: 'Iso', help: 'Projection isométrique : les trois axes se valent, et les changements d’axe se lisent d’un coup.',
+      u: [-ISO, 0, ISO], v: [ISO_V, -2 * ISO_V, ISO_V], w: unit([1, 1, 1]) }
   ];
 
   function view(id) {
@@ -95,6 +101,29 @@
   function foreshortening(axis, id) {
     var v = typeof id === 'string' || id == null ? view(id) : id;
     return Math.abs(dot(unit(axis), v.w));
+  }
+
+  /**
+   * De quel BOUT on regarde cet axe : +1 s'il s'éloigne de l'œil, −1 s'il vient
+   * vers lui, 0 s'il est dans le plan de l'écran.
+   *
+   * `presentation` et `foreshortening` prennent tous deux la valeur ABSOLUE du
+   * produit scalaire — ce qui suffit à dire « de face » ou « de profil », et
+   * détruit au passage une information qu'on ne peut pas reconstruire ensuite :
+   * une roue vue de son autre extrémité tourne, à l'écran, dans l'autre sens.
+   * Sans ce signe, l'animation affirme le même sens de rotation des deux côtés
+   * du réducteur, ce qui est faux la moitié du temps.
+   */
+  function facing(axis, id) {
+    var v = typeof id === 'string' || id == null ? view(id) : id;
+    var alignment = dot(unit(axis), v.w);
+    return Math.abs(alignment) < 1e-9 ? 0 : (alignment > 0 ? 1 : -1);
+  }
+
+  /** La profondeur d'un point sous ce regard : ce qui permet de trier. */
+  function depth(point, id) {
+    var v = typeof id === 'string' || id == null ? view(id) : id;
+    return dot(point, v.w);
   }
 
   /**
@@ -184,7 +213,8 @@
   }
 
   return { VIEWS: VIEWS, view: view, project: project, presentation: presentation,
-    foreshortening: foreshortening, auto: auto, engagement: engagement, penalty: penalty,
+    foreshortening: foreshortening, facing: facing, depth: depth,
+    auto: auto, engagement: engagement, penalty: penalty,
     FACE_LIMIT: FACE_LIMIT, PROFILE_LIMIT: PROFILE_LIMIT,
     vector: { dot: dot, cross: cross, unit: unit, norm: norm } };
 });

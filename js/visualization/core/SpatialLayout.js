@@ -270,14 +270,81 @@
    * `options.view` impose une projection ; 'auto' demande celle qui perd le
    * moins du mécanisme ; sans rien, celle qui montre le plus de denture.
    */
+  /**
+   * Les SIÈGES d'une vraie projection : la position de chaque organe est
+   * l'image de sa position, et rien d'autre.
+   *
+   * C'est la différence avec le dépliage, et elle est entière. Une distance qui
+   * possède une composante en profondeur DOIT apparaître raccourcie ; la
+   * rétablir à sa valeur vraie produit un dessin qu'aucun point de vue ne peut
+   * voir. Ici, un entraxe oblique se dessine plus court qu'il n'est — et c'est
+   * la cote, jamais le trait, qui en donne la valeur.
+   */
+  function projectedSeats(layout, viewId) {
+    var view = Projection.view(viewId);
+    var byId = {}, shafts = {};
+    (layout.members || []).forEach(function (member) {
+      var xy = Projection.project(member.position, view);
+      byId[member.id] = { x: xy[0], y: xy[1], shaftId: member.shaftId,
+        depth: Projection.depth(member.position, view) };
+    });
+    (layout.shafts || []).forEach(function (shaft) {
+      var axis = layout.graph && layout.graph.byAxis[shaft.axisId];
+      var origin = axis ? Projection.project(axis.origin, view) : [0, 0];
+      var raw = axis ? Projection.project(axis.direction, view) : [0, 0];
+      var length = Math.hypot(raw[0], raw[1]);
+      shafts[shaft.id] = {
+        origin: origin,
+        // `along` reste UNITAIRE : c'est une direction d'écran, elle sert à
+        // orienter un corps vu par la tranche. Le raccourcissement, lui, est
+        // déjà dans les positions — l'appliquer deux fois les décalerait.
+        along: length < 1e-9 ? [0, 0] : [raw[0] / length, raw[1] / length],
+        foreshortened: length
+      };
+    });
+    return { view: view, byId: byId, shafts: shafts, mode: 'projected' };
+  }
+
+  /**
+   * Le repère de dessin d'un graphe — et le CHOIX qui vient avec.
+   *
+   * Deux systèmes coexistaient sous un même nom. `front`, `top`, `side` et
+   * `iso` nommaient des projections, mais toutes passaient ensuite par le
+   * dépliage : on en gardait les directions et on rétablissait les longueurs.
+   * « Dessus » n'était donc pas une vue de dessus, et « Iso » pas une
+   * isométrie — c'étaient des vues dépliées orientées par ces regards. Le
+   * mélange se voyait à un détail qui aurait dû alerter : l'entraxe dessiné
+   * restait égal à l'entraxe vrai jusque dans l'axonométrie, ce qui ne peut
+   * pas arriver dans une projection.
+   *
+   * Les deux systèmes sont maintenant nommés :
+   *
+   *   'unfolded'                le dessin d'ensemble de réducteur — angles de
+   *                             la projection, longueurs vraies. Fait pour
+   *                             COMPRENDRE une transmission d'un coup d'œil ;
+   *   'front' | 'top' | 'side' | 'iso'
+   *                             une projection orthographique, sans le moindre
+   *                             rétablissement. Fait pour MESURER.
+   */
   function frame(graph, options) {
     options = options || {};
     var spatial = build(graph);
-    var view = options.view && options.view !== 'auto' ? Projection.view(options.view)
-      : options.view === 'auto' ? autoView(spatial) : Projection.engagement((graph && graph.axes) || []);
-    return { graph: graph, spatial: spatial, view: view, seats: unfold(spatial, view.id) };
+    var asked = options.view || 'unfolded';
+    if (asked === 'unfolded' || asked === 'auto' || asked === '') {
+      // Le dépliage a tout de même besoin d'un regard : c'est lui qui donne
+      // les DIRECTIONS. `auto` retient la vue la moins perdante, à défaut
+      // celle qui montre le plus de denture.
+      var basis = asked === 'auto' ? autoView(spatial) : Projection.engagement((graph && graph.axes) || []);
+      var seats = unfold(spatial, basis.id);
+      seats.mode = 'unfolded';
+      return { graph: graph, spatial: spatial, view: basis, mode: 'unfolded', seats: seats };
+    }
+    var view = Projection.view(asked);
+    return { graph: graph, spatial: spatial, view: view, mode: 'projected',
+      seats: projectedSeats(spatial, view.id) };
   }
 
   return { build: build, project: project, unfold: unfold, autoView: autoView, frame: frame,
+    projectedSeats: projectedSeats,
     bounds: bounds, SHAFT_OVERHANG: SHAFT_OVERHANG };
 });

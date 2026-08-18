@@ -364,6 +364,9 @@
       wheels: wheels,
       shafts: shaftSegments(frame, scene),
       view: frame.view,
+      // 'unfolded' ou 'projected' : ce que la vue AFFIRME. La distinction
+      // décide de ce qu'on a le droit de lire sur le dessin.
+      mode: frame.mode,
       graph: frame.graph,
       spatial: frame.spatial,
       scene: scene,

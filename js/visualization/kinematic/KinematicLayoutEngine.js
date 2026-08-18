@@ -116,7 +116,22 @@
    */
   var LEGACY_VIEWS = { main: 'iso', orthogonal: 'top' };
 
+  /**
+   * Le schéma a UNE présentation, et elle ne se règle pas.
+   *
+   * Lui appliquer les caméras du modèle spatial — Face, Dessus, Iso — revenait
+   * à traiter sa disposition symbolique comme si c'était le vrai réducteur.
+   * Elle ne l'est pas : les écartements y sont constants, rien n'est à
+   * l'échelle, et c'est ce que la vue annonce elle-même. Changer de point de
+   * vue ne doit donc pas la réorganiser. Un repère fixe suffit, et il reste
+   * une base orthonormée du moteur de projection plutôt qu'une formule à soi.
+   */
+  var SCHEMATIC_VIEW = 'iso';
+
   function viewOf(name) {
+    if (!name || name === 'schematic' || name === 'unfolded' || name === 'auto') {
+      return Projection.view(SCHEMATIC_VIEW);
+    }
     return Projection.view(LEGACY_VIEWS[name] || name);
   }
 
@@ -186,19 +201,7 @@
     });
     if (current) current.role = 'OUTPUT';
 
-    if (projection === 'auto') {
-      // Un schéma symbolique n'a rien à mesurer : ce qui le rend utile est
-      // qu'on y distingue les arbres. Le critère d'encombrement, discutable
-      // pour un dessin coté, est ici le bon.
-      var candidates = Projection.VIEWS.map(function (view) { return view.id; });
-      projection = candidates.reduce(function (best, candidate) {
-        var candidatePoints = shafts.map(function (shaft) { return project(shaft, candidate, self.origin); });
-        var candidateScore = collisionScore(candidatePoints);
-        return !best || candidateScore < best.score ? { name: candidate, score: candidateScore } : best;
-      }, null).name;
-    } else {
-      projection = viewOf(projection).id;
-    }
+    projection = viewOf(projection).id;
     var projectedShafts = shafts.filter(function (shaft, index, all) {
       return all.findIndex(function (candidate) { return candidate.id === shaft.id; }) === index;
     }).map(function (shaft) {

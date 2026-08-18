@@ -1310,21 +1310,28 @@ test('a chain that changes axis is drawn as one, not as a row of front views', a
 
   // Changer de point de vue change le dessin, jamais la mécanique.
   const seen = {};
-  for (const view of ['front', 'top', 'side', 'iso']) {
+  for (const view of ['unfolded', 'front', 'top', 'side', 'iso']) {
     seen[view] = await page.evaluate(v => {
       const renderer = window.__viewer.renderer();
       renderer.projection = v;
       renderer.render(renderer.solution);
       const model = renderer.model;
-      return { view: model.view.id,
+      return { view: model.view.id, mode: model.mode,
         drawing: model.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'),
         world: model.spatial.members.map(m => m.id + ':' + m.position.join(',')).join('|'),
         centres: model.stages.filter(s => Number.isFinite(s.centerDistance)).map(s =>
           Math.hypot(s.wheels[1].cx - s.wheels[0].cx, s.wheels[1].cy - s.wheels[0].cy) - s.centerDistance) };
     }, view);
-    expect(seen[view].view, 'la vue demandée est celle qui est rendue').toBe(view);
-    // Dans chaque vue, chaque engrènement reste à son entraxe calculé.
-    seen[view].centres.forEach(gap => expect(Math.abs(gap)).toBeLessThan(1e-6));
+    if (view !== 'unfolded') expect(seen[view].view, 'la vue demandée est celle qui est rendue').toBe(view);
+    if (seen[view].mode === 'unfolded') {
+      // La vue dépliée garde les longueurs vraies : c'est sa raison d'être.
+      seen[view].centres.forEach(gap => expect(Math.abs(gap)).toBeLessThan(1e-6));
+    } else {
+      // Une PROJECTION raccourcit ce qui a de la profondeur. Exiger l'entraxe
+      // vrai jusque dans l'axonométrie, c'était exiger un dessin qu'aucun
+      // point de vue ne peut voir.
+      seen[view].centres.forEach(gap => expect(gap).toBeLessThan(1e-6));
+    }
   }
   const worlds = new Set(Object.values(seen).map(s => s.world));
   expect(worlds.size, 'aucune pièce ne bouge quand on change de vue').toBe(1);
@@ -1341,34 +1348,40 @@ test('the point of view is a control, not a decoration (§28)', async ({ page })
 
   const select = page.locator('#viewerProjection');
   await expect(select).toBeEnabled();
-  await expect(select).toHaveValue('');
+  await expect(select).toHaveValue('unfolded');
   // La liste vient du moteur de projection : rien n'est réécrit dans l'UI.
   const offered = await select.locator('option').evaluateAll(list => list.map(o => o.value));
   const known = await page.evaluate(() => GearProjectionEngine.VIEWS.map(v => v.id));
-  expect(offered).toEqual([''].concat(known));
+  // « Dépliée » vient en tête, et sous son nom : ce n'est pas une projection,
+  // et la faire passer pour le comportement caché des autres était la source
+  // de la confusion entre comprendre et mesurer.
+  expect(offered).toEqual(['unfolded'].concat(known));
 
   const shot = () => page.evaluate(() => {
     const svg = document.querySelector('#svgContainer svg');
     const model = window.__viewer.renderer().model;
-    return { announced: svg.dataset.view,
+    return { announced: svg.dataset.view, mode: model.mode,
       drawing: model.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'),
       world: model.spatial.members.map(m => m.id + ':' + m.position.join(',')).join('|') };
   });
 
   const automatic = await shot();
+  expect(automatic.mode, 'la vue par défaut est la vue dépliée').toBe('unfolded');
   const drawings = new Set([automatic.drawing]);
   for (const id of known) {
     await select.selectOption(id);
     const seen = await shot();
     // Ce que la commande promet : le dessin change, la mécanique non.
     expect(seen.announced, id).toBe(id);
+    // Et une vue nommée comme une projection EST une projection.
+    expect(seen.mode, id + ' doit être une vraie projection').toBe('projected');
     expect(seen.world, id + ' : aucune pièce ne bouge').toBe(automatic.world);
     drawings.add(seen.drawing);
   }
   expect(drawings.size, 'chaque point de vue doit donner un dessin distinct').toBeGreaterThan(1);
 
-  // Retour à l'automatique : on retrouve exactement le dessin de départ.
-  await select.selectOption('');
+  // Retour à la vue dépliée : on retrouve exactement le dessin de départ.
+  await select.selectOption('unfolded');
   expect((await shot()).drawing).toBe(automatic.drawing);
 
   // Une seule commande pour les trois vues : elles dessinent le même
@@ -1385,17 +1398,16 @@ test('the point of view is a control, not a decoration (§28)', async ({ page })
   const flat = await drawn();
   await select.selectOption('side');
   expect(await drawn(), 'la vue cotée suit le point de vue choisi').not.toBe(flat);
-  await select.selectOption('');
+  await select.selectOption('unfolded');
 
-  // La Cinématique aussi, et elle annonce celui qu'elle a retenu.
+  // La Cinématique, elle, n'a pas de point de vue à choisir : c'est un schéma
+  // fonctionnel, et le réorganiser au gré d'une caméra reviendrait à le prendre
+  // pour une vue du mécanisme.
   await showView(page, 'kinematic');
-  await expect(select).toBeEnabled();
-  await select.selectOption('iso');
-  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'iso');
-  await select.selectOption('top');
-  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'top');
-  await select.selectOption('');
+  await expect(select).toBeDisabled();
+  await expect(select).toHaveAttribute('title', /schéma cinématique est fonctionnel/);
   await showView(page, 'teeth');
+  await expect(select).toBeEnabled();
 
   expect(errors).toEqual([]);
 });
