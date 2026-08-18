@@ -1082,14 +1082,31 @@
   TrainRenderer.prototype._stageBox = function (index) {
     var entry = this.model && this.model.stages && this.model.stages[index];
     if (!entry || !entry.wheels.length) return null;
+    // En vue dépliée, rien ne se raccourcit ; en projection, ce qui suit l'axe
+    // se réduit du sinus de l'angle de l'axe sur le regard.
+    var unfolded = this.model.mode === 'unfolded';
     var box = null;
     entry.wheels.forEach(function (wheel) {
-      // L'encombrement d'un organe est celui de sa denture ; une crémaillère
-      // occupe sa course, qui n'a rien d'un diamètre.
-      var reach = Math.max(finite(wheel.length, 0) / 2,
-        Math.max(finite(wheel.outsideD, 0), finite(wheel.pitchD, 0)) / 2, 2);
+      var radius = Math.max(finite(wheel.outsideD, 0), finite(wheel.pitchD, 0)) / 2;
+      var half, across;
+      if (!wheel.apparent || wheel.kind === 'rack') {
+        // Une crémaillère occupe sa course, qui n'a rien d'un diamètre.
+        half = across = Math.max(finite(wheel.length, 0) / 2, radius, 2);
+      } else {
+        // L'encombrement DESSINÉ d'un cylindre : son ellipse apparente balayée
+        // le long de l'axe projeté. Le mesurer au diamètre dans les deux
+        // directions donnait une boîte trop grande d'un organe vu par la
+        // tranche, et un cadrage qui laissait du vide autour de lui.
+        var axial = unfolded ? 1 : Math.sqrt(Math.max(0, 1 - wheel.apparent.minor * wheel.apparent.minor));
+        half = Math.max(finite(wheel.faceWidth, 0) / 2 * axial + radius * wheel.apparent.minor, 2);
+        across = Math.max(radius * wheel.apparent.major, 2);
+      }
+      var theta = finite(wheel.axisAngleDeg, 0) * Math.PI / 180;
+      var cos = Math.abs(Math.cos(theta)), sin = Math.abs(Math.sin(theta));
+      var reachX = cos * half + sin * across;
+      var reachY = sin * half + cos * across;
       var x = finite(wheel.cx, 0), y = finite(wheel.cy, 0);
-      var own = { left: x - reach, top: y - reach, right: x + reach, bottom: y + reach };
+      var own = { left: x - reachX, top: y - reachY, right: x + reachX, bottom: y + reachY };
       box = box ? { left: Math.min(box.left, own.left), top: Math.min(box.top, own.top),
         right: Math.max(box.right, own.right), bottom: Math.max(box.bottom, own.bottom) } : own;
     });

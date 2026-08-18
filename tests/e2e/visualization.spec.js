@@ -864,6 +864,121 @@ test('the drawing is painted from the back, and can be seen from the other side 
   expect(errors).toEqual([]);
 });
 
+test('the iso view of a spur → belt train holds together (§24 de la mission)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // La capture de référence : une grande roue d'un premier étage et la petite
+  // poulie du suivant, sur le MÊME ARBRE, vues en isométrie.
+  await mount(page, ['spur', 'belt']);
+  await showView(page, 'teeth');
+  const mod180 = a => ((a % 180) + 180) % 180;
+
+  // « Iso opposée » n'a pas d'entrée dans la liste : c'est la même vue, prise
+  // de l'autre bord, et le bouton ⇄ y mène. On la demande donc par son nom.
+  for (const view of ['iso', 'iso-rear']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    await page.waitForTimeout(60);
+    const seen = await page.evaluate(() => {
+      const svg = document.querySelector('#svgContainer svg');
+      const model = window.__viewer.renderer().model;
+      const wheels = {};
+      model.wheels.forEach(w => { wheels[w.memberId] = w; });
+      const shafts = {};
+      model.shafts.forEach(s => { shafts[s.id] = s; });
+      const link = model.stages[1].links[0];
+      // F. aucun cercle de construction autour d'une roue oblique.
+      const stray = Array.from(svg.querySelectorAll('.geometry-layer .train-wheel')).filter(host => {
+        const record = window.__viewer.renderer()._wheels.filter(w => w.group === host)[0];
+        return record && record.wheel.presentation === 'oblique' &&
+          host.querySelector('circle.pitch-circle, circle.base-circle, circle.root-circle, circle.tip-circle');
+      }).length;
+      return {
+        wheels: model.wheels.map(w => ({ id: w.memberId, body: w.bodyId, presentation: w.presentation,
+          apparent: w.apparent, cx: w.cx, cy: w.cy, width: w.faceWidth })),
+        shafts: model.shafts.map(s => ({ id: s.id, length: Math.hypot(s.x2 - s.x1, s.y2 - s.y1),
+          endOn: s.endOn, real: null })),
+        spatial: model.spatial.shafts.map(s => ({ id: s.id, length: s.length })),
+        stray: stray,
+        belt: { circles: link.geometry.circles, parts: link.geometry.parts.length,
+          origin: link.geometry.origin, first: link.geometry.first, second: link.geometry.second,
+          distance: link.geometry.distance, r1: link.r1, r2: link.r2 },
+        io: Array.from(svg.querySelectorAll('.io-chip')).map(chip => ({
+          along: chip.dataset.along.split(',').map(Number),
+          d: chip.querySelector('.io-arrow').getAttribute('d') })),
+        painted: Array.from(svg.querySelectorAll('.geometry-layer > .train-wheel'))
+          .map(el => el.dataset.member),
+        depths: model.wheels.reduce((map, w) => { map[w.memberId] = w.depth; return map; }, {})
+      };
+    });
+
+    // A/B/C. Les deux organes du même arbre partagent leur plan apparent.
+    const byBody = {};
+    seen.wheels.forEach(w => { (byBody[w.body] = byBody[w.body] || []).push(w); });
+    const shared = Object.keys(byBody).filter(id => byBody[id].length > 1);
+    expect(shared.length, view + ' : aucun arbre ne porte deux organes').toBeGreaterThan(0);
+    shared.forEach(id => {
+      const [a, b] = byBody[id];
+      expect(a.apparent.major, view).toBeCloseTo(b.apparent.major, 9);
+      expect(a.apparent.minor, view).toBeCloseTo(b.apparent.minor, 9);
+      expect(mod180(a.apparent.rotationDeg), view).toBeCloseTo(mod180(b.apparent.rotationDeg), 6);
+      // D. seule une translation le long de leur arbre commun les sépare.
+      const shaft = seen.shafts.filter(s => s.id === id)[0];
+      const gap = [b.cx - a.cx, b.cy - a.cy];
+      if (!shaft.endOn && Math.hypot(gap[0], gap[1]) > 1e-9) {
+        const axis = mod180(a.apparent.rotationDeg + 90) * Math.PI / 180;
+        const across = gap[0] * -Math.sin(axis) + gap[1] * Math.cos(axis);
+        expect(Math.abs(across), view + ' : les deux organes s’écartent en travers de leur arbre')
+          .toBeLessThan(1e-6);
+      }
+    });
+
+    // E. la courroie est tangente à ses deux poulies, et chaque poulie est
+    // décrite par la même ellipse que la roue.
+    seen.belt.circles.forEach((circle, index) => {
+      const wheel = seen.wheels.filter(w => w.id === (index === 0 ? 's1-input' : 's1-output'))[0];
+      expect(circle.major, view).toBeCloseTo(wheel.apparent.major, 9);
+      expect(circle.minor, view).toBeCloseTo(wheel.apparent.minor, 9);
+      expect(mod180(circle.rotationDeg), view).toBeCloseTo(mod180(wheel.apparent.rotationDeg), 6);
+      expect(Math.hypot(circle.centre[0] - wheel.cx, circle.centre[1] - wheel.cy), view).toBeLessThan(1e-9);
+    });
+
+    // F. aucun cercle de construction autour d'une ellipse.
+    expect(seen.stray, view + ' : un cercle entoure encore une roue oblique').toBe(0);
+
+    // G. l'arbre est raccourci exactement comme la projection le veut.
+    seen.shafts.forEach(shaft => {
+      const real = seen.spatial.filter(s => s.id === shaft.id)[0];
+      expect(shaft.length, view + ' ' + shaft.id).toBeCloseTo(real.length * Math.sqrt(2 / 3), 6);
+    });
+
+    // H. la profondeur décide de l'ordre de peinture, tous étages confondus.
+    seen.painted.forEach((id, index) => {
+      if (index === 0) return;
+      expect(seen.depths[id], view + ' : ordre de profondeur rompu')
+        .toBeLessThanOrEqual(seen.depths[seen.painted[index - 1]] + 1e-9);
+    });
+    // Et la courroie est découpée, pour pouvoir passer devant ET derrière.
+    expect(seen.belt.parts, view).toBe(4);
+
+    // I. ENTRÉE et SORTIE suivent l'orientation réelle des arbres.
+    expect(seen.io.length).toBe(2);
+    seen.io.forEach(chip => {
+      // La direction est écrite au dix-millième dans l'attribut : on la
+      // compare à cette précision, pas au-delà.
+      expect(Math.hypot(chip.along[0], chip.along[1]), view).toBeCloseTo(1, 3);
+      // La flèche n'est pas horizontale : les arbres ne le sont pas.
+      expect(Math.abs(chip.along[1]), view + ' : flèche horizontale sur un arbre oblique')
+        .toBeGreaterThan(0.05);
+      const points = Array.from(chip.d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)).map(m => [Number(m[1]), Number(m[2])]);
+      const shaftDirection = [chip.along[0], chip.along[1]];
+      const stroke = [points[1][0] - points[0][0], points[1][1] - points[0][1]];
+      const span = Math.hypot(stroke[0], stroke[1]);
+      const cos = (stroke[0] * shaftDirection[0] + stroke[1] * shaftDirection[1]) / span;
+      expect(Math.abs(Math.abs(cos) - 1), view + ' : la flèche ne suit pas son arbre').toBeLessThan(1e-3);
+    });
+  }
+  expect(errors).toEqual([]);
+});
+
 test('the animation cadence follows the mode, the poses never do', async ({ page }) => {
   await mount(page, ['spur']);
   await showView(page, 'teeth');
