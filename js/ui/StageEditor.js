@@ -187,6 +187,23 @@
     ]
   };
 
+  /**
+   * Les diamètres primitifs éditables, et le nombre de dents qui les porte.
+   *
+   * Un diamètre primitif n'est pas une taille de dessin : c'est le produit du
+   * module par le nombre de dents. On peut donc le SAISIR — c'est souvent lui
+   * qu'un encombrement impose — à condition de dire quel nombre de dents en
+   * résulte, et quel diamètre est réellement atteignable, le compte de dents
+   * étant entier. C'est ce que GearSizing calcule, et que personne ne lisait.
+   */
+  var DIAMETER_FIELDS = {
+    pair: [{ teeth: 'input.teeth', label: 'Ø primitif menant (mm)' },
+      { teeth: 'output.teeth', label: 'Ø primitif mené (mm)' }],
+    worm: [{ teeth: 'wheelTeeth', label: 'Ø primitif roue (mm)' }],
+    planetary: [{ teeth: 'sunTeeth', label: 'Ø primitif solaire (mm)' },
+      { teeth: 'ringTeeth', label: 'Ø primitif couronne (mm)' }]
+  };
+
   function el(id) { return document.getElementById(id); }
   function getPath(obj, path) {
     return path.split('.').reduce(function (o, k) { return o && o[k]; }, obj);
@@ -386,7 +403,12 @@
       wrap.textContent = label;
       var input = document.createElement('input');
       input.type = 'number';
-      Object.keys(attrs || {}).forEach(function (k) { if (attrs[k] !== undefined) input[k] = attrs[k]; });
+      Object.keys(attrs || {}).forEach(function (k) {
+        if (attrs[k] === undefined) return;
+        // Les attributs `data-` ne sont pas des propriétés : les poser comme
+        // telles créerait un champ muet côté DOM, invisible aux sélecteurs.
+        if (k.indexOf('data-') === 0) input.setAttribute(k, attrs[k]); else input[k] = attrs[k];
+      });
       input.value = value;
       input.addEventListener('input', function () {
         var parsed = parseFloat(input.value);
@@ -426,11 +448,14 @@
     }
 
     // Champs d'étage
+    var teethInputs = {};
+    var refreshDiameters = function () {};
     var stageFields = STAGE_FIELDS[registry] || STAGE_FIELDS.pair;
     stageFields.forEach(function (field) {
-      numberField(field.label, getPath(stage, field.path), { min: field.min, max: field.max, step: field.step }, function (value) {
+      teethInputs[field.path] = numberField(field.label, getPath(stage, field.path), { min: field.min, max: field.max, step: field.step, 'data-field': field.path }, function (value) {
         setPath(stage, field.path, Math.round(value));
         if (registry === 'planetary') stage.planetTeeth = (stage.ringTeeth - stage.sunTeeth) / 2;
+        refreshDiameters();
       });
     });
     if (registry === 'planetary') {
@@ -444,6 +469,44 @@
     stage.parameters = stage.parameters || {};
     if (def.capabilities.usesModule) {
       numberField('Module (mm)', stage.parameters.module || 1, { min: 0.1, step: 0.1 }, function (value) { stage.parameters.module = value; });
+    }
+
+    // Ø primitif : la grandeur qu'un encombrement impose, et qu'on ne pouvait
+    // que subir. On la saisit, GearSizing en déduit le nombre de dents — entier,
+    // donc le diamètre atteignable est discret — et le dit au lieu d'arrondir
+    // en silence. Rien n'est mis à l'échelle : c'est la denture qui change.
+    // Une crémaillère n'a pas de roue menée : elle n'entre pas dans ce repli.
+    var sizingFields = DIAMETER_FIELDS[registry]
+      || (stage.input && stage.output ? DIAMETER_FIELDS.pair : null);
+    if (def.capabilities.usesModule && sizingFields && typeof GearSizing !== 'undefined') {
+      var sized = sizingFields.map(function (field) {
+        var note = document.createElement('span');
+        note.className = 'sizing-note';
+        var input = numberField(field.label, '', { min: 0.1, step: 0.1, 'data-sizing': field.teeth }, function (value) {
+          var solved = GearSizing.solve({ module: stage.parameters.module,
+            diameter: value, helixAngleDeg: stage.parameters.helixAngle });
+          note.textContent = solved.message;
+          note.classList.toggle('is-conflict', solved.status !== 'solved');
+          if (solved.status !== 'solved' || !Number.isFinite(solved.teeth)) return;
+          setPath(stage, field.teeth, solved.teeth);
+          if (teethInputs[field.teeth]) teethInputs[field.teeth].value = solved.teeth;
+          if (registry === 'planetary') stage.planetTeeth = (stage.ringTeeth - stage.sunTeeth) / 2;
+        });
+        input.parentNode.appendChild(note);
+        return { field: field, input: input, note: note };
+      });
+      // Les deux grandeurs restent d'accord dans les deux sens : changer les
+      // dents met à jour le diamètre, sans quoi l'un des deux champs mentirait.
+      refreshDiameters = function (silent) {
+        sized.forEach(function (entry) {
+          var teeth = getPath(stage, entry.field.teeth);
+          var reached = Number.isFinite(teeth) && Number.isFinite(stage.parameters.module)
+            ? GearSizing.diameterOf(stage.parameters.module, teeth, stage.parameters.helixAngle) : null;
+          if (document.activeElement !== entry.input) entry.input.value = Number.isFinite(reached) ? reached.toFixed(2) : '';
+          if (!silent) { entry.note.textContent = ''; entry.note.classList.remove('is-conflict'); }
+        });
+      };
+      refreshDiameters(true);
     }
 
     // Paramètres spécifiques

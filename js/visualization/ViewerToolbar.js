@@ -201,9 +201,15 @@
    */
   ViewerToolbar.prototype.setProjection = function (id) {
     this.projection = id || '';
-    this.teeth.projection = this.projection || null;
-    if (this.camera) delete this.camera.teeth;
-    if (this.solution && this.currentView === 'teeth') this.render(this.solution);
+    // Les trois vues dessinent le même mécanisme depuis le même endroit. Une
+    // commande par vue — un sélecteur ici, trois boutons dans la Cinématique —
+    // laissait croire à deux réglages indépendants, et il fallait les reposer
+    // l'un après l'autre en changeant de vue.
+    ['teeth', 'geometry', 'kinematic'].forEach(function (name) {
+      if (this[name]) this[name].projection = this.projection || (name === 'kinematic' ? 'auto' : null);
+    }, this);
+    this.camera = {};
+    if (this.solution) this.render(this.solution);
     this._syncProjection();
     this.container.dispatchEvent(new CustomEvent('viewer:projection-changed',
       { detail: { projection: this.projection || 'auto' } }));
@@ -230,16 +236,9 @@
       });
     }
     select.value = this.projection || '';
-    var spatial = this.currentView === 'teeth';
-    select.disabled = !spatial;
     var chosen = this.projection && typeof GearProjectionEngine !== 'undefined'
       ? GearProjectionEngine.view(this.projection) : null;
-    select.title = !spatial
-      ? 'Seule la Denture est un dessin spatial : les autres vues n’ont pas de point de vue à choisir'
-      : chosen ? chosen.help
-        : 'Automatique : la projection qui montre le plus de denture';
-    var label = document.querySelector('.viewer-projection-label');
-    if (label) label.classList.toggle('is-disabled', !spatial);
+    select.title = chosen ? chosen.help : 'Automatique : chaque vue choisit le point de vue qui la sert';
     return this;
   };
 
@@ -276,9 +275,29 @@
    * membre, encore fallait-il le dire.
    */
   var FIDELITY = {
-    teeth: 'Dentures et entraxes à l’échelle réelle ; la longueur des arbres est schématique.',
+    teeth: 'Dentures et entraxes à l’échelle réelle.',
     geometry: 'Vue cotée : diamètres, entraxes et courses sont ceux du calcul.',
     kinematic: 'Schéma symbolique : les positions et les tailles ne sont pas à l’échelle, seuls les liens et les vitesses ont un sens.'
+  };
+
+  /**
+   * §54 : ce que vaut l'ÉCARTEMENT des organes sur leurs arbres.
+   *
+   * La phrase disait une bonne fois « la longueur des arbres est
+   * schématique ». Elle l'était, faute d'abscisses ; elle ne l'est plus
+   * toujours, et continuer à l'affirmer serait un mensonge dans l'autre sens.
+   * Chaque abscisse porte maintenant sa provenance — mesurée, déduite d'un jeu
+   * d'arbre par défaut, ou purement conventionnelle — et la vue dit la moins
+   * bonne des trois, puisque c'est elle qui limite ce qu'on peut affirmer.
+   */
+  ViewerToolbar.prototype._axialFidelity = function (rendered) {
+    var wheels = rendered && rendered.model && rendered.model.wheels;
+    if (!wheels || !wheels.length) return '';
+    var seen = {};
+    wheels.forEach(function (wheel) { if (wheel.axialProvenance) seen[wheel.axialProvenance] = true; });
+    if (seen.schematic) return ' L’écartement des organes sur un même arbre est conventionnel : leur largeur de denture n’est pas calculée.';
+    if (seen.derived) return ' L’écartement des organes sur un même arbre suit un jeu d’arbre par défaut.';
+    return ' L’écartement des organes sur leurs arbres est celui du calcul.';
   };
 
   ViewerToolbar.prototype._renderFidelity = function (rendered) {
@@ -288,6 +307,7 @@
     // dessin absent parlerait du précédent.
     if (!rendered) { host.textContent = ''; host.title = ''; host.hidden = true; host.classList.remove('has-derived'); return; }
     var text = FIDELITY[this.currentView] || '';
+    text += this._axialFidelity(rendered);
     var scene = rendered && rendered.scene;
     // Une cote reconstruite faute de mieux ne doit pas être lue comme une cote
     // calculée : la scène marque ces membres, la vue le répercute.

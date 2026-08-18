@@ -211,7 +211,7 @@
   GeometryRenderer.prototype.render = function (solution) {
     this.solution = solution;
     this.scene = GearSceneBuilder.build(solution);
-    this.layout = GearGeometryLayout.build(solution, { scene: this.scene });
+    this.layout = GearGeometryLayout.build(solution, { scene: this.scene, view: this.projection });
     this._rotors = [];
     this._phases = [];
     this._linear = [];
@@ -239,7 +239,13 @@
       var axes = self._stageGroup(layers.shaft, item, false);
       var labels = self._stageGroup(layers.label, item, false);
 
-      p.axis(axes, item.axis.x1, item.axis.y, item.axis.x2, item.axis.y);
+      // Une marque d'axe par corps : dans une vue de face, un axe se voit en
+      // bout, et c'est une croix — pas un trait qui traverserait l'étage en
+      // supposant que tous ses organes sont alignés.
+      (item.axes || []).forEach(function (mark) {
+        p.axis(axes, mark.x - mark.reach, mark.y, mark.x + mark.reach, mark.y);
+        p.axis(axes, mark.x, mark.y - mark.reach, mark.x, mark.y + mark.reach);
+      });
       if (item.type === 'belt' || item.type === 'chain') self._flexible(geometryGroup, item);
       (item.members || []).forEach(function (member) { self._member(geometryGroup, item, member); });
       GearDimensionRenderer.stage(dimensions, item, p, { fontSize: fontSize, scale: unit });

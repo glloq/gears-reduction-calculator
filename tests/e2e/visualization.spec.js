@@ -258,6 +258,16 @@ test('each view says what it draws to scale, and what it only suggests (§22, §
   await showView(page, 'teeth');
   await expect(badge).toContainText('à l’échelle réelle');
   await expect(badge).not.toHaveClass(/has-derived/);
+  // §54 : la phrase disait une bonne fois « la longueur des arbres est
+  // schématique ». Elle l'était faute d'abscisses ; elle ne l'est plus
+  // toujours, et la vue qualifie maintenant ce qu'elle montre.
+  await expect(badge).toContainText('L’écartement des organes');
+
+  // Un train composé fait porter deux organes au même arbre : leur écartement
+  // dépend alors d'un jeu d'arbre, que rien n'impose ici. La vue le dit.
+  await mount(page, ['spur', 'helical']);
+  await showView(page, 'teeth');
+  await expect(badge).toContainText('jeu d’arbre par défaut');
 });
 
 test('belts and chains use the exact tangent path and travelling elements', async ({ page }) => {
@@ -1361,13 +1371,88 @@ test('the point of view is a control, not a decoration (§28)', async ({ page })
   await select.selectOption('');
   expect((await shot()).drawing).toBe(automatic.drawing);
 
-  // La Cinématique est un schéma : elle n'a pas de point de vue à offrir, et
-  // le dit au lieu de laisser croire qu'on a mal cliqué.
-  await showView(page, 'kinematic');
-  await expect(select).toBeDisabled();
-  await expect(select).toHaveAttribute('title', /pas de point de vue/);
-  await showView(page, 'teeth');
+  // Une seule commande pour les trois vues : elles dessinent le même
+  // mécanisme depuis le même endroit, et un réglage par vue laissait croire à
+  // deux réglages indépendants, à reposer l'un après l'autre.
+  // Les positions dessinées, plutôt que le cadrage : deux points de vue
+  // peuvent donner la même boîte englobante en plaçant les pièces ailleurs.
+  const drawn = () => page.evaluate(() => Array.from(
+    document.querySelectorAll('#svgContainer svg circle'))
+    .map(c => c.getAttribute('cx') + ',' + c.getAttribute('cy')).join('|'));
+
+  await showView(page, 'geometry');
   await expect(select).toBeEnabled();
+  const flat = await drawn();
+  await select.selectOption('side');
+  expect(await drawn(), 'la vue cotée suit le point de vue choisi').not.toBe(flat);
+  await select.selectOption('');
+
+  // La Cinématique aussi, et elle annonce celui qu'elle a retenu.
+  await showView(page, 'kinematic');
+  await expect(select).toBeEnabled();
+  await select.selectOption('iso');
+  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'iso');
+  await select.selectOption('top');
+  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'top');
+  await select.selectOption('');
+  await showView(page, 'teeth');
+
+  expect(errors).toEqual([]);
+});
+
+test('what turns as one block lights up as one block (§ corps rigides)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Train composé : la roue menée de l'étage 1 et le pignon menant de l'étage 2
+  // sont sur le même arbre. Rien de visible ne le disait.
+  await mount(page, ['spur', 'helical']);
+  await showView(page, 'teeth');
+
+  const bodies = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    return Array.from(svg.querySelectorAll('.train-wheel'))
+      .map(g => g.dataset.member + '→' + g.dataset.body);
+  });
+  expect(bodies.length).toBe(4);
+  // Deux organes partagent un corps, les deux autres non.
+  const perBody = bodies.reduce((count, entry) => {
+    const body = entry.split('→')[1];
+    count[body] = (count[body] || 0) + 1;
+    return count;
+  }, {});
+  expect(Object.values(perBody).filter(n => n === 2).length, 'un arbre porte deux roues').toBe(1);
+
+  // Survoler l'un éclaire l'autre, ainsi que leur arbre — et rien d'autre.
+  const shared = Object.keys(perBody).find(body => perBody[body] === 2);
+  const lit = await page.evaluate(body => {
+    const svg = document.querySelector('#svgContainer svg');
+    const part = svg.querySelector(`.train-wheel[data-body="${body}"] path, .train-wheel[data-body="${body}"] circle`);
+    const box = part.getBoundingClientRect();
+    part.dispatchEvent(new MouseEvent('mousemove', { bubbles: true,
+      clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }));
+    return {
+      wheels: Array.from(svg.querySelectorAll('.train-wheel.rigid-highlight')).map(g => g.dataset.member),
+      shafts: Array.from(svg.querySelectorAll('.train-shaft.rigid-highlight')).map(g => g.dataset.shaft)
+    };
+  }, shared);
+  expect(lit.wheels.length, 'les deux roues solidaires').toBe(2);
+  expect(lit.shafts, 'et leur arbre, lui seul').toEqual([shared]);
+
+  // Quitter le dessin éteint tout : un surlignage qui reste allumé ment.
+  const after = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    svg.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
+    return svg.querySelectorAll('.rigid-highlight').length;
+  });
+  expect(after).toBe(0);
+
+  // Et le texte le dit aussi, pour qui ne survole pas : la solidarité est une
+  // information, pas seulement un effet visuel.
+  const said = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    return Array.from(svg.querySelectorAll('.train-wheel [data-hud], .train-wheel'))
+      .map(g => g.dataset.hud || '').filter(Boolean).join('\n---\n');
+  });
+  expect(said).toMatch(/Solidaire de/);
 
   expect(errors).toEqual([]);
 });

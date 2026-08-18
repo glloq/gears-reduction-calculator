@@ -21,8 +21,14 @@
   function linear(group, primitives, x1, y1, x2, y2, text, extend, scale) {
     var p = primitives;
     if (extend) {
-      group.appendChild(p.node('line', { x1: x1, y1: extend.from, x2: x1, y2: y1, class: 'dimension-witness' }));
-      group.appendChild(p.node('line', { x1: x2, y1: extend.to, x2: x2, y2: y2, class: 'dimension-witness' }));
+      // Les lignes d'attache joignent la pièce à sa cote, où que celle-ci soit
+      // posée : les faire partir d'une ordonnée seule supposait une cote à plat.
+      var fromX = Number.isFinite(extend.fromX) ? extend.fromX : x1;
+      var toX = Number.isFinite(extend.toX) ? extend.toX : x2;
+      var fromY = Number.isFinite(extend.fromY) ? extend.fromY : extend.from;
+      var toY = Number.isFinite(extend.toY) ? extend.toY : extend.to;
+      group.appendChild(p.node('line', { x1: fromX, y1: fromY, x2: x1, y2: y1, class: 'dimension-witness' }));
+      group.appendChild(p.node('line', { x1: toX, y1: toY, x2: x2, y2: y2, class: 'dimension-witness' }));
     }
     group.appendChild(p.node('line', { x1: x1, y1: y1, x2: x2, y2: y2, class: 'dimension-line', 'marker-start': 'url(#dimension-arrow-start)', 'marker-end': 'url(#dimension-arrow-end)' }));
     p.label(group, (x1 + x2) / 2, (y1 + y2) / 2 - finite(scale, 1) * 4, text, 'geometry-dimension', { scale: scale });
@@ -57,12 +63,27 @@
     if (has(item.centerDistance)) {
       var exactCenter = item.exactCenterDistance !== false;
       var a = members[0], b = members[1];
+      var text = (exactCenter ? 'c = ' : '~ c = ') + fmt(item.centerDistance) + ' mm';
       if (a && b) {
-        linear(group, primitives, a.cx, baseline, b.cx, baseline,
-          (exactCenter ? 'c = ' : '~ c = ') + fmt(item.centerDistance) + ' mm', { from: a.cy, to: b.cy }, scale);
+        // La cote d'entraxe se posait à plat, entre les abscisses des deux
+        // centres : elle supposait qu'un entraxe est horizontal. Il ne l'est
+        // que dans certaines vues, et depuis que le placement vient du modèle
+        // spatial elle se réduisait à un point au milieu de la roue. Elle suit
+        // maintenant le segment qui joint les deux centres, décalée de côté.
+        var dx = b.cx - a.cx, dy = b.cy - a.cy;
+        var span = Math.hypot(dx, dy);
+        if (span < 1e-6) {
+          // Deux organes concentriques : leur entraxe est nul, il n'y a rien à
+          // coter, et un trait de longueur nulle ne dirait rien de plus.
+          primitives.label(group, a.cx, baseline, text, 'geometry-dimension', { scale: scale });
+        } else {
+          var off = (item.diameter / 2 + step * 1.6);
+          var nx = -dy / span * off, ny = dx / span * off;
+          linear(group, primitives, a.cx + nx, a.cy + ny, b.cx + nx, b.cy + ny, text,
+            { fromX: a.cx, fromY: a.cy, toX: b.cx, toY: b.cy }, scale);
+        }
       } else {
-        linear(group, primitives, item.x, baseline, item.x + item.centerDistance, baseline,
-          (exactCenter ? 'c = ' : '~ c = ') + fmt(item.centerDistance) + ' mm', null, scale);
+        linear(group, primitives, item.x, baseline, item.x + item.centerDistance, baseline, text, null, scale);
       }
     }
 
@@ -70,14 +91,25 @@
     // simplement proches) ne doivent jamais superposer leurs valeurs.
     // Une cote RECONSTRUITE est marquée « ~ » et prend la classe `schematic` :
     // sur un plan, une valeur non calculée ne doit pas se lire comme une cote.
-    members.filter(function (member) { return member.role !== 'planet' && member.role !== 'carrier'; })
-      .forEach(function (member, index) {
+    // Le centre de gravité de l'étage : les cotes de diamètre extérieur se
+    // posent du côté OPPOSÉ, pour qu'un petit pignon n'écrive pas sa valeur
+    // sur la grande roue qu'il touche. Les poser toujours au-dessus supposait
+    // que les organes d'un étage sont côte à côte.
+    var cotable = members.filter(function (member) { return member.role !== 'planet' && member.role !== 'carrier'; });
+    var focus = cotable.reduce(function (sum, member) {
+      return { x: sum.x + member.cx / cotable.length, y: sum.y + member.cy / cotable.length };
+    }, { x: 0, y: 0 });
+    cotable.forEach(function (member, index) {
         var exactPitch = member.exact ? member.exact('pitchDiameter') : true;
         diameter(group, primitives, member, member.pitchDiameter, exactPitch ? 'Ø' : '~ Ø',
           'pitch-diameter' + (exactPitch ? '' : ' schematic'), -step * (index + 0.4), scale);
         if (has(member.outsideDiameter) && Math.abs(member.outsideDiameter - member.pitchDiameter) > 0.05) {
           var exactTip = member.exact ? member.exact('outsideDiameter') : true;
-          primitives.label(group, member.cx, member.cy - member.outsideDiameter / 2 - step * (index + 0.5),
+          // Vers le haut par défaut ; vers le bas si c'est là que l'étage laisse
+          // de la place.
+          var away = member.cy > focus.y || (member.cy === focus.y && cotable.length < 2) ? 1 : -1;
+          primitives.label(group, member.cx,
+            member.cy + away * (member.outsideDiameter / 2 + step * (index + 0.5)),
             (exactTip ? 'Ø tête ' : '~ Ø tête ') + fmt(member.outsideDiameter) + ' mm',
             'geometry-dimension outside-diameter' + (exactTip ? '' : ' schematic'), { scale: scale });
         }
