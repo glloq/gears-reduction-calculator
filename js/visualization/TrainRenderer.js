@@ -1,4 +1,10 @@
-// TrainRenderer.js - Vue « Denture réaliste ».
+// TrainRenderer.js - Vue « Transmission » : comment le mécanisme est assemblé.
+//
+// Elle s'appelait « Denture », et ne montrait effectivement qu'une denture.
+// Elle montre aujourd'hui l'assemblage : les arbres et leur longueur, les
+// orientations, les engrènements, les corps solidaires, le mouvement. Le nom
+// suivait un contenu qu'elle avait dépassé ; les identifiants internes, eux,
+// restent `teeth` — les renommer n'aurait rien appris à personne.
 //
 // Le renderer est un ORCHESTRATEUR : il ne calcule ni rapport, ni sens, ni
 // profil de dent. Il assemble ce que produisent
@@ -94,7 +100,7 @@
     this.model = model;
     var svg = n('svg', { class: 'train-svg', role: 'img',
       'data-view': model.view.id,
-      'aria-label': 'Denture réaliste, ' + model.view.label.toLowerCase() + ' — ' + (solution.stages || []).length + ' étage(s)' });
+      'aria-label': 'Transmission, ' + model.view.label.toLowerCase() + ' — ' + (solution.stages || []).length + ' étage(s)' });
     var viewport = n('g', { class: 'train-viewport' });
     svg.appendChild(viewport);
     var self = this;
@@ -275,13 +281,16 @@
     // partout l'hypothèse inverse, ce qui interdisait de montrer un engrenage et
     // une vis sur le même arbre.
     var built = GearTeethPrimitives.build(record.wheel, { lod: lod,
-      presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening });
+      presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening,
+      style: this.style });
     appendAll(record.rotor, built.rotor);
     // Les cercles de construction — primitif, base, pied — sont des CERCLES :
     // ils n'ont de sens que sur une roue vue de face. Tracés sur un organe vu
     // par la tranche, ils dessinaient une ellipse fantôme autour d'un
     // rectangle, sans rien coter.
-    if (record.wheel.presentation !== 'profile') {
+    // La représentation conventionnelle porte DÉJÀ les surfaces : y superposer
+    // les cercles de construction doublerait chaque trait.
+    if (record.wheel.presentation !== 'profile' && !built.conventional) {
       appendAll(record.construction, GearTeethOverlay.circles(record.wheel, lod));
     }
     appendAll(record.construction, built.fixed);
@@ -571,7 +580,8 @@
       // Le niveau de détail suit la taille APPARENTE : une roue vue par la
       // tranche n'a pas besoin d'une développante exacte pour trente pixels.
       var lod = GearTeethPrimitives.levelFor(record.wheel, ppu,
-        { presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening });
+        { presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening,
+          style: self.style });
       // « Détails automatiques » désactivé : on plafonne à la développante nue.
       if (!self._autoDetails) lod = Math.min(lod, LEVELS.INVOLUTE);
       if (force || lod !== record.lod) self._paintWheel(record, lod, force);

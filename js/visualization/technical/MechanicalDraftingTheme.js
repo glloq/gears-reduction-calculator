@@ -67,11 +67,12 @@
     visibleContour: { line: { width: WIDTH.medium, dash: DASH.solid }, ink: 'ink',
       aliases: ['tooth-profile', 'gear-profile', 'pulley-profile', 'ring-profile-top',
         'ring-profile-bottom', 'worm-body', 'cone-body', 'cone-face', 'oblique-body',
-        'rack-teeth', 'rack-profile', 'geometry-member', 'worm-end'] },
+        'rack-teeth', 'rack-profile', 'geometry-member', 'worm-end',
+        'tip-surface', 'rim-surface'] },
     visibleContourStrong: { line: { width: WIDTH.wide, dash: DASH.solid }, ink: 'ink',
       aliases: ['belt-line', 'chain-line', 'shaft-body'] },
     hiddenContour: { line: { width: WIDTH.narrow, dash: DASH.dashed }, ink: 'muted',
-      aliases: ['hidden-contour'] },
+      aliases: ['hidden-contour', 'bore-surface'] },
 
     centerLine: { line: { width: WIDTH.narrow, dash: DASH.chain }, ink: 'muted',
       aliases: ['shaft-centre', 'shaft-axis', 'construction-axis', 'stage-axis', 'cone-apex'] },
@@ -79,7 +80,7 @@
     pitchSurface: { line: { width: WIDTH.narrow, dash: DASH.chain }, ink: 'muted',
       aliases: ['pitch-circle', 'pitch-line', 'pitch-diameter'] },
     rootSurface: { line: { width: WIDTH.narrow, dash: DASH.solid }, ink: 'muted',
-      aliases: ['root-circle', 'root-line', 'ring-rim', 'cone-front'] },
+      aliases: ['root-circle', 'root-line', 'ring-rim', 'cone-front', 'root-surface'] },
     baseSurface: { line: { width: WIDTH.narrow, dash: DASH.fine }, ink: 'muted',
       aliases: ['base-circle'] },
 
@@ -200,7 +201,8 @@
     if (style === 'technical') {
       rules.push('.tooth-profile,.gear-profile,.pulley-profile,.ring-profile-top,' +
         '.ring-profile-bottom,.worm-body,.cone-body,.cone-face,.oblique-body,' +
-        '.rack-teeth,.geometry-member,.worm-end{fill:none}');
+        '.rack-teeth,.geometry-member,.worm-end,.tip-surface,.rim-surface,' +
+        '.root-surface,.bore-surface{fill:none}');
       rules.push('.gear-hub,.carrier-hub{fill:' + tokens.surface + ';stroke:' + tokens.ink + ';stroke-width:' + WIDTH.narrow + '}');
     } else {
       rules.push('.tooth-profile,.gear-profile,.pulley-profile,.ring-profile-top,' +

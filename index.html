@@ -517,7 +517,7 @@
           <div class="segmented view-switch">
             <!-- §19 : le nom dit ce qu'on y voit. « Géométrie 2D » décrivait la
                  technique du dessin, pas ce qu'on y cherche : des cotes. -->
-            <button class="view-mode active" data-view="teeth" title="Forme et engrènement : profils en développante, animables">Denture</button>
+            <button class="view-mode active" data-view="teeth" title="Comment le mécanisme est assemblé : arbres, orientations, engrènements">Transmission</button>
             <button class="view-mode" data-view="geometry" title="Encombrement et cotes : diamètres, entraxes, courses">Dimensions</button>
             <button class="view-mode" data-view="kinematic" title="Arbres, sens et vitesses : schéma symbolique">Cinématique</button>
           </div>
@@ -574,6 +574,14 @@
                les pièces ne bougent pas, seule leur image change. Il n'a de
                sens que là où le dessin est spatial — la Cinématique est un
                schéma, elle n'a pas de point de vue à offrir. -->
+          <!-- §2 : le style de dessin. Deux langages graphiques pour la même
+               mécanique, pas deux mécaniques. -->
+          <span class="segmented view-style" role="group" aria-label="Style de dessin">
+            <button type="button" class="btn-small active" data-style="visual" aria-pressed="true"
+              title="Denture réelle, couleurs de rôle, animation">Visuel</button>
+            <button type="button" class="btn-small" data-style="technical" aria-pressed="false"
+              title="Vocabulaire du dessin d’ensemble : contours, axes, surfaces primitives, très peu de couleur">Technique</button>
+          </span>
           <label class="viewer-projection-label" for="viewerProjection">Point de vue</label>
           <select id="viewerProjection" class="viewer-speed" title="D’où l’on regarde la transmission : les pièces ne bougent pas, seule leur image change">
             <option value="">Automatique</option>

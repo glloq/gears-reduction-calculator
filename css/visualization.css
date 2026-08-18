@@ -411,3 +411,62 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .planet-carrier.rigid-highlight path { stroke-width: 1.8; }
 .train-shaft.rigid-highlight .shaft-body { stroke-width: 1.8; opacity: 1; }
 .train-shaft.rigid-highlight .shaft-centre { stroke-width: .9; opacity: 1; }
+
+/* ===== Style de dessin : visuel ou technique =====
+
+   Le style technique n'est pas le style visuel en gris. Une pièce n'y est pas
+   coloriée mais cernée, la denture cède la place à ses surfaces, et la couleur
+   devient une information rare — seuls le bâti et l'alerte la gardent, parce
+   que ce sont les deux choses qu'on ne doit pas manquer sur un plan.
+
+   Les épaisseurs et les motifs viennent de MechanicalDraftingTheme : ce qui
+   est écrit ici ne fait que les rattacher aux jetons de la page. */
+
+.tip-surface, .rim-surface { fill: none; stroke: var(--ink); stroke-width: .5; }
+.root-surface { fill: none; stroke: var(--muted); stroke-width: .35; }
+.bore-surface { fill: none; stroke: var(--muted); stroke-width: .35; stroke-dasharray: 4 2; }
+.d-hidden-contour { fill: none; stroke: var(--muted); stroke-width: .35; stroke-dasharray: 4 2; }
+
+.svg-container.is-technical .tooth-profile,
+.svg-container.is-technical .gear-profile,
+.svg-container.is-technical .pulley-profile,
+.svg-container.is-technical .ring-profile-top,
+.svg-container.is-technical .ring-profile-bottom,
+.svg-container.is-technical .worm-body,
+.svg-container.is-technical .cone-body,
+.svg-container.is-technical .cone-face,
+.svg-container.is-technical .oblique-body,
+.svg-container.is-technical .rack-profile,
+.svg-container.is-technical .geometry-member { fill: none; stroke: var(--ink); }
+
+/* Les teintes de rôle disparaissent : en monochrome, entrée et sortie se
+   distinguent par leur PORT et leur repère, jamais par leur couleur seule. */
+.svg-container.is-technical .train-wheel.sun .tooth-profile,
+.svg-container.is-technical .train-wheel.planet .tooth-profile,
+.svg-container.is-technical .train-wheel.ring .tooth-profile,
+.svg-container.is-technical .train-wheel.output-member .tooth-profile { fill: none; }
+.svg-container.is-technical .helix-stripe,
+.svg-container.is-technical .power-pulse { display: none; }
+.svg-container.is-technical .helix-hand { stroke: var(--ink); stroke-width: .5; }
+.svg-container.is-technical .belt-line,
+.svg-container.is-technical .chain-line { stroke: var(--ink); stroke-width: .7; }
+
+.view-style { align-self: center; }
+
+/* §16 : en technique, ce qui commente la géométrie sort de la géométrie. Les
+   alertes et les efforts restent accessibles par l'inspecteur et le HUD ; un
+   badge coloré posé au milieu d'un plan masque ce qu'il commente. */
+.svg-container.is-technical .warning-overlay,
+.svg-container.is-technical .force-vector,
+.svg-container.is-technical .power-flow { display: none; }
+
+/* §59 : sans couleur, il faut une forme. Entrée et sortie portent déjà leur
+   mot ; la sélection et le bâti prennent une épaisseur et un motif. */
+.svg-container.is-technical .io-chip text { fill: var(--ink); font-weight: 700; }
+.svg-container.is-technical .io-arrow { stroke: var(--ink); stroke-width: .8; }
+.svg-container.is-technical .train-stage.selected .tip-surface,
+.svg-container.is-technical .train-stage.selected .gear-profile,
+.svg-container.is-technical .train-stage.selected .rim-surface,
+.svg-container.is-technical .train-stage.selected .worm-body,
+.svg-container.is-technical .train-stage.selected .cone-body { stroke-width: 1; }
+.svg-container.is-technical .train-stage.selected .d-selection-mark { display: inline; }

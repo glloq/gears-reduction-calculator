@@ -93,3 +93,101 @@ test('an unknown role is refused rather than silently drawn', () => {
   assert.equal(Theme.declarations('inventé', 'technical'), '');
   assert.equal(Theme.roleOf('classe-sans-rôle'), null);
 });
+
+// ===== Le style ne change jamais la mécanique (§53) =====
+
+const Teeth = require('../js/visualization/teeth/TeethPrimitives.js');
+
+const GEAR = { kind: 'gear', pitchD: 40, outsideD: 44, rootD: 35, module: 2, teeth: 20,
+  faceWidth: 20, pressureAngle: 20 };
+const RING = { kind: 'internal-ring', pitchD: 120, outsideD: 116, rootD: 125, module: 2,
+  teeth: 60, faceWidth: 20 };
+const WORM = { kind: 'worm', pitchD: 20, outsideD: 24, rootD: 15, module: 2, teeth: 2,
+  faceWidth: 40, leadAngle: 20, handedness: 'left' };
+
+const classesOf = built => built.rotor.map(node => node.attrs.class);
+
+test('a global drawing shows a wheel by its surfaces, not by eighty teeth', () => {
+  // Quatre-vingts développantes exactes n'apprennent rien de plus qu'un cercle
+  // et couvrent le trait qui compte.
+  const visual = Teeth.build(GEAR, { lod: 2, presentation: 'face', style: 'visual' });
+  const technical = Teeth.build(GEAR, { lod: 2, presentation: 'face', style: 'technical' });
+
+  assert.ok(classesOf(visual).some(c => /tooth-profile/.test(c)), 'le style visuel garde la denture');
+  assert.equal(technical.conventional, true);
+  assert.ok(!classesOf(technical).some(c => /tooth-profile/.test(c)), 'aucune denture dessinée');
+  // Les trois surfaces qui définissent une roue.
+  ['tip-surface', 'pitch-circle', 'root-surface'].forEach(cssClass => {
+    assert.ok(classesOf(technical).some(c => c.split(/\s+/).includes(cssClass)), cssClass);
+  });
+});
+
+test('the technical style has its own ladder, so teeth do not come back at once', () => {
+  // Les mêmes seuils dans les deux styles ramenaient la denture réelle dès le
+  // cadrage par défaut : un dessin d'ensemble couvert de développantes.
+  const pixels = 300;
+  assert.equal(Teeth.level(pixels, 'visual'), Teeth.LEVELS.TECHNICAL);
+  assert.ok(Teeth.level(pixels, 'technical') < Teeth.LEVELS.TECHNICAL);
+  // De TRÈS près, la denture revient : le mode s'appelle technique, pas aveugle.
+  assert.equal(Teeth.level(1200, 'technical'), Teeth.LEVELS.TECHNICAL);
+  assert.equal(Teeth.build(GEAR, { lod: 3, presentation: 'face', style: 'technical' }).conventional, false);
+  // Et l'échelle technique est partout plus exigeante que la visuelle.
+  Teeth.TECHNICAL_THRESHOLDS.forEach((value, index) => {
+    assert.ok(value > Teeth.THRESHOLDS[index], 'seuil ' + index);
+  });
+});
+
+test('an internal ring stays an internal ring without colour', () => {
+  // Sa denture est tournée vers le centre : son cercle de tête est plus petit
+  // que sa primitive, l'inverse d'une roue extérieure. Sans la jante, rien ne
+  // la distinguerait d'un engrenage une fois la denture retirée.
+  const face = Teeth.build(RING, { lod: 2, presentation: 'face', style: 'technical' });
+  assert.ok(classesOf(face).some(c => c.includes('rim-surface')), 'la jante');
+  const radii = Object.fromEntries(face.rotor
+    .filter(node => node.attrs.r).map(node => [node.attrs.class, Number(node.attrs.r)]));
+  assert.ok(radii['rim-surface'] > radii['pitch-circle'], 'la jante enveloppe la primitive');
+  assert.ok(radii['tip-surface'] <= radii['pitch-circle'], 'la tête plonge vers le centre');
+
+  // Vue par la tranche, une couronne n'est pas un rectangle plein.
+  const profile = Teeth.build(RING, { lod: 2, presentation: 'profile', style: 'technical' });
+  const rims = classesOf(profile).filter(c => /ring-profile-(top|bottom)/.test(c));
+  assert.equal(rims.length, 2, 'deux jantes, et du vide entre elles');
+});
+
+test('a worm keeps its thread count and hand without a pseudo-helix', () => {
+  const technical = Teeth.build(WORM, { lod: 2, presentation: 'profile', style: 'technical' });
+  assert.equal(technical.conventional, true);
+  assert.ok(classesOf(technical).some(c => c.includes('worm-body')), 'le corps');
+  const thread = technical.rotor.find(node => (node.attrs.class || '').includes('worm-thread'));
+  assert.ok(thread, 'les filets');
+  // Des obliques, pas une hélice : leur inclinaison porte le sens du filet.
+  const strokes = (thread.attrs.d.match(/M /g) || []).length;
+  assert.ok(strokes >= 2 && strokes <= 40, 'nombre d’obliques raisonnable : ' + strokes);
+
+  // Et le sens compte réellement : deux vis opposées ne se dessinent pas pareil.
+  const right = Teeth.build(Object.assign({}, WORM, { handedness: 'right' }),
+    { lod: 2, presentation: 'profile', style: 'technical' });
+  const other = right.rotor.find(node => (node.attrs.class || '').includes('worm-thread'));
+  assert.notEqual(thread.attrs.d, other.attrs.d, 'le sens du filet doit se voir');
+});
+
+test('style changes the drawing and nothing else', () => {
+  // C'est l'invariant de la passe : un dessin technique et un dessin visuel
+  // décrivent le même mécanisme, pas deux lectures possibles du calcul.
+  [GEAR, RING, WORM].forEach(wheel => {
+    ['face', 'profile'].forEach(presentation => {
+      const visual = Teeth.build(wheel, { lod: 2, presentation, style: 'visual' });
+      const technical = Teeth.build(wheel, { lod: 2, presentation, style: 'technical' });
+      assert.equal(visual.presentation, technical.presentation);
+      assert.equal(visual.lod, technical.lod);
+      // Le tracé diffère — sinon le style ne servirait à rien.
+      assert.notDeepEqual(classesOf(visual), classesOf(technical),
+        wheel.kind + '/' + presentation);
+    });
+  });
+  // Et l'objet d'entrée n'est jamais modifié : une primitive qui muterait sa
+  // roue ferait dépendre la mécanique de l'ordre des rendus.
+  const before = JSON.stringify(GEAR);
+  Teeth.build(GEAR, { lod: 3, presentation: 'face', style: 'technical' });
+  assert.equal(JSON.stringify(GEAR), before);
+});

@@ -87,6 +87,11 @@
     // point de vue qui se réinitialiserait à chaque solution obligerait à le
     // reposer sans cesse pendant qu'on compare deux réducteurs.
     this.projection = '';
+    // §2 : le STYLE de dessin. `visual` est ce que l'application montre depuis
+    // toujours ; `technical` emprunte le vocabulaire du dessin d'ensemble. Le
+    // style ne touche jamais à la mécanique — mêmes organes, mêmes rapports,
+    // mêmes entraxes — seulement au langage graphique.
+    this.style = 'visual';
     // §8 : un cadrage par vue, valable pour la solution en cours seulement.
     this.camera = {};
     this._cameraOwner = null;
@@ -223,6 +228,32 @@
    * schéma, elle n'a pas de point de vue à offrir, et le dire vaut mieux que
    * de laisser croire qu'on a mal cliqué.
    */
+  /**
+   * §2, §60 : changer de style ne recalcule aucune mécanique.
+   *
+   * Le style vit sur les renderers, qui le passent aux primitives. Rien dans
+   * Engineering, SceneBuilder ou MechanicalGraph n'en dépend : c'est ce qui
+   * garantit qu'un dessin technique et un dessin visuel décrivent le même
+   * mécanisme, et non deux lectures possibles du même calcul.
+   */
+  ViewerToolbar.prototype.setStyle = function (style) {
+    this.style = style === 'technical' ? 'technical' : 'visual';
+    ['teeth', 'geometry', 'kinematic'].forEach(function (name) {
+      if (this[name]) this[name].style = this.style;
+    }, this);
+    this.container.classList.toggle('is-technical', this.style === 'technical');
+    var host = this.container.closest ? this.container.closest('.svg-container') : null;
+    if (host) host.classList.toggle('is-technical', this.style === 'technical');
+    document.querySelectorAll('[data-style]').forEach(function (button) {
+      var active = button.dataset.style === this.style;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    }, this);
+    if (this.solution) this.render(this.solution);
+    this.container.dispatchEvent(new CustomEvent('viewer:style-changed', { detail: { style: this.style } }));
+    return this;
+  };
+
   ViewerToolbar.prototype._syncProjection = function () {
     var select = document.getElementById('viewerProjection');
     if (!select) return this;
@@ -527,6 +558,8 @@
     controls.addEventListener('click', function (event) {
       var view = event.target.closest('.view-mode');
       if (view) { self.setView(view.dataset.view); return; }
+      var styled = event.target.closest('[data-style]');
+      if (styled) { self.setStyle(styled.dataset.style); return; }
       var chosen = event.target.closest('[data-preset]');
       if (chosen) { self.setPreset(chosen.dataset.preset); return; }
       var renderer = self.renderer();

@@ -70,7 +70,7 @@ test('selection survives all three visualization views', async ({ page }) => {
   await expect(page.locator('.geometry-layer .geometry-stage').first()).toHaveClass(/selected/);
   await page.getByRole('button', { name: 'Cinématique' }).click();
   await expect(page.locator('.kinematic-stage').first()).toHaveClass(/selected/);
-  await page.getByRole('button', { name: 'Denture' }).click();
+  await page.getByRole('button', { name: 'Transmission' }).click();
   await expect(page.locator('.train-stage').first()).toHaveClass(/selected/);
   expect(errors).toEqual([]);
 });
@@ -1453,6 +1453,65 @@ test('what turns as one block lights up as one block (§ corps rigides)', async 
       .map(g => g.dataset.hud || '').filter(Boolean).join('\n---\n');
   });
   expect(said).toMatch(/Solidaire de/);
+
+  expect(errors).toEqual([]);
+});
+
+test('the technical style is a drawing language, not a grey filter (§2, §53)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'worm', 'internal']);
+  await showView(page, 'teeth');
+
+  const read = () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const model = window.__viewer.renderer().model;
+    return {
+      teeth: svg.querySelectorAll('.tooth-profile').length,
+      surfaces: svg.querySelectorAll('.tip-surface, .root-surface, .rim-surface').length,
+      pitch: svg.querySelectorAll('.pitch-circle, .pitch-line').length,
+      warnings: svg.querySelectorAll('.warning-overlay').length,
+      // La mécanique, telle que le modèle la décrit : elle ne doit pas bouger.
+      mechanics: model.wheels.map(w => [w.memberId, w.bodyId, w.pitchD.toFixed(4),
+        w.teeth, w.presentation].join(':')).join('|'),
+      centres: model.stages.map(s => (s.centerDistance || 0).toFixed(4)).join('|')
+    };
+  });
+
+  const visual = await read();
+  expect(visual.teeth, 'le style visuel garde la denture').toBeGreaterThan(0);
+
+  await page.locator('[data-style="technical"]').click();
+  await page.waitForTimeout(150);
+  const technical = await read();
+
+  // §63.3 : une roue globale n'affiche plus nécessairement toutes ses dents.
+  expect(technical.teeth, 'aucune denture sur un dessin d’ensemble').toBe(0);
+  // §63.2 : ce n'est pas un filtre — les surfaces conventionnelles apparaissent.
+  expect(technical.surfaces, 'les surfaces remplacent la denture').toBeGreaterThan(0);
+  expect(technical.pitch, 'les surfaces primitives restent').toBeGreaterThan(0);
+
+  // §53 : le style ne change JAMAIS la mécanique.
+  expect(technical.mechanics).toBe(visual.mechanics);
+  expect(technical.centres).toBe(visual.centres);
+
+  // §16 : ce qui commente la géométrie sort de la géométrie — mais reste
+  // accessible ailleurs, ce que l'inspecteur assure déjà.
+  const painted = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('#svgContainer .warning-overlay') || document.body).display);
+  if (technical.warnings) expect(painted).toBe('none');
+
+  // Le conteneur porte l'état, ce qui permet au CSS de suivre sans que chaque
+  // primitive ait à connaître le style.
+  await expect(page.locator('#svgContainer')).toHaveClass(/is-technical/);
+  await expect(page.locator('[data-style="technical"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-style="visual"]')).toHaveAttribute('aria-pressed', 'false');
+
+  // Et le retour au visuel restitue exactement le dessin d'avant.
+  await page.locator('[data-style="visual"]').click();
+  await page.waitForTimeout(150);
+  const back = await read();
+  expect(back.teeth).toBe(visual.teeth);
+  expect(back.mechanics).toBe(visual.mechanics);
 
   expect(errors).toEqual([]);
 });
