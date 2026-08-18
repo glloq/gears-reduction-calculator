@@ -114,10 +114,10 @@
     viewport.appendChild(engineeringLayer);
     viewport.appendChild(annotationLayer);
 
-    // Les arbres se peignent SOUS les dentures : ils les traversent de part en
-    // part, et un arbre posé par-dessus ses propres roues n'aurait pas de sens.
-    this._drawShafts(geometryLayer, model);
-    var bodies = [];
+    // Les arbres entrent dans le TRI, comme tout le reste : un arbre croisé
+    // plonge dans la profondeur, et le poser en bloc au fond du dessin le
+    // faisait passer derrière une roue qu'il traverse pourtant par-devant.
+    var bodies = this._drawShafts(geometryLayer, model);
     model.stages.forEach(function (entry, index) {
       bodies = bodies.concat(self._buildStage(entry, solution, index,
         { engineering: engineeringLayer, annotation: annotationLayer }));
@@ -409,11 +409,36 @@
    * mais un point : on le marque alors d'une croix d'axe, comme le veut le
    * dessin technique, plutôt que de tracer un trait de longueur nulle.
    */
+  /**
+   * Les arbres, découpés en PORTIONS triables.
+   *
+   * Un arbre n'est pas à une seule profondeur dès qu'il est croisé par rapport
+   * au regard : il plonge, et la roue qu'il traverse est devant l'une de ses
+   * moitiés et derrière l'autre. Chaque portion prend donc sa place dans le
+   * tri global, exactement comme les brins d'une courroie.
+   *
+   * Toutes les portions d'un même arbre portent son identifiant : le
+   * surlignage du corps rigide les allume ensemble, où qu'elles se trouvent
+   * dans la pile.
+   *
+   * @returns {Array} les morceaux, avec leur profondeur.
+   */
   TrainRenderer.prototype._drawShafts = function (viewport, model) {
-    var host = n('g', { class: 'train-shafts' });
+    var pieces = [];
+    // Les arbres vus EN BOUT restent au fond, dans un groupe à part. Leur croix
+    // n'est pas du métal : c'est le tracé d'axe, une convention de dessin, et
+    // la poser devant la roue dont elle marque le centre reviendrait à couvrir
+    // la pièce avec son propre repère.
+    var back = n('g', { class: 'train-shafts' });
+    viewport.appendChild(back);
     (model.shafts || []).forEach(function (shaft) {
-      var group = n('g', { class: 'train-shaft' + (shaft.grounded ? ' grounded' : ''),
-        'data-shaft': shaft.id, 'data-role': shaft.role });
+      function group(depth) {
+        var el = n('g', { class: 'train-shaft' + (shaft.grounded ? ' grounded' : ''),
+          'data-shaft': shaft.id, 'data-role': shaft.role });
+        if (depth === null) back.appendChild(el);
+        else pieces.push({ el: el, depth: finite(depth, 0) });
+        return el;
+      }
       if (shaft.endOn) {
         var reach = 0;
         (shaft.memberIds || []).forEach(function (id) {
@@ -421,17 +446,23 @@
           if (wheel) reach = Math.max(reach, finite(wheel.outsideD, 0) / 2);
         });
         var arm = Math.max(2, reach * 0.16);
-        group.appendChild(n('path', { class: 'shaft-centre',
+        // Vu en bout, l'arbre est un POINT : il n'a qu'une profondeur, et sa
+        // croix d'axe est une convention de dessin, pas un morceau de métal.
+        group(null).appendChild(n('path', { class: 'shaft-centre',
           d: 'M ' + (shaft.x1 - arm).toFixed(2) + ' ' + shaft.y1.toFixed(2) + ' H ' + (shaft.x1 + arm).toFixed(2) +
             ' M ' + shaft.x1.toFixed(2) + ' ' + (shaft.y1 - arm).toFixed(2) + ' V ' + (shaft.y1 + arm).toFixed(2) }));
-      } else {
-        group.appendChild(n('line', { class: 'shaft-body',
-          x1: shaft.x1.toFixed(2), y1: shaft.y1.toFixed(2), x2: shaft.x2.toFixed(2), y2: shaft.y2.toFixed(2) }));
+        return;
       }
-      host.appendChild(group);
+      // Un arbre entièrement couvert par ses roues ne laisse RIEN à voir : une
+      // liste vide est une réponse, pas une absence de réponse.
+      var parts = shaft.parts || [{ x1: shaft.x1, y1: shaft.y1, x2: shaft.x2, y2: shaft.y2, depth: shaft.depth }];
+      parts.forEach(function (part) {
+        group(part.depth).appendChild(n('line', { class: 'shaft-body',
+          x1: part.x1.toFixed(2), y1: part.y1.toFixed(2),
+          x2: part.x2.toFixed(2), y2: part.y2.toFixed(2) }));
+      });
     });
-    viewport.appendChild(host);
-    return host;
+    return pieces;
   };
 
   /**

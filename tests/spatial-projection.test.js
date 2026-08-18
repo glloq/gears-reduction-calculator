@@ -526,3 +526,92 @@ test('which end you look from is not the same as how far off-axis you are', () =
   assert.equal(Projection.foreshortening([0, 0, 1], front), Projection.foreshortening([0, 0, -1], front));
   assert.equal(Projection.presentation([0, 0, 1], front), Projection.presentation([0, 0, -1], front));
 });
+
+const TrainLayout = require('../js/visualization/TrainLayout.js');
+const Registry = require('../js/transmissions/TransmissionRegistry.js');
+
+function trainOf(stages, view) {
+  const built = stages.map(s => {
+    const copy = JSON.parse(JSON.stringify(s));
+    copy.geometry = Registry.get(copy.type).calculateGeometry(copy);
+    return copy;
+  });
+  return TrainLayout.layout(built, built.map(() => ({ ratio: 2 })), { view });
+}
+
+test('a shaft is not at one depth: it is cut into portions that can be sorted', () => {
+  for (const view of ['front', 'top', 'side', 'iso', 'iso-rear']) {
+    const model = trainOf([SPUR(15, 60), BEVEL()], view);
+    model.shafts.forEach(shaft => {
+      // Vu en bout, un arbre est un POINT : sa croix d'axe est une convention
+      // de dessin, pas un morceau de métal à trier.
+      if (shaft.endOn) { assert.equal(shaft.parts.length, 0, view + ' ' + shaft.id); return; }
+      assert.ok(shaft.parts.length >= 1, view + ' ' + shaft.id + ' : aucun tronçon');
+      const span = Math.hypot(shaft.x2 - shaft.x1, shaft.y2 - shaft.y1);
+      shaft.parts.forEach(part => {
+        assert.ok(Number.isFinite(part.depth), view + ' : tronçon sans profondeur');
+        // Chaque tronçon est PORTÉ par l'arbre : il ne s'en écarte pas.
+        [[part.x1, part.y1], [part.x2, part.y2]].forEach(point => {
+          const along = ((point[0] - shaft.x1) * (shaft.x2 - shaft.x1) +
+            (point[1] - shaft.y1) * (shaft.y2 - shaft.y1)) / (span * span);
+          assert.ok(along > -1e-6 && along < 1 + 1e-6, view + ' : tronçon hors de l’arbre');
+          const off = Math.hypot(point[0] - shaft.x1 - (shaft.x2 - shaft.x1) * along,
+            point[1] - shaft.y1 - (shaft.y2 - shaft.y1) * along);
+          assert.ok(off < 1e-6, view + ' : tronçon à côté de l’arbre');
+        });
+      });
+      // Un arbre est coupé aux roues qu'il porte : au plus un tronçon de plus
+      // qu'elles ne sont. Au-delà, c'est qu'il a été SUBDIVISÉ, et un tronçon
+      // subdivisé se reconnaît à ce qu'il touche le suivant bout à bout.
+      const cut = shaft.parts.some((part, i) => i > 0 &&
+        Math.hypot(part.x1 - shaft.parts[i - 1].x2, part.y1 - shaft.parts[i - 1].y2) < 1e-6);
+      const flat = Math.abs(shaft.parts[0].depth - shaft.parts[shaft.parts.length - 1].depth) < 1e-6;
+      // Perpendiculaire au regard, il est à UNE profondeur : le découper en
+      // huit n'apprendrait rien et ferait huit fois le même tri.
+      if (flat) {
+        assert.ok(!cut, view + ' ' + shaft.id + ' : découpé sans raison');
+        assert.ok(shaft.parts.length <= shaft.memberIds.length + 1, view + ' ' + shaft.id);
+      } else {
+        assert.ok(cut, view + ' ' + shaft.id + ' : arbre croisé laissé d’un bloc');
+        // Et les profondeurs se suivent le long de l'arbre : elles décrivent
+        // une plongée, pas un désordre.
+        const depths = shaft.parts.map(part => part.depth);
+        const rising = depths.every((d, i) => i === 0 || d >= depths[i - 1] - 1e-9);
+        const falling = depths.every((d, i) => i === 0 || d <= depths[i - 1] + 1e-9);
+        assert.ok(rising || falling, view + ' ' + shaft.id + ' : profondeurs non monotones');
+      }
+    });
+  }
+});
+
+test('a shaft is not drawn across the wheels it carries', () => {
+  for (const view of ['front', 'side', 'iso']) {
+    const model = trainOf([SPUR(15, 60)], view);
+    model.shafts.forEach(shaft => {
+      if (shaft.endOn) return;
+      // Là où l'arbre traverse un de ses organes, il est DANS LE MÉTAL : le
+      // dessin y posait quand même son trait, en travers du moyeu.
+      shaft.memberIds.forEach(id => {
+        const wheel = model.wheels.filter(w => w.memberId === id)[0];
+        if (!wheel) return;
+        // La demi-largeur PROJETÉE de la roue le long de son axe : ce qui reste
+        // de b une fois la longueur raccourcie.
+        const minor = wheel.apparent ? wheel.apparent.minor : 0;
+        const half = wheel.faceWidth / 2 * Math.sqrt(Math.max(0, 1 - minor * minor));
+        const span = Math.hypot(shaft.x2 - shaft.x1, shaft.y2 - shaft.y1);
+        shaft.parts.forEach(part => {
+          [[part.x1, part.y1], [part.x2, part.y2],
+            [(part.x1 + part.x2) / 2, (part.y1 + part.y2) / 2]].forEach(point => {
+            // Aucun point d'un tronçon ne tombe dans l'épaisseur de la roue :
+            // là, l'arbre est dans le métal et le trait passait en travers du
+            // moyeu.
+            const along = Math.abs((point[0] - wheel.cx) * (shaft.x2 - shaft.x1) +
+              (point[1] - wheel.cy) * (shaft.y2 - shaft.y1)) / span;
+            assert.ok(along > half - 1e-6,
+              view + ' : arbre tracé dans ' + id + ' (' + along.toFixed(3) + ' < ' + half.toFixed(3) + ')');
+          });
+        });
+      });
+    });
+  }
+});

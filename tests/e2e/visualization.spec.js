@@ -2275,3 +2275,47 @@ test('the ground symbol follows the shape of the part it blocks (§ bâti obliqu
   // suivrait rien du tout.
   expect(new Set(Object.values(seenIn).map(v => v.toFixed(2))).size).toBeGreaterThan(1);
 });
+
+test('a crossed shaft passes in front of some parts and behind others (§ profondeur des arbres)', async ({ page }) => {
+  await mount(page, ['spur', 'bevel']);
+  await showView(page, 'teeth');
+  const stack = async () => page.evaluate(() => {
+    const layer = document.querySelector('#svgContainer .geometry-layer');
+    const order = Array.from(layer.children);
+    const kind = el => el.classList.contains('train-shaft') ? 'shaft'
+      : el.classList.contains('train-wheel') ? 'wheel'
+      : el.classList.contains('train-shafts') ? 'axes' : 'autre';
+    const first = order.findIndex(el => kind(el) === 'wheel');
+    const last = order.map(kind).lastIndexOf('wheel');
+    return {
+      pieces: order.filter(el => kind(el) === 'shaft').length,
+      // Un tronçon d'arbre peint APRÈS une roue passe devant elle.
+      inFront: order.filter((el, i) => kind(el) === 'shaft' && i > first).length,
+      behind: order.filter((el, i) => kind(el) === 'shaft' && i < last).length,
+      // Un arbre reste UNE pièce : tous ses tronçons portent son identifiant.
+      shafts: new Set(order.filter(el => kind(el) === 'shaft').map(el => el.dataset.shaft)).size,
+      crossings: order.filter(el => kind(el) === 'shaft')
+        .map(el => el.querySelector('line')).filter(Boolean)
+        .filter(line => Number(line.getAttribute('x1')) !== Number(line.getAttribute('x2'))).length
+    };
+  });
+
+  await page.evaluate(() => window.__viewer.setProjection('front'));
+  const flat = await stack();
+  // De face, les arbres sont perpendiculaires au regard : un tronçon par
+  // portion visible, aucun besoin d'en découper davantage.
+  expect(flat.pieces).toBeGreaterThan(0);
+
+  await page.evaluate(() => window.__viewer.setProjection('iso'));
+  const seen = await stack();
+  // De biais, les arbres plongent : ils sont découpés, et leurs tronçons se
+  // répartissent de part et d'autre des roues. Le dessin les posait d'un bloc
+  // au fond, sous toutes les dentures.
+  expect(seen.pieces, 'les arbres ne sont pas découpés').toBeGreaterThan(flat.pieces);
+  expect(seen.inFront, 'aucun tronçon devant une roue').toBeGreaterThan(0);
+  expect(seen.behind, 'aucun tronçon derrière une roue').toBeGreaterThan(0);
+  // Et le corps rigide reste lisible : les tronçons d'un même arbre gardent
+  // son identifiant, donc s'allument ensemble.
+  expect(seen.shafts).toBeGreaterThanOrEqual(2);
+  expect(seen.shafts).toBeLessThan(seen.pieces);
+});
