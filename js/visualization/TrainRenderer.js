@@ -128,6 +128,10 @@
     // derrière la roue avec laquelle elle partage pourtant son arbre.
     bodies.sort(function (a, b) { return b.depth - a.depth; })
       .forEach(function (part) { geometryLayer.appendChild(part.el); });
+    // Gardé pour l'animation : un satellite qui passe derrière la couronne doit
+    // changer de place dans la pile, pas seulement de coordonnées.
+    this._bodies = bodies;
+    this._geometryLayer = geometryLayer;
     this._drawIOChips(annotationLayer, model);
 
     this.container.innerHTML = '';
@@ -203,14 +207,16 @@
 
     // ===== Géométrie : à plat, pour pouvoir être triée par profondeur =====
     var bodies = [];
-    function body(element, depth) {
+    function body(element, depth, wheel) {
       if (!element) return;
       stamp(element);
       // Une pièce qui se nomme déjà garde son propre nom : celui de l'étage ne
       // vient qu'à défaut. Le poser par-dessus faisait dire « Étage 2 · Droit »
       // à une roue qui savait dire de quel corps elle est solidaire.
       if (!element.querySelector('title')) element.appendChild(n('title', {}, title));
-      bodies.push({ el: element, depth: finite(depth, 0) });
+      // La roue est gardée : un satellite change de profondeur en tournant, et
+      // le tri doit pouvoir la lui redemander à chaque image.
+      bodies.push({ el: element, depth: finite(depth, 0), wheel: wheel || null });
     }
     entry.links.forEach(function (link) {
       // Une courroie n'est pas UNE pièce à une profondeur : ses deux brins et
@@ -220,7 +226,7 @@
       self._drawLink(link, entry).forEach(function (piece) { body(piece.el, piece.depth); });
     });
     if (entry.carrier) body(this._drawCarrier(entry), entry.carrier.depth);
-    entry.wheels.forEach(function (wheel) { body(self._buildWheel(wheel, entry), wheel.depth); });
+    entry.wheels.forEach(function (wheel) { body(self._buildWheel(wheel, entry), wheel.depth, wheel); });
 
     // ===== Commentaires d'ingénierie =====
     var engineering = stageGroup(layers.engineering, 'stage-overlay', false);
@@ -270,6 +276,7 @@
     var orbit = null;
     var host = n('g', { class: 'train-wheel ' + roleClass, 'data-role': wheel.role });
     if (wheel.memberId) host.setAttribute('data-member', wheel.memberId);
+    if (Number.isFinite(wheel.instance)) host.setAttribute('data-instance', String(wheel.instance));
     if (wheel.bodyId) host.setAttribute('data-body', wheel.bodyId);
     if (Number.isFinite(wheel.orbit) && wheel.orbit > 0) {
       orbit = n('g', { class: 'planet-orbit' });
@@ -930,6 +937,43 @@
         strand.el.setAttribute('stroke-dashoffset', (strand.start - offset).toFixed(1));
       });
     });
+
+    this._restack(members);
+  };
+
+  /**
+   * Le tri en profondeur PENDANT l'animation.
+   *
+   * La pile était établie une fois pour toutes au rendu. C'est exact pour une
+   * roue, qui tourne sur place ; c'est faux pour un satellite, qui fait le tour
+   * de son axe et passe donc alternativement devant et derrière la couronne.
+   * Il gardait la profondeur qu'il avait au premier dessin, et traversait la
+   * pièce qu'il aurait dû contourner.
+   *
+   * On ne repeint que si l'ORDRE change : une orbite vue de face ne modifie
+   * aucune profondeur, et un tour complet n'y provoque aucune manipulation du
+   * DOM.
+   */
+  TrainRenderer.prototype._restack = function (members) {
+    var bodies = this._bodies;
+    if (!bodies || !this._geometryLayer) return;
+    var moving = false;
+    bodies.forEach(function (part) {
+      var wheel = part.wheel;
+      if (!wheel || !wheel.orbitBasis) return;
+      var posed = (members || {})[wheel.memberId] || {};
+      var theta = finite(wheel.phase, 0) + finite(posed.orbitAngle, 0) * Math.PI / 180;
+      var seat = GearProjectedScene.orbitPoint(wheel.orbitBasis, finite(wheel.orbit, 0), theta);
+      var depth = finite(wheel.orbitDepth, 0) + seat.depth;
+      if (Math.abs(depth - part.depth) > 1e-9) { part.depth = depth; moving = true; }
+    });
+    if (!moving) return;
+    var sorted = bodies.slice().sort(function (a, b) { return b.depth - a.depth; });
+    var changed = sorted.some(function (part, index) { return part !== bodies[index]; });
+    if (!changed) return;
+    this._bodies = sorted;
+    var layer = this._geometryLayer;
+    sorted.forEach(function (part) { layer.appendChild(part.el); });
   };
 
   /**

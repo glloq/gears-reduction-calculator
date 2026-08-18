@@ -183,15 +183,29 @@
     var centre = seatOf(frame, (byRole.C || byRole.S || {}).id);
     var orbitAxis = planetShaft && frame.graph.byAxis[planetShaft.axisId];
     var basis = orbitBasis(frame, orbitAxis ? orbitAxis.direction : [1, 0, 0]);
+    // La profondeur de l'AXE d'orbite : c'est autour d'elle que les satellites
+    // se répartissent, l'un devant, l'autre derrière.
+    var seenPlanet = frame.projected.member(byRole.P && byRole.P.id);
+    var orbitDepth = seenPlanet ? finite(seenPlanet.depth, 0) : 0;
     for (var pi = 0; pi < count; pi++) {
       var a = 2 * Math.PI * pi / count;
-      var seat = ProjectedScene.phasePoint(basis, orbit, a);
+      var seat = ProjectedScene.orbitPoint(basis, orbit, a);
       entry.wheels.push(wheelAt(frame, byRole.P, {
         role: 'planet',
-        cx: centre.x + seat[0], cy: centre.y + seat[1],
+        // Un organe dessiné PLUSIEURS fois : le numéro d'exemplaire est la
+        // seule chose qui distingue quatre satellites portant le même
+        // identifiant de membre, et le tri en profondeur les mélange.
+        instance: pi,
+        cx: centre.x + seat.x, cy: centre.y + seat.y,
+        // Chaque satellite a SA position dans l'espace, donc SA profondeur.
+        // Ils héritaient tous de celle de leur axe commun : quatre satellites
+        // à la même profondeur, alors que deux sont devant la couronne et deux
+        // derrière — le tri global n'avait alors rien à trier.
+        depth: orbitDepth + seat.depth,
         // La base voyage avec le satellite : c'est elle, et non un `rotate()`
         // d'écran, qui donne sa place à chaque instant de l'animation.
         orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y, orbitBasis: basis,
+        orbitDepth: orbitDepth,
         orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
       }));
     }
