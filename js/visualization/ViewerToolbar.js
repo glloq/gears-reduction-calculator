@@ -201,9 +201,15 @@
    */
   ViewerToolbar.prototype.setProjection = function (id) {
     this.projection = id || '';
-    this.teeth.projection = this.projection || null;
-    if (this.camera) delete this.camera.teeth;
-    if (this.solution && this.currentView === 'teeth') this.render(this.solution);
+    // Les trois vues dessinent le même mécanisme depuis le même endroit. Une
+    // commande par vue — un sélecteur ici, trois boutons dans la Cinématique —
+    // laissait croire à deux réglages indépendants, et il fallait les reposer
+    // l'un après l'autre en changeant de vue.
+    ['teeth', 'geometry', 'kinematic'].forEach(function (name) {
+      if (this[name]) this[name].projection = this.projection || (name === 'kinematic' ? 'auto' : null);
+    }, this);
+    this.camera = {};
+    if (this.solution) this.render(this.solution);
     this._syncProjection();
     this.container.dispatchEvent(new CustomEvent('viewer:projection-changed',
       { detail: { projection: this.projection || 'auto' } }));
@@ -230,16 +236,9 @@
       });
     }
     select.value = this.projection || '';
-    var spatial = this.currentView === 'teeth';
-    select.disabled = !spatial;
     var chosen = this.projection && typeof GearProjectionEngine !== 'undefined'
       ? GearProjectionEngine.view(this.projection) : null;
-    select.title = !spatial
-      ? 'Seule la Denture est un dessin spatial : les autres vues n’ont pas de point de vue à choisir'
-      : chosen ? chosen.help
-        : 'Automatique : la projection qui montre le plus de denture';
-    var label = document.querySelector('.viewer-projection-label');
-    if (label) label.classList.toggle('is-disabled', !spatial);
+    select.title = chosen ? chosen.help : 'Automatique : chaque vue choisit le point de vue qui la sert';
     return this;
   };
 

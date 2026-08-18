@@ -103,17 +103,31 @@
     return g;
   }
 
-  /** Trièdre de repérage : rappelle quelle projection est affichée. */
+  /**
+   * Trièdre de repérage : rappelle d'où l'on regarde.
+   *
+   * Il était écrit en dur, deux jeux de flèches pour deux projections
+   * codées à la main. Les branches se DÉDUISENT du point de vue : on projette
+   * les trois axes du monde, et celui qui pointe vers l'œil se réduit à un
+   * point — ce qu'un trièdre doit justement montrer.
+   */
   function axisIndicator(x, y, projection) {
     var g = el('g', { class: 'axis-indicator', transform: 'translate(' + x + ' ' + y + ')' });
-    var axes = projection === 'orthogonal'
-      ? [['X', 26, 0], ['Z', 0, -26]]
-      : [['X', 26, 0], ['Y', 0, -26], ['Z', 15, 12]];
-    axes.forEach(function (axis) {
-      g.appendChild(el('line', { x1: 0, y1: 0, x2: axis[1], y2: axis[2], class: 'axis-arrow' }));
-      g.appendChild(el('text', { x: axis[1] * 1.25, y: axis[2] * 1.25, dy: '.35em', 'text-anchor': 'middle', class: 'axis-name' }, axis[0]));
+    var view = typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine.view(projection) : null;
+    var arm = 26;
+    [['X', [1, 0, 0]], ['Y', [0, 1, 0]], ['Z', [0, 0, 1]]].forEach(function (axis) {
+      var screen = view ? GearProjectionEngine.project(axis[1], view) : [0, 0];
+      var dx = screen[0] * arm, dy = screen[1] * arm;
+      if (Math.hypot(dx, dy) < 1) {
+        // Axe vu en bout : un point, marqué comme tel plutôt qu'omis.
+        g.appendChild(el('circle', { cx: 0, cy: 0, r: 2.4, class: 'axis-arrow end-on' }));
+        return;
+      }
+      g.appendChild(el('line', { x1: 0, y1: 0, x2: dx.toFixed(2), y2: dy.toFixed(2), class: 'axis-arrow' }));
+      g.appendChild(el('text', { x: (dx * 1.25).toFixed(2), y: (dy * 1.25).toFixed(2), dy: '.35em',
+        'text-anchor': 'middle', class: 'axis-name' }, axis[0]));
     });
-    g.appendChild(el('title', {}, 'Projection ' + (projection === 'orthogonal' ? 'orthogonale' : 'principale')));
+    g.appendChild(el('title', {}, 'Vue ' + (view ? view.label.toLowerCase() : projection)));
     return g;
   }
 

@@ -328,15 +328,10 @@
     var renderer = new KinematicRenderer(container);
     GearApp.visualization.kinematicRenderer = renderer;
 
+    // Le point de vue est réglé une fois pour les trois vues, par la barre du
+    // visualiseur : trois boutons ici auraient été un second réglage du même
+    // fait, à reposer en changeant de vue.
     document.addEventListener('click', function (e) {
-      var current = GearApp.currentSolution;
-      var projection = e.target.closest && e.target.closest('[data-projection]');
-      if (projection && current) {
-        document.querySelectorAll('[data-projection]').forEach(function (b) {
-          b.classList.toggle('active', b === projection);
-        });
-        renderer.setProjection(projection.dataset.projection);
-      }
       if (e.target.id === 'kinematicReset') renderer.resetView();
     });
   });

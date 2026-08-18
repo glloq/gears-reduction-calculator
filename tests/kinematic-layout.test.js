@@ -36,11 +36,25 @@ test('planetary remains coaxial while internal mesh uses offset parallel axes', 
   assert.equal(internal.input.axis.name, internal.output.axis.name);
 });
 
-test('main and orthogonal projections expose different spatial coordinates', () => {
+test('every point of view is a real frame, and they differ', () => {
+  // Les deux projections d'origine étaient écrites ici, et « l'orthogonale »
+  // supprimait Y : ce n'est pas un point de vue, c'est une perte
+  // d'information. Elles viennent maintenant du moteur de projection.
   const engine = new Layout(), stages = [{ type: 'bevel' }];
-  const main = engine.layout(stages, 'main').nodes[0].output;
-  const orthogonal = engine.layout(stages, 'orthogonal').nodes[0].output;
-  assert.notEqual(main.y, orthogonal.y);
+  const seen = new Set(['front', 'top', 'side', 'iso'].map(view => {
+    const model = engine.layout(stages, view);
+    assert.equal(model.projection, view);
+    const point = model.nodes[0].output;
+    assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), view);
+    return point.x.toFixed(3) + ',' + point.y.toFixed(3);
+  }));
+  assert.ok(seen.size > 1, 'quatre vues qui donneraient le même dessin ne serviraient à rien');
+
+  // Les anciens noms restent compris : un lien partagé ou un réglage mémorisé
+  // ne doit pas cesser de fonctionner du jour au lendemain.
+  assert.equal(engine.layout(stages, 'main').projection, 'iso');
+  assert.equal(engine.layout(stages, 'orthogonal').projection, 'top');
+
   assert.equal(engine.layout([{ type: 'rack' }]).worldNodes[0].output.axis.name, 'LINEAR');
 });
 
@@ -59,8 +73,9 @@ test('auto projection selects the least colliding supported projection', () => {
   const stages = [{ type: 'spur' }, { type: 'bevel' }, { type: 'spur' }, { type: 'worm' }];
   const automatic = engine.layout(stages, 'auto');
   assert.equal(automatic.requestedProjection, 'auto');
-  assert.ok(['main', 'orthogonal'].includes(automatic.projection));
-  const scores = ['main', 'orthogonal'].map(name => {
+  const offered = ['front', 'top', 'side', 'iso'];
+  assert.ok(offered.includes(automatic.projection));
+  const scores = offered.map(name => {
     const points = engine.layout(stages, name).projectedShafts;
     return { name, score: Layout.collisionScore(points) };
   });

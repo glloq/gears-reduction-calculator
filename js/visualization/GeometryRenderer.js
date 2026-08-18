@@ -211,7 +211,7 @@
   GeometryRenderer.prototype.render = function (solution) {
     this.solution = solution;
     this.scene = GearSceneBuilder.build(solution);
-    this.layout = GearGeometryLayout.build(solution, { scene: this.scene });
+    this.layout = GearGeometryLayout.build(solution, { scene: this.scene, view: this.projection });
     this._rotors = [];
     this._phases = [];
     this._linear = [];

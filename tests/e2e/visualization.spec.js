@@ -1371,13 +1371,31 @@ test('the point of view is a control, not a decoration (§28)', async ({ page })
   await select.selectOption('');
   expect((await shot()).drawing).toBe(automatic.drawing);
 
-  // La Cinématique est un schéma : elle n'a pas de point de vue à offrir, et
-  // le dit au lieu de laisser croire qu'on a mal cliqué.
-  await showView(page, 'kinematic');
-  await expect(select).toBeDisabled();
-  await expect(select).toHaveAttribute('title', /pas de point de vue/);
-  await showView(page, 'teeth');
+  // Une seule commande pour les trois vues : elles dessinent le même
+  // mécanisme depuis le même endroit, et un réglage par vue laissait croire à
+  // deux réglages indépendants, à reposer l'un après l'autre.
+  // Les positions dessinées, plutôt que le cadrage : deux points de vue
+  // peuvent donner la même boîte englobante en plaçant les pièces ailleurs.
+  const drawn = () => page.evaluate(() => Array.from(
+    document.querySelectorAll('#svgContainer svg circle'))
+    .map(c => c.getAttribute('cx') + ',' + c.getAttribute('cy')).join('|'));
+
+  await showView(page, 'geometry');
   await expect(select).toBeEnabled();
+  const flat = await drawn();
+  await select.selectOption('side');
+  expect(await drawn(), 'la vue cotée suit le point de vue choisi').not.toBe(flat);
+  await select.selectOption('');
+
+  // La Cinématique aussi, et elle annonce celui qu'elle a retenu.
+  await showView(page, 'kinematic');
+  await expect(select).toBeEnabled();
+  await select.selectOption('iso');
+  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'iso');
+  await select.selectOption('top');
+  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'top');
+  await select.selectOption('');
+  await showView(page, 'teeth');
 
   expect(errors).toEqual([]);
 });

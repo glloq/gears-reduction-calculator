@@ -10,10 +10,11 @@
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('../../transmissions/TransmissionRegistry.js') : root.GearTransmissionRegistry,
-    common ? require('../core/MechanicalGraph.js') : root.GearMechanicalGraph);
+    common ? require('../core/MechanicalGraph.js') : root.GearMechanicalGraph,
+    common ? require('../core/ProjectionEngine.js') : root.GearProjectionEngine);
   if (common) module.exports = api;
   else root.KinematicLayoutEngine = api;
-})(typeof self !== 'undefined' ? self : this, function (Registry, MechanicalGraph) {
+})(typeof self !== 'undefined' ? self : this, function (Registry, MechanicalGraph, Projection) {
   'use strict';
 
   var AXES = [
@@ -97,10 +98,33 @@
     });
     return byStage;
   }
+  /**
+   * Les projections d'origine étaient deux formules écrites ici :
+   *
+   *     principale   x = X + 0,45·Z   y = Y − 0,30·Z
+   *     orthogonale  x = X            y = Z
+   *
+   * La seconde supprimait purement et simplement Y. Ce n'était pas un choix de
+   * point de vue mais une perte d'information — dans la vue où la projection
+   * importe le moins, puisque le schéma sert à comprendre qui entraîne quoi.
+   * Le moteur de projection en donne quatre, qui sont des bases orthonormées :
+   * rien n'y est écrasé, seule la composante suivant le regard disparaît.
+   *
+   * Le repère du schéma a son Y vers le bas, comme l'écran ; le monde du moteur
+   * l'a vers le haut. On rend donc la coordonnée au monde avant de projeter,
+   * faute de quoi tout le schéma serait dessiné à l'envers.
+   */
+  var LEGACY_VIEWS = { main: 'iso', orthogonal: 'top' };
+
+  function viewOf(name) {
+    return Projection.view(LEGACY_VIEWS[name] || name);
+  }
+
   function project(point, projection, origin) {
-    var horizontal = projection === 'orthogonal' ? point.x : point.x + point.z * 0.45;
-    var vertical = projection === 'orthogonal' ? point.z : point.y - point.z * 0.3;
-    return { id: point.id, x: origin.x + horizontal, y: origin.y + vertical, z: point.z, axis: point.axis, orientation: point.axis.name, role: point.role };
+    var view = typeof projection === 'string' || projection == null ? viewOf(projection) : projection;
+    var screen = Projection.project([point.x, -point.y, point.z], view);
+    return { id: point.id, x: origin.x + screen[0], y: origin.y + screen[1], z: point.z,
+      axis: point.axis, orientation: point.axis.name, role: point.role };
   }
   function collisionScore(points) {
     var score = 0;
@@ -163,12 +187,17 @@
     if (current) current.role = 'OUTPUT';
 
     if (projection === 'auto') {
-      var candidates = ['main', 'orthogonal'];
+      // Un schéma symbolique n'a rien à mesurer : ce qui le rend utile est
+      // qu'on y distingue les arbres. Le critère d'encombrement, discutable
+      // pour un dessin coté, est ici le bon.
+      var candidates = Projection.VIEWS.map(function (view) { return view.id; });
       projection = candidates.reduce(function (best, candidate) {
         var candidatePoints = shafts.map(function (shaft) { return project(shaft, candidate, self.origin); });
         var candidateScore = collisionScore(candidatePoints);
         return !best || candidateScore < best.score ? { name: candidate, score: candidateScore } : best;
       }, null).name;
+    } else {
+      projection = viewOf(projection).id;
     }
     var projectedShafts = shafts.filter(function (shaft, index, all) {
       return all.findIndex(function (candidate) { return candidate.id === shaft.id; }) === index;
