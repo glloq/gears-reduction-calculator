@@ -225,12 +225,20 @@ test('a gear seen edge-on is a cylinder of width b, never a circle', () => {
 
   // Aucune denture dessinée de face, et aucun disque.
   assert.ok(!built.rotor.some(s => s.tag === 'circle'), 'pas de cercle de profil');
-  // Les traits conventionnels remplacent la denture.
-  assert.ok(classesOf(built).includes('pitch-line'));
-  // Un cylindre qui tourne ne change pas de silhouette : il lui faut un repère.
-  assert.ok(classesOf(built).includes('index-mark'));
+  // Les surfaces — primitive et fond — ne sont plus tracées par le corps : ce
+  // sont des surfaces, et c'est TeethOverlay qui les dessine, pour toutes les
+  // présentations. Deux endroits pour un même trait, c'étaient deux occasions
+  // de diverger — et c'est ainsi qu'une roue oblique se retrouvait cerclée.
+  assert.ok(!classesOf(built).includes('pitch-line'), 'le corps ne trace plus les surfaces');
+  const seen = Overlay.surfaces(wide, LEVELS.INVOLUTE, { presentation: 'profile' });
+  assert.ok(seen.some(s => /pitch-line/.test(s.attrs.class)), 'les génératrices primitives');
+  assert.ok(!seen.some(s => s.tag === 'circle' || s.tag === 'ellipse'), 'aucun contour fermé par la tranche');
+  // Plus de repère d'indexation FIXE : la phase est portée par le repère mobile
+  // que la pose pilote, et un trait immobile en travers du corps se lisait
+  // comme un axe ou un diamètre.
+  assert.ok(!classesOf(built).includes('index-mark'));
   // Z=n n'a pas de sens sur une tranche.
-  assert.ok(!built.fixed.some(s => s.attrs && s.attrs.class === 'tooth-count'));
+  assert.ok(!built.upright.some(s => s.attrs && s.attrs.class === 'tooth-count'));
 });
 
 test('an internal ring seen edge-on stays recognisable as a ring', () => {
@@ -283,17 +291,34 @@ test('a bevel keeps its cone from the side and shows its face end-on', () => {
 });
 
 test('an oblique part is neither a disc nor a rectangle', () => {
-  const built = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'oblique', foreshortening: 0.5 });
+  // L'ellipse vient de `apparent` — la description projetée que ProjectedScene
+  // calcule pour l'axe —, et non d'un raccourci que la primitive redérive.
+  const seen = { major: 1, minor: 0.5, rotationDeg: 0 };
+  const built = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'oblique', apparent: seen });
   assert.equal(built.presentation, 'oblique');
   const face = built.rotor.find(s => s.tag === 'ellipse' && /oblique-face/.test(s.attrs.class));
   assert.ok(face, 'une face elliptique');
-  // Le petit axe EST le raccourci réel : c'est ce qui montre l'orientation.
+  // Petit axe LE LONG de l'axe projeté, grand axe en travers : c'est le
+  // contrat du repère local, et c'est lui qui montre l'orientation.
   assert.ok(Math.abs(Number(face.attrs.rx) / Number(face.attrs.ry) - 0.5) < 0.02);
+  // Aucune rotation propre : le groupe de la pièce la porte déjà.
+  assert.equal(face.attrs.transform, undefined);
 
   // De plus en plus de face : l'ellipse tend vers le cercle.
-  const flat = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'oblique', foreshortening: 0.95 });
+  const flat = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'oblique',
+    apparent: { major: 1, minor: 0.95, rotationDeg: 0 } });
   const nearlyFace = flat.rotor.find(s => s.tag === 'ellipse' && /oblique-face/.test(s.attrs.class));
   assert.ok(Number(nearlyFace.attrs.rx) > Number(face.attrs.rx));
+
+  // Le raccourci seul reste accepté : c'est le cas particulier grand axe = 1.
+  const legacy = Primitives.build(GEAR(), { lod: LEVELS.INVOLUTE, presentation: 'oblique', foreshortening: 0.5 });
+  const same = legacy.rotor.find(s => s.tag === 'ellipse' && /oblique-face/.test(s.attrs.class));
+  assert.equal(same.attrs.rx, face.attrs.rx);
+  assert.equal(same.attrs.ry, face.attrs.ry);
+
+  // Plus de repère d'indexation FIXE en travers du corps : il ne bougeait pas,
+  // et se lisait comme un axe, un diamètre ou un sens de rotation.
+  assert.equal(built.rotor.filter(s => /index-mark/.test((s.attrs || {}).class || '')).length, 0);
 });
 
 test('the level of detail follows the apparent size, not the true diameter', () => {

@@ -44,8 +44,13 @@
    */
   function phaseBasis(axisDirection, view) {
     var vector = MechanicalGraph.vector;
-    var e1 = vector.perpendicularDirection(axisDirection, 0);
-    var e2 = vector.cross(axisDirection, e1);
+    // L'axe est NORMALISÉ ici : `cross(axe, e1)` hérite sinon de la norme de
+    // l'axe, la base cesse d'être orthonormée, et l'ellipse apparente sort avec
+    // un grand axe de 2,41 pour un cercle de rayon 1. Les axes du graphe sont
+    // unitaires, mais une source de vérité ne doit pas en dépendre.
+    var axis = vector.unit(axisDirection);
+    var e1 = vector.perpendicularDirection(axis, 0);
+    var e2 = vector.cross(axis, e1);
     var p1 = Projection.project(e1, view);
     var p2 = Projection.project(e2, view);
     var determinant = p1[0] * p2[1] - p1[1] * p2[0];
@@ -72,6 +77,28 @@
     return { major: q + r, minor: Math.abs(q - r),
       rotationDeg: (Math.atan2(k, e) + Math.atan2(h, g)) / 2 * 180 / Math.PI,
       det: a * d - b * c };
+  }
+
+  /**
+   * UN CERCLE PROJETÉ — la description partagée d'un cercle porté par un axe.
+   *
+   * Roue, poulie, surface primitive, surface de tête, arc de courroie : tout
+   * cela n'est qu'un cercle de rayon R dans le plan perpendiculaire à un axe.
+   * Chaque couche en tirait sa propre image — l'une du raccourci, l'autre d'une
+   * base projetée —, si bien qu'une roue elliptique se retrouvait cerclée de
+   * cercles parfaits. Il n'y a plus qu'une description, et elle porte de quoi
+   * tracer directement l'ellipse : `rx`/`ry` dans le repère local de l'organe,
+   * `rotationDeg` pour qui travaille en coordonnées d'écran.
+   */
+  function projectedCircle(centre, radius, apparent) {
+    var seen = apparent || { major: 1, minor: 1, rotationDeg: 0, det: 1 };
+    var r = finite(radius, 0);
+    return { centre: centre || [0, 0], radius: r,
+      major: seen.major, minor: seen.minor, rotationDeg: seen.rotationDeg,
+      // Repère LOCAL de l'organe : le petit axe suit l'axe projeté (+X).
+      rx: r * seen.minor, ry: r * seen.major,
+      // Vu par la tranche, le cercle n'a plus de surface : c'est un segment.
+      collapsed: seen.minor < 1e-9 };
   }
 
   /** Le point à l'angle θ et au rayon R autour d'un axe, tel qu'on le voit. */
@@ -159,5 +186,6 @@
       shaft: function (id) { return shafts[id] || null; } };
   }
 
-  return { build: build, phaseBasis: phaseBasis, phasePoint: phasePoint, ellipseOf: ellipseOf };
+  return { build: build, phaseBasis: phaseBasis, phasePoint: phasePoint, ellipseOf: ellipseOf,
+    projectedCircle: projectedCircle };
 });

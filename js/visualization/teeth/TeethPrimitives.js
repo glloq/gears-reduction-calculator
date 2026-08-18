@@ -374,19 +374,12 @@
     var shapes = [node('rect', { class: 'tooth-profile gear-profile', x: fixed(-b / 2), y: fixed(-r.tip),
       width: fixed(b), height: fixed(2 * r.tip) })];
     if (lod <= LEVELS.SILHOUETTE) return shapes;
-    // Surface primitive et fond de denture : les deux traits conventionnels qui
-    // distinguent une roue d'un simple cylindre.
-    shapes.push(node('path', { class: 'pitch-line',
-      d: 'M ' + fixed(-b / 2) + ' ' + fixed(-r.pitch) + ' H ' + fixed(b / 2) +
-         ' M ' + fixed(-b / 2) + ' ' + fixed(r.pitch) + ' H ' + fixed(b / 2) }));
-    if (lod >= LEVELS.INVOLUTE) {
-      shapes.push(node('path', { class: 'root-line',
-        d: 'M ' + fixed(-b / 2) + ' ' + fixed(-r.root) + ' H ' + fixed(b / 2) +
-           ' M ' + fixed(-b / 2) + ' ' + fixed(r.root) + ' H ' + fixed(b / 2) }));
-      // Un repère d'indexation : la silhouette d'un cylindre qui tourne ne
-      // change pas, il faut donc autre chose pour voir qu'il tourne.
-      shapes.push(node('path', { class: 'index-mark', d: 'M 0 ' + fixed(-r.root) + ' V ' + fixed(r.root) }));
-    }
+    // Surface primitive et fond de denture ne sont plus tracés ici : ce sont
+    // des SURFACES, et TeethOverlay les dessine pour toutes les présentations —
+    // cercles de face, ellipses de biais, génératrices par la tranche. Deux
+    // endroits pour un même trait, c'étaient deux occasions de diverger.
+    // Le repère d'indexation fixe disparaît aussi : la phase d'une roue vue
+    // autrement que de face est portée par le repère mobile de la pose.
     if (lod >= LEVELS.TECHNICAL && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
       // Les flancs d'une denture hélicoïdale sont obliques, et leur pente donne
       // le sens de l'hélice.
@@ -486,34 +479,66 @@
     return shapes;
   }
 
+  // ===== CONTRAT DES PRIMITIVES ORIENTÉES ==============================
+  //
+  // Une primitive `profile` ou `oblique` est exprimée DANS LE REPÈRE LOCAL DE
+  // L'ORGANE. Le renderer pose ce repère une fois :
+  //
+  //     translate(cx, cy) rotate(axisAngleDeg)
+  //
+  // si bien que, dans le repère local, l'axe projeté de la pièce est +X. Toute
+  // ellipse apparente s'y écrit donc SANS rotation propre :
+  //
+  //     rx = R × apparent.minor        (le long de l'axe)
+  //     ry = R × apparent.major        (en travers de l'axe)
+  //
+  // C'est vrai parce que `apparent.rotationDeg − axisAngleDeg ≡ 90° [180]` :
+  // le grand axe de l'ellipse apparente est toujours perpendiculaire à l'axe
+  // projeté. Un test le vérifie plutôt que de le laisser en commentaire.
+  //
+  // Interdit : mélanger les deux — une ellipse portant `rotate(rotationDeg)`
+  // À L'INTÉRIEUR d'un groupe déjà tourné applique la rotation deux fois.
+  // ======================================================================
+
+  /** L'ellipse apparente d'un cercle de rayon `radius`, dans le repère local. */
+  function apparentEllipse(radius, apparent, attrs) {
+    var seen = apparent || { major: 1, minor: 1 };
+    return node('ellipse', Object.assign({
+      rx: fixed(Math.max(0.2, radius * seen.minor)),
+      ry: fixed(Math.max(0.2, radius * seen.major))
+    }, attrs || {}));
+  }
+
   /**
    * Vue oblique : ni un disque, ni un rectangle.
    *
-   * On ne prétend pas faire de la 3D. Une ellipse dont le petit axe vaut le
-   * raccourci réel, épaissie le long de l'axe, suffit à montrer immédiatement
-   * qu'une pièce n'est ni de face ni de profil — c'est tout ce qu'on lui
-   * demande.
+   * On ne prétend pas faire de la 3D. Le cylindre est décrit par son ellipse
+   * apparente — celle que ProjectedScene a calculée pour l'axe de la pièce —
+   * épaissie de ce qui reste de sa largeur une fois projetée. Le raccourci
+   * n'est plus redérivé ici : c'est `apparent` qui le porte, et c'est la même
+   * ellipse qui sert aux surfaces de construction et à la courroie.
    */
-  function obliqueBody(wheel, lod, foreshortening) {
+  function obliqueBody(wheel, lod, apparent) {
     var r = radii(wheel);
-    var squeeze = Math.min(1, Math.max(0.05, finite(foreshortening, 0.5)));
+    var seen = apparent || { major: 1, minor: 0.5 };
+    var squeeze = Math.min(1, Math.max(0.05, finite(seen.minor, 0.5)));
     var b = faceWidthOf(wheel, r);
     // L'épaisseur apparente d'une pièce est ce qui reste de sa largeur quand on
     // ne la voit plus tout à fait de face.
     var thickness = b * Math.sqrt(Math.max(0, 1 - squeeze * squeeze));
-    var rx = r.tip * squeeze;
+    var reach = r.tip * finite(seen.major, 1);
     var shapes = [
       node('path', { class: 'tooth-profile oblique-body',
-        d: 'M ' + fixed(-thickness / 2) + ' ' + fixed(-r.tip) + ' h ' + fixed(thickness) +
-           ' v ' + fixed(2 * r.tip) + ' h ' + fixed(-thickness) + ' Z' }),
-      node('ellipse', { class: 'tooth-profile oblique-face', cx: fixed(thickness / 2), cy: '0',
-        rx: fixed(Math.max(0.4, rx)), ry: fixed(r.tip) })
+        d: 'M ' + fixed(-thickness / 2) + ' ' + fixed(-reach) + ' h ' + fixed(thickness) +
+           ' v ' + fixed(2 * reach) + ' h ' + fixed(-thickness) + ' Z' }),
+      apparentEllipse(r.tip, seen, { class: 'tooth-profile oblique-face', cx: fixed(thickness / 2), cy: '0' })
     ];
     if (lod <= LEVELS.SILHOUETTE) return shapes;
-    shapes.push(node('ellipse', { class: 'oblique-back', cx: fixed(-thickness / 2), cy: '0',
-      rx: fixed(Math.max(0.4, rx)), ry: fixed(r.tip) }));
-    shapes.push(node('path', { class: 'index-mark',
-      d: 'M ' + fixed(thickness / 2) + ' ' + fixed(-r.tip) + ' V ' + fixed(r.tip) }));
+    shapes.push(apparentEllipse(r.tip, seen, { class: 'oblique-back', cx: fixed(-thickness / 2), cy: '0' }));
+    // Plus de repère d'indexation FIXE en travers de l'ellipse : il ne bougeait
+    // pas, et se lisait indifféremment comme un axe, un diamètre ou un sens de
+    // rotation. La phase d'une roue oblique est portée par son repère mobile,
+    // celui que la pose pilote — et lui seul.
     return shapes;
   }
 
@@ -760,7 +785,11 @@
     if (drafted) {
       body = drafted;
     } else if (presentation === 'oblique') {
-      body = obliqueBody(wheel, lod, options.foreshortening);
+      // `apparent` est la description complète de l'ellipse projetée. Le
+      // raccourci seul en est un cas particulier — grand axe unitaire —, et
+      // reste accepté pour les appelants qui n'ont que lui.
+      body = obliqueBody(wheel, lod, options.apparent ||
+        (Number.isFinite(options.foreshortening) ? { major: 1, minor: options.foreshortening } : null));
     } else if (presentation === 'profile') {
       body = (PROFILES[wheel.kind] || gearProfile)(wheel, lod);
     } else if (presentation === 'face') {
@@ -780,7 +809,12 @@
     if (drafted && presentation === 'face' && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
       body = body.concat(helixHandMark(wheel, radii(wheel)));
     }
+    // `fixed` porte ce qui suit la PIÈCE — géométrie, hachures de bâti ;
+    // `upright` ce qui doit rester lisible à l'écran — les textes. Les mêler
+    // obligeait à contre-tourner un groupe qui contenait aussi de la géométrie :
+    // le trait y prenait alors une orientation que la pièce n'a pas.
     var labels = [];
+    var upright = [];
     var r = radii(wheel);
     // Z=n reste hors du rotor (il ne doit pas tourner) et disparaît quand la
     // roue est trop petite pour rester lisible.
@@ -788,7 +822,7 @@
       var y = wheel.kind === 'internal-ring' ? -(r.pitch + 2.6 * r.module) : -r.root * 0.5;
       var size = Math.max(2.6, Math.min(r.root * 0.3, 10));
       if (wheel.kind === 'internal-ring' || r.root > 6) {
-        labels.push(node('text', { class: 'tooth-count', 'text-anchor': 'middle', y: fixed(y, 1), 'font-size': fixed(size, 1) }, 'Z=' + wheel.teeth));
+        upright.push(node('text', { class: 'tooth-count', 'text-anchor': 'middle', y: fixed(y, 1), 'font-size': fixed(size, 1) }, 'Z=' + wheel.teeth));
       }
     }
     // §18 : un organe bloqué porte les hachures de bâti. Elles vont dans
@@ -796,7 +830,7 @@
     if (wheel.functionalRole === 'fixed' && Ground) {
       labels = labels.concat(Ground.ring(0, 0, groundRadius(wheel, r), { length: r.module * 1.6 }));
     }
-    return { rotor: body, fixed: labels, lod: lod, presentation: presentation,
+    return { rotor: body, fixed: labels, upright: upright, lod: lod, presentation: presentation,
       conventional: !!drafted };
   }
 
@@ -815,6 +849,7 @@
     level: level, levelFor: levelFor, build: build,
     conventional: conventional, CONVENTIONAL_UNTIL: CONVENTIONAL_UNTIL,
     radii: radii, circlePath: circlePath, node: node, group: group,
+    apparentEllipse: apparentEllipse, faceWidthOf: faceWidthOf,
     wormGeometry: wormGeometry, wormClipId: wormClipId, WORM_MARGIN_PITCHES: WORM_MARGIN_PITCHES,
     groundRadius: groundRadius };
 });

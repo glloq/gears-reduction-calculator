@@ -20,25 +20,74 @@
   function node(tag, attrs, text) { return { tag: tag, attrs: attrs, text: text }; }
 
   /**
-   * circles(wheel, lod) — repères concentriques, exprimés dans le repère de la
-   * roue. Le primitif apparaît dès le niveau 2, le reste au niveau 3.
+   * surfaces(wheel, lod, options) — les surfaces de construction d'une roue,
+   * TELLES QU'ON LES VOIT.
+   *
+   * Elles étaient toujours tracées en `<circle>`. Un cercle porté par un axe
+   * qui ne pointe pas vers l'œil ne se voit pas comme un cercle : c'est ce qui
+   * mettait, autour d'une roue elliptique en iso, trois cercles fantômes qui
+   * n'appartenaient à aucune pièce. Elles suivent maintenant la MÊME ellipse
+   * apparente que le corps — celle que ProjectedScene a calculée pour l'axe.
+   *
+   *   face      cercles
+   *   oblique   ellipses (repère local : voir le contrat de TeethPrimitives)
+   *   profile   génératrices — deux droites parallèles à l'axe
+   *
+   * Le primitif apparaît dès le niveau 2, le reste au niveau 3.
    */
-  function circles(wheel, lod) {
+  function surfaces(wheel, lod, options) {
     lod = finite(lod, LEVELS.INVOLUTE);
-    if (lod < LEVELS.INVOLUTE || !wheel) return [];
+    if (!wheel) return [];
+    options = options || {};
+    var presentation = options.presentation || wheel.presentation || 'face';
+    // Par la tranche, la surface primitive est le seul trait qui distingue une
+    // roue d'un simple cylindre : elle apparaît donc dès que la silhouette est
+    // dessinée, comme le corps le faisait avant que les surfaces ne soient
+    // rassemblées ici. De face ou de biais, le contour suffit d'abord.
+    if (lod < (presentation === 'profile' ? LEVELS.SIMPLIFIED : LEVELS.INVOLUTE)) return [];
+    var apparent = options.apparent || wheel.apparent || null;
     var r = Primitives.radii(wheel);
     var shapes = [];
-    if (wheel.kind !== 'worm' && wheel.kind !== 'rack' && wheel.kind !== 'cone') {
-      shapes.push(node('circle', { class: 'pitch-circle', r: fixed(r.pitch) }));
+    var flat = presentation === 'profile';
+    var span = flat ? Primitives.faceWidthOf(wheel, r) : 0;
+
+    // Vue par la tranche, une surface de révolution n'a plus de contour fermé :
+    // il en reste ses deux génératrices, à ±R de l'axe. Le contour de tête est
+    // alors la silhouette elle-même, et un cercle de base n'a plus d'arête
+    // visible : les tracer doublerait le dessin au lieu de l'informer.
+    function generatrices(radius, className) {
+      if (!(radius > 0)) return;
+      shapes.push(node('path', { class: className,
+        d: 'M ' + fixed(-span / 2) + ' ' + fixed(-radius) + ' H ' + fixed(span / 2) +
+           ' M ' + fixed(-span / 2) + ' ' + fixed(radius) + ' H ' + fixed(span / 2) }));
     }
+    function surface(radius, className) {
+      if (!(radius > 0)) return;
+      if (!apparent || Math.abs(apparent.major - apparent.minor) < 1e-9) {
+        shapes.push(node('circle', { class: className, r: fixed(radius * (apparent ? apparent.major : 1)) }));
+        return;
+      }
+      shapes.push(Primitives.apparentEllipse(radius, apparent, { class: className }));
+    }
+
+    if (flat) {
+      if (wheel.kind === 'worm' || wheel.kind === 'rack' || wheel.kind === 'cone') return shapes;
+      generatrices(r.pitch, 'pitch-line');
+      if (lod >= LEVELS.INVOLUTE && wheel.kind === 'gear') generatrices(r.root, 'root-line');
+      return shapes;
+    }
+    if (wheel.kind !== 'worm' && wheel.kind !== 'rack' && wheel.kind !== 'cone') surface(r.pitch, 'pitch-circle');
     if (lod < LEVELS.TECHNICAL || wheel.kind === 'rack' || wheel.kind === 'worm' || wheel.kind === 'cone') return shapes;
-    if (r.base > 0 && r.base < r.tip) shapes.push(node('circle', { class: 'base-circle', r: fixed(r.base) }));
+    if (r.base > 0 && r.base < r.tip) surface(r.base, 'base-circle');
     if (wheel.kind === 'gear') {
-      shapes.push(node('circle', { class: 'root-circle', r: fixed(r.root) }));
-      shapes.push(node('circle', { class: 'tip-circle', r: fixed(r.tip) }));
+      surface(r.root, 'root-circle');
+      surface(r.tip, 'tip-circle');
     }
     return shapes;
   }
+
+  /** Compatibilité : une roue sans présentation est une roue vue de face. */
+  function circles(wheel, lod) { return surfaces(wheel, lod, { presentation: 'face' }); }
 
   /**
    * Point primitif d'un engrènement : à r1 du centre menant, sur la ligne des
@@ -78,5 +127,5 @@
     ];
   }
 
-  return { circles: circles, mesh: mesh, pitchPoint: pitchPoint, MESHING: MESHING };
+  return { circles: circles, surfaces: surfaces, mesh: mesh, pitchPoint: pitchPoint, MESHING: MESHING };
 });

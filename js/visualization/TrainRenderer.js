@@ -227,11 +227,22 @@
     seat.appendChild(rotor);
     // Les repères et étiquettes compensent l'inclinaison de l'axe : un « Z=40 »
     // couché sur le flanc d'un cône serait illisible.
+    // Deux groupes, et deux règles.
+    //
+    // `construction` porte de la GÉOMÉTRIE — surfaces primitives, de tête, de
+    // pied, hachures de bâti. Elle suit la pièce, exactement comme son corps.
+    // `annotation` porte ce qui doit rester LISIBLE — les textes —, et se
+    // contre-tourne pour cela. Les deux vivaient dans un seul groupe
+    // contre-tourné : la géométrie y prenait donc une orientation que la pièce
+    // n'a pas, et les cercles de construction se retrouvaient tournés à
+    // l'envers de l'ellipse qu'ils étaient censés épouser.
     var construction = n('g', { class: 'construction' });
-    if (Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg) {
-      construction.setAttribute('transform', 'rotate(' + (-wheel.axisAngleDeg).toFixed(2) + ')');
-    }
     seat.appendChild(construction);
+    var annotation = n('g', { class: 'wheel-annotation' });
+    if (Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg) {
+      annotation.setAttribute('transform', 'rotate(' + (-wheel.axisAngleDeg).toFixed(2) + ')');
+    }
+    seat.appendChild(annotation);
 
     // §9, §10 : la scène nomme déjà l'organe ET sa fonction. Le renderer n'en
     // garde pas de copie, et n'affiche plus « S » tout court : « Solaire (S) ·
@@ -260,7 +271,8 @@
       seat.appendChild(phase);
     }
 
-    var record = { wheel: wheel, entry: entry, group: host, seat: seat, rotor: rotor, construction: construction, orbit: orbit, phase: phase, lod: -1 };
+    var record = { wheel: wheel, entry: entry, group: host, seat: seat, rotor: rotor,
+      construction: construction, annotation: annotation, orbit: orbit, phase: phase, lod: -1 };
     if (wheel.kind === 'rack') this._linear.push(record);
     this._wheels.push(record);
     return host;
@@ -289,29 +301,30 @@
     record.lod = lod;
     record.rotor.textContent = '';
     record.construction.textContent = '';
+    record.annotation.textContent = '';
     // La PRÉSENTATION vient du modèle spatial, pas d'une supposition : une roue
     // n'est un disque que lorsque son axe pointe vers l'œil. Le dessin faisait
     // partout l'hypothèse inverse, ce qui interdisait de montrer un engrenage et
     // une vis sur le même arbre.
     var built = GearTeethPrimitives.build(record.wheel, { lod: lod,
       presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening,
-      style: this.style });
+      // L'ellipse apparente vient de ProjectedScene : le corps, les surfaces de
+      // construction et la courroie décrivent ainsi le MÊME cercle projeté.
+      apparent: record.wheel.apparent, style: this.style });
     appendAll(record.rotor, built.rotor);
-    // Les cercles de construction — primitif, base, pied — sont des CERCLES :
-    // ils n'ont de sens que sur une roue vue de face. Tracés sur un organe vu
-    // par la tranche, ils dessinaient une ellipse fantôme autour d'un
-    // rectangle, sans rien coter.
     // La représentation conventionnelle porte DÉJÀ les surfaces : y superposer
     // les cercles de construction doublerait chaque trait.
-    if (record.wheel.presentation !== 'profile' && !built.conventional) {
-      appendAll(record.construction, GearTeethOverlay.circles(record.wheel, lod));
+    if (!built.conventional) {
+      appendAll(record.construction, GearTeethOverlay.surfaces(record.wheel, lod,
+        { presentation: record.wheel.presentation, apparent: record.wheel.apparent }));
     }
     appendAll(record.construction, built.fixed);
+    appendAll(record.annotation, built.upright);
     // Les textes portés par la roue sont plafonnés à la taille d'écran commune :
     // ils restent proportionnés à la roue, sans jamais devenir illisibles.
     if (Number.isFinite(this._fontSize)) {
       var cap = this._fontSize;
-      Array.prototype.forEach.call(record.construction.querySelectorAll('text'), function (text) {
+      Array.prototype.forEach.call(record.annotation.querySelectorAll('text'), function (text) {
         var own = Number(text.getAttribute('font-size'));
         text.setAttribute('font-size', Math.min(own || cap, cap).toFixed(3));
       });

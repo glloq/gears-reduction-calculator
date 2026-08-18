@@ -119,6 +119,11 @@
     }, []);
     geometry.centre1 = geometry.toScreen([0, 0]);
     geometry.centre2 = geometry.toScreen([distance, 0]);
+    // Les deux poulies, décrites comme la vue décrit n'importe quel cercle
+    // porté par un axe. C'est le MÊME descripteur que celui d'une roue : si
+    // l'un des deux venait à diverger, la courroie quitterait la jante.
+    geometry.circles = [ProjectedScene.projectedCircle(geometry.centre1, r1, ellipse),
+      ProjectedScene.projectedCircle(geometry.centre2, r2, ellipse)];
     geometry.outline = outline(geometry);
     return geometry;
   }
