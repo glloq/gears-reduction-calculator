@@ -76,6 +76,13 @@ test('Transmission and Dimensions put the satellites in the same plane', () => {
         trainPlanets[index].cy - trainPlanets[index].orbitCenterY];
       assert.ok(Math.hypot(mine[0] - theirs[0], mine[1] - theirs[1]) < 1e-9,
         view + ' satellite ' + index + ' : ' + mine + ' vs ' + theirs);
+      // Et à la même PROFONDEUR relative : les deux vues doivent empiler les
+      // satellites dans le même ordre, sinon l'une des deux ment.
+      const mineDepth = planet.depth - dimPlanets[0].depth;
+      const theirsDepth = trainPlanets[index].depth - trainPlanets[0].depth;
+      assert.ok(Math.abs(mineDepth - theirsDepth) < 1e-9,
+        view + ' satellite ' + index + ' : profondeur ' + mineDepth + ' vs ' + theirsDepth);
+      assert.equal(planet.instance, index, view + ' : exemplaire non numéroté');
     });
     // Et le porte-satellites de la vue cotée connaît la même base.
     const carrier = dimensions.members.filter(m => m.role === 'carrier')[0];

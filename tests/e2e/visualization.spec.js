@@ -601,8 +601,12 @@ test('the dimensioned view draws what it sees, not always a circle (§7 de l’a
     const shape = selector => {
       const host = svg.querySelector(selector);
       if (!host) return 'absent';
-      if (host.querySelector('.profile-body')) return 'profile';
+      // L'ellipse d'abord : vue de BIAIS, la pièce a une silhouette de cylindre
+      // ET des cercles ouverts en ellipses. Vue par la TRANCHE, elle a la même
+      // silhouette mais ses cercles se referment en segments — c'est l'ellipse,
+      // pas la silhouette, qui distingue les deux.
       if (host.querySelector('ellipse')) return 'ellipse';
+      if (host.querySelector('.profile-body')) return 'profile';
       if (host.querySelector('circle:not(.phase-dot)')) return 'circle';
       return 'autre';
     };
@@ -2197,4 +2201,77 @@ test('a satellite passes behind the ring, then in front of it (§ profondeur pla
     // Et au moins un satellite est passé des deux côtés de la couronne.
     expect(run.both).toBeGreaterThan(0);
   }
+});
+
+test('the Dimensions view draws the same oblique bodies as the Teeth view', async ({ page }) => {
+  await mount(page, ['worm', 'bevel', 'spur']);
+  await showView(page, 'geometry');
+  const read = async () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const body = selector => {
+      const el = svg.querySelector(selector);
+      return el ? { d: el.getAttribute('d') || '', tag: el.tagName } : null;
+    };
+    return { worm: body('.worm-member'), cone: body('.cone-member'),
+      profile: body('.profile-body > path'),
+      // Le bâti d'un organe bloqué : cercle de face, ellipse de biais.
+      ground: (() => {
+        const el = svg.querySelector('.ground-ring, .ground-boundary');
+        return el ? { tag: el.tagName, rx: el.getAttribute('rx'), ry: el.getAttribute('ry') } : null;
+      })(),
+      base: !!svg.querySelector('.cone-base'), face: !!svg.querySelector('.worm-end-face') };
+  });
+
+  await page.evaluate(() => window.__viewer.setProjection('front'));
+  const flat = await read();
+  // Vu de face ou par la tranche, un corps couché reste le RECTANGLE du dessin
+  // de profil : ses bouts sont des segments, il n'y a pas d'arc à tracer.
+  if (flat.worm) expect(flat.worm.d).not.toContain('A ');
+
+  await page.evaluate(() => window.__viewer.setProjection('iso'));
+  const oblique = await read();
+  // De biais, chaque corps se ferme par les demi-ellipses de ses bouts : c'est
+  // le contour de la vue Denture, dans le vocabulaire de trait des cotes. Le
+  // rectangle laissait quatre coins hors d'une pièce ronde.
+  expect(oblique.worm, 'pas de vis dans la vue cotée').not.toBeNull();
+  expect(oblique.worm.d).toContain('A ');
+  expect(oblique.cone, 'pas de cône dans la vue cotée').not.toBeNull();
+  expect(oblique.cone.d).toContain('A ');
+  expect(oblique.profile, 'pas de corps couché dans la vue cotée').not.toBeNull();
+  expect(oblique.profile.d).toContain('A ');
+  // Et chaque famille montre le cercle que sa forme rend visible.
+  expect(oblique.base).toBe(true);
+  expect(oblique.face).toBe(true);
+});
+
+test('the ground symbol follows the shape of the part it blocks (§ bâti oblique)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  await showView(page, 'geometry');
+  const shape = async () => page.evaluate(() => {
+    const el = document.querySelector('#svgContainer .envelope-layer ellipse, #svgContainer .envelope-layer circle');
+    if (!el) return null;
+    const blocked = window.__viewer.geometry.layout.stages[0].members
+      .filter(m => m.functionalRole === 'fixed')[0];
+    return { tag: el.tagName.toLowerCase(),
+      // rx/ry du symbole, et le rapport que l'organe bloqué ANNONCE lui-même.
+      ratio: el.tagName.toLowerCase() === 'ellipse'
+        ? Number(el.getAttribute('rx')) / Number(el.getAttribute('ry')) : 1,
+      expected: blocked && blocked.apparent ? blocked.apparent.minor / blocked.apparent.major : null };
+  });
+
+  const seenIn = {};
+  for (const view of ['front', 'side', 'iso']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    const found = await shape();
+    expect(found, view + ' : aucun symbole de bâti').not.toBeNull();
+    // Le bâti prend la forme de la pièce qu'il bloque. Un anneau circulaire
+    // autour d'une couronne vue de biais affirmait que la pièce, elle, est vue
+    // de face — et le rapport de son ellipse le dit, vue par vue.
+    expect(Math.abs(found.ratio - found.expected), view + ' : bâti ' + found.ratio
+      + ' vs pièce ' + found.expected).toBeLessThan(0.02);
+    seenIn[view] = found.ratio;
+  }
+  // Et il change réellement d'une vue à l'autre : une forme constante ne
+  // suivrait rien du tout.
+  expect(new Set(Object.values(seenIn).map(v => v.toFixed(2))).size).toBeGreaterThan(1);
 });
