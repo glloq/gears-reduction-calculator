@@ -100,26 +100,81 @@
   }
 
   /**
+   * DE QUOI UN AXE VU DE BIAIS A L'AIR — la description que toutes les pièces
+   * couchées de cette vue partagent.
+   *
+   * `axialScale` est ce qui reste d'une longueur portée par l'axe. Le petit axe
+   * de l'ellipse apparente s'en déduit exactement, `minor² + axialScale² = 1` :
+   * une seule valeur décrit donc à la fois le raccourci de la longueur et
+   * l'ouverture des bouts, et les deux ne peuvent pas se contredire. Vue par la
+   * tranche (`axialScale = 1`), l'ellipse se referme et le corps redevient le
+   * rectangle du dessin de profil.
+   */
+  function seenAlongAxis(member) {
+    var squeeze = Math.min(1, Math.max(0, finite(member && member.axialScale, 1)));
+    return { squeeze: squeeze, minor: Math.sqrt(Math.max(0, 1 - squeeze * squeeze)),
+      major: finite(member && member.apparent && member.apparent.major, 1) };
+  }
+
+  /**
+   * La silhouette d'un cylindre couché : deux génératrices fermées par les
+   * demi-ellipses de ses bouts. Un rectangle laisserait quatre coins hors d'une
+   * pièce ronde dès que le bout s'ouvre — c'est le même contour que la vue
+   * Denture, écrit dans le vocabulaire de trait de la vue Dimensions.
+   */
+  function cylinderPath(half, radius, seen) {
+    var reach = radius * seen.major;
+    var flat = radius * seen.minor;
+    if (flat < 1e-6) {
+      return 'M ' + (-half).toFixed(3) + ' ' + (-reach).toFixed(3) +
+        ' L ' + (-half).toFixed(3) + ' ' + reach.toFixed(3) +
+        ' L ' + half.toFixed(3) + ' ' + reach.toFixed(3) +
+        ' L ' + half.toFixed(3) + ' ' + (-reach).toFixed(3) + ' Z';
+    }
+    return 'M ' + (-half).toFixed(3) + ' ' + (-reach).toFixed(3) +
+      ' A ' + flat.toFixed(3) + ' ' + reach.toFixed(3) + ' 0 0 0 ' + (-half).toFixed(3) + ' ' + reach.toFixed(3) +
+      ' L ' + half.toFixed(3) + ' ' + reach.toFixed(3) +
+      ' A ' + flat.toFixed(3) + ' ' + reach.toFixed(3) + ' 0 0 0 ' + half.toFixed(3) + ' ' + (-reach).toFixed(3) + ' Z';
+  }
+
+  /**
    * Une roue vue par la tranche : son encombrement est un rectangle b × Ø, et
    * son cercle primitif deux génératrices. C'est le dessin d'un cylindre vu de
    * côté — pas un disque, qui supposerait qu'on le regarde de face.
+   *
+   * Vue de BIAIS, c'est le même corps : sa longueur se raccourcit et ses bouts
+   * s'ouvrent en ellipses. Le rectangle y était étiré par un `scale()` non
+   * uniforme, qui déformait au passage l'épaisseur de ses traits.
    */
-  function profileBody(group, member, className) {
+  function profileBody(group, member, className, options) {
+    // `bare` : seule la SILHOUETTE. De biais, les cercles de la pièce sont
+    // dessinés en ellipses par la couche de construction — les redoubler en
+    // génératrices dirait deux fois la même chose, et jamais tout à fait
+    // pareil.
+    var bare = !!(options && options.bare);
     var width = Math.max(1.5, finite(member.width, 4));
     var tip = finite(member.outsideDiameter, finite(member.pitchDiameter, 20));
     var angle = finite(member.axisAngleDeg, 0);
-    var squeeze = finite(member.axialScale, 1);
+    var seen = seenAlongAxis(member);
+    var half = width * seen.squeeze / 2;
     var host = node('g', { class: 'profile-body',
       transform: 'translate(' + finite(member.cx, 0).toFixed(3) + ' ' + finite(member.cy, 0).toFixed(3) +
-        ') rotate(' + angle.toFixed(3) + ')' + (Math.abs(squeeze - 1) < 1e-6 ? '' : ' scale(' + squeeze.toFixed(4) + ' 1)') });
-    host.appendChild(node('rect', { class: className, x: (-width / 2).toFixed(3), y: (-tip / 2).toFixed(3),
-      width: width.toFixed(3), height: tip.toFixed(3), 'data-diameter-mm': tip }));
+        ') rotate(' + angle.toFixed(3) + ')' });
+    host.appendChild(node('path', { class: className, d: cylinderPath(half, tip / 2, seen),
+      'data-diameter-mm': tip }));
+    // Le bout qu'on voit : c'est lui qui dit que la pièce est ronde, et de quel
+    // côté on la regarde.
+    if (seen.minor > 0.02 && !bare) {
+      host.appendChild(node('ellipse', { class: 'profile-face construction-circle',
+        cx: half.toFixed(3), cy: '0',
+        rx: (tip / 2 * seen.minor).toFixed(3), ry: (tip / 2 * seen.major).toFixed(3) }));
+    }
     var pitch = finite(member.pitchDiameter, 0);
-    if (pitch > 0) {
+    if (pitch > 0 && !bare) {
       [-1, 1].forEach(function (side) {
         host.appendChild(node('line', { class: 'pitch-generatrix construction-circle',
-          x1: (-width / 2 - 1).toFixed(3), y1: (side * pitch / 2).toFixed(3),
-          x2: (width / 2 + 1).toFixed(3), y2: (side * pitch / 2).toFixed(3), 'data-diameter-mm': pitch }));
+          x1: (-half - 1).toFixed(3), y1: (side * pitch / 2 * seen.major).toFixed(3),
+          x2: (half + 1).toFixed(3), y2: (side * pitch / 2 * seen.major).toFixed(3), 'data-diameter-mm': pitch }));
       });
     }
     group.appendChild(host);
@@ -146,17 +201,47 @@
   }
 
   /** Silhouette conique : cône primitif au demi-angle réel. */
-  function cone(group, x, y, pitchDiameter, coneAngleDeg, faceWidth, className) {
+  /**
+   * Un tronc de cône primitif, posé sur son axe.
+   *
+   * `member` porte le raccourci : vu par la tranche, les deux bases sont des
+   * segments et la silhouette est le trapèze du dessin de profil ; vue de
+   * biais, ce sont deux ellipses, et le trapèze laissait quatre coins hors de
+   * la pièce. C'est la même construction que la vue Denture — grande base,
+   * génératrices, petite base —, écrite en traits de cotation.
+   */
+  function cone(group, x, y, pitchDiameter, coneAngleDeg, faceWidth, className, member) {
     var back = finite(pitchDiameter, 20) / 2;
     var delta = finite(coneAngleDeg, 45) * Math.PI / 180;
     var face = Math.max(4, finite(faceWidth, back / 2));
-    var depth = Math.max(3, face * Math.cos(delta));
+    var seen = seenAlongAxis(member);
+    // Le sommet du couple donne le SENS : sans lui, les deux cônes s'amincissent
+    // du même côté et leurs sommets ne peuvent pas coïncider.
+    var side = finite(member && member.apexSide, 1) < 0 ? -1 : 1;
+    var depth = Math.max(3, face * Math.cos(delta)) * seen.squeeze * side;
     var front = Math.max(1, back - face * Math.sin(delta));
-    return group.appendChild(node('path', {
-      class: className || 'geometry-member cone-member',
-      d: 'M ' + x + ' ' + (y - back).toFixed(2) + ' L ' + (x + depth).toFixed(2) + ' ' + (y - front).toFixed(2) +
-        ' L ' + (x + depth).toFixed(2) + ' ' + (y + front).toFixed(2) + ' L ' + x + ' ' + (y + back).toFixed(2) + ' Z'
-    }));
+    var by = back * seen.major, bx = back * seen.minor;
+    var fy = front * seen.major, fx = front * seen.minor;
+    var sweep = side > 0 ? 1 : 0;
+    var d = bx < 1e-6
+      ? 'M ' + x + ' ' + (y - by).toFixed(3) + ' L ' + (x + depth).toFixed(3) + ' ' + (y - fy).toFixed(3) +
+        ' L ' + (x + depth).toFixed(3) + ' ' + (y + fy).toFixed(3) + ' L ' + x + ' ' + (y + by).toFixed(3) + ' Z'
+      : 'M ' + x + ' ' + (y - by).toFixed(3) +
+        ' L ' + (x + depth).toFixed(3) + ' ' + (y - fy).toFixed(3) +
+        ' A ' + fx.toFixed(3) + ' ' + fy.toFixed(3) + ' 0 0 ' + sweep + ' ' + (x + depth).toFixed(3) + ' ' + (y + fy).toFixed(3) +
+        ' L ' + x + ' ' + (y + by).toFixed(3) +
+        ' A ' + bx.toFixed(3) + ' ' + by.toFixed(3) + ' 0 0 ' + sweep + ' ' + x + ' ' + (y - by).toFixed(3) + ' Z';
+    var shape = group.appendChild(node('path', {
+      class: className || 'geometry-member cone-member', d: d,
+      'data-diameter-mm': finite(pitchDiameter, 0) }));
+    // La grande base est le cercle primitif du cône : c'est LE cercle qu'on
+    // cote, et il se voit en entier.
+    if (bx > 1e-6) {
+      group.appendChild(node('ellipse', { class: 'cone-base construction-circle',
+        cx: x, cy: y, rx: bx.toFixed(3), ry: by.toFixed(3),
+        'data-diameter-mm': finite(pitchDiameter, 0) }));
+    }
+    return shape;
   }
 
   /** Vis sans fin : corps cylindrique et axe, vus de côté. */
@@ -181,11 +266,26 @@
         module: m, starts: 1, pitch: Math.PI * m, lead: 0 };
     var r = g.radius, length = g.length;
     // Cylindre vu de côté : un rectangle. `rx = r` en faisait une capsule à
-    // extrémités hémisphériques, une forme qu'aucune vis n'a.
-    group.appendChild(node('rect', { class: className || 'geometry-member worm-member',
-      x: (x - length / 2).toFixed(2), y: (y - r).toFixed(2), width: length.toFixed(2), height: (2 * r).toFixed(2) }));
+    // extrémités hémisphériques, une forme qu'aucune vis n'a. Vue de biais, ce
+    // même cylindre se raccourcit et ses bouts s'ouvrent en ellipses : c'est le
+    // contour partagé, pas un second dessin.
+    var seen = seenAlongAxis(options.member);
+    var half = length * seen.squeeze / 2;
+    group.appendChild(node('path', { class: className || 'geometry-member worm-member',
+      d: cylinderPath(half, r, seen), transform: 'translate(' + x + ' ' + y + ')' }));
     group.appendChild(node('line', { class: 'shaft-axis construction-axis',
-      x1: (x - length / 2 - 3 * m).toFixed(2), y1: y, x2: (x + length / 2 + 3 * m).toFixed(2), y2: y }));
+      x1: (x - half - 3 * m).toFixed(2), y1: y, x2: (x + half + 3 * m).toFixed(2), y2: y }));
+    if (seen.minor > 0.02) {
+      group.appendChild(node('ellipse', { class: 'worm-end-face construction-circle',
+        cx: (x + half).toFixed(3), cy: y,
+        rx: (r * seen.minor).toFixed(3), ry: (r * seen.major).toFixed(3) }));
+    }
+    // Les filets défilent dans le repère COMPRIMÉ le long de l'axe : un pas
+    // dessiné y reste un pas mécanique, et le masque suit la même compression.
+    var seat = node('g', { class: 'worm-squeeze' });
+    if (Math.abs(seen.squeeze - 1) > 1e-6) seat.setAttribute('transform', 'scale(' + seen.squeeze.toFixed(4) + ' 1)');
+    group.appendChild(seat);
+    group = seat;
 
     // Les filets débordent de deux pas de chaque côté : sans ce débord, un
     // filet disparaîtrait d'un bord avant que le suivant n'entre par l'autre,

@@ -196,6 +196,22 @@
         y2: drawn.origin[1] + drawn.along[1] * to * squeeze,
         endOn: Math.hypot(drawn.along[0], drawn.along[1]) < 1e-9,
         depth: Projection.depth(shaft.start, view),
+        // UN ARBRE N'EST PAS À UNE SEULE PROFONDEUR. Croisé par rapport au
+        // regard, il plonge : son premier bout est devant les roues qu'il
+        // traverse, son second derrière. Ses deux profondeurs sont donc
+        // portées séparément, et la vue peut le découper pour l'intercaler.
+        depthStart: Projection.depth(shaft.start, view),
+        depthEnd: Projection.depth(shaft.end, view),
+        // Là où l'arbre TRAVERSE un des organes qu'il porte, il est dans le
+        // métal : on ne le voit pas. Ces intervalles sont donnés en abscisse
+        // normalisée le long du segment dessiné, pour que la vue puisse
+        // n'émettre que ce qui sort réellement des roues.
+        hidden: to - from < 1e-9 ? [] : shaft.memberIds.map(function (id) {
+          var placed = spatial.byId[id];
+          if (!placed) return null;
+          return [(placed.axialPosition - placed.width / 2 - from) / (to - from),
+            (placed.axialPosition + placed.width / 2 - from) / (to - from)];
+        }).filter(Boolean),
         basis: phaseBasis(shaft.direction, view)
       };
     });

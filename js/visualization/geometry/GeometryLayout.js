@@ -131,9 +131,13 @@
       var orbiting = { orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y, orbitBasis: basis };
       for (var i = 0; i < count; i++) {
         var a = 2 * Math.PI * i / count;
-        var offset = ProjectedScene.phasePoint(basis, orbit, a);
-        list.push(place(byRole.P, 'planet', centre.x + offset[0], centre.y + offset[1],
-          memberLabel(byRole.P, 'P'), Object.assign(orientation(frame, byRole.P.id), { phase: a }, orbiting)));
+        var offset = ProjectedScene.orbitPoint(basis, orbit, a);
+        var seenPlanet = orientation(frame, byRole.P.id);
+        list.push(place(byRole.P, 'planet', centre.x + offset.x, centre.y + offset.y,
+          memberLabel(byRole.P, 'P'), Object.assign(seenPlanet, { phase: a, instance: i,
+            // Chaque satellite a SA place dans l'espace, donc SA profondeur :
+            // ils héritaient tous de celle de leur axe commun.
+            depth: finite(seenPlanet.depth, 0) + offset.depth }, orbiting)));
       }
       if (byRole.C) {
         list.push(place(byRole.C, 'carrier', centre.x, centre.y, memberLabel(byRole.C, 'C'),

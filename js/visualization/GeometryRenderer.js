@@ -26,6 +26,7 @@
     this._phaseMarks = [];
     this._orbits = [];
     this._arms = [];
+    this._piles = {};
     this._phases = [];
     this._linear = [];
     this._angle = 0;
@@ -71,12 +72,20 @@
    * l'axe. Une silhouette dessinée en millimètres vrais dans une projection
    * annoncerait une longueur qu'on ne voit pas.
    */
+  /**
+   * Le repère LOCAL d'un organe couché : son axe projeté sur +X.
+   *
+   * Le raccourci n'y est plus appliqué par un `scale()` non uniforme. Il
+   * déformait l'épaisseur des traits, et surtout il empêchait la primitive de
+   * fermer sa silhouette par les ellipses de ses bouts : elle ne connaissait
+   * plus le rapport entre sa longueur et son diamètre. Chaque primitive
+   * raccourcit désormais ce qu'elle porte, comme dans la vue Denture.
+   */
   function axisSeat(member, extraTurn) {
     var angle = finite(member.axisAngleDeg, 0) + finite(extraTurn, 0);
-    var squeeze = finite(member.axialScale, 1);
     return GearGeometryPrimitives.node('g', { class: 'axis-seat',
       transform: 'translate(' + finite(member.cx, 0).toFixed(3) + ' ' + finite(member.cy, 0).toFixed(3) +
-        ') rotate(' + angle.toFixed(3) + ')' + (Math.abs(squeeze - 1) < 1e-6 ? '' : ' scale(' + squeeze.toFixed(4) + ' 1)') });
+        ') rotate(' + angle.toFixed(3) + ')' });
   }
 
   /** Le tracé des bras d'un porte-satellites, à l'angle où il se trouve. */
@@ -95,6 +104,10 @@
   GeometryRenderer.prototype._member = function (group, item, member) {
     var p = GearGeometryPrimitives;
     var host = p.node('g', { class: 'geometry-member-group role-' + member.role, 'data-role': member.role });
+    if (member.memberId) host.setAttribute('data-member', member.memberId);
+    // Un organe dessiné PLUSIEURS fois : sans son numéro d'exemplaire, quatre
+    // satellites sont indiscernables dans une pile que la profondeur mélange.
+    if (Number.isFinite(member.instance)) host.setAttribute('data-instance', String(member.instance));
     host.appendChild(p.node('title', {}, this._memberTitle(member)));
     group.appendChild(host);
     this._ground(item, member);
@@ -102,8 +115,13 @@
     // tournait autour du centre d'étage : le disque restait sur place pendant
     // que son repère s'en allait faire le tour du dessin.
     if (member.role === 'planet' && member.orbitBasis) {
+      // `orbitDepth` est la profondeur de l'AXE d'orbite : celle du satellite
+      // s'en écarte du terme que le point d'orbite porte, et c'est elle qui
+      // décide de sa place dans la pile.
+      var swept = GearProjectedScene.orbitPoint(member.orbitBasis, finite(member.orbit, 0), finite(member.phase, 0));
       this._orbits.push({ el: host, memberId: member.memberId, basis: member.orbitBasis,
-        orbit: finite(member.orbit, 0), phase: finite(member.phase, 0),
+        orbit: finite(member.orbit, 0), phase: finite(member.phase, 0), stage: item.index,
+        depth: finite(member.depth, 0), orbitDepth: finite(member.depth, 0) - swept.depth,
         centreX: finite(member.orbitCenterX, member.cx), centreY: finite(member.orbitCenterY, member.cy),
         seatX: member.cx, seatY: member.cy });
     }
@@ -151,7 +169,7 @@
       host.appendChild(wormSeat);
       var threads = p.worm(wormSeat, 0, 0, member.pitchDiameter,
         finite(item.stage.parameters && item.stage.parameters.module, 1), null,
-        { starts: member.teeth, leadAngleDeg: member.leadAngleDeg,
+        { starts: member.teeth, leadAngleDeg: member.leadAngleDeg, member: member,
           memberId: member.memberId || ('s' + item.index + '-' + member.role) });
       this._phases.push({ el: threads, memberId: member.memberId,
         pitch: Number(threads.dataset.pitch) || 1 });
@@ -168,9 +186,9 @@
         // sur son axe, deux cônes à 90° seraient dessinés parallèles.
         // Le cône s'amincit vers le SOMMET du couple : `apexSide` dit de quel
         // côté de l'organe il se trouve, ce que le sens de l'axe ne dit pas.
-        var tilt = axisSeat(member, member.apexSide < 0 ? 180 : 0);
+        var tilt = axisSeat(member, 0);
         host.appendChild(tilt);
-        p.cone(tilt, 0, 0, member.pitchDiameter, member.coneAngleDeg, member.width, coneClass);
+        p.cone(tilt, 0, 0, member.pitchDiameter, member.coneAngleDeg, member.width, coneClass, member);
       }
       this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
       return host;
@@ -200,6 +218,12 @@
       // le pignon d'un couple conique, qui ne le sont jamais tous les deux.
       p.profileBody(host, member, 'geometry-member ' + kindClass + ' ' + roleClass);
     } else {
+      // De BIAIS, la pièce a une épaisseur : sa silhouette est le même cylindre
+      // couché, et ses cercles des ellipses posées dessus. Elle était réduite à
+      // une ellipse plate — une roue sans largeur, qu'aucune vue ne montre.
+      if (member.presentation === 'oblique') {
+        p.profileBody(host, member, 'geometry-member ' + kindClass + ' ' + roleClass, { bare: true });
+      }
       p.circle(host, member.cx, member.cy, member.pitchDiameter,
         'geometry-member ' + kindClass + ' ' + roleClass, null, member.apparent);
       // Couche « pitch » : tête, pied et base — masquables sans toucher au reste.
@@ -223,7 +247,10 @@
     if (member.kind === 'carrier') radius = finite(member.pitchDiameter, 0) / 2 * 0.55;
     if (!(radius > 0)) return;
     var host = this._layers.envelope;
-    GearGroundSymbol.ring(member.cx, member.cy, radius * 1.04, { length: radius * 0.16 })
+    // L'ELLIPSE APPARENTE de l'organe : un anneau de bâti circulaire autour
+    // d'une pièce vue de biais affirmait que la pièce, elle, est vue de face.
+    GearGroundSymbol.ring(member.cx, member.cy, radius * 1.04,
+      { length: radius * 0.16, apparent: member.apparent })
       .forEach(function (shape) { host.appendChild(GearGeometryPrimitives.node(shape.tag, shape.attrs)); });
   };
 
@@ -322,6 +349,7 @@
     this._phaseMarks = [];
     this._orbits = [];
     this._arms = [];
+    this._piles = {};
     this._phases = [];
     this._linear = [];
     if (this.viewport) this.viewport.detach();
@@ -361,7 +389,17 @@
         p.axis(axes, mark.x1, mark.y1, mark.x2, mark.y2);
       });
       if (item.type === 'belt' || item.type === 'chain') self._flexible(geometryGroup, item);
-      (item.members || []).forEach(function (member) { self._member(geometryGroup, item, member); });
+      // Du plus lointain au plus proche, DANS L'ÉTAGE. L'ordre était celui du
+      // modèle — couronne, solaire, satellites —, qui ne dit rien de la
+      // profondeur : un satellite passé derrière la couronne se dessinait
+      // quand même par-dessus elle.
+      var drawn = (item.members || []).map(function (member) {
+        return { el: self._member(geometryGroup, item, member), depth: finite(member.depth, 0),
+          memberId: member.memberId, phase: member.phase };
+      }).filter(function (part) { return !!part.el; });
+      drawn.sort(function (a, b) { return b.depth - a.depth; })
+        .forEach(function (part) { geometryGroup.appendChild(part.el); });
+      self._piles[item.index] = { host: geometryGroup, parts: drawn };
       GearDimensionRenderer.stage(dimensions, item, p, { fontSize: fontSize, scale: unit });
 
       var mech = (solution.mechanical || [])[item.index] || {};
@@ -408,6 +446,7 @@
   /** applyPose(pose) — mêmes angles, mêmes translations que la vue Denture. */
   GeometryRenderer.prototype.applyPose = function (pose) {
     if (!this.svg || !pose) return;
+    var self = this;
     var members = pose.members || {}, linear = pose.linear || {};
     this._rotors.forEach(function (rotor) {
       var posed = members[rotor.memberId] || {};
@@ -424,14 +463,23 @@
       // dit sans prétendre le masquer.
       entry.el.setAttribute('opacity', Math.cos(theta) >= 0 ? '1' : '0.35');
     });
-    // Les satellites suivent le plan d'orbite, pas un cercle d'écran.
+    // Les satellites suivent le plan d'orbite, pas un cercle d'écran — et ils
+    // changent de profondeur en le parcourant.
+    var restack = null;
     this._orbits.forEach(function (entry) {
       var theta = entry.phase + finite((members[entry.memberId] || {}).orbitAngle, 0) * Math.PI / 180;
-      var seat = GearProjectedScene.phasePoint(entry.basis, entry.orbit, theta);
+      var seat = GearProjectedScene.orbitPoint(entry.basis, entry.orbit, theta);
       entry.el.setAttribute('transform', 'translate(' +
-        (entry.centreX + seat[0] - entry.seatX).toFixed(2) + ' ' +
-        (entry.centreY + seat[1] - entry.seatY).toFixed(2) + ')');
+        (entry.centreX + seat.x - entry.seatX).toFixed(2) + ' ' +
+        (entry.centreY + seat.y - entry.seatY).toFixed(2) + ')');
+      var depth = entry.orbitDepth + seat.depth;
+      if (Math.abs(depth - entry.depth) > 1e-9) { entry.depth = depth; restack = restack || {}; }
+      if (restack) restack[entry.stage] = true;
     });
+    // Repeint la pile de l'étage concerné, et seulement si l'ordre a bougé :
+    // un satellite passé derrière la couronne doit changer de place dans la
+    // pile, pas seulement de coordonnées.
+    if (restack) Object.keys(restack).forEach(function (index) { self._restack(Number(index)); });
     this._arms.forEach(function (entry) {
       entry.el.setAttribute('d', armsPath(entry, finite((members[entry.memberId] || {}).angle, 0) * Math.PI / 180));
     });
@@ -449,6 +497,32 @@
       var along = entry.along || [1, 0];
       entry.el.setAttribute('transform', 'translate(' + (along[0] * travel).toFixed(2) + ' ' + (along[1] * travel).toFixed(2) + ')');
     });
+  };
+
+  /**
+   * Le tri en profondeur PENDANT l'animation, étage par étage.
+   *
+   * La pile est établie au rendu : exact pour une roue, qui tourne sur place ;
+   * faux pour un satellite, qui fait le tour de son axe et passe donc
+   * alternativement devant et derrière la couronne. On ne repeint que si
+   * l'ordre change réellement — une orbite vue de face n'en modifie aucun.
+   */
+  GeometryRenderer.prototype._restack = function (index) {
+    var pile = this._piles && this._piles[index];
+    if (!pile) return;
+    var depths = {};
+    this._orbits.forEach(function (entry) {
+      if (entry.stage === index) depths[entry.memberId + '@' + entry.phase] = entry.depth;
+    });
+    pile.parts.forEach(function (part) {
+      var moved = depths[part.memberId + '@' + part.phase];
+      if (Number.isFinite(moved)) part.depth = moved;
+    });
+    var sorted = pile.parts.slice().sort(function (a, b) { return b.depth - a.depth; });
+    var changed = sorted.some(function (part, i) { return part !== pile.parts[i]; });
+    if (!changed) return;
+    pile.parts = sorted;
+    sorted.forEach(function (part) { pile.host.appendChild(part.el); });
   };
 
   GeometryRenderer.prototype.setAnimationSpeed = function (speed) { this.animation.setSpeed(speed); };

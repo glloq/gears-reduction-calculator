@@ -494,6 +494,61 @@
    * dépasse de part et d'autre des organes qu'il porte — et sur lequel on peut
    * enfin voir que deux roues sont solidaires.
    */
+  /**
+   * Un arbre découpé en portions, du plus loin au plus près.
+   *
+   * Un arbre perpendiculaire au regard est à une seule profondeur : le
+   * découper n'apporterait rien, et une portion suffit. Un arbre CROISÉ plonge
+   * dans la profondeur — son premier bout passe devant les roues qu'il
+   * traverse, son second derrière. Le dessin le posait d'un bloc au fond, sous
+   * toutes les dentures : un arbre qui sort vers l'observateur s'enfonçait
+   * quand même derrière sa propre roue.
+   */
+  var SHAFT_PARTS = 8;
+  function shaftParts(seen) {
+    if (seen.endOn) return [];
+    var from = finite(seen.depthStart, finite(seen.depth, 0));
+    var to = finite(seen.depthEnd, from);
+    // Ce qui sort des roues : là où l'arbre les traverse, il est dans le métal.
+    // Le dessin y posait quand même son trait, en travers du moyeu.
+    var spans = visibleSpans(seen.hidden || []);
+    var flat = Math.abs(to - from) < 1e-6;
+    var list = [];
+    spans.forEach(function (span) {
+      // Un arbre perpendiculaire au regard est à une seule profondeur : le
+      // découper n'apprendrait rien. Un arbre croisé plonge, et chaque tronçon
+      // prend sa place dans le tri.
+      // Un tronçon d'arbre croisé est toujours coupé au moins en deux : même
+      // court, il plonge, et ses deux moitiés ne se trient pas au même endroit.
+      var slices = flat ? 1 : Math.max(2, Math.round(SHAFT_PARTS * (span[1] - span[0])));
+      for (var i = 0; i < slices; i++) {
+        var a = span[0] + (span[1] - span[0]) * i / slices;
+        var b = span[0] + (span[1] - span[0]) * (i + 1) / slices;
+        list.push({
+          x1: seen.x1 + (seen.x2 - seen.x1) * a, y1: seen.y1 + (seen.y2 - seen.y1) * a,
+          x2: seen.x1 + (seen.x2 - seen.x1) * b, y2: seen.y1 + (seen.y2 - seen.y1) * b,
+          // La profondeur du MILIEU du tronçon : c'est elle qui le situe.
+          depth: from + (to - from) * (a + b) / 2 });
+      }
+    });
+    return list;
+  }
+
+  /** [0, 1] moins les intervalles cachés, fusionnés et bornés. */
+  function visibleSpans(hidden) {
+    var blocks = hidden.map(function (span) {
+      return [Math.max(0, Math.min(1, span[0])), Math.max(0, Math.min(1, span[1]))];
+    }).filter(function (span) { return span[1] - span[0] > 1e-6; })
+      .sort(function (a, b) { return a[0] - b[0]; });
+    var spans = [], cursor = 0;
+    blocks.forEach(function (span) {
+      if (span[0] > cursor + 1e-6) spans.push([cursor, span[0]]);
+      cursor = Math.max(cursor, span[1]);
+    });
+    if (cursor < 1 - 1e-6) spans.push([cursor, 1]);
+    return spans;
+  }
+
   function shaftSegments(frame, scene) {
     return frame.spatial.shafts.map(function (shaft) {
       // Les extrémités viennent de la SCÈNE PROJETÉE, telles quelles. Elles
@@ -511,6 +566,10 @@
         }),
         x1: seen.x1, y1: seen.y1, x2: seen.x2, y2: seen.y2,
         along: seen.along, depth: seen.depth,
+        // Les PORTIONS de l'arbre, chacune avec sa profondeur : c'est ce qui
+        // permet de l'intercaler entre les roues qu'il traverse au lieu de le
+        // poser en bloc au fond du dessin.
+        parts: shaftParts(seen),
         // Un arbre vu en bout n'est pas un trait : c'est un point, et le
         // dessiner comme un segment de longueur nulle serait une trace muette.
         endOn: seen.endOn };
