@@ -111,6 +111,14 @@
     if (finite(lod, 0) < LEVELS.TECHNICAL || !entry || !MESHING[entry.type]) return [];
     var a = entry.wheels && entry.wheels[0], b = entry.wheels && entry.wheels[1];
     if (!a || !b) return [];
+    // La ligne d'action est construite À L'ÉCRAN : la ligne des centres, un
+    // quart de tour, moins l'angle de pression. Cette construction ne vaut que
+    // si le plan d'engrènement est vu de face — là, un angle mécanique de 20°
+    // est bien un angle de 20° sur la feuille. Vu de biais, tourner un vecteur
+    // d'écran de 20° ne représente plus rien : le dessin affirmerait un angle
+    // de pression qu'il ne mesure pas. Tant qu'il n'existe pas de construction
+    // dans le repère mécanique de l'engrènement, on préfère ne rien tracer.
+    if ((a.presentation && a.presentation !== 'face') || (b.presentation && b.presentation !== 'face')) return [];
     var point = pitchPoint(a, b, entry.type === 'internal');
     if (!point) return [];
     var alpha = finite(a.pressureAngle, 20) * Math.PI / 180;

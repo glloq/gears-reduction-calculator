@@ -124,11 +124,14 @@
 .io-chip.out text { fill: var(--danger); }
 .io-arrow { stroke: var(--muted); stroke-width: 1; fill: none; }
 
-.train-stage { cursor: pointer; }
+/* Les trois calques du dessin — géométrie, commentaires d'ingénierie,
+   annotations — portent tous `data-stage` : c'est lui qui désigne un étage,
+   et non plus l'appartenance à un groupe unique. */
+.train-svg [data-stage] { cursor: pointer; }
 /* Chromium dessine un anneau de focus natif sur les <g tabindex> : le halo
    de sélection (pitch-circle accentué) le remplace. */
-.train-stage:focus, .train-stage:focus-visible { outline: none; }
-.train-stage:hover .tooth-profile { stroke-width: 1; }
+.train-svg [data-stage]:focus, .train-svg [data-stage]:focus-visible { outline: none; }
+.train-svg [data-stage]:hover .tooth-profile { stroke-width: 1; }
 
 /* Corps vus de CÔTÉ ou obliquement. Un cercle affirme qu'on regarde le long de
    l'axe ; dès que l'axe est dans le plan de l'écran, une roue est un cylindre
@@ -249,7 +252,7 @@
 .force-fa.force-end-on circle, .force-fa.force-end-on line { stroke: var(--warning); }
 .force-fa.force-end-on .force-tip { fill: var(--warning); }
 /* Les efforts n'encombrent le dessin que sur l'étage inspecté. */
-.train-stage:not(.selected) .force-vector { display: none; }
+.stage-overlay:not(.selected) .force-vector { display: none; }
 
 /* ===================== Warnings ===================== */
 
@@ -265,11 +268,11 @@
 
 /* ===================== Selection ===================== */
 
-.train-stage.selected .tooth-profile { stroke: var(--accent); stroke-width: 1.4; }
-.train-stage.selected .pitch-circle { stroke: var(--accent); stroke-dasharray: none; stroke-width: 1; }
+.train-svg .selected .tooth-profile { stroke: var(--accent); stroke-width: 1.4; }
+.train-svg .selected .pitch-circle { stroke: var(--accent); stroke-dasharray: none; stroke-width: 1; }
 .geometry-stage.selected .geometry-member { stroke-width: 3.5; }
 .geometry-stage.selected .stage-label { fill: var(--accent); }
-.train-stage.selected, .kinematic-stage.selected, .geometry-stage.selected { filter: drop-shadow(0 0 4px var(--accent)); }
+.train-svg .selected, .kinematic-stage.selected, .geometry-stage.selected { filter: drop-shadow(0 0 4px var(--accent)); }
 
 /* §6 : l'inspecteur d'étage est DOCKÉ à côté du dessin, partagé par les trois
    vues. Il était posé dessus, en haut à droite : sur un train composé il
@@ -473,12 +476,12 @@ body.dark-theme .geometry-envelope { opacity: .7; }
    mot ; la sélection et le bâti prennent une épaisseur et un motif. */
 .svg-container.is-technical .io-chip text { fill: var(--ink); font-weight: 700; }
 .svg-container.is-technical .io-arrow { stroke: var(--ink); stroke-width: .8; }
-.svg-container.is-technical .train-stage.selected .tip-surface,
-.svg-container.is-technical .train-stage.selected .gear-profile,
-.svg-container.is-technical .train-stage.selected .rim-surface,
-.svg-container.is-technical .train-stage.selected .worm-body,
-.svg-container.is-technical .train-stage.selected .cone-body { stroke-width: 1; }
-.svg-container.is-technical .train-stage.selected .d-selection-mark { display: inline; }
+.svg-container.is-technical .train-svg .selected .tip-surface,
+.svg-container.is-technical .train-svg .selected .gear-profile,
+.svg-container.is-technical .train-svg .selected .rim-surface,
+.svg-container.is-technical .train-svg .selected .worm-body,
+.svg-container.is-technical .train-svg .selected .cone-body { stroke-width: 1; }
+.svg-container.is-technical .train-svg .selected .d-selection-mark { display: inline; }
 
 /* Repère de phase : ce qui porte le mouvement d'un organe qu'on ne voit pas de
    face. Son corps ne tourne pas — il ne le peut pas —, le repère si. */

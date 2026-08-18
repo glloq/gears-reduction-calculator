@@ -44,7 +44,7 @@ test('linear UI and constraints reach the rack solver',async({page})=>{
   expect(await page.inputValue('#objective_mode')).toBe('rotationTranslation');
   await expect(page.locator('.solution-card').first()).toContainText('Course',{timeout:30000});
   await expect(page.locator('#solutionCard')).toContainText('Vitesse linéaire');
-  await expect(page.locator('.train-stage.rack .rack-teeth')).toBeVisible();
+  await expect(page.locator('.train-wheel[data-type="rack"] .rack-teeth').first()).toBeVisible();
 
   const force=Number((await page.locator('#solutionCard').textContent()).match(/Force sortie([\d.]+)/)?.[1]);
   await defineSearch(page,{constraints:{outputForce:force+100000}});

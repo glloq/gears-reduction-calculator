@@ -204,8 +204,12 @@
       if (member) entry.members[functional] = member.role;
     });
     entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
+    var carrierSeen = byRole.C && frame.projected.member(byRole.C.id);
     entry.carrier = { memberId: 's' + index + '-C', cx: centre.x, cy: centre.y, orbit: orbit, count: count,
       speed: entry.carrierSpeed, basis: basis,
+      // La profondeur du porte-satellites : c'est elle qui décide s'il passe
+      // devant ou derrière une pièce voisine, comme pour toute autre pièce.
+      depth: carrierSeen ? carrierSeen.depth : 0,
       bodyId: byRole.C && frame.spatial.byId[byRole.C.id] ? frame.spatial.byId[byRole.C.id].shaftId : null,
       functionalRole: byRole.C ? byRole.C.functionalRole : null,
       memberName: byRole.C ? byRole.C.memberName : null,

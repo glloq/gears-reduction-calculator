@@ -329,7 +329,7 @@ test('the viewer says what is on screen, and every stage is addressable (§14, �
 
   // Et l'inverse : cliquer une roue allume la puce. Les deux gestes désignent
   // la même chose, par le même chemin.
-  await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
+  await page.locator('.train-wheel[data-stage="0"]').first().click();
   await expect(page.locator('#stageNav [data-stage-nav="0"]')).toHaveClass(/active/);
 
   await page.locator('#stageNav [data-stage-nav="all"]').click();
