@@ -449,28 +449,6 @@
     return d.trim();
   };
 
-  /**
-   * Les bras du porte-satellites, à l'angle où il se trouve.
-   *
-   * Ils étaient tracés en `cos(a)·orbite / sin(a)·orbite` : un cercle d'écran,
-   * qui ignorait la base d'orbite que le modèle spatial fournit pourtant. Vus
-   * de biais, les bras d'un porte-satellites parcourent une ellipse, et vus par
-   * la tranche ils se replient sur un segment — un `rotate()` d'écran ne sait
-   * représenter ni l'un ni l'autre.
-   */
-  TrainRenderer.prototype._carrierArms = function (carrier, angleDeg) {
-    var theta = finite(angleDeg, 0) * Math.PI / 180;
-    var orbit = finite(carrier.orbit, 0), d = '';
-    for (var i = 0; i < carrier.count; i++) {
-      var a = 2 * Math.PI * i / carrier.count + theta;
-      var point = carrier.basis
-        ? GearProjectedScene.phasePoint(carrier.basis, orbit, a)
-        : [Math.cos(a) * orbit, Math.sin(a) * orbit];
-      d += ' M 0 0 L ' + point[0].toFixed(2) + ' ' + point[1].toFixed(2);
-    }
-    return d.trim();
-  };
-
   /** Porte-satellites : bras reliant le centre à chaque satellite. */
   TrainRenderer.prototype._drawCarrier = function (entry) {
     var carrier = entry.carrier;

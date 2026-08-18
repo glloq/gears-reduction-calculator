@@ -266,6 +266,14 @@
     entry.attach = connection.axisRelation === 'coaxial' ? 'coaxial'
       : connection.axisRelation === 'perpendicular' ? 'break' : 'mesh';
 
+    // Un cône s'amincit vers le SOMMET COMMUN du couple. Le supposer toujours
+    // dans le sens de l'axe revient à parier sur l'orientation que le graphe a
+    // donnée à cet axe : l'un des deux cônes se dessinait donc pointe tournée
+    // vers l'extérieur du couple, sur toutes les vues.
+    if (stage.type === 'bevel') {
+      var sides = coneSides(frame, byRole.input, byRole.output);
+      if (sides) { wIn.apexSide = sides.sideA; wOut.apexSide = sides.sideB; }
+    }
     entry.wheels.push(wIn, wOut);
     if (isBeltLike) entry.links.push(flexibleLink(frame, connection, byRole, wIn, wOut, 's' + index + '-drive'));
     if (stage.type === 'bevel') {
@@ -282,6 +290,20 @@
       }
     }
     entry.stageRadius = Math.max(wIn.outsideD, wOut.outsideD) / 2;
+  }
+
+  /** De quel côté de chaque organe se trouve le sommet commun d'un couple. */
+  function coneSides(frame, input, output) {
+    if (!input || !output) return null;
+    function cone(entry) {
+      var placed = frame.spatial.byId[entry.id];
+      var back = SpatialLayout.coneBack(finite(entry.geometry.pitchDiameter, 0), entry.geometry.coneAngleDeg);
+      return placed && back ? { position: placed.position, axis: placed.axis, back: back } : null;
+    }
+    var apex = SpatialLayout.coneApex(cone(input), cone(output));
+    // Deux sommets qui ne se rejoignent pas ne sont pas un sommet : mieux vaut
+    // ne rien orienter que d'orienter d'après une coïncidence approximative.
+    return apex && apex.gap < 1e-6 * Math.max(1, Math.hypot(apex.point[0], apex.point[1], apex.point[2])) ? apex : null;
   }
 
   /** Le sommet commun de deux cônes primitifs, dans le repère du dessin. */

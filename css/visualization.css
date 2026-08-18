@@ -154,6 +154,17 @@
 .oblique-body { fill: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); stroke: var(--ink); stroke-width: .5; }
 .oblique-face { fill: color-mix(in srgb, var(--accent) 18%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; }
 .oblique-back { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 3 2; opacity: .7; }
+/* Familles vues de biais : une couronne reste annulaire, une poulie garde sa
+   gorge, un cône garde ses deux bases. Le corps générique les confondait. */
+.ring-oblique-body { fill: color-mix(in srgb, var(--accent) 8%, var(--surface-1)); stroke: var(--ink); stroke-width: .5; }
+.ring-oblique-face { fill: color-mix(in srgb, var(--accent) 16%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; }
+.ring-oblique-bore { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 3 2; opacity: .7; }
+.flexible-groove { fill: none; stroke: var(--muted); stroke-width: .45; opacity: .8; }
+.sprocket-oblique-root { fill: none; stroke: var(--muted); stroke-width: .45; opacity: .8; }
+.sprocket-oblique-teeth { fill: none; stroke: var(--ink); stroke-width: .4; opacity: .75; }
+.cone-oblique-body { fill: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); stroke: var(--ink); stroke-width: .5; }
+.cone-oblique-face { fill: color-mix(in srgb, var(--accent) 18%, var(--surface-1)); stroke: var(--ink); stroke-width: .6; }
+.cone-oblique-back { fill: none; stroke: var(--muted); stroke-width: .4; stroke-dasharray: 3 2; opacity: .7; }
 
 /* ===================== Geometry ===================== */
 
@@ -447,6 +458,10 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .svg-container.is-technical .worm-body,
 .svg-container.is-technical .cone-body,
 .svg-container.is-technical .cone-face,
+.svg-container.is-technical .ring-oblique-body,
+.svg-container.is-technical .ring-oblique-face,
+.svg-container.is-technical .cone-oblique-body,
+.svg-container.is-technical .cone-oblique-face,
 .svg-container.is-technical .oblique-body,
 .svg-container.is-technical .rack-profile,
 .svg-container.is-technical .geometry-member { fill: none; stroke: var(--ink); }
