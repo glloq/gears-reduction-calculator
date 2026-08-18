@@ -261,6 +261,23 @@
     return Projection.auto(axes);
   }
 
-  return { build: build, project: project, unfold: unfold, autoView: autoView, bounds: bounds,
-    SHAFT_OVERHANG: SHAFT_OVERHANG };
+  /**
+   * Le repère de dessin d'un graphe : placement, point de vue, et sièges
+   * dépliés. Les vues qui dessinent une géométrie réelle le demandent ici
+   * plutôt que d'enchaîner elles-mêmes build → choix de vue → unfold : trois
+   * appels recopiés, c'est trois occasions de diverger sur le point de vue.
+   *
+   * `options.view` impose une projection ; 'auto' demande celle qui perd le
+   * moins du mécanisme ; sans rien, celle qui montre le plus de denture.
+   */
+  function frame(graph, options) {
+    options = options || {};
+    var spatial = build(graph);
+    var view = options.view && options.view !== 'auto' ? Projection.view(options.view)
+      : options.view === 'auto' ? autoView(spatial) : Projection.engagement((graph && graph.axes) || []);
+    return { graph: graph, spatial: spatial, view: view, seats: unfold(spatial, view.id) };
+  }
+
+  return { build: build, project: project, unfold: unfold, autoView: autoView, frame: frame,
+    bounds: bounds, SHAFT_OVERHANG: SHAFT_OVERHANG };
 });

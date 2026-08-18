@@ -7,9 +7,11 @@
  */
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
-  var api = factory(common ? require('../core/SceneBuilder.js') : root.GearSceneBuilder);
+  var api = factory(common ? require('../core/SceneBuilder.js') : root.GearSceneBuilder,
+    common ? require('../core/MechanicalGraph.js') : root.GearMechanicalGraph,
+    common ? require('../core/SpatialLayout.js') : root.GearSpatialLayout);
   if (common) module.exports = api; else root.GearGeometryLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -60,65 +62,104 @@
   }
 
   /**
-   * Membres d'un étage, aux positions réelles issues de l'entraxe calculé.
-   * Le repère local a pour origine le centre du membre d'entrée.
+   * Membres d'un étage, aux positions que le MODÈLE SPATIAL leur donne.
+   *
+   * Cette fonction contenait un placement par famille : la roue d'une vis sans
+   * fin « sous » la vis, la couronne d'un train intérieur à gauche de son
+   * pignon, la roue conique décalée d'une demi-somme de diamètres augmentée
+   * d'un demi-diamètre — une formule sans justification mécanique. C'était le
+   * troisième placement du projet, avec ses propres conventions, donc sa propre
+   * façon de se tromper : rien ne garantissait que la vue cotée et la vue de
+   * denture décrivent le même mécanisme.
+   *
+   * Les positions viennent maintenant de là où viennent celles des autres vues.
+   * Ne reste ici que ce qui appartient à une vue de COTATION : les étages sont
+   * posés côte à côte, chacun lisible seul, au lieu d'être empilés sur leurs
+   * axes réels comme le veut un dessin d'ensemble.
    */
-  function members(scene, index, stage, x, y, centerDistance) {
+  function members(scene, frame, index, stage) {
     var byRole = {};
     scene.stageMembers(index).forEach(function (entry) { byRole[entry.role] = entry; });
     var type = stage.type === 'epicyclic' ? 'planetary' : stage.type;
+    var seat = function (id) { return (frame.seats.byId[id] || { x: 0, y: 0 }); };
+
+    var list = [];
+    function put(entry, role, label, extra) {
+      if (!entry) return null;
+      var at = seat(entry.id);
+      var placed = place(entry, role, at.x, at.y, label, extra);
+      list.push(placed);
+      return placed;
+    }
 
     if (type === 'planetary') {
       var count = Math.max(2, Math.round(finite(byRole.P && byRole.P.count, 3)));
       var orbit = finite(byRole.P && byRole.P.orbitRadius, 0);
-      var list = [
-        place(byRole.R, 'ring', x, y, memberLabel(byRole.R, 'R')),
-        place(byRole.S, 'sun', x, y, memberLabel(byRole.S, 'S'))
-      ];
+      put(byRole.R, 'ring', memberLabel(byRole.R, 'R'));
+      put(byRole.S, 'sun', memberLabel(byRole.S, 'S'));
+      // Les satellites tournent AUTOUR de l'axe : c'est la seule répartition
+      // que la cotation demande de voir, et son rayon vient de la scène.
+      var centre = seat((byRole.C || byRole.S || {}).id);
       for (var i = 0; i < count; i++) {
         var a = 2 * Math.PI * i / count;
-        list.push(place(byRole.P, 'planet', x + Math.cos(a) * orbit, y + Math.sin(a) * orbit, memberLabel(byRole.P, 'P')));
+        list.push(place(byRole.P, 'planet', centre.x + Math.cos(a) * orbit, centre.y + Math.sin(a) * orbit,
+          memberLabel(byRole.P, 'P')));
       }
-      list.push(place(byRole.C, 'carrier', x, y, memberLabel(byRole.C, 'C'),
-        { pitchDiameter: orbit ? 2 * orbit : null, count: count }));
+      if (byRole.C) {
+        list.push(place(byRole.C, 'carrier', centre.x, centre.y, memberLabel(byRole.C, 'C'),
+          { pitchDiameter: orbit ? 2 * orbit : null, count: count }));
+      }
       return list;
     }
+
     if (type === 'rack') {
-      var pinionD = finite(byRole.input && byRole.input.geometry.pitchDiameter, 20);
-      return [
-        place(byRole.input, 'input', x, y - pinionD / 2, 'Pignon'),
-        place(byRole.rack, 'output', x, y, 'Crémaillère', { linearId: byRole.rack ? byRole.rack.id : null })
-      ];
+      // La crémaillère n'est portée par aucun arbre : elle glisse, tangente au
+      // cercle primitif du pignon, du côté que le modèle donne à sa glissière.
+      var pinion = put(byRole.input, 'input', 'Pignon');
+      var slide = (frame.graph.slides || []).filter(function (s) { return s.stageIndex === index; })[0];
+      var direction = slide ? Projection2d(slide.direction, frame) : [0, 1];
+      var normal = [-direction[1], direction[0]];
+      var reach = finite(byRole.input && byRole.input.geometry.pitchDiameter, 20) / 2;
+      if (byRole.rack && pinion) {
+        list.push(place(byRole.rack, 'output', pinion.cx + normal[0] * reach, pinion.cy + normal[1] * reach,
+          'Crémaillère', { linearId: byRole.rack.id, slideAlong: direction }));
+      }
+      return list;
     }
-    if (type === 'bevel') {
-      var sigma = finite((scene.connections[index] || {}).shaftAngleDeg, 90);
-      var d1 = finite(byRole.input && byRole.input.geometry.pitchDiameter, 20);
-      var d2 = finite(byRole.output && byRole.output.geometry.pitchDiameter, 40);
-      var input = place(byRole.input, 'input', x, y, 'Pignon conique', { shaftAngleDeg: sigma });
-      var output = place(byRole.output, 'output',
-        x + Math.cos(rad(sigma - 90)) * (d1 + d2) / 2,
-        y + Math.sin(rad(sigma - 90)) * (d1 + d2) / 2 + d1 / 2, 'Roue conique');
-      return [input, output];
-    }
-    if (type === 'worm') {
-      // Axes perpendiculaires : la roue se place sous la vis, à l'entraxe réel.
-      return [
-        place(byRole.input, 'input', x, y, 'Vis'),
-        place(byRole.output, 'output', x, y + centerDistance, 'Roue')
-      ];
-    }
+
+    var labels = LABELS[type] || LABELS.pair;
+    // La couronne d'un train intérieur enveloppe son pignon : on la dessine
+    // d'abord, pour que le pignon reste lisible par-dessus.
     if (type === 'internal') {
-      return [
-        place(byRole.output, 'output', x, y, 'Couronne'),
-        place(byRole.input, 'input', x + centerDistance, y, 'Pignon')
-      ];
+      put(byRole.output, 'output', labels.output);
+      put(byRole.input, 'input', labels.input,
+        { shaftAngleDeg: finite((scene.connections[index] || {}).shaftAngleDeg, null) });
+    } else {
+      put(byRole.input, 'input', labels.input,
+        { shaftAngleDeg: finite((scene.connections[index] || {}).shaftAngleDeg, null) });
+      put(byRole.output, 'output', labels.output);
     }
-    var flexible = type === 'belt' || type === 'chain';
-    return [
-      place(byRole.input, 'input', x, y, flexible ? 'Poulie/pignon entrée' : 'Entrée'),
-      place(byRole.output, 'output', x + centerDistance, y, flexible ? 'Poulie/pignon sortie' : 'Sortie')
-    ];
+    return list;
   }
+
+  /** La direction d'une glissière, telle que la vue courante la projette. */
+  function Projection2d(vector, frame) {
+    var view = frame.view;
+    var x = vector[0] * view.u[0] + vector[1] * view.u[1] + vector[2] * view.u[2];
+    var y = vector[0] * view.v[0] + vector[1] * view.v[1] + vector[2] * view.v[2];
+    var length = Math.hypot(x, y);
+    return length < 1e-9 ? [0, 1] : [x / length, y / length];
+  }
+
+  /** Les noms d'organes propres à chaque famille — ils ne se déduisent pas. */
+  var LABELS = {
+    pair: { input: 'Entrée', output: 'Sortie' },
+    belt: { input: 'Poulie/pignon entrée', output: 'Poulie/pignon sortie' },
+    chain: { input: 'Poulie/pignon entrée', output: 'Poulie/pignon sortie' },
+    worm: { input: 'Vis', output: 'Roue' },
+    bevel: { input: 'Pignon conique', output: 'Roue conique' },
+    internal: { input: 'Pignon', output: 'Couronne' }
+  };
 
   /** Cotes remarquables d'un étage, uniquement celles réellement calculées. */
   function stageDimensions(stage, centerDistance) {
@@ -137,9 +178,17 @@
     return list;
   }
 
+  /** L'encombrement dessiné d'un organe : sa denture, ou la course d'un coulisseau. */
+  function reachOf(member) {
+    return Math.max(finite(member.outsideDiameter, 0), finite(member.pitchDiameter, 0),
+      finite(member.travelPerRevolution, 0), 8) / 2;
+  }
+
   function build(solution, options) {
     var opts = options || {};
     var scene = opts.scene && opts.scene.member ? opts.scene : SceneBuilder.build(solution || {});
+    var frame = SpatialLayout.frame(MechanicalGraph.build(solution || {}, scene), opts);
+
     // Marges et écarts PROPORTIONNELS au réducteur : un train de pignons de
     // 20 mm et un convoyeur de 2 m doivent occuper la même part du dessin.
     var span = (solution && solution.stages || []).reduce(function (max, stage) {
@@ -148,26 +197,64 @@
     var margin = finite(opts.margin, span * 0.45);
     var gap = finite(opts.stageGap, span * 0.6);
     var headroom = margin * 0.65;
+
+    // Chaque étage est un AMAS d'organes, à leurs positions réelles les uns par
+    // rapport aux autres. On mesure l'amas, puis on le pose : la largeur d'un
+    // étage n'est plus devinée d'une formule par famille, elle est celle de ce
+    // qu'il contient.
+    var clusters = (solution && solution.stages || []).map(function (stage, index) {
+      var list = members(scene, frame, index, stage);
+      var box = null;
+      list.forEach(function (member) {
+        var reach = reachOf(member);
+        var own = { left: member.cx - reach, top: member.cy - reach,
+          right: member.cx + reach, bottom: member.cy + reach };
+        box = box ? { left: Math.min(box.left, own.left), top: Math.min(box.top, own.top),
+          right: Math.max(box.right, own.right), bottom: Math.max(box.bottom, own.bottom) } : own;
+      });
+      if (!box) box = { left: 0, top: 0, right: 20, bottom: 20 };
+      return { list: list, box: box };
+    });
+
     var cursor = margin, bottom = margin;
     var stages = (solution && solution.stages || []).map(function (stage, index) {
+      var cluster = clusters[index];
       var geometry = stage.geometry || {};
-      var size = Math.max(20, diameter(geometry));
+      var width = cluster.box.right - cluster.box.left;
+      var height = cluster.box.bottom - cluster.box.top;
       var center = finite(geometry.correctedCenterDistance, finite(geometry.centerDistance, 0));
-      var width = Math.max(size, center + finite(geometry.pitchDiameterInput, 0) / 2 + finite(geometry.pitchDiameterOutput, 0) / 2);
-      if (stage.type === 'rack') width = Math.max(width, finite(geometry.travelPerRevolution, size * 2));
-      var item = { index: index, stage: stage, type: stage.type, x: cursor + size / 2, y: margin + size / 2 + headroom,
-        width: width, height: size + 2 * headroom, diameter: size, centerDistance: center };
+      // L'amas est translaté d'un bloc : ses positions RELATIVES sont celles du
+      // modèle, et poser un étage à côté d'un autre n'en change aucune.
+      var shiftX = cursor - cluster.box.left;
+      var shiftY = margin + headroom - cluster.box.top;
+      cluster.list.forEach(function (member) { member.cx += shiftX; member.cy += shiftY; });
+
+      var anchor = cluster.list.filter(function (m) { return m.functionalRole === 'input'; })[0] || cluster.list[0];
+      var item = { index: index, stage: stage, type: stage.type,
+        x: anchor ? anchor.cx : cursor + width / 2, y: anchor ? anchor.cy : margin + headroom + height / 2,
+        width: width, height: height + 2 * headroom,
+        diameter: Math.max(20, diameter(geometry)), centerDistance: center };
       item.exactCenterDistance = !!(scene.connections[index] && scene.connections[index].exactCenterDistance);
       item.schematic = scene.stageMembers(index).some(function (entry) { return entry.schematic; });
-      item.members = members(scene, index, stage, item.x, item.y, center);
+      item.members = cluster.list;
       item.dimensions = stageDimensions(stage, center);
-      item.axis = { x1: item.x - size / 2 - margin * 0.3, x2: item.x + width + margin * 0.3, y: item.y };
+      // Un seul trait d'axe horizontal par étage supposait que tous ses organes
+      // soient alignés. Ils ne le sont pas dès qu'il y a un entraxe : chaque
+      // corps porte donc sa propre marque d'axe, à sa place.
+      var marks = [];
+      cluster.list.forEach(function (member) {
+        var key = member.cx.toFixed(2) + ',' + member.cy.toFixed(2);
+        if (marks.some(function (mark) { return mark.key === key; })) return;
+        marks.push({ key: key, x: member.cx, y: member.cy, reach: reachOf(member) * 1.18 });
+      });
+      item.axes = marks;
       cursor += width + gap;
-      bottom = Math.max(bottom, item.y + size / 2 + headroom * 1.6);
+      bottom = Math.max(bottom, margin + headroom + height + headroom * 0.6);
       return item;
     });
+
     var overall = (solution && solution.dimensions) || {};
-    return { stages: stages, scene: scene, margin: margin, headroom: headroom,
+    return { stages: stages, scene: scene, frame: frame, view: frame.view, margin: margin, headroom: headroom,
       bounds: { x: 0, y: 0, width: Math.max(4 * margin, cursor - gap + margin), height: Math.max(3 * margin, bottom + margin) },
       envelope: { length: present(overall.length), maxDiameter: present(overall.maxDiameter), width: present(overall.width) } };
   }

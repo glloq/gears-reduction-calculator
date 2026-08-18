@@ -89,12 +89,7 @@
    * voit en disque, en rectangle, ou entre les deux.
    */
   function frameOf(solution, scene, options) {
-    var graph = MechanicalGraph.build(solution, scene);
-    var spatial = SpatialLayout.build(graph);
-    var axes = graph.axes;
-    var view = options.view && options.view !== 'auto' ? Projection.view(options.view)
-      : options.view === 'auto' ? SpatialLayout.autoView(spatial) : Projection.engagement(axes);
-    return { graph: graph, spatial: spatial, view: view, seats: SpatialLayout.unfold(spatial, view.id) };
+    return SpatialLayout.frame(MechanicalGraph.build(solution, scene), options);
   }
 
   /** Le vecteur unitaire de l'écran qui porte l'arbre de ce membre. */
