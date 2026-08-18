@@ -105,15 +105,30 @@
     svg.appendChild(viewport);
     var self = this;
 
-    // Les arbres se peignent SOUS les dentures : ils les traversent.
-    this._drawShafts(viewport, model);
+    // Trois calques : ce qui EXISTE, ce qui COMMENTE, ce qui S'ADRESSE au
+    // lecteur. Voir _buildStage.
+    var geometryLayer = n('g', { class: 'geometry-layer' });
+    var engineeringLayer = n('g', { class: 'engineering-overlay-layer' });
+    var annotationLayer = n('g', { class: 'annotation-layer' });
+    viewport.appendChild(geometryLayer);
+    viewport.appendChild(engineeringLayer);
+    viewport.appendChild(annotationLayer);
+
+    // Les arbres se peignent SOUS les dentures : ils les traversent de part en
+    // part, et un arbre posé par-dessus ses propres roues n'aurait pas de sens.
+    this._drawShafts(geometryLayer, model);
+    var bodies = [];
     model.stages.forEach(function (entry, index) {
-      viewport.appendChild(self._buildStage(entry, solution, index));
+      bodies = bodies.concat(self._buildStage(entry, solution, index,
+        { engineering: engineeringLayer, annotation: annotationLayer }));
     });
-    // Du plus lointain au plus proche : le SVG peint dans l'ordre du document,
-    // qui était celui des étages — un ordre qui ne dit rien de la profondeur.
-    this._sortByDepth(viewport);
-    this._drawIOChips(viewport, model);
+    // Du plus lointain au plus proche, TOUS ÉTAGES CONFONDUS. Le SVG peint dans
+    // l'ordre du document, qui était celui des étages — un ordre qui ne dit
+    // rien de la profondeur, et qui faisait passer la poulie d'un étage
+    // derrière la roue avec laquelle elle partage pourtant son arbre.
+    bodies.sort(function (a, b) { return b.depth - a.depth; })
+      .forEach(function (part) { geometryLayer.appendChild(part.el); });
+    this._drawIOChips(annotationLayer, model);
 
     this.container.innerHTML = '';
     this.container.appendChild(svg);
@@ -135,42 +150,92 @@
     return this;
   };
 
-  TrainRenderer.prototype._buildStage = function (entry, solution, index) {
+  /**
+   * Un étage se répartit sur TROIS CALQUES.
+   *
+   * Tout vivait dans un seul groupe : dentures, tracés d'engrènement, flèches
+   * d'effort, badges d'alerte, libellés. Impossible alors de trier les corps
+   * par profondeur sans enterrer une alerte sous la denture du voisin — c'est
+   * ce qui limitait le tri à l'intérieur d'un étage.
+   *
+   *   geometry-layer               ce qui EXISTE dans le mécanisme, et qui se
+   *                                trie donc par profondeur, tous étages
+   *                                confondus ;
+   *   engineering-overlay-layer    ce qui commente la mécanique : ligne
+   *                                d'action, efforts ;
+   *   annotation-layer             ce qui s'adresse au lecteur : alertes,
+   *                                libellés, cotes, puces ENTRÉE/SORTIE.
+   *
+   * Les trois portent `data-stage` : la sélection, le survol et le clic
+   * continuent de désigner un étage entier, quel que soit le calque touché.
+   */
+  TrainRenderer.prototype._buildStage = function (entry, solution, index, layers) {
     var self = this;
     var mech = (solution.mechanical || [])[index] || {};
-    var stage = (solution.stages || [])[index] || {};
-    var group = n('g', {
-      class: 'train-stage ' + entry.type,
-      'data-stage': index,
-      'data-type': entry.type,
-      tabindex: 0,
-      role: 'button',
-      'aria-label': 'Étage ' + (index + 1) + ' · ' + GearTransmissionRegistry.familyName(entry.type) + ' — rapport ' + fmt(mech.ratio, 3)
+    var title = 'Étage ' + (index + 1) + ' · ' + GearTransmissionRegistry.familyName(entry.type) +
+      (Number.isFinite(mech.ratio) ? '\nRapport : ' + fmt(mech.ratio, 4) : '') +
+      (Number.isFinite(entry.centerDistance) ? '\nEntraxe : ' + fmt(entry.centerDistance, 2) + ' mm' : '');
+
+    function stamp(element) {
+      element.setAttribute('data-stage', index);
+      element.setAttribute('data-type', entry.type);
+      if (Number.isFinite(entry.centerDistance)) element.setAttribute('data-center-distance-mm', entry.centerDistance.toFixed(2));
+      if (Number.isFinite(mech.ratio)) element.setAttribute('data-ratio', mech.ratio.toFixed(4));
+      return element;
+    }
+    // `.train-stage` ne désigne QU'UN SEUL groupe par étage — celui des
+    // annotations, qui porte son libellé et ses alertes. C'est lui l'élément
+    // adressable d'un étage. Les autres calques sont repérés par `data-stage`,
+    // comme les pièces elles-mêmes : deux éléments portant la même classe et
+    // le même étage rendraient tout sélecteur ambigu.
+    function stageGroup(host, className, focusable) {
+      var group = stamp(n('g', { class: className + ' ' + entry.type }));
+      if (focusable) {
+        group.setAttribute('tabindex', 0);
+        group.setAttribute('role', 'button');
+        group.setAttribute('aria-label', 'Étage ' + (index + 1) + ' · ' +
+          GearTransmissionRegistry.familyName(entry.type) + ' — rapport ' + fmt(mech.ratio, 3));
+      }
+      group.appendChild(n('title', {}, title));
+      host.appendChild(group);
+      return group;
+    }
+
+    // ===== Géométrie : à plat, pour pouvoir être triée par profondeur =====
+    var bodies = [];
+    function body(element, depth) {
+      if (!element) return;
+      stamp(element);
+      // Une pièce qui se nomme déjà garde son propre nom : celui de l'étage ne
+      // vient qu'à défaut. Le poser par-dessus faisait dire « Étage 2 · Droit »
+      // à une roue qui savait dire de quel corps elle est solidaire.
+      if (!element.querySelector('title')) element.appendChild(n('title', {}, title));
+      bodies.push({ el: element, depth: finite(depth, 0) });
+    }
+    entry.links.forEach(function (link) {
+      // Une courroie n'est pas UNE pièce à une profondeur : ses deux brins et
+      // ses deux arcs vivent à des profondeurs différentes, et c'est ce qui
+      // lui permet de passer derrière la roue qui porte sa poulie puis devant
+      // la suivante. Chaque portion prend donc sa place dans le tri.
+      self._drawLink(link, entry).forEach(function (piece) { body(piece.el, piece.depth); });
     });
-    if (Number.isFinite(entry.centerDistance)) group.setAttribute('data-center-distance-mm', entry.centerDistance.toFixed(2));
-    if (Number.isFinite(mech.ratio)) group.setAttribute('data-ratio', mech.ratio.toFixed(4));
+    if (entry.carrier) body(this._drawCarrier(entry), entry.carrier.depth);
+    entry.wheels.forEach(function (wheel) { body(self._buildWheel(wheel, entry), wheel.depth); });
 
-    var links = n('g', { class: 'stage-links' });
-    group.appendChild(links);
-    entry.links.forEach(function (link) { self._drawLink(links, link, entry); });
-
-    if (entry.carrier) this._drawCarrier(group, entry);
-
-    entry.wheels.forEach(function (wheel) {
-      group.appendChild(self._buildWheel(wheel, entry));
-    });
-
-    // Tracés de construction de l'engrènement (niveau technique seulement).
+    // ===== Commentaires d'ingénierie =====
+    var engineering = stageGroup(layers.engineering, 'stage-overlay', false);
     var meshOverlay = n('g', { class: 'mesh-overlay' });
-    group.appendChild(meshOverlay);
+    engineering.appendChild(meshOverlay);
     this._meshOverlays.push({ entry: entry, host: meshOverlay, lod: -1 });
-
     // Les efforts s'appliquent AU POINT PRIMITIF, dans le repère de
     // l'engrènement : le modèle le donne, le renderer ne l'invente plus.
     if (entry.forceFrame) {
-      GearForceOverlay.render(n, group, mech.forces,
+      GearForceOverlay.render(n, engineering, mech.forces,
         { x: entry.forceFrame.origin[0], y: entry.forceFrame.origin[1] }, entry.forceFrame);
     }
+
+    // ===== Annotations =====
+    var annotation = stageGroup(layers.annotation, 'train-stage', true);
     // Les badges d'alerte se posent AU-DESSUS de l'étage, jamais sur les
     // dentures : ils signalent sans masquer ce qu'ils commentent.
     var top = entry.wheels.reduce(function (best, wheel) {
@@ -179,8 +244,8 @@
     var middle = entry.wheels.reduce(function (sum, wheel) { return sum + finite(wheel.cx, 0); }, 0) / (entry.wheels.length || 1);
     // Les alertes viennent du moteur, pas d'un calcul local : le dessin dit
     // exactement ce que dit l'analyse.
-    GearWarningOverlay.render(n, group, (this.solution || {}).warnings, index,
-      { x: middle, y: Number.isFinite(top) ? top : anchor.cy },
+    GearWarningOverlay.render(n, annotation, (this.solution || {}).warnings, index,
+      { x: middle, y: Number.isFinite(top) ? top : 0 },
       function (stageIndex) { self.selectStage(stageIndex); });
 
     // Décor : libellé d'étage (couloirs anti-collision posés dans _placeLabels)
@@ -194,13 +259,8 @@
     if (Number.isFinite(entry.centerDistance) && entry.wheels.length >= 2 && entry.type !== 'planetary') {
       this._drawDim(decor, entry);
     }
-    group.appendChild(decor);
-
-    var title = 'Étage ' + (index + 1) + ' · ' + GearTransmissionRegistry.familyName(entry.type) +
-      (Number.isFinite(mech.ratio) ? '\nRapport : ' + fmt(mech.ratio, 4) : '') +
-      (Number.isFinite(entry.centerDistance) ? '\nEntraxe : ' + fmt(entry.centerDistance, 2) + ' mm' : '');
-    group.appendChild(n('title', {}, title));
-    return group;
+    annotation.appendChild(decor);
+    return bodies;
   };
 
   TrainRenderer.prototype._buildWheel = function (wheel, entry) {
@@ -227,11 +287,22 @@
     seat.appendChild(rotor);
     // Les repères et étiquettes compensent l'inclinaison de l'axe : un « Z=40 »
     // couché sur le flanc d'un cône serait illisible.
+    // Deux groupes, et deux règles.
+    //
+    // `construction` porte de la GÉOMÉTRIE — surfaces primitives, de tête, de
+    // pied, hachures de bâti. Elle suit la pièce, exactement comme son corps.
+    // `annotation` porte ce qui doit rester LISIBLE — les textes —, et se
+    // contre-tourne pour cela. Les deux vivaient dans un seul groupe
+    // contre-tourné : la géométrie y prenait donc une orientation que la pièce
+    // n'a pas, et les cercles de construction se retrouvaient tournés à
+    // l'envers de l'ellipse qu'ils étaient censés épouser.
     var construction = n('g', { class: 'construction' });
-    if (Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg) {
-      construction.setAttribute('transform', 'rotate(' + (-wheel.axisAngleDeg).toFixed(2) + ')');
-    }
     seat.appendChild(construction);
+    var annotation = n('g', { class: 'wheel-annotation' });
+    if (Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg) {
+      annotation.setAttribute('transform', 'rotate(' + (-wheel.axisAngleDeg).toFixed(2) + ')');
+    }
+    seat.appendChild(annotation);
 
     // §9, §10 : la scène nomme déjà l'organe ET sa fonction. Le renderer n'en
     // garde pas de copie, et n'affiche plus « S » tout court : « Solaire (S) ·
@@ -260,7 +331,8 @@
       seat.appendChild(phase);
     }
 
-    var record = { wheel: wheel, entry: entry, group: host, seat: seat, rotor: rotor, construction: construction, orbit: orbit, phase: phase, lod: -1 };
+    var record = { wheel: wheel, entry: entry, group: host, seat: seat, rotor: rotor,
+      construction: construction, annotation: annotation, orbit: orbit, phase: phase, lod: -1 };
     if (wheel.kind === 'rack') this._linear.push(record);
     this._wheels.push(record);
     return host;
@@ -289,29 +361,30 @@
     record.lod = lod;
     record.rotor.textContent = '';
     record.construction.textContent = '';
+    record.annotation.textContent = '';
     // La PRÉSENTATION vient du modèle spatial, pas d'une supposition : une roue
     // n'est un disque que lorsque son axe pointe vers l'œil. Le dessin faisait
     // partout l'hypothèse inverse, ce qui interdisait de montrer un engrenage et
     // une vis sur le même arbre.
     var built = GearTeethPrimitives.build(record.wheel, { lod: lod,
       presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening,
-      style: this.style });
+      // L'ellipse apparente vient de ProjectedScene : le corps, les surfaces de
+      // construction et la courroie décrivent ainsi le MÊME cercle projeté.
+      apparent: record.wheel.apparent, style: this.style });
     appendAll(record.rotor, built.rotor);
-    // Les cercles de construction — primitif, base, pied — sont des CERCLES :
-    // ils n'ont de sens que sur une roue vue de face. Tracés sur un organe vu
-    // par la tranche, ils dessinaient une ellipse fantôme autour d'un
-    // rectangle, sans rien coter.
     // La représentation conventionnelle porte DÉJÀ les surfaces : y superposer
     // les cercles de construction doublerait chaque trait.
-    if (record.wheel.presentation !== 'profile' && !built.conventional) {
-      appendAll(record.construction, GearTeethOverlay.circles(record.wheel, lod));
+    if (!built.conventional) {
+      appendAll(record.construction, GearTeethOverlay.surfaces(record.wheel, lod,
+        { presentation: record.wheel.presentation, apparent: record.wheel.apparent }));
     }
     appendAll(record.construction, built.fixed);
+    appendAll(record.annotation, built.upright);
     // Les textes portés par la roue sont plafonnés à la taille d'écran commune :
     // ils restent proportionnés à la roue, sans jamais devenir illisibles.
     if (Number.isFinite(this._fontSize)) {
       var cap = this._fontSize;
-      Array.prototype.forEach.call(record.construction.querySelectorAll('text'), function (text) {
+      Array.prototype.forEach.call(record.annotation.querySelectorAll('text'), function (text) {
         var own = Number(text.getAttribute('font-size'));
         text.setAttribute('font-size', Math.min(own || cap, cap).toFixed(3));
       });
@@ -377,46 +450,29 @@
   };
 
   /**
-   * L'ordre de peinture, du plus lointain au plus proche.
+   * Les bras du porte-satellites, à l'angle où il se trouve.
    *
-   * Les positions 3D étaient justes, mais le SVG était peint dans l'ordre des
-   * étages : de biais, une roue du fond pouvait recouvrir celle qui est devant
-   * elle, et le dessin devenait indéchiffrable dès qu'un train se croisait.
-   *
-   * Le tri se fait À L'INTÉRIEUR de chaque étage, entre ses roues. Les étages,
-   * eux, gardent leur ordre — celui du mécanisme —, parce qu'ils portent aussi
-   * leurs annotations : badges d'alerte, libellés, cotes. Les réordonner
-   * enterrerait l'alerte d'un étage sous la denture du voisin, et une alerte
-   * qu'on ne peut pas atteindre ne sert à rien. Les faire remonter dans un
-   * calque d'annotations propre reste à faire ; d'ici là, le tri s'arrête où
-   * il commencerait à cacher ce qui doit se lire.
+   * Ils étaient tracés en `cos(a)·orbite / sin(a)·orbite` : un cercle d'écran,
+   * qui ignorait la base d'orbite que le modèle spatial fournit pourtant. Vus
+   * de biais, les bras d'un porte-satellites parcourent une ellipse, et vus par
+   * la tranche ils se replient sur un segment — un `rotate()` d'écran ne sait
+   * représenter ni l'un ni l'autre.
    */
-  TrainRenderer.prototype._sortByDepth = function (viewport) {
-    function reorder(host, list, depthOf) {
-      if (list.length < 2) return;
-      // Les éléments triés sont contigus : on les réinsère devant leur suivant,
-      // pour ne pas les faire passer par-dessus les calques posés après eux.
-      var after = list[list.length - 1].nextSibling;
-      list.slice().sort(function (a, b) { return depthOf(b) - depthOf(a); })
-        .forEach(function (element) { host.insertBefore(element, after); });
+  TrainRenderer.prototype._carrierArms = function (carrier, angleDeg) {
+    var theta = finite(angleDeg, 0) * Math.PI / 180;
+    var orbit = finite(carrier.orbit, 0), d = '';
+    for (var i = 0; i < carrier.count; i++) {
+      var a = 2 * Math.PI * i / carrier.count + theta;
+      var point = carrier.basis
+        ? GearProjectedScene.phasePoint(carrier.basis, orbit, a)
+        : [Math.cos(a) * orbit, Math.sin(a) * orbit];
+      d += ' M 0 0 L ' + point[0].toFixed(2) + ' ' + point[1].toFixed(2);
     }
-    var byElement = new Map();
-    this._wheels.forEach(function (record) { byElement.set(record.group, finite(record.wheel.depth, 0)); });
-
-    var stages = [];
-    Array.prototype.forEach.call(viewport.childNodes, function (node) {
-      if (node.classList && node.classList.contains('train-stage')) stages.push(node);
-    });
-    stages.forEach(function (stage) {
-      var wheels = Array.prototype.filter.call(stage.childNodes, function (node) {
-        return node.classList && node.classList.contains('train-wheel');
-      });
-      reorder(stage, wheels, function (element) { return byElement.get(element) || 0; });
-    });
+    return d.trim();
   };
 
   /** Porte-satellites : bras reliant le centre à chaque satellite. */
-  TrainRenderer.prototype._drawCarrier = function (group, entry) {
+  TrainRenderer.prototype._drawCarrier = function (entry) {
     var carrier = entry.carrier;
     var host = n('g', { class: 'planet-carrier' });
     if (carrier.bodyId) host.setAttribute('data-body', carrier.bodyId);
@@ -432,39 +488,61 @@
       appendAll(host, GearGroundSymbol.ring(carrier.cx, carrier.cy,
         Math.max(2, carrier.orbit * 0.28), { length: Math.max(1.5, carrier.orbit * 0.14) }));
     }
-    group.appendChild(host);
     entry.carrierElement = arms;
     entry.carrierSpokes = spokes;
     return host;
   };
 
-  TrainRenderer.prototype._drawLink = function (host, link, entry) {
+  /** _drawLink(link, entry) → les morceaux à poser, chacun à sa profondeur. */
+  TrainRenderer.prototype._drawLink = function (link, entry) {
+    var pieces = [];
+    var middle = entry.wheels.reduce(function (sum, wheel) {
+      return sum + finite(wheel.depth, 0) / (entry.wheels.length || 1);
+    }, 0);
     if (link.kind === 'belt-span' || link.kind === 'chain-span') {
       var cls = link.kind === 'belt-span' ? 'belt-line' : 'chain-line';
-      var d = link.outline;
-      if (!d) {
+      var strands = [];
+      var parts = link.geometry && link.geometry.parts;
+      if (parts && parts.length) {
+        parts.forEach(function (part) {
+          var piece = n('path', { class: cls + ' belt-part', d: part.d, 'data-part': part.kind });
+          strands.push({ el: piece, start: part.start });
+          pieces.push({ el: piece, depth: part.depth });
+        });
+      } else {
         // Géométrie dégénérée : on garde deux brins finis plutôt qu'un NaN.
-        d = 'M ' + link.x1 + ' ' + (link.y1 - link.r1) + ' L ' + link.x2 + ' ' + (link.y2 - link.r2) +
-          ' M ' + link.x1 + ' ' + (link.y1 + link.r1) + ' L ' + link.x2 + ' ' + (link.y2 + link.r2);
+        var fallback = link.outline ||
+          ('M ' + link.x1 + ' ' + (link.y1 - link.r1) + ' L ' + link.x2 + ' ' + (link.y2 - link.r2) +
+           ' M ' + link.x1 + ' ' + (link.y1 + link.r1) + ' L ' + link.x2 + ' ' + (link.y2 + link.r2));
+        var whole = n('path', { class: cls, d: fallback });
+        strands.push({ el: whole, start: 0 });
+        pieces.push({ el: whole, depth: middle });
       }
-      var span = n('path', { class: cls, d: d });
-      host.appendChild(span);
-      var markers = n('g', { class: link.kind === 'belt-span' ? 'belt-markers' : 'chain-markers' });
-      host.appendChild(markers);
-      this._flexible.push({ link: link, entry: entry, path: span, markers: markers, built: 0 });
+      // Un porteur de marqueurs PAR PORTION, à la profondeur de celle-ci : une
+      // dent de courroie doit disparaître avec le brin qu'elle suit, et non
+      // flotter devant la roue qui cache pourtant ce brin.
+      var markers = (parts && parts.length ? parts : [{ depth: middle }]).map(function (part) {
+        var host = n('g', { class: link.kind === 'belt-span' ? 'belt-markers' : 'chain-markers' });
+        pieces.push({ el: host, depth: part.depth });
+        return { host: host, start: part.start || 0, length: part.length || Infinity };
+      });
+      this._flexible.push({ link: link, entry: entry, strands: strands, markers: markers, built: 0 });
     } else if (link.kind === 'bevel-axes') {
       // Les deux axes se coupent au sommet commun des cônes. Leurs directions
       // ne sont plus déduites de l'angle d'arbre — elles viennent du modèle
       // spatial, qui les a projetées : un renvoi à 60° se dessine à 60°.
-      var span2 = finite(link.span, 40);
+      var host = n('g', { class: 'stage-axes' });
+      var span = finite(link.span, 40);
       [link.inAlong, link.outAlong].forEach(function (along) {
         if (!along || !Math.hypot(along[0], along[1])) return;
         host.appendChild(n('path', { class: 'stage-axis',
-          d: 'M ' + (link.x - along[0] * span2).toFixed(2) + ' ' + (link.y - along[1] * span2).toFixed(2) +
-            ' L ' + (link.x + along[0] * span2).toFixed(2) + ' ' + (link.y + along[1] * span2).toFixed(2) }));
+          d: 'M ' + (link.x - along[0] * span).toFixed(2) + ' ' + (link.y - along[1] * span).toFixed(2) +
+            ' L ' + (link.x + along[0] * span).toFixed(2) + ' ' + (link.y + along[1] * span).toFixed(2) }));
       });
       host.appendChild(n('circle', { class: 'cone-apex-point', cx: link.x.toFixed(2), cy: link.y.toFixed(2), r: 1.2 }));
+      pieces.push({ el: host, depth: middle });
     }
+    return pieces;
   };
 
   /**
@@ -476,7 +554,7 @@
     var link = record.link;
     if (record.built === lod) return;
     record.built = lod;
-    record.markers.textContent = '';
+    record.markers.forEach(function (group) { group.host.textContent = ''; });
     record.marks = [];
     if (lod <= LEVELS.SILHOUETTE || !link.geometry || !(link.length > 0)) return;
     var pitch = Math.max(1.5, finite(link.pitch, 4));
@@ -487,48 +565,114 @@
         ? n('circle', { class: 'chain-link', r: Math.max(0.6, pitch * 0.18).toFixed(2) })
         : n('rect', { class: 'belt-tooth', x: (-pitch * 0.18).toFixed(2), y: (-pitch * 0.22).toFixed(2),
           width: (pitch * 0.36).toFixed(2), height: (pitch * 0.44).toFixed(2) });
-      record.markers.appendChild(mark);
-      record.marks.push({ el: mark, s: link.length * i / count });
+      record.markers[0].host.appendChild(mark);
+      record.marks.push({ el: mark, s: link.length * i / count, host: 0 });
     }
   };
 
+  /**
+   * La cote d'entraxe, LE LONG DE LA LIGNE DES CENTRES.
+   *
+   * Elle était posée à plat : deux traits de rappel verticaux et une ligne
+   * horizontale sous les roues. Un entraxe n'est horizontal que dans certaines
+   * vues — dès qu'il ne l'est pas, la cote mesurait la projection horizontale
+   * de l'entraxe et annonçait pourtant sa valeur vraie.
+   */
   TrainRenderer.prototype._drawDim = function (host, entry) {
     var a = entry.wheels[0], b = entry.wheels[1];
+    var dx = b.cx - a.cx, dy = b.cy - a.cy;
+    var span = Math.hypot(dx, dy);
     // Un entraxe vu en bout se projette en un point : la cote n'aurait ni
     // longueur ni sens, et deux traits de rappel superposés ne diraient rien.
-    if (Math.hypot(b.cx - a.cx, b.cy - a.cy) < 1e-6) return;
-    var below = Math.max(a.cy + a.outsideD / 2, b.cy + b.outsideD / 2) + Math.max(6, 3 * a.module);
+    if (span < 1e-6) return;
+    var along = [dx / span, dy / span];
+    // Décalée sur le côté, d'un rayon plus une marge : la cote longe l'entraxe
+    // sans recouvrir les dentures qu'elle mesure.
+    var offset = Math.max(a.outsideD, b.outsideD) / 2 + Math.max(6, 3 * a.module);
+    var away = [-along[1] * offset, along[0] * offset];
+    // Du côté opposé au reste du dessin, quand on peut le dire.
+    if (away[1] < 0) { away = [-away[0], -away[1]]; }
     var g = n('g', { class: 'train-dim' });
-    g.appendChild(n('line', { x1: a.cx, y1: a.cy, x2: a.cx, y2: below, class: 'dim-leader' }));
-    g.appendChild(n('line', { x1: b.cx, y1: b.cy, x2: b.cx, y2: below, class: 'dim-leader' }));
-    g.appendChild(n('line', { x1: a.cx, y1: below, x2: b.cx, y2: below }));
+    var from = [a.cx + away[0], a.cy + away[1]], to = [b.cx + away[0], b.cy + away[1]];
+    g.appendChild(n('line', { x1: a.cx.toFixed(2), y1: a.cy.toFixed(2), x2: from[0].toFixed(2), y2: from[1].toFixed(2), class: 'dim-leader' }));
+    g.appendChild(n('line', { x1: b.cx.toFixed(2), y1: b.cy.toFixed(2), x2: to[0].toFixed(2), y2: to[1].toFixed(2), class: 'dim-leader' }));
+    g.appendChild(n('line', { x1: from[0].toFixed(2), y1: from[1].toFixed(2), x2: to[0].toFixed(2), y2: to[1].toFixed(2) }));
     var text = 'c = ' + fmt(entry.centerDistance, 2) + ' mm';
     if (Number.isFinite(entry.links[0] && entry.links[0].wrapAngle1Deg)) {
       text += ' · enroulement ' + fmt(entry.links[0].wrapAngle1Deg, 0) + '°/' + fmt(entry.links[0].wrapAngle2Deg, 0) + '°';
     }
+    // Le texte, lui, reste droit : c'est une annotation d'écran.
+    var size = Math.max(3.5, Math.min(4 * a.module, 10));
     g.appendChild(n('text', {
-      x: (a.cx + b.cx) / 2, y: below + Math.max(4, 2 * a.module),
-      'text-anchor': 'middle', 'font-size': Math.max(3.5, Math.min(4 * a.module, 10))
+      x: ((from[0] + to[0]) / 2 - along[1] * size * 0.9).toFixed(2),
+      y: ((from[1] + to[1]) / 2 + along[0] * size * 0.9).toFixed(2),
+      'text-anchor': 'middle', 'font-size': size
     }, text));
     host.appendChild(g);
   };
 
+  /**
+   * ENTRÉE et SORTIE, LE LONG DE LEUR ARBRE.
+   *
+   * Les deux flèches étaient toujours horizontales — l'une à gauche de sa
+   * roue, l'autre à droite — quelle que soit la direction réelle des arbres.
+   * En iso, deux flèches horizontales désignaient donc des arbres obliques :
+   * le lecteur ne pouvait plus dire par où le couple entre.
+   *
+   * La flèche suit maintenant la projection de l'arbre qui porte l'organe, et
+   * pointe vers l'extérieur du mécanisme pour la sortie, vers lui pour
+   * l'entrée. Le TEXTE, lui, reste horizontal : c'est une annotation d'écran,
+   * pas une géométrie, et un mot couché à 30° ne se lit plus.
+   */
   TrainRenderer.prototype._drawIOChips = function (viewport, model) {
     if (!model.io.input || !model.io.output) return;
+    // Le centre du dessin : il dit de quel côté d'une roue se trouve le
+    // dehors, et donc dans quel sens poser la flèche sur son arbre.
+    var middle = (model.wheels || []).reduce(function (sum, wheel) {
+      return [sum[0] + finite(wheel.cx, 0) / model.wheels.length,
+        sum[1] + finite(wheel.cy, 0) / model.wheels.length];
+    }, [0, 0]);
+
+    function alongOf(wheel) {
+      var carrier = (model.shafts || []).filter(function (shaft) {
+        return shaft.memberIds.indexOf(wheel.memberId) >= 0;
+      })[0];
+      var along = carrier && carrier.along ? carrier.along : null;
+      // Arbre vu en bout : il n'a plus de direction à l'écran. La flèche
+      // reprend alors l'horizontale, faute de mieux — et parce qu'une flèche
+      // de longueur nulle ne désignerait rien.
+      if (!along || Math.hypot(along[0], along[1]) < 1e-9) return null;
+      var outward = (finite(wheel.cx, 0) - middle[0]) * along[0] + (finite(wheel.cy, 0) - middle[1]) * along[1];
+      var sign = Math.abs(outward) < 1e-9 ? 1 : Math.sign(outward);
+      return [along[0] * sign, along[1] * sign];
+    }
+
     function chip(cls, text, wheel, side) {
       // chipR : rayon d'évitement (la couronne entière pour un planétaire).
-      // Entrée à gauche de sa roue, sortie à droite : jamais superposées,
-      // même sur un train mono-étage.
       var r = finite(wheel.chipR, finite(wheel.outsideD, 20) / 2);
       var cx = finite(wheel.cx, 0), cy = finite(wheel.cy, 0);
-      var g = n('g', { class: 'io-chip ' + cls });
-      if (side === 'in') {
-        g.appendChild(n('path', { class: 'io-arrow', d: 'M ' + (cx - r - 16) + ' ' + cy + ' h 10 m 0 0 l -4 -3 m 4 3 l -4 3' }));
-        g.appendChild(n('text', { x: cx - r - 19, y: cy, 'text-anchor': 'end', dy: '0.34em' }, text));
-      } else {
-        g.appendChild(n('path', { class: 'io-arrow', d: 'M ' + (cx + r + 5) + ' ' + cy + ' h 10 m 0 0 l -4 -3 m 4 3 l -4 3' }));
-        g.appendChild(n('text', { x: cx + r + 19, y: cy, 'text-anchor': 'start', dy: '0.34em' }, text));
-      }
+      var away = alongOf(wheel) || [side === 'in' ? -1 : 1, 0];
+      var near = side === 'in' ? r + 6 : r + 5;
+      var far = side === 'in' ? r + 16 : r + 15;
+      // L'entrée pointe VERS la roue, la sortie s'en éloigne.
+      var tail = side === 'in' ? far : near;
+      var head = side === 'in' ? near : far;
+      var g = n('g', { class: 'io-chip ' + cls, 'data-along': away[0].toFixed(4) + ',' + away[1].toFixed(4) });
+      var from = [cx + away[0] * tail, cy + away[1] * tail];
+      var to = [cx + away[0] * head, cy + away[1] * head];
+      var back = [from[0] - to[0], from[1] - to[1]];
+      var span = Math.hypot(back[0], back[1]) || 1;
+      var unit = [back[0] / span, back[1] / span];
+      var wing = [-unit[1], unit[0]];
+      g.appendChild(n('path', { class: 'io-arrow',
+        d: 'M ' + from[0].toFixed(2) + ' ' + from[1].toFixed(2) +
+           ' L ' + to[0].toFixed(2) + ' ' + to[1].toFixed(2) +
+           ' M ' + (to[0] + unit[0] * 4 + wing[0] * 3).toFixed(2) + ' ' + (to[1] + unit[1] * 4 + wing[1] * 3).toFixed(2) +
+           ' L ' + to[0].toFixed(2) + ' ' + to[1].toFixed(2) +
+           ' L ' + (to[0] + unit[0] * 4 - wing[0] * 3).toFixed(2) + ' ' + (to[1] + unit[1] * 4 - wing[1] * 3).toFixed(2) }));
+      var label = [cx + away[0] * (far + 4), cy + away[1] * (far + 4)];
+      g.appendChild(n('text', { x: label[0].toFixed(2), y: label[1].toFixed(2),
+        'text-anchor': away[0] < -1e-6 ? 'end' : 'start', dy: '0.34em' }, text));
       return g;
     }
     viewport.appendChild(chip('in', 'ENTRÉE', model.io.input, 'in'));
@@ -559,9 +703,12 @@
     // poussée horizontale si chevauchement dans un couloir.
     var labels = Array.from(svg.querySelectorAll('.train-label'));
     var lanes = { top: -Infinity, bottom: -Infinity };
+    var self = this;
     labels.forEach(function (label, i) {
-      var stageGroup = label.closest('.train-stage');
-      var stageBox; try { stageBox = stageGroup.getBBox(); } catch (e) { stageBox = bbox; }
+      // L'étiquette vit dans le calque d'annotations : la boîte de son groupe
+      // ne dirait donc plus que la taille du texte. Elle vient du MODÈLE — les
+      // pièces de l'étage —, ce qui est de toute façon ce qu'elle désigne.
+      var stageBox = self._stageBox(Number(label.dataset.labelStage)) || bbox;
       var top = i % 2 === 0;
       var y = top ? bbox.y - fontSize * 1.6 : bbox.y + bbox.height + fontSize * 2.2;
       var x = stageBox.x + stageBox.width / 2;
@@ -670,10 +817,12 @@
       if (!force && lod === record.lod) return;
       record.lod = lod;
       record.host.textContent = '';
-      // La ligne d'action se lit dans le plan de l'engrènement. Vue par la
-      // tranche, elle traverserait le dessin en diagonale sans rien montrer.
-      var flat = record.entry.wheels.some(function (wheel) { return wheel.presentation === 'profile'; });
-      if (!flat) appendAll(record.host, GearTeethOverlay.mesh(record.entry, lod));
+      // La ligne d'action se lit dans le plan de l'engrènement, vu de face.
+      // C'est TeethOverlay qui refuse maintenant de la construire ailleurs :
+      // le filtre était ici, il ne couvrait que la tranche, et laissait donc
+      // passer les vues obliques — où un angle d'écran de 20° ne représente
+      // aucun angle de pression.
+      appendAll(record.host, GearTeethOverlay.mesh(record.entry, lod));
     });
     this.setAnimationAngle(this._angle);
   };
@@ -777,7 +926,18 @@
       // rayon × vitesse n'est refait ici.
       var offset = finite((flexible[link.driveId] || {}).offset, 0);
       if (record.marks && link.geometry) {
+        var length = finite(link.length, 0);
         record.marks.forEach(function (mark) {
+          // La portion sur laquelle ce marqueur se trouve à cet instant : c'est
+          // elle qui dit s'il passe devant ou derrière une pièce voisine.
+          if (length > 0 && record.markers.length > 1) {
+            var s = ((mark.s + offset) % length + length) % length;
+            var host = 0;
+            for (var i = 0; i < record.markers.length; i++) {
+              if (s >= record.markers[i].start) host = i;
+            }
+            if (host !== mark.host) { record.markers[host].host.appendChild(mark.el); mark.host = host; }
+          }
           // L'abscisse est comptée sur la courroie RÉELLE, en millimètres :
           // c'est le plan de courroie qui transporte ensuite le point à
           // l'écran. Un maillon ne parcourt donc pas un tracé d'écran, dont la
@@ -786,7 +946,11 @@
           if (point) mark.el.setAttribute('transform', 'translate(' + point[0].toFixed(2) + ' ' + point[1].toFixed(2) + ')');
         });
       }
-      record.path.setAttribute('stroke-dashoffset', (-offset).toFixed(1));
+      // Le motif reste continu d'une portion à l'autre : chaque morceau décale
+      // sa phase de son abscisse de départ sur la courroie.
+      (record.strands || []).forEach(function (strand) {
+        strand.el.setAttribute('stroke-dashoffset', (strand.start - offset).toFixed(1));
+      });
     });
   };
 
@@ -844,7 +1008,9 @@
 
   TrainRenderer.prototype._bindStageInteractions = function () {
     var self = this;
-    Array.from(this.svg.querySelectorAll('.train-stage')).forEach(function (group) {
+    // Tous les calques : cliquer une pièce, sa flèche d'effort ou son libellé
+    // désigne le même étage.
+    Array.from(this.svg.querySelectorAll('[data-stage]')).forEach(function (group) {
       var index = Number(group.dataset.stage);
       group.addEventListener('click', function (event) {
         if (self.viewport && self.viewport.dragged) { self.viewport.dragged = false; return; }
@@ -900,13 +1066,16 @@
   };
 
   TrainRenderer.prototype.getStageElement = function (index) {
-    return this.svg ? this.svg.querySelector('.train-stage[data-stage="' + index + '"]') : null;
+    if (!this.svg) return null;
+    // La géométrie d'abord : c'est elle qu'on veut cadrer ou faire défiler.
+    return this.svg.querySelector('.geometry-layer [data-stage="' + index + '"]') ||
+      this.svg.querySelector('[data-stage="' + index + '"]');
   };
 
   TrainRenderer.prototype.selectStage = function (index, silent) {
     if (!this.svg) return;
     this._selected = index;
-    Array.from(this.svg.querySelectorAll('.train-stage')).forEach(function (group) {
+    Array.from(this.svg.querySelectorAll('[data-stage]')).forEach(function (group) {
       group.classList.toggle('selected', Number(group.dataset.stage) === index);
     });
     if (!silent) this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: index } }));
@@ -922,23 +1091,53 @@
    * s'empilent sur leurs axes réels, c'est exactement ce qu'on obtenait — un
    * double-clic qui ne rapprochait de rien.
    */
-  TrainRenderer.prototype.focusStage = function (index) {
-    if (!this.viewport) return false;
+  /**
+   * L'encombrement DESSINÉ d'un étage, lu sur le modèle.
+   *
+   * Le mesurer sur le DOM revenait à mesurer aussi son étiquette, posée en
+   * marge du dessin entier : le double-clic ne rapprochait alors de rien. Et
+   * depuis que les pièces sont réparties par profondeur, un étage n'a même
+   * plus de groupe géométrique à mesurer.
+   */
+  TrainRenderer.prototype._stageBox = function (index) {
     var entry = this.model && this.model.stages && this.model.stages[index];
-    if (!entry || !entry.wheels.length) return this.viewport.focusElement(this.getStageElement(index));
+    if (!entry || !entry.wheels.length) return null;
+    // En vue dépliée, rien ne se raccourcit ; en projection, ce qui suit l'axe
+    // se réduit du sinus de l'angle de l'axe sur le regard.
+    var unfolded = this.model.mode === 'unfolded';
     var box = null;
     entry.wheels.forEach(function (wheel) {
-      // L'encombrement d'un organe est celui de sa denture ; une crémaillère
-      // occupe sa course, qui n'a rien d'un diamètre.
-      var reach = Math.max(finite(wheel.length, 0) / 2,
-        Math.max(finite(wheel.outsideD, 0), finite(wheel.pitchD, 0)) / 2, 2);
+      var radius = Math.max(finite(wheel.outsideD, 0), finite(wheel.pitchD, 0)) / 2;
+      var half, across;
+      if (!wheel.apparent || wheel.kind === 'rack') {
+        // Une crémaillère occupe sa course, qui n'a rien d'un diamètre.
+        half = across = Math.max(finite(wheel.length, 0) / 2, radius, 2);
+      } else {
+        // L'encombrement DESSINÉ d'un cylindre : son ellipse apparente balayée
+        // le long de l'axe projeté. Le mesurer au diamètre dans les deux
+        // directions donnait une boîte trop grande d'un organe vu par la
+        // tranche, et un cadrage qui laissait du vide autour de lui.
+        var axial = unfolded ? 1 : Math.sqrt(Math.max(0, 1 - wheel.apparent.minor * wheel.apparent.minor));
+        half = Math.max(finite(wheel.faceWidth, 0) / 2 * axial + radius * wheel.apparent.minor, 2);
+        across = Math.max(radius * wheel.apparent.major, 2);
+      }
+      var theta = finite(wheel.axisAngleDeg, 0) * Math.PI / 180;
+      var cos = Math.abs(Math.cos(theta)), sin = Math.abs(Math.sin(theta));
+      var reachX = cos * half + sin * across;
+      var reachY = sin * half + cos * across;
       var x = finite(wheel.cx, 0), y = finite(wheel.cy, 0);
-      var own = { left: x - reach, top: y - reach, right: x + reach, bottom: y + reach };
+      var own = { left: x - reachX, top: y - reachY, right: x + reachX, bottom: y + reachY };
       box = box ? { left: Math.min(box.left, own.left), top: Math.min(box.top, own.top),
         right: Math.max(box.right, own.right), bottom: Math.max(box.bottom, own.bottom) } : own;
     });
-    this.viewport.focus({ x: box.left, y: box.top,
-      width: box.right - box.left, height: box.bottom - box.top });
+    return { x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top };
+  };
+
+  TrainRenderer.prototype.focusStage = function (index) {
+    if (!this.viewport) return false;
+    var box = this._stageBox(index);
+    if (!box) return this.viewport.focusElement(this.getStageElement(index));
+    this.viewport.focus(box);
     return true;
   };
 

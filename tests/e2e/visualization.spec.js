@@ -65,7 +65,7 @@ test('selection survives all three visualization views', async ({ page }) => {
   await expect(page.locator('.train-stage').first()).toBeVisible({ timeout: 20000 });
   // On clique une roue de l'étage, pas le centre de son cadre : sur un train
   // composé, les cadres d'étages se recouvrent.
-  await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
+  await page.locator('.train-wheel[data-stage="0"]').first().click();
   await page.getByRole('button', { name: 'Dimensions', exact: true }).click();
   await expect(page.locator('.geometry-layer .geometry-stage').first()).toHaveClass(/selected/);
   await page.getByRole('button', { name: 'Cinématique' }).click();
@@ -233,7 +233,7 @@ test('the worm turns without walking, in the Denture and Geometry views (§15)',
 test('the inspector explains a planetary, and the analysis lets it be checked (§20, §21)', async ({ page }) => {
   await mount(page, ['planetary']);
   await showView(page, 'teeth');
-  await page.locator('.train-stage[data-stage="0"] .train-wheel').first().click();
+  await page.locator('.train-wheel[data-stage="0"]').first().click();
   const inspector = page.locator('#stageInspector');
   await expect(inspector).toBeVisible();
   // §20 : la relation qui EXPLIQUE le rapport, et le rapport de base — pas
@@ -811,27 +811,27 @@ test('the drawing is painted from the back, and can be seen from the other side 
   await select.selectOption('iso');
   const painted = await page.evaluate(() => {
     const renderer = window.__viewer.renderer();
-    const depthOf = element => {
+    // Le calque de géométrie est PLAT : les pièces de tous les étages y sont
+    // sœurs, et c'est ce qui permet de les trier entre elles.
+    const layer = document.querySelector('#svgContainer .geometry-layer');
+    return Array.from(layer.querySelectorAll(':scope > .train-wheel')).map(element => {
       const record = renderer._wheels.filter(w => w.group === element)[0];
-      return record ? record.wheel.depth : null;
-    };
-    const stages = Array.from(document.querySelectorAll('#svgContainer .train-stage'));
-    return stages.map(stage => ({
-      wheels: Array.from(stage.querySelectorAll(':scope > .train-wheel')).map(depthOf),
-      nearest: Math.min.apply(null, Array.from(stage.querySelectorAll(':scope > .train-wheel')).map(depthOf))
-    }));
-  });
-  painted.forEach((stage, index) => {
-    stage.wheels.forEach((depth, i) => {
-      if (i === 0) return;
-      expect(depth, 'étage ' + index + ' : roue peinte devant une plus proche')
-        .toBeLessThanOrEqual(stage.wheels[i - 1] + 1e-9);
+      return { stage: element.dataset.stage, depth: record ? record.wheel.depth : null };
     });
   });
-  // Les étages, eux, gardent leur ordre : ils portent leurs alertes et leurs
-  // libellés, et les réordonner enterrerait le badge d'un étage sous la
-  // denture du voisin.
-  expect(painted.length).toBeGreaterThan(1);
+  expect(painted.length, 'aucune pièce dans le calque de géométrie').toBeGreaterThan(3);
+  // Peint du fond vers l'avant, TOUS ÉTAGES CONFONDUS.
+  painted.forEach((piece, index) => {
+    if (index === 0) return;
+    expect(piece.depth, 'pièce peinte devant une plus proche')
+      .toBeLessThanOrEqual(painted[index - 1].depth + 1e-9);
+  });
+  // Et l'ordre traverse réellement les étages : sinon le tri ne serait que
+  // celui de la PR précédente, interne à chaque étage.
+  expect(new Set(painted.map(p => p.stage)).size).toBeGreaterThan(1);
+  const straight = painted.map(p => p.stage).join('');
+  expect(straight, 'les pièces restent rangées par étage').not.toBe(
+    painted.map(p => p.stage).sort().join(''));
 
   // L'autre bord : le même mécanisme, regardé de l'autre côté.
   const drawingOf = () => page.evaluate(() =>
@@ -861,6 +861,121 @@ test('the drawing is painted from the back, and can be seen from the other side 
   // La vue dépliée n'est pas une projection : elle n'a pas de bord.
   await select.selectOption('unfolded');
   await expect(flip).toBeDisabled();
+  expect(errors).toEqual([]);
+});
+
+test('the iso view of a spur → belt train holds together (§24 de la mission)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // La capture de référence : une grande roue d'un premier étage et la petite
+  // poulie du suivant, sur le MÊME ARBRE, vues en isométrie.
+  await mount(page, ['spur', 'belt']);
+  await showView(page, 'teeth');
+  const mod180 = a => ((a % 180) + 180) % 180;
+
+  // « Iso opposée » n'a pas d'entrée dans la liste : c'est la même vue, prise
+  // de l'autre bord, et le bouton ⇄ y mène. On la demande donc par son nom.
+  for (const view of ['iso', 'iso-rear']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    await page.waitForTimeout(60);
+    const seen = await page.evaluate(() => {
+      const svg = document.querySelector('#svgContainer svg');
+      const model = window.__viewer.renderer().model;
+      const wheels = {};
+      model.wheels.forEach(w => { wheels[w.memberId] = w; });
+      const shafts = {};
+      model.shafts.forEach(s => { shafts[s.id] = s; });
+      const link = model.stages[1].links[0];
+      // F. aucun cercle de construction autour d'une roue oblique.
+      const stray = Array.from(svg.querySelectorAll('.geometry-layer .train-wheel')).filter(host => {
+        const record = window.__viewer.renderer()._wheels.filter(w => w.group === host)[0];
+        return record && record.wheel.presentation === 'oblique' &&
+          host.querySelector('circle.pitch-circle, circle.base-circle, circle.root-circle, circle.tip-circle');
+      }).length;
+      return {
+        wheels: model.wheels.map(w => ({ id: w.memberId, body: w.bodyId, presentation: w.presentation,
+          apparent: w.apparent, cx: w.cx, cy: w.cy, width: w.faceWidth })),
+        shafts: model.shafts.map(s => ({ id: s.id, length: Math.hypot(s.x2 - s.x1, s.y2 - s.y1),
+          endOn: s.endOn, real: null })),
+        spatial: model.spatial.shafts.map(s => ({ id: s.id, length: s.length })),
+        stray: stray,
+        belt: { circles: link.geometry.circles, parts: link.geometry.parts.length,
+          origin: link.geometry.origin, first: link.geometry.first, second: link.geometry.second,
+          distance: link.geometry.distance, r1: link.r1, r2: link.r2 },
+        io: Array.from(svg.querySelectorAll('.io-chip')).map(chip => ({
+          along: chip.dataset.along.split(',').map(Number),
+          d: chip.querySelector('.io-arrow').getAttribute('d') })),
+        painted: Array.from(svg.querySelectorAll('.geometry-layer > .train-wheel'))
+          .map(el => el.dataset.member),
+        depths: model.wheels.reduce((map, w) => { map[w.memberId] = w.depth; return map; }, {})
+      };
+    });
+
+    // A/B/C. Les deux organes du même arbre partagent leur plan apparent.
+    const byBody = {};
+    seen.wheels.forEach(w => { (byBody[w.body] = byBody[w.body] || []).push(w); });
+    const shared = Object.keys(byBody).filter(id => byBody[id].length > 1);
+    expect(shared.length, view + ' : aucun arbre ne porte deux organes').toBeGreaterThan(0);
+    shared.forEach(id => {
+      const [a, b] = byBody[id];
+      expect(a.apparent.major, view).toBeCloseTo(b.apparent.major, 9);
+      expect(a.apparent.minor, view).toBeCloseTo(b.apparent.minor, 9);
+      expect(mod180(a.apparent.rotationDeg), view).toBeCloseTo(mod180(b.apparent.rotationDeg), 6);
+      // D. seule une translation le long de leur arbre commun les sépare.
+      const shaft = seen.shafts.filter(s => s.id === id)[0];
+      const gap = [b.cx - a.cx, b.cy - a.cy];
+      if (!shaft.endOn && Math.hypot(gap[0], gap[1]) > 1e-9) {
+        const axis = mod180(a.apparent.rotationDeg + 90) * Math.PI / 180;
+        const across = gap[0] * -Math.sin(axis) + gap[1] * Math.cos(axis);
+        expect(Math.abs(across), view + ' : les deux organes s’écartent en travers de leur arbre')
+          .toBeLessThan(1e-6);
+      }
+    });
+
+    // E. la courroie est tangente à ses deux poulies, et chaque poulie est
+    // décrite par la même ellipse que la roue.
+    seen.belt.circles.forEach((circle, index) => {
+      const wheel = seen.wheels.filter(w => w.id === (index === 0 ? 's1-input' : 's1-output'))[0];
+      expect(circle.major, view).toBeCloseTo(wheel.apparent.major, 9);
+      expect(circle.minor, view).toBeCloseTo(wheel.apparent.minor, 9);
+      expect(mod180(circle.rotationDeg), view).toBeCloseTo(mod180(wheel.apparent.rotationDeg), 6);
+      expect(Math.hypot(circle.centre[0] - wheel.cx, circle.centre[1] - wheel.cy), view).toBeLessThan(1e-9);
+    });
+
+    // F. aucun cercle de construction autour d'une ellipse.
+    expect(seen.stray, view + ' : un cercle entoure encore une roue oblique').toBe(0);
+
+    // G. l'arbre est raccourci exactement comme la projection le veut.
+    seen.shafts.forEach(shaft => {
+      const real = seen.spatial.filter(s => s.id === shaft.id)[0];
+      expect(shaft.length, view + ' ' + shaft.id).toBeCloseTo(real.length * Math.sqrt(2 / 3), 6);
+    });
+
+    // H. la profondeur décide de l'ordre de peinture, tous étages confondus.
+    seen.painted.forEach((id, index) => {
+      if (index === 0) return;
+      expect(seen.depths[id], view + ' : ordre de profondeur rompu')
+        .toBeLessThanOrEqual(seen.depths[seen.painted[index - 1]] + 1e-9);
+    });
+    // Et la courroie est découpée, pour pouvoir passer devant ET derrière.
+    expect(seen.belt.parts, view).toBe(4);
+
+    // I. ENTRÉE et SORTIE suivent l'orientation réelle des arbres.
+    expect(seen.io.length).toBe(2);
+    seen.io.forEach(chip => {
+      // La direction est écrite au dix-millième dans l'attribut : on la
+      // compare à cette précision, pas au-delà.
+      expect(Math.hypot(chip.along[0], chip.along[1]), view).toBeCloseTo(1, 3);
+      // La flèche n'est pas horizontale : les arbres ne le sont pas.
+      expect(Math.abs(chip.along[1]), view + ' : flèche horizontale sur un arbre oblique')
+        .toBeGreaterThan(0.05);
+      const points = Array.from(chip.d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)).map(m => [Number(m[1]), Number(m[2])]);
+      const shaftDirection = [chip.along[0], chip.along[1]];
+      const stroke = [points[1][0] - points[0][0], points[1][1] - points[0][1]];
+      const span = Math.hypot(stroke[0], stroke[1]);
+      const cos = (stroke[0] * shaftDirection[0] + stroke[1] * shaftDirection[1]) / span;
+      expect(Math.abs(Math.abs(cos) - 1), view + ' : la flèche ne suit pas son arbre').toBeLessThan(1e-3);
+    });
+  }
   expect(errors).toEqual([]);
 });
 
@@ -1068,7 +1183,10 @@ test('hovering a wheel reads it at once, and the export keeps the titles (§4)',
 
   const hud = page.locator('#viewerHud');
   await expect(hud).toBeHidden();
-  await page.locator('#svgContainer [data-hud]').first().hover();
+  // Une pièce que le tri de profondeur place DERRIÈRE une autre ne reçoit plus
+  // le survol : c'est le propre d'un dessin qui respecte la profondeur. On
+  // survole donc une roue, et non la première pièce du document.
+  await page.locator('#svgContainer .train-wheel.sun').hover();
   await expect(hud).toBeVisible();
   // Le HUD présente ce que le renderer écrit : titre puis grandeurs.
   await expect(hud.locator('.hud-title')).toHaveCount(1);
@@ -1083,7 +1201,7 @@ test('hovering a wheel reads it at once, and the export keeps the titles (§4)',
   // Le panneau survit à un nouveau rendu — les renderers vident le conteneur.
   await showView(page, 'geometry');
   await expect(page.locator('#viewerHud')).toHaveCount(1);
-  await page.locator('#svgContainer [data-hud]').first().hover();
+  await page.locator('#svgContainer .geometry-member-group[data-hud]').first().hover();
   await expect(page.locator('#viewerHud')).toBeVisible();
 
   // Hors de l'application, un SVG exporté doit rester lisible : les `<title>`
@@ -1189,7 +1307,7 @@ test('a double-click frames the stage it points at, in all three views (§7)', a
   await mount(page, ['spur', 'helical', 'planetary']);
   // Le même étage apparaît dans plusieurs couches de la vue Géométrie (dessin,
   // cotes, alertes) : on visait ici la pièce, pas ses annotations.
-  const selector = { teeth: '.train-stage', geometry: '.geometry-layer .geometry-stage',
+  const selector = { teeth: '.train-wheel', geometry: '.geometry-layer .geometry-stage',
     kinematic: '.kinematic-stage' };
 
   // Un point du dessin qui répond effectivement l'étage visé. Viser le centre
@@ -1197,13 +1315,16 @@ test('a double-click frames the stage it points at, in all three views (§7)', a
   // étiquette, posée en marge du dessin entier, et un trait ne se clique pas
   // en son milieu.
   const aim = sel => page.evaluate(selector => {
-    const stage = document.querySelector(`#svgContainer ${selector}[data-stage="2"]`);
-    for (const part of stage.querySelectorAll('path, circle, rect, polygon, ellipse')) {
-      const box = part.getBoundingClientRect();
-      if (!box.width || !box.height) continue;
-      const x = box.x + box.width / 2, y = box.y + box.height / 2;
-      const hit = document.elementFromPoint(x, y);
-      if (hit && stage.contains(hit)) return { x, y };
+    // Plusieurs pièces peuvent porter l'étage visé, et le tri de profondeur en
+    // cache certaines : on cherche celle qui répond réellement.
+    for (const stage of document.querySelectorAll(`#svgContainer ${selector}[data-stage="2"]`)) {
+      for (const part of stage.querySelectorAll('path, circle, rect, polygon, ellipse')) {
+        const box = part.getBoundingClientRect();
+        if (!box.width || !box.height) continue;
+        const x = box.x + box.width / 2, y = box.y + box.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        if (hit && stage.contains(hit)) return { x, y };
+      }
     }
     return null;
   }, sel);
@@ -1225,7 +1346,7 @@ test('a double-click frames the stage it points at, in all three views (§7)', a
     expect(await width(), view).toBeLessThan(whole);
     // Le double-clic sélectionne aussi : cadrer sans sélectionner laisserait
     // l'inspecteur parler d'un autre étage que celui qu'on regarde.
-    await expect(page.locator(`#svgContainer ${selector[view]}[data-stage="2"]`)).toHaveClass(/selected/);
+    await expect(page.locator(`#svgContainer ${selector[view]}[data-stage="2"]`).first()).toHaveClass(/selected/);
     await page.locator('#viewerReset').click();
   }
   expect(errors).toEqual([]);
@@ -1252,7 +1373,9 @@ test('the inspector is docked beside the drawing, never over it (§6)', async ({
   expect(closed.hidden).toBe(true);
   expect(closed.host, 'l’inspecteur vit à côté du dessin, pas dedans').toContain('viewer-stage');
 
-  await page.locator('#svgContainer .train-stage[data-stage="1"] .train-wheel').first().click();
+  // Une pièce que la profondeur place derrière une autre ne reçoit plus le
+  // clic : on désigne donc l'étage par son libellé, qui est au-dessus de tout.
+  await page.locator('#svgContainer .train-stage[data-stage="1"] .train-label').click();
   await expect(page.locator('#stageInspector')).toBeVisible();
   const open = await layout();
   expect(open.overlaps, 'l’inspecteur ne doit rien recouvrir').toBe(false);
@@ -1290,7 +1413,7 @@ test('a filter that excludes everything leaves no solution on screen', async ({ 
   await search(page);
   await page.locator('.solution-card').first().click();
   await page.locator('#svgContainer svg').waitFor({ timeout: 20000 });
-  await page.locator('#svgContainer .train-stage .train-wheel').first().click();
+  await page.locator('#svgContainer .train-wheel').first().click();
   await expect(page.locator('#stageInspector')).toBeVisible();
 
   const shown = () => page.evaluate(() => ({

@@ -95,6 +95,7 @@
       local: local, view: view, origin: origin, first: s1, second: s2, ellipse: ellipse,
       axis: axis, planeFirst: first, planeSecond: second,
       distance: distance, axialOffset: axial, crossed: !!o.crossed,
+      centreWorld: c1,
       r1: r1, r2: r2,
       spanLength: local.spanLength, length: local.length,
       wrapAngle1Deg: local.wrapAngle1 * 180 / Math.PI,
@@ -119,8 +120,65 @@
     }, []);
     geometry.centre1 = geometry.toScreen([0, 0]);
     geometry.centre2 = geometry.toScreen([distance, 0]);
+    // Les deux poulies, décrites comme la vue décrit n'importe quel cercle
+    // porté par un axe. C'est le MÊME descripteur que celui d'une roue : si
+    // l'un des deux venait à diverger, la courroie quitterait la jante.
+    geometry.circles = [ProjectedScene.projectedCircle(geometry.centre1, r1, ellipse),
+      ProjectedScene.projectedCircle(geometry.centre2, r2, ellipse)];
     geometry.outline = outline(geometry);
+    // La courroie DÉCOUPÉE en ses quatre portions — brin, arc, brin, arc —
+    // chacune avec sa profondeur propre. Un seul grand chemin ne peut pas
+    // passer à la fois devant une pièce et derrière une autre : c'est ce qui
+    // faisait courir la courroie par-dessus la roue qui porte pourtant sa
+    // poulie. Chaque portion peut maintenant prendre sa place dans le tri.
+    geometry.parts = parts(geometry);
     return geometry;
+  }
+
+  /**
+   * Les quatre portions du circuit, chacune avec son chemin, son abscisse de
+   * départ sur la courroie, et la PROFONDEUR de son milieu — celle du point
+   * physique, mesurée le long du regard comme pour n'importe quelle pièce.
+   */
+  function parts(geometry) {
+    var cut = GeometryUtils.segments(geometry.local);
+    if (!cut) return [];
+    var view = geometry.view;
+    var start = 0;
+    return cut.list.map(function (segment, index) {
+      var from = start;
+      start += segment.length;
+      var middle = GeometryUtils.pointAlong(geometry.local, from + segment.length / 2);
+      var depth = 0;
+      if (middle) {
+        // Le point, dans le MONDE : centre 1 + a·F1 + b·F2. Sa profondeur est
+        // sa projection sur la direction du regard.
+        for (var i = 0; i < 3; i++) {
+          depth += (geometry.centreWorld[i] + middle.x * geometry.planeFirst[i] + middle.y * geometry.planeSecond[i]) * view.w[i];
+        }
+      }
+      return { kind: segment.kind, index: index, start: from, length: segment.length, depth: depth,
+        d: strokeOf(geometry, segment) };
+    });
+  }
+
+  /** Le chemin OUVERT d'une portion : un brin droit ou un arc d'ellipse. */
+  function strokeOf(geometry, segment) {
+    var e = geometry.ellipse;
+    if (segment.kind === 'line') {
+      var from = geometry.toScreen([segment.from.x, segment.from.y]);
+      var to = geometry.toScreen([segment.to.x, segment.to.y]);
+      return 'M ' + f2(from[0]) + ' ' + f2(from[1]) + ' L ' + f2(to[0]) + ' ' + f2(to[1]);
+    }
+    var head = geometry.toScreen([segment.centre.x + segment.radius * Math.cos(segment.start),
+      segment.centre.y + segment.radius * Math.sin(segment.start)]);
+    var angle = segment.start + segment.delta;
+    var tail = geometry.toScreen([segment.centre.x + segment.radius * Math.cos(angle),
+      segment.centre.y + segment.radius * Math.sin(angle)]);
+    return 'M ' + f2(head[0]) + ' ' + f2(head[1]) +
+      ' A ' + f2(segment.radius * e.major) + ' ' + f2(segment.radius * e.minor) + ' ' +
+      f2(e.rotationDeg) + ' ' + (Math.abs(segment.delta) > Math.PI ? 1 : 0) + ' ' +
+      (segment.delta * e.det > 0 ? 1 : 0) + ' ' + f2(tail[0]) + ' ' + f2(tail[1]);
   }
 
   /**

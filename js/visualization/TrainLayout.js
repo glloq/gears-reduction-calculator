@@ -116,7 +116,12 @@
       // De quel BOUT on regarde, et dans quel repère d'écran tourne ce qui
       // tourne : sans eux, l'animation suppose partout une roue vue de face.
       facing: seen.facing, phaseBasis: seen.basis, depth: seen.depth,
-      axisAngleDeg: seen.axisAngleDeg };
+      axisAngleDeg: seen.axisAngleDeg,
+      // L'ELLIPSE APPARENTE de tout cercle porté par cet axe. C'est la seule
+      // description de la forme projetée : les surfaces primitives, de tête et
+      // de pied s'y accrochent au lieu que chaque couche redérive la sienne du
+      // raccourci — d'où, en iso, une roue elliptique cerclée de trois cercles.
+      apparent: seen.apparent };
   }
 
   function seatOf(frame, memberId) {
@@ -199,8 +204,12 @@
       if (member) entry.members[functional] = member.role;
     });
     entry.carrierSpeed = finite(byRole.C && byRole.C.mechanical.relativeSpeed, 0);
+    var carrierSeen = byRole.C && frame.projected.member(byRole.C.id);
     entry.carrier = { memberId: 's' + index + '-C', cx: centre.x, cy: centre.y, orbit: orbit, count: count,
       speed: entry.carrierSpeed, basis: basis,
+      // La profondeur du porte-satellites : c'est elle qui décide s'il passe
+      // devant ou derrière une pièce voisine, comme pour toute autre pièce.
+      depth: carrierSeen ? carrierSeen.depth : 0,
       bodyId: byRole.C && frame.spatial.byId[byRole.C.id] ? frame.spatial.byId[byRole.C.id].shaftId : null,
       functionalRole: byRole.C ? byRole.C.functionalRole : null,
       memberName: byRole.C ? byRole.C.memberName : null,
@@ -451,11 +460,12 @@
    */
   function shaftSegments(frame, scene) {
     return frame.spatial.shafts.map(function (shaft) {
-      var drawn = frame.seats.shafts[shaft.id] || { origin: [0, 0], along: [1, 0] };
-      var first = frame.spatial.byId[shaft.memberIds[0]];
-      var last = frame.spatial.byId[shaft.memberIds[shaft.memberIds.length - 1]];
-      var from = first.axialPosition - first.width / 2 - SpatialLayout.SHAFT_OVERHANG;
-      var to = last.axialPosition + last.width / 2 + SpatialLayout.SHAFT_OVERHANG;
+      // Les extrémités viennent de la SCÈNE PROJETÉE, telles quelles. Elles
+      // étaient recalculées ici à partir de l'origine et de la direction, en
+      // millimètres réels : l'arbre gardait donc sa longueur vraie là où tout
+      // le reste du dessin était raccourci, et un arbre oblique dépassait de
+      // ses propres roues. Deux géométries concurrentes pour une seule pièce.
+      var seen = frame.projected.shaft(shaft.id) || { x1: 0, y1: 0, x2: 0, y2: 0, endOn: true };
       return { id: shaft.id, role: shaft.role, grounded: !!shaft.grounded,
         memberIds: shaft.memberIds.slice(),
         // Les noms viennent de la scène : le dessin ne nomme rien lui-même.
@@ -463,11 +473,11 @@
           var member = scene && scene.member ? scene.member(id) : null;
           return member ? (member.memberName || member.role) : id;
         }),
-        x1: drawn.origin[0] + drawn.along[0] * from, y1: drawn.origin[1] + drawn.along[1] * from,
-        x2: drawn.origin[0] + drawn.along[0] * to, y2: drawn.origin[1] + drawn.along[1] * to,
+        x1: seen.x1, y1: seen.y1, x2: seen.x2, y2: seen.y2,
+        along: seen.along, depth: seen.depth,
         // Un arbre vu en bout n'est pas un trait : c'est un point, et le
         // dessiner comme un segment de longueur nulle serait une trace muette.
-        endOn: Math.hypot(drawn.along[0], drawn.along[1]) < 1e-9 };
+        endOn: seen.endOn };
     });
   }
 

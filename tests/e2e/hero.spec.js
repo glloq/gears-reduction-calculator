@@ -15,7 +15,7 @@ test('clicking a stage in the hero opens the inspector and bridges to the editor
 
   // Cibler le moyeu du premier engrenage : les trains composés superposent
   // les centres de groupes, le centre du bbox n'est pas cliquable.
-  await page.locator('.train-stage[data-stage="0"] .gear-hub').first().click({ force: true });
+  await page.locator('.train-wheel[data-stage="0"] .gear-hub').first().click({ force: true });
   await expect(page.locator('#stageInspector')).toBeVisible();
   await expect(page.locator('#stageInspector')).toContainText('Rapport');
   await expect(page.locator('.train-stage.selected')).toHaveCount(1);
