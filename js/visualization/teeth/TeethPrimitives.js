@@ -22,6 +22,17 @@
   var LEVELS = { SILHOUETTE: 0, SIMPLIFIED: 1, INVOLUTE: 2, TECHNICAL: 3 };
   // Seuils en pixels du diamètre de tête à l'écran.
   var THRESHOLDS = [18, 70, 260];
+  /**
+   * §17 : le style technique a sa PROPRE échelle de détail.
+   *
+   * Les mêmes seuils dans les deux styles ramenaient la denture réelle dès le
+   * cadrage par défaut — un dessin d'ensemble couvert de développantes, c'est
+   * exactement le bruit que la représentation conventionnelle existe pour
+   * éviter. Sur un plan, une denture ne se dessine que si on l'a demandée de
+   * près : il faut donc une roue nettement plus grande à l'écran pour qu'elle
+   * revienne. Le mode s'appelle « technique », pas « détaillé ».
+   */
+  var TECHNICAL_THRESHOLDS = [60, 260, 900];
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
   function rad(deg) { return deg * Math.PI / 180; }
@@ -32,9 +43,10 @@
   function group(attrs, children) { return { tag: 'g', attrs: attrs, children: children }; }
 
   /** level(diameterPx) → niveau de détail pour une roue de ce diamètre écran. */
-  function level(diameterPx) {
+  function level(diameterPx, style) {
     var size = finite(diameterPx, 0);
-    for (var i = 0; i < THRESHOLDS.length; i++) if (size < THRESHOLDS[i]) return i;
+    var ladder = style === 'technical' ? TECHNICAL_THRESHOLDS : THRESHOLDS;
+    for (var i = 0; i < ladder.length; i++) if (size < ladder[i]) return i;
     return LEVELS.TECHNICAL;
   }
 
@@ -55,7 +67,7 @@
       var squeeze = Math.min(1, Math.max(0.05, finite(options && options.foreshortening, 0.5)));
       apparent = diameter * squeeze;
     }
-    return level(apparent * finite(pixelsPerUnit, 1));
+    return level(apparent * finite(pixelsPerUnit, 1), options && options.style);
   }
 
   function radii(wheel) {
@@ -505,6 +517,219 @@
     return shapes;
   }
 
+  // ===== Représentation conventionnelle (style technique) =====
+  //
+  // Sur un dessin d'ensemble, une roue ne montre pas ses dents. Quatre-vingts
+  // développantes exactes n'apprennent rien de plus qu'un cercle, et couvrent
+  // le trait qui compte. Le dessin mécanique remplace donc la denture par ses
+  // SURFACES : le cercle de tête en trait fort, la surface primitive en trait
+  // mixte fin, le fond de denture en trait fin. C'est la convention dont
+  // s'inspire ISO 2203 — s'en inspire, sans prétendre la certifier.
+  //
+  // La denture reste accessible : elle revient de près, quand le niveau de
+  // détail la rend lisible, et le style visuel la garde partout.
+
+  /**
+   * Le sens d'hélice, en un seul trait.
+   *
+   * Le style visuel strie tout le disque à l'angle réel, ce qui est juste et
+   * lisible quand on regarde une roue. Sur un ensemble technique, seize stries
+   * par roue deviennent un motif : un repère oblique unique dit la même chose —
+   * à gauche ou à droite — et β se lit dans le résumé de l'organe.
+   */
+  function helixHandMark(wheel, r) {
+    var hand = handOf(wheel);
+    var reach = r.pitch * 0.55;
+    return [node('path', { class: 'helix-hand',
+      d: 'M ' + fixed(-hand * reach * 0.5) + ' ' + fixed(reach * 0.5) +
+         ' L ' + fixed(hand * reach * 0.5) + ' ' + fixed(-reach * 0.5) })];
+  }
+
+  /** Un engrenage extérieur vu de face : trois surfaces, pas de dents. */
+  function gearFaceConventional(wheel, lod) {
+    var r = radii(wheel);
+    var shapes = [node('circle', { class: 'tip-surface', r: fixed(r.tip) })];
+    shapes.push(node('circle', { class: 'pitch-circle', r: fixed(r.pitch) }));
+    if (lod > LEVELS.SILHOUETTE) shapes.push(node('circle', { class: 'root-surface', r: fixed(r.root) }));
+    return shapes.concat(hubOf(wheel, r, lod));
+  }
+
+  /**
+   * Une couronne intérieure vue de face. Sa denture est TOURNÉE VERS LE
+   * CENTRE : son cercle de tête est plus petit que sa primitive, l'inverse
+   * d'une roue extérieure. Sans la jante, rien ne la distinguerait d'un
+   * engrenage extérieur une fois la denture retirée.
+   */
+  function ringFaceConventional(wheel, lod) {
+    var r = radii(wheel);
+    var rim = Math.max(r.pitch + 3 * r.module, r.root + r.module);
+    var shapes = [node('circle', { class: 'rim-surface', r: fixed(rim) })];
+    shapes.push(node('circle', { class: 'pitch-circle', r: fixed(r.pitch) }));
+    shapes.push(node('circle', { class: 'tip-surface', r: fixed(Math.min(r.tip, r.pitch)) }));
+    if (lod > LEVELS.SILHOUETTE) shapes.push(node('circle', { class: 'root-surface', r: fixed(Math.max(r.root, r.pitch)) }));
+    return shapes;
+  }
+
+  /** Poulie ou pignon de chaîne : le diamètre primitif est ce qui compte. */
+  function flexibleFaceConventional(wheel, lod) {
+    var r = radii(wheel);
+    return [node('circle', { class: 'tip-surface', r: fixed(r.tip) }),
+      node('circle', { class: 'pitch-circle', r: fixed(r.pitch) })].concat(hubOf(wheel, r, lod));
+  }
+
+  /** Un cône vu en bout : sa grande face, sa primitive, sa petite face. */
+  function coneFaceConventional(wheel, lod) {
+    var r = radii(wheel);
+    var delta = rad(finite(wheel.coneAngleDeg, 45));
+    var face = Math.max(3 * r.module, finite(wheel.faceWidth, 8 * r.module));
+    var front = Math.max(r.module, r.pitch - face * Math.sin(delta));
+    return [node('circle', { class: 'tip-surface', r: fixed(r.tip) }),
+      node('circle', { class: 'pitch-circle', r: fixed(r.pitch) }),
+      node('circle', { class: 'cone-front', r: fixed(front) })].concat(hubOf(wheel, r, lod));
+  }
+
+  /** Le moyeu, seulement s'il est connu : inventer un Ø20 ne renseigne personne. */
+  function hubOf(wheel, r, lod) {
+    var bore = finite(wheel.boreDiameter, null);
+    if (bore === null || !(bore > 0)) return [];
+    return [node('circle', { class: 'd-hidden-contour bore-surface', r: fixed(bore / 2) })];
+  }
+
+  /**
+   * Un engrenage vu par la tranche : un cylindre de largeur b. La surface
+   * primitive y est une DROITE, tracée d'un bout à l'autre du corps, et le
+   * fond de denture une seconde droite plus près de l'axe. C'est ce couple de
+   * traits qui dit « denture » sans dessiner une dent.
+   */
+  function gearProfileConventional(wheel, lod) {
+    var r = radii(wheel);
+    var b = faceWidthOf(wheel, r);
+    var shapes = [node('rect', { class: 'gear-profile', x: fixed(-b / 2), y: fixed(-r.tip),
+      width: fixed(b), height: fixed(2 * r.tip) })];
+    [-1, 1].forEach(function (side) {
+      shapes.push(node('path', { class: 'pitch-line',
+        d: 'M ' + fixed(-b / 2) + ' ' + fixed(side * r.pitch) + ' H ' + fixed(b / 2) }));
+      if (lod > LEVELS.SILHOUETTE) {
+        shapes.push(node('path', { class: 'root-line',
+          d: 'M ' + fixed(-b / 2) + ' ' + fixed(side * r.root) + ' H ' + fixed(b / 2) }));
+      }
+    });
+    return shapes;
+  }
+
+  /**
+   * Une couronne vue par la tranche : deux jantes, et du vide entre elles.
+   * Un rectangle plein la rendrait identique à une roue extérieure — et c'est
+   * justement la distinction qui doit survivre au monochrome.
+   */
+  function ringProfileConventional(wheel, lod) {
+    var r = radii(wheel);
+    var b = faceWidthOf(wheel, r);
+    var rim = Math.max(r.pitch + 3 * r.module, r.root + r.module);
+    var inner = Math.min(r.tip, r.pitch);
+    var shapes = [];
+    [-1, 1].forEach(function (side) {
+      var top = side < 0 ? -rim : inner;
+      shapes.push(node('rect', { class: side < 0 ? 'ring-profile-top' : 'ring-profile-bottom',
+        x: fixed(-b / 2), y: fixed(top), width: fixed(b), height: fixed(rim - inner) }));
+      shapes.push(node('path', { class: 'pitch-line',
+        d: 'M ' + fixed(-b / 2) + ' ' + fixed(side * r.pitch) + ' H ' + fixed(b / 2) }));
+    });
+    return shapes;
+  }
+
+  /**
+   * Une vis sans fin vue par la tranche : son corps, et quelques obliques qui
+   * disent le filet et son sens. Une pseudo-hélice détaillée sur un dessin
+   * d'ensemble est du bruit ; le nombre de filets et le sens restent lisibles
+   * dans le résumé de l'organe.
+   */
+  function wormProfileConventional(wheel, lod) {
+    var r = radii(wheel);
+    var g = wormGeometry(wheel);
+    var half = g.length / 2;
+    var hand = handOf(wheel);
+    var shapes = [node('rect', { class: 'worm-body', x: fixed(-half), y: fixed(-r.tip),
+      width: fixed(g.length), height: fixed(2 * r.tip) })];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    // Une oblique par pas : leur inclinaison porte le sens du filet, leur
+    // nombre le pas réel. Aucune n'est décorative.
+    var pitch = Math.max(g.pitch, g.length / 24);
+    var slant = r.tip * 0.85;
+    var marks = '';
+    for (var x = -half + pitch / 2; x < half; x += pitch) {
+      marks += ' M ' + fixed(x - hand * slant * 0.35) + ' ' + fixed(-r.tip) +
+        ' L ' + fixed(x + hand * slant * 0.35) + ' ' + fixed(r.tip);
+    }
+    if (marks) shapes.push(node('path', { class: 'worm-thread', d: marks.trim() }));
+    shapes.push(node('path', { class: 'pitch-line',
+      d: 'M ' + fixed(-half) + ' ' + fixed(-r.pitch) + ' H ' + fixed(half) +
+         ' M ' + fixed(-half) + ' ' + fixed(r.pitch) + ' H ' + fixed(half) }));
+    return shapes;
+  }
+
+  /**
+   * Un cône vu par la tranche : son cône primitif et son sommet. Sur un
+   * ensemble, un renvoi d'angle doit se lire comme un renvoi avant de se lire
+   * comme une denture.
+   */
+  function coneProfileConventional(wheel, lod) {
+    var r = radii(wheel);
+    var delta = rad(finite(wheel.coneAngleDeg, 45));
+    var face = Math.max(3 * r.module, finite(wheel.faceWidth, 8 * r.module));
+    var depth = Math.max(2 * r.module, face * Math.cos(delta));
+    var front = Math.max(r.module, r.pitch - face * Math.sin(delta));
+    var shapes = [node('path', { class: 'cone-body',
+      d: 'M 0 ' + fixed(-r.pitch) + ' L ' + fixed(depth) + ' ' + fixed(-front) +
+         ' L ' + fixed(depth) + ' ' + fixed(front) + ' L 0 ' + fixed(r.pitch) + ' Z' })];
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    var apex = r.pitch / Math.max(1e-6, Math.tan(delta));
+    shapes.push(node('path', { class: 'cone-apex',
+      d: 'M ' + fixed(apex) + ' 0 L 0 ' + fixed(-r.pitch) + ' M ' + fixed(apex) + ' 0 L 0 ' + fixed(r.pitch) }));
+    shapes.push(node('circle', { class: 'cone-apex-point', cx: fixed(apex), cy: '0',
+      r: fixed(Math.max(0.6, r.module * 0.6)) }));
+    return shapes;
+  }
+
+  /** Une crémaillère : sa ligne primitive, sa tête, son pied. Pas de dents. */
+  function rackProfileConventional(wheel, lod) {
+    var m = Math.max(0.2, finite(wheel.module, 1));
+    var length = Math.max(6 * m, finite(wheel.length, 40 * m));
+    var half = length / 2;
+    var shapes = [node('rect', { class: 'rack-profile', x: fixed(-half), y: '0',
+      width: fixed(length), height: fixed(2.5 * m) })];
+    shapes.push(node('path', { class: 'pitch-line', d: 'M ' + fixed(-half) + ' 0 H ' + fixed(half) }));
+    if (lod > LEVELS.SILHOUETTE) {
+      shapes.push(node('path', { class: 'root-line',
+        d: 'M ' + fixed(-half) + ' ' + fixed(1.25 * m) + ' H ' + fixed(half) }));
+    }
+    return shapes;
+  }
+
+  var CONVENTIONAL_FACE = { gear: gearFaceConventional, 'internal-ring': ringFaceConventional,
+    pulley: flexibleFaceConventional, sprocket: flexibleFaceConventional,
+    worm: flexibleFaceConventional, cone: coneFaceConventional };
+  var CONVENTIONAL_PROFILE = { gear: gearProfileConventional, 'internal-ring': ringProfileConventional,
+    pulley: gearProfileConventional, sprocket: gearProfileConventional,
+    worm: wormProfileConventional, cone: coneProfileConventional, rack: rackProfileConventional };
+
+  /**
+   * Le niveau à partir duquel le style technique consent à dessiner des dents.
+   * Le mode s'appelle « technique », pas « détaillé » : rendre la développante
+   * partout parce qu'on a changé de style serait exactement le bruit que la
+   * représentation conventionnelle existe pour éviter.
+   */
+  var CONVENTIONAL_UNTIL = LEVELS.INVOLUTE;
+
+  function conventional(wheel, presentation, lod) {
+    if (lod > CONVENTIONAL_UNTIL) return null;              // de très près, la denture reprend
+    var table = presentation === 'profile' ? CONVENTIONAL_PROFILE
+      : presentation === 'face' ? CONVENTIONAL_FACE : null;
+    if (!table) return null;                                 // oblique : pas de convention établie
+    var draw = table[wheel.kind];
+    return draw ? draw(wheel, lod) : null;
+  }
+
   var BODIES = { gear: gearBody, 'internal-ring': internalRingBody, pulley: flexibleBody, sprocket: flexibleBody,
     worm: wormBody, cone: coneBody, rack: rackBody };
 
@@ -528,7 +753,13 @@
     var asked = options.presentation;
     var presentation = asked === 'profile' || asked === 'oblique' || asked === 'face' ? asked : null;
     var body;
-    if (presentation === 'oblique') {
+    // Le style TECHNIQUE remplace la denture par ses surfaces tant que le
+    // dessin reste un dessin d'ensemble. Il ne change rien à la mécanique :
+    // mêmes diamètres, même organe, même identité.
+    var drafted = options.style === 'technical' ? conventional(wheel, presentation, lod) : null;
+    if (drafted) {
+      body = drafted;
+    } else if (presentation === 'oblique') {
       body = obliqueBody(wheel, lod, options.foreshortening);
     } else if (presentation === 'profile') {
       body = (PROFILES[wheel.kind] || gearProfile)(wheel, lod);
@@ -539,14 +770,21 @@
     }
     // Les stries d'hélice décrivent une denture vue de FACE : de profil, c'est
     // la pente des flancs qui porte l'information, et elle est déjà tracée.
-    if (presentation !== 'profile' && presentation !== 'oblique' && wheel.kind === 'gear' && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
+    // Les stries d'hélice décrivent une denture vue de FACE. En technique, elles
+    // rempliraient le disque d'un motif décoratif là où un seul repère de sens
+    // suffit — β et le sens se lisent dans le résumé de l'organe.
+    if (!drafted && presentation !== 'profile' && presentation !== 'oblique'
+      && wheel.kind === 'gear' && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
       body = body.concat(helicalMarks(wheel, lod));
+    }
+    if (drafted && presentation === 'face' && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
+      body = body.concat(helixHandMark(wheel, radii(wheel)));
     }
     var labels = [];
     var r = radii(wheel);
     // Z=n reste hors du rotor (il ne doit pas tourner) et disparaît quand la
     // roue est trop petite pour rester lisible.
-    if (lod >= LEVELS.SIMPLIFIED && wheel.teeth > 0 && wheel.kind !== 'worm' && presentation !== 'profile') {
+    if (lod >= LEVELS.SIMPLIFIED && wheel.teeth > 0 && wheel.kind !== 'worm' && presentation !== 'profile' && !drafted) {
       var y = wheel.kind === 'internal-ring' ? -(r.pitch + 2.6 * r.module) : -r.root * 0.5;
       var size = Math.max(2.6, Math.min(r.root * 0.3, 10));
       if (wheel.kind === 'internal-ring' || r.root > 6) {
@@ -558,7 +796,8 @@
     if (wheel.functionalRole === 'fixed' && Ground) {
       labels = labels.concat(Ground.ring(0, 0, groundRadius(wheel, r), { length: r.module * 1.6 }));
     }
-    return { rotor: body, fixed: labels, lod: lod, presentation: presentation };
+    return { rotor: body, fixed: labels, lod: lod, presentation: presentation,
+      conventional: !!drafted };
   }
 
   /**
@@ -572,7 +811,9 @@
     return r.tip + r.module * 0.4;
   }
 
-  return { LEVELS: LEVELS, THRESHOLDS: THRESHOLDS, level: level, levelFor: levelFor, build: build,
+  return { LEVELS: LEVELS, THRESHOLDS: THRESHOLDS, TECHNICAL_THRESHOLDS: TECHNICAL_THRESHOLDS,
+    level: level, levelFor: levelFor, build: build,
+    conventional: conventional, CONVENTIONAL_UNTIL: CONVENTIONAL_UNTIL,
     radii: radii, circlePath: circlePath, node: node, group: group,
     wormGeometry: wormGeometry, wormClipId: wormClipId, WORM_MARGIN_PITCHES: WORM_MARGIN_PITCHES,
     groundRadius: groundRadius };

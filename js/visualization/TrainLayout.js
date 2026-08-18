@@ -1,4 +1,4 @@
-// TrainLayout.js - La vue « Denture réaliste », lue sur le modèle spatial.
+// TrainLayout.js - La vue « Transmission », lue sur le modèle spatial.
 //
 // Ce module ne place plus rien. Il l'a fait longtemps, et c'est précisément ce
 // qui rendait le dessin faux dès qu'une chaîne changeait d'axe : un curseur 2D

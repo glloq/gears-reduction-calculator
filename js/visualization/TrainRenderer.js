@@ -1,4 +1,10 @@
-// TrainRenderer.js - Vue « Denture réaliste ».
+// TrainRenderer.js - Vue « Transmission » : comment le mécanisme est assemblé.
+//
+// Elle s'appelait « Denture », et ne montrait effectivement qu'une denture.
+// Elle montre aujourd'hui l'assemblage : les arbres et leur longueur, les
+// orientations, les engrènements, les corps solidaires, le mouvement. Le nom
+// suivait un contenu qu'elle avait dépassé ; les identifiants internes, eux,
+// restent `teeth` — les renommer n'aurait rien appris à personne.
 //
 // Le renderer est un ORCHESTRATEUR : il ne calcule ni rapport, ni sens, ni
 // profil de dent. Il assemble ce que produisent
@@ -94,7 +100,7 @@
     this.model = model;
     var svg = n('svg', { class: 'train-svg', role: 'img',
       'data-view': model.view.id,
-      'aria-label': 'Denture réaliste, ' + model.view.label.toLowerCase() + ' — ' + (solution.stages || []).length + ' étage(s)' });
+      'aria-label': 'Transmission, ' + model.view.label.toLowerCase() + ' — ' + (solution.stages || []).length + ' étage(s)' });
     var viewport = n('g', { class: 'train-viewport' });
     svg.appendChild(viewport);
     var self = this;
@@ -275,13 +281,16 @@
     // partout l'hypothèse inverse, ce qui interdisait de montrer un engrenage et
     // une vis sur le même arbre.
     var built = GearTeethPrimitives.build(record.wheel, { lod: lod,
-      presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening });
+      presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening,
+      style: this.style });
     appendAll(record.rotor, built.rotor);
     // Les cercles de construction — primitif, base, pied — sont des CERCLES :
     // ils n'ont de sens que sur une roue vue de face. Tracés sur un organe vu
     // par la tranche, ils dessinaient une ellipse fantôme autour d'un
     // rectangle, sans rien coter.
-    if (record.wheel.presentation !== 'profile') {
+    // La représentation conventionnelle porte DÉJÀ les surfaces : y superposer
+    // les cercles de construction doublerait chaque trait.
+    if (record.wheel.presentation !== 'profile' && !built.conventional) {
       appendAll(record.construction, GearTeethOverlay.circles(record.wheel, lod));
     }
     appendAll(record.construction, built.fixed);
@@ -571,7 +580,8 @@
       // Le niveau de détail suit la taille APPARENTE : une roue vue par la
       // tranche n'a pas besoin d'une développante exacte pour trente pixels.
       var lod = GearTeethPrimitives.levelFor(record.wheel, ppu,
-        { presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening });
+        { presentation: record.wheel.presentation, foreshortening: record.wheel.foreshortening,
+          style: self.style });
       // « Détails automatiques » désactivé : on plafonne à la développante nue.
       if (!self._autoDetails) lod = Math.min(lod, LEVELS.INVOLUTE);
       if (force || lod !== record.lod) self._paintWheel(record, lod, force);
@@ -816,54 +826,13 @@
 
   // ===== Exports autonomes (jetons résolus) =====
 
-  TrainRenderer.prototype._resolvedStyle = function () {
-    var cs = getComputedStyle(document.body);
-    function v(name, fallback) { var value = cs.getPropertyValue(name).trim(); return value || fallback; }
-    var ink = v('--ink', '#182335'), muted = v('--muted', '#5d6b81'), accent = v('--accent', '#2563eb'),
-      success = v('--success', '#0c7f5c'), surface = v('--surface-1', '#ffffff'),
-      danger = v('--danger', '#b3261e'), warning = v('--warning', '#b26a00');
-    return '.tooth-profile{fill:' + accent + '22;stroke:' + ink + ';stroke-width:.6;stroke-linejoin:round}' +
-      '.train-wheel.output-member .tooth-profile{fill:' + success + '22}' +
-      '.pitch-circle{fill:none;stroke:' + muted + ';stroke-width:.5;stroke-dasharray:4 3}' +
-      '.base-circle{fill:none;stroke:' + muted + ';stroke-width:.4;stroke-dasharray:1.5 2}' +
-      '.root-circle,.tip-circle,.ring-rim{fill:none;stroke:' + muted + ';stroke-width:.35;opacity:.7}' +
-      '.gear-hub{fill:' + surface + ';stroke:' + ink + ';stroke-width:.5}' +
-      '.hub-cross,.shaft-link,.stage-axis,.dim-leader,.label-leader,.cone-apex{stroke:' + muted + ';stroke-width:.5;fill:none}' +
-      '.shaft-body{stroke:' + muted + ';stroke-width:1.1;fill:none;stroke-linecap:round;opacity:.85}' +
-      '.shaft-centre{stroke:' + muted + ';stroke-width:.5;fill:none;stroke-dasharray:5 2 1 2}' +
-      '.train-shaft.grounded .shaft-body,.train-shaft.grounded .shaft-centre{stroke:' + warning + '}' +
-      '.gear-profile,.pulley-profile,.ring-profile-top,.ring-profile-bottom,.oblique-body{' +
-      'fill:' + accent + '22;stroke:' + ink + ';stroke-width:.6}' +
-      '.oblique-face,.oblique-back{fill:' + surface + ';stroke:' + ink + ';stroke-width:.5}' +
-      '.pitch-line{stroke:' + muted + ';stroke-width:.5;stroke-dasharray:4 3;fill:none}' +
-      '.root-line,.bore-line,.pulley-flange{stroke:' + muted + ';stroke-width:.4;fill:none;opacity:.7}' +
-      '.worm-end,.cone-face{fill:' + accent + '18;stroke:' + ink + ';stroke-width:.6}' +
-      '.cone-apex{stroke-dasharray:6 2 1 2}' +
-      '.cone-apex-point{fill:' + muted + '}' +
-      '.worm-thread,.cone-tip,.cone-teeth,.cone-front{stroke:' + ink + ';stroke-width:.5;fill:none}' +
-      '.helix-stripe{stroke:' + ink + ';stroke-width:.35;fill:none;opacity:.65}' +
-      '.helix-hand{stroke:' + accent + ';stroke-width:.7;fill:none}' +
-      '.helix-label,.worm-label{fill:' + muted + ';font:600 3px system-ui,sans-serif}' +
-      '.carrier-arms path{stroke:' + muted + ';stroke-width:1.2;fill:none}' +
-      '.carrier-hub{fill:' + surface + ';stroke:' + muted + ';stroke-width:.5}' +
-      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8}' +
-      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75}' +
-      '.belt-line{stroke:' + ink + ';stroke-width:1.4;fill:none}' +
-      '.chain-line{stroke:' + ink + ';stroke-width:1.4;fill:none;stroke-dasharray:3 2.2}' +
-      '.belt-tooth{fill:' + ink + ';opacity:.75}' +
-      '.chain-link{fill:' + ink + ';opacity:.75}' +
-      '.line-of-action{stroke:' + danger + ';stroke-width:.5;stroke-dasharray:3 2;fill:none}' +
-      '.contact-point{fill:' + danger + '}' +
-      '.train-dim line{stroke:' + muted + ';stroke-width:.5}' +
-      '.train-dim text,.train-label{fill:' + muted + ';font-family:system-ui,sans-serif}' +
-      '.tooth-count{fill:' + ink + ';font-weight:600;font-family:system-ui,sans-serif}' +
-      '.io-chip text{font-weight:700;font-family:system-ui,sans-serif}' +
-      '.io-chip.in text{fill:' + success + '}.io-chip.out text{fill:' + danger + '}' +
-      '.io-arrow{stroke:' + muted + ';fill:none}' +
-      '.warning-overlay circle{fill:' + warning + '}.warning-overlay text{fill:' + surface + ';font:700 8px system-ui,sans-serif}' +
-      '.force-vector line{stroke:' + accent + ';stroke-width:1.5;fill:none}' +
-      '.force-vector text{fill:' + accent + ';font:700 8px system-ui,sans-serif}' +
-      'svg{background:' + surface + '}';
+  TrainRenderer.prototype._resolvedStyle = function (options) {
+    // Les trois vues partageaient la même intention et trois copies du même
+    // code : chaque renderer reconstruisait sa feuille de style d'export, donc
+    // sa propre idée de ce qu'est un axe ou une cote. Le thème la produit une
+    // fois, pour le style demandé.
+    return GearDraftingTheme.css({ style: (options && options.style) || this.style || 'visual',
+      tokens: GearDraftingTheme.tokensFrom(document.body) });
   };
 
   TrainRenderer.prototype.exportSVG = function (options) {
