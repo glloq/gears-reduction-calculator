@@ -652,6 +652,91 @@ test('the dimensioned view draws what it sees, not always a circle (§7 de l’a
   expect(errors).toEqual([]);
 });
 
+test('every phase mark on the drawing really carries a movement (§8 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['worm']);
+  const select = page.locator('#viewerProjection');
+
+  // Une vis porte sa phase dans ses FILETS. Un repère de phase posé en plus
+  // restait immobile : une puce sur le dessin que rien n'animait.
+  await showView(page, 'teeth');
+  await select.selectOption('unfolded');
+  const worm = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    const host = document.querySelector('#svgContainer .train-wheel[data-role="input"]');
+    const read = () => ({
+      threads: host.querySelector('.worm-thread-phase').getAttribute('transform'),
+      marks: host.querySelectorAll('.phase-mark').length
+    });
+    renderer.setAnimationAngle(0);
+    const start = read();
+    renderer.setAnimationAngle(90);
+    return { start, quarter: read() };
+  });
+  expect(worm.start.marks, 'la vis porte un repère de phase que rien ne bouge').toBe(0);
+  expect(worm.quarter.threads).not.toBe(worm.start.threads);
+
+  // Vue dans son axe, la vis se voit par le bout : elle tourne, et c'est son
+  // repère de bout qui le montre.
+  await select.selectOption('side');
+  const endOn = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    const host = document.querySelector('#svgContainer .train-wheel[data-role="input"]');
+    const rotor = host.querySelector('.rotor');
+    renderer.setAnimationAngle(0);
+    const start = { rotor: rotor.getAttribute('transform'), end: host.querySelectorAll('.worm-end-phase').length };
+    renderer.setAnimationAngle(90);
+    return { start, quarter: rotor.getAttribute('transform') };
+  });
+  expect(endOn.start.end, 'pas de repère de bout sur une vis vue en bout').toBeGreaterThan(0);
+  expect(endOn.quarter).not.toBe(endOn.start.rotor);
+
+  // Et la vue cotée la dessine par le bout aussi : un cylindre couché y
+  // montrerait une longueur que cette vue ne voit pas.
+  await showView(page, 'geometry');
+  await select.selectOption('side');
+  const cotted = await page.evaluate(() => {
+    const host = document.querySelector('#svgContainer .geometry-member-group.role-input');
+    return { circle: !!host.querySelector('circle.worm-member'), body: host.querySelectorAll('rect').length };
+  });
+  expect(cotted.circle).toBe(true);
+  expect(cotted.body).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('the dimensioned rack slides on its slide, not along the screen (§8 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['rack']);
+  await showView(page, 'geometry');
+
+  const trace = await page.evaluate(() => {
+    const renderer = window.__viewer.geometry;
+    const member = renderer.layout.stages[0].members.filter(m => m.kind === 'rack')[0];
+    const slider = document.querySelector('#svgContainer .linear-slider');
+    const at = angle => {
+      renderer.setAnimationAngle(angle);
+      const m = slider.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
+      const pose = GearKinematicsEngine.pose(renderer.scene.kinematics, angle);
+      return { x: Number(m[1]), y: Number(m[2]),
+        travel: pose.linear[member.linearId].position };
+    };
+    return { along: member.slideAlong, frames: [0, 90, 180, 270].map(at) };
+  });
+
+  const along = trace.along;
+  expect(Math.hypot(along[0], along[1])).toBeCloseTo(1, 6);
+  trace.frames.forEach(frame => {
+    // La course dessinée est celle de la pose, en millimètres réels…
+    expect(Math.hypot(frame.x, frame.y)).toBeCloseTo(Math.abs(frame.travel), 1);
+    // …et elle suit la glissière : aucune composante en travers.
+    const across = frame.x * -along[1] + frame.y * along[0];
+    expect(Math.abs(across), 'la crémaillère glisse en travers de sa glissière').toBeLessThan(0.02);
+  });
+  // Elle bouge réellement.
+  expect(new Set(trace.frames.map(f => f.x.toFixed(2) + ',' + f.y.toFixed(2))).size).toBeGreaterThan(2);
+  expect(errors).toEqual([]);
+});
+
 test('the animation cadence follows the mode, the poses never do', async ({ page }) => {
   await mount(page, ['spur']);
   await showView(page, 'teeth');

@@ -112,16 +112,36 @@
       var geometry = item.stage.geometry || {};
       var length = Math.max(item.diameter * 2, finite(geometry.travelPerRevolution, 0));
       var moduleValue = finite(item.stage.parameters && item.stage.parameters.module, 1);
+      // La crémaillère est posée SUR SA GLISSIÈRE, et y glisse. Elle était
+      // dessinée à l'horizontale et translatée suivant l'axe X de l'écran :
+      // une crémaillère verticale glissait donc de travers, à plat, au travers
+      // de son pignon.
+      var along = member.slideAlong && Math.hypot(member.slideAlong[0], member.slideAlong[1]) > 1e-9
+        ? member.slideAlong : [1, 0];
       var slider = p.node('g', { class: 'linear-slider' });
+      var seat = p.node('g', { class: 'slide-seat',
+        transform: 'translate(' + finite(member.cx, 0).toFixed(3) + ' ' + finite(member.cy, 0).toFixed(3) +
+          ') rotate(' + (Math.atan2(along[1], along[0]) * 180 / Math.PI).toFixed(3) + ')' });
+      slider.appendChild(seat);
       host.appendChild(slider);
-      p.rack(slider, member.cx, member.cy, length, moduleValue);
-      this._linear.push({ el: slider, linearId: member.linearId || ('s' + item.index + '-rack') });
+      p.rack(seat, 0, 0, length, moduleValue);
+      this._linear.push({ el: slider, along: along, linearId: member.linearId || ('s' + item.index + '-rack') });
       return host;
     }
     // Vis, cônes et porte-satellites tournent aussi : ils reçoivent le même
     // repère d'indexation que les roues, sinon la vue Géométrie raconterait une
     // cinématique incomplète.
     if (member.kind === 'worm') {
+      if (member.presentation === 'face') {
+        // Regardée DANS SON AXE, une vis se voit par son bout : un cercle, et
+        // une aiguille qui tourne. Le cylindre couché dessiné ici montrait une
+        // longueur que cette vue ne voit pas.
+        p.circle(host, member.cx, member.cy, member.pitchDiameter,
+          'geometry-member worm-member worm-end ' + (member.role === 'input' ? 'input-member' : 'output-member'),
+          null, member.apparent);
+        this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
+        return host;
+      }
       // §15 : la vis est vue de profil. Pas d'aiguille radiale — elle
       // prétendrait une rotation dans le plan du dessin, que la pièce ne fait
       // pas. Seuls les filets défilent, comme dans la vue Denture.
@@ -421,7 +441,10 @@
       entry.el.setAttribute('transform', 'translate(' + shift.toFixed(3) + ' 0)');
     });
     this._linear.forEach(function (entry) {
-      entry.el.setAttribute('transform', 'translate(' + finite((linear[entry.linearId] || {}).position, 0).toFixed(2) + ' 0)');
+      // La course est en millimètres réels, le long de la GLISSIÈRE projetée.
+      var travel = finite((linear[entry.linearId] || {}).position, 0);
+      var along = entry.along || [1, 0];
+      entry.el.setAttribute('transform', 'translate(' + (along[0] * travel).toFixed(2) + ' ' + (along[1] * travel).toFixed(2) + ')');
     });
   };
 

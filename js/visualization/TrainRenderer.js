@@ -244,7 +244,9 @@
     // surface primitive — cercle de face, ellipse obliquement, segment par la
     // tranche. Le faire tourner comme un disque, c'était affirmer que toute
     // roue est vue de face, ce que le dessin ne suppose plus depuis longtemps.
-    if (wheel.presentation && wheel.presentation !== 'face' && wheel.kind !== 'rack') {
+    // Une vis porte déjà sa phase dans ses filets, qui défilent : lui ajouter
+    // un repère revenait à poser sur le dessin une puce que rien n'anime.
+    if (wheel.presentation && wheel.presentation !== 'face' && wheel.kind !== 'rack' && wheel.kind !== 'worm') {
       phase = n('g', { class: 'phase-mark' });
       phase.appendChild(n('circle', { class: 'phase-dot', cx: '0', cy: '0',
         r: Math.max(0.5, finite(wheel.module, 1) * 0.7).toFixed(2) }));
