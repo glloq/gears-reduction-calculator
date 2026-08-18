@@ -288,29 +288,13 @@
     return !!this.viewport && this.viewport.focusElement(this.getStageElement(index));
   };
 
-  KinematicRenderer.prototype._resolvedStyle = function () {
-    var cs = getComputedStyle(document.body);
-    function v(name, fallback) { var value = cs.getPropertyValue(name).trim(); return value || fallback; }
-    var ink = v('--ink', '#182335'), muted = v('--muted', '#5d6b81'), accent = v('--accent', '#2563eb'),
-      success = v('--success', '#0c7f5c'), danger = v('--danger', '#b3261e'), surface = v('--surface-1', '#ffffff'),
-      warning = v('--warning', '#b06d00');
-    return '.kinematic-shaft{stroke:' + ink + ';stroke-width:4;stroke-linecap:round}' +
-      '.shaft-bearing{fill:' + surface + ';stroke:' + ink + ';stroke-width:1.5}' +
-      '.gear-symbol,.pulley,.worm-wheel,.internal-ring,.sun,.ring,.planet,.bevel-symbol{fill:none;stroke:' + ink + ';stroke-width:1.5}' +
-      '.symbol-line,.helix-mark,.worm-thread,.rack-line,.rack-tooth,.carrier{fill:none;stroke:' + ink + ';stroke-width:1.2}' +
-      '.belt-span,.chain-span{fill:none;stroke:' + ink + ';stroke-width:1.5}.chain-span{stroke-dasharray:5 3}' +
-      '.power-flow{fill:none;stroke:' + accent + ';stroke-width:2;stroke-dasharray:7 7}' +
-      '.power-pulse{fill:' + accent + '}' +
-      '.spin-mark{fill:none;stroke:' + accent + ';stroke-width:1.4}' +
-      '.shaft-label,.stage-label,.member-label,.stage-ratio{fill:' + muted + ';font:600 11px system-ui,sans-serif}' +
-      '.role-label{font:700 10px system-ui,sans-serif;fill:' + muted + '}' +
-      '.input-role{fill:' + success + '}.output-role{fill:' + danger + '}' +
-      '.fixed-role{fill:' + warning + '}' +
-      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8;vector-effect:non-scaling-stroke}' +
-      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75;vector-effect:non-scaling-stroke}' +
-      '.relation-badge{fill:' + surface + ';stroke:' + muted + ';stroke-width:1}' +
-      '.relation-glyph{fill:' + muted + ';font:700 11px system-ui,sans-serif}' +
-      'svg{background:' + surface + '}';
+  KinematicRenderer.prototype._resolvedStyle = function (options) {
+    // Les trois vues partageaient la même intention et trois copies du même
+    // code : chaque renderer reconstruisait sa feuille de style d'export, donc
+    // sa propre idée de ce qu'est un axe ou une cote. Le thème la produit une
+    // fois, pour le style demandé.
+    return GearDraftingTheme.css({ style: (options && options.style) || this.style || 'visual',
+      tokens: GearDraftingTheme.tokensFrom(document.body) });
   };
 
   KinematicRenderer.prototype.exportSVG = function (options) {

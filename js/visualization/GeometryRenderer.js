@@ -341,28 +341,13 @@
     return !!this.viewport && this.viewport.focusElement(this.getStageElement(index));
   };
 
-  GeometryRenderer.prototype._resolvedStyle = function () {
-    var cs = getComputedStyle(document.body);
-    function v(name, fallback) { var value = cs.getPropertyValue(name).trim(); return value || fallback; }
-    var ink = v('--ink', '#182335'), muted = v('--muted', '#5d6b81'), accent = v('--accent', '#2563eb'),
-      success = v('--success', '#0c7f5c'), surface = v('--surface-1', '#ffffff'), warning = v('--warning', '#b06d00');
-    return '.geometry-member{fill:none;stroke:' + ink + ';stroke-width:1;vector-effect:non-scaling-stroke}' +
-      '.geometry-member.input-member{stroke:' + accent + '}.geometry-member.output-member{stroke:' + success + '}' +
-      '.construction-circle{fill:none;stroke:' + muted + ';stroke-width:.6;vector-effect:non-scaling-stroke}' +
-      '.base-circle{stroke-dasharray:2 2}.tip-circle{stroke-dasharray:none}.root-circle{stroke-dasharray:4 2}' +
-      '.shaft-axis{stroke:' + muted + ';stroke-width:.6;stroke-dasharray:10 3 2 3}' +
-      '.dimension-line,.dimension-witness{stroke:' + muted + ';stroke-width:.6;fill:none}' +
-      '.dimension-arrow{fill:' + muted + '}' +
-      '.geometry-dimension,.stage-label{fill:' + muted + ';font:600 11px system-ui,sans-serif}' +
-      '.geometry-envelope{fill:none;stroke:' + muted + ';stroke-dasharray:7 5;opacity:.55}' +
-      '.worm-thread{stroke:' + accent + ';stroke-width:.8;fill:none;opacity:.8;vector-effect:non-scaling-stroke}' +
-      '.ground-boundary{fill:none;stroke:' + warning + ';stroke-width:.6;opacity:.8;vector-effect:non-scaling-stroke}' +
-      '.ground-hatch{stroke:' + warning + ';stroke-width:.5;opacity:.75;vector-effect:non-scaling-stroke}' +
-      '.belt-span,.chain-span{fill:none;stroke:' + ink + ';stroke-width:1.4}' +
-      '.chain-span{stroke-dasharray:4 3}.tangency-point{fill:' + accent + '}' +
-      '.rack-profile,.worm-member,.cone-member,.carrier-member{fill:none;stroke:' + ink + ';stroke-width:1}' +
-      '.index-mark{stroke:' + accent + ';stroke-width:1}' +
-      'svg{background:' + surface + '}';
+  GeometryRenderer.prototype._resolvedStyle = function (options) {
+    // Les trois vues partageaient la même intention et trois copies du même
+    // code : chaque renderer reconstruisait sa feuille de style d'export, donc
+    // sa propre idée de ce qu'est un axe ou une cote. Le thème la produit une
+    // fois, pour le style demandé.
+    return GearDraftingTheme.css({ style: (options && options.style) || this.style || 'visual',
+      tokens: GearDraftingTheme.tokensFrom(document.body) });
   };
 
   GeometryRenderer.prototype.exportSVG = function (options) {
