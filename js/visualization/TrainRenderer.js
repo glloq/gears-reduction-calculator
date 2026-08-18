@@ -570,23 +570,43 @@
     }
   };
 
+  /**
+   * La cote d'entraxe, LE LONG DE LA LIGNE DES CENTRES.
+   *
+   * Elle était posée à plat : deux traits de rappel verticaux et une ligne
+   * horizontale sous les roues. Un entraxe n'est horizontal que dans certaines
+   * vues — dès qu'il ne l'est pas, la cote mesurait la projection horizontale
+   * de l'entraxe et annonçait pourtant sa valeur vraie.
+   */
   TrainRenderer.prototype._drawDim = function (host, entry) {
     var a = entry.wheels[0], b = entry.wheels[1];
+    var dx = b.cx - a.cx, dy = b.cy - a.cy;
+    var span = Math.hypot(dx, dy);
     // Un entraxe vu en bout se projette en un point : la cote n'aurait ni
     // longueur ni sens, et deux traits de rappel superposés ne diraient rien.
-    if (Math.hypot(b.cx - a.cx, b.cy - a.cy) < 1e-6) return;
-    var below = Math.max(a.cy + a.outsideD / 2, b.cy + b.outsideD / 2) + Math.max(6, 3 * a.module);
+    if (span < 1e-6) return;
+    var along = [dx / span, dy / span];
+    // Décalée sur le côté, d'un rayon plus une marge : la cote longe l'entraxe
+    // sans recouvrir les dentures qu'elle mesure.
+    var offset = Math.max(a.outsideD, b.outsideD) / 2 + Math.max(6, 3 * a.module);
+    var away = [-along[1] * offset, along[0] * offset];
+    // Du côté opposé au reste du dessin, quand on peut le dire.
+    if (away[1] < 0) { away = [-away[0], -away[1]]; }
     var g = n('g', { class: 'train-dim' });
-    g.appendChild(n('line', { x1: a.cx, y1: a.cy, x2: a.cx, y2: below, class: 'dim-leader' }));
-    g.appendChild(n('line', { x1: b.cx, y1: b.cy, x2: b.cx, y2: below, class: 'dim-leader' }));
-    g.appendChild(n('line', { x1: a.cx, y1: below, x2: b.cx, y2: below }));
+    var from = [a.cx + away[0], a.cy + away[1]], to = [b.cx + away[0], b.cy + away[1]];
+    g.appendChild(n('line', { x1: a.cx.toFixed(2), y1: a.cy.toFixed(2), x2: from[0].toFixed(2), y2: from[1].toFixed(2), class: 'dim-leader' }));
+    g.appendChild(n('line', { x1: b.cx.toFixed(2), y1: b.cy.toFixed(2), x2: to[0].toFixed(2), y2: to[1].toFixed(2), class: 'dim-leader' }));
+    g.appendChild(n('line', { x1: from[0].toFixed(2), y1: from[1].toFixed(2), x2: to[0].toFixed(2), y2: to[1].toFixed(2) }));
     var text = 'c = ' + fmt(entry.centerDistance, 2) + ' mm';
     if (Number.isFinite(entry.links[0] && entry.links[0].wrapAngle1Deg)) {
       text += ' · enroulement ' + fmt(entry.links[0].wrapAngle1Deg, 0) + '°/' + fmt(entry.links[0].wrapAngle2Deg, 0) + '°';
     }
+    // Le texte, lui, reste droit : c'est une annotation d'écran.
+    var size = Math.max(3.5, Math.min(4 * a.module, 10));
     g.appendChild(n('text', {
-      x: (a.cx + b.cx) / 2, y: below + Math.max(4, 2 * a.module),
-      'text-anchor': 'middle', 'font-size': Math.max(3.5, Math.min(4 * a.module, 10))
+      x: ((from[0] + to[0]) / 2 - along[1] * size * 0.9).toFixed(2),
+      y: ((from[1] + to[1]) / 2 + along[0] * size * 0.9).toFixed(2),
+      'text-anchor': 'middle', 'font-size': size
     }, text));
     host.appendChild(g);
   };

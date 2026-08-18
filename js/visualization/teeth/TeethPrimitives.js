@@ -125,7 +125,11 @@
     if (lod >= LEVELS.TECHNICAL) {
       marks.push(node('path', { class: 'helix-hand',
         d: 'M ' + fixed(-r.pitch * 0.4) + ' ' + fixed(r.pitch * 0.62) + ' l ' + fixed(hand * r.pitch * 0.8) + ' ' + fixed(-r.pitch * 0.24) }));
-      marks.push(node('text', { class: 'helix-label', 'text-anchor': 'middle', y: fixed(r.pitch * 0.86),
+      // β se lit : c'est un TEXTE, pas une géométrie. Il ne peut donc pas
+      // vivre dans le rotor, qui tourne — il rejoint les annotations, qui
+      // restent droites (voir `upright` dans build()).
+      marks.push(node('text', { class: 'helix-label upright-annotation', 'text-anchor': 'middle',
+        y: fixed(r.pitch * 0.86),
         'font-size': fixed(Math.max(2.4, r.module * 2), 1) }, 'β ' + fixed(finite(wheel.helixAngle, 20), 0) + '° ' + (hand < 0 ? 'G' : 'D')));
     }
     return marks;
@@ -828,8 +832,18 @@
     // §18 : un organe bloqué porte les hachures de bâti. Elles vont dans
     // `fixed` — pas dans le rotor — puisque justement rien ne tourne.
     if (wheel.functionalRole === 'fixed' && Ground) {
-      labels = labels.concat(Ground.ring(0, 0, groundRadius(wheel, r), { length: r.module * 1.6 }));
+      // Les hachures épousent le contour APPARENT de l'organe : un anneau
+      // circulaire autour d'une roue elliptique dessinerait un bord absent.
+      labels = labels.concat(Ground.ring(0, 0, groundRadius(wheel, r),
+        { length: r.module * 1.6, apparent: options.apparent }));
     }
+    // Un texte glissé dans le corps tournerait avec lui : on les remonte tous
+    // dans `upright`, où ils restent droits et lisibles.
+    body = body.filter(function (shape) {
+      if (!shape.attrs || !/upright-annotation/.test(shape.attrs.class || '')) return true;
+      upright.push(shape);
+      return false;
+    });
     return { rotor: body, fixed: labels, upright: upright, lod: lod, presentation: presentation,
       conventional: !!drafted };
   }
