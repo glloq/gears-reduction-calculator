@@ -91,7 +91,10 @@
     if (this.viewport) this.viewport.detach();
 
     var stages = solution.stages || solution;
-    var layout = this.layoutEngine.layout(stages, this.projection);
+    // Le graphe est déjà construit pour la scène : le schéma en tire sa
+    // topologie plutôt que de relire les étages une seconde fois.
+    var layout = this.layoutEngine.layout(stages, this.projection,
+      { graph: typeof GearMechanicalGraph !== 'undefined' ? GearMechanicalGraph.build(solution, this.scene) : null });
     var svg = document.createElementNS(NS, 'svg');
     var viewport = document.createElementNS(NS, 'g');
     var self = this;

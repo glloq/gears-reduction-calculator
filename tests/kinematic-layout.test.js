@@ -107,3 +107,36 @@ test('normalize reframes negative coordinates without distorting the drawing', (
   assert.ok(points.every(p => p.x >= 0 && p.y >= 0));
   assert.ok(box.width >= points[1].x && box.height >= points[1].y);
 });
+
+test('a right-angle drive points the same way wherever it sits in the chain', () => {
+  // L'axe d'un renvoi était choisi par la PARITÉ du rang de l'étage : le même
+  // couple conique partait dans une direction en deuxième position et dans une
+  // autre en troisième. Deux réducteurs identiques n'avaient donc pas la même
+  // géométrie selon ce qui les précédait — exactement le défaut que le graphe
+  // mécanique a corrigé pour les autres vues.
+  const Registry = require('../js/transmissions/TransmissionRegistry.js');
+  const build = (type, config) => {
+    const stage = Object.assign({ type, parameters: { module: 2 } }, config);
+    stage.geometry = Registry.get(type).calculateGeometry(stage);
+    return stage;
+  };
+  const spur = () => build('spur', { input: { teeth: 20 }, output: { teeth: 40 }, parameters: { module: 2, faceWidth: 20 } });
+  const bevel = () => build('bevel', { input: { teeth: 20 }, output: { teeth: 40 }, parameters: { module: 2, shaftAngle: 90, faceWidth: 15 } });
+
+  const engine = new Layout();
+  const bevelAxis = stages => {
+    const model = engine.layout(stages, 'main');
+    const node = model.worldNodes.find(entry => entry.relation === 'perpendicular');
+    return node.output.axis.name;
+  };
+  // Deuxième, troisième, quatrième position : le renvoi part toujours du même
+  // côté, puisque c'est une propriété du mécanisme et non de son rang.
+  const seen = new Set([
+    bevelAxis([spur(), bevel()]),
+    bevelAxis([spur(), spur(), bevel()]),
+    bevelAxis([spur(), spur(), spur(), bevel()])
+  ]);
+  assert.equal(seen.size, 1, 'directions observées : ' + [...seen].join(', '));
+  // Et c'est bien un renvoi : l'axe change.
+  assert.notEqual([...seen][0], 'X');
+});
