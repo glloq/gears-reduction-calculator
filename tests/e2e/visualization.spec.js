@@ -1332,13 +1332,23 @@ test('a double-click frames the stage it points at, in all three views (§7)', a
   const aim = sel => page.evaluate(selector => {
     // Plusieurs pièces peuvent porter l'étage visé, et le tri de profondeur en
     // cache certaines : on cherche celle qui répond réellement.
+    //
+    // Le CENTRE d'une pièce ne suffit pas à la viser. Une couronne est un
+    // anneau : son centre est un trou, et c'est ce qui se trouve derrière qui
+    // y répond — le pignon de l'étage précédent, coaxial. On échantillonne
+    // donc plusieurs points de sa boîte, pas seulement son milieu.
+    const steps = [0.06, 0.2, 0.35, 0.5, 0.65, 0.8, 0.94];
     for (const stage of document.querySelectorAll(`#svgContainer ${selector}[data-stage="2"]`)) {
       for (const part of stage.querySelectorAll('path, circle, rect, polygon, ellipse')) {
         const box = part.getBoundingClientRect();
         if (!box.width || !box.height) continue;
-        const x = box.x + box.width / 2, y = box.y + box.height / 2;
-        const hit = document.elementFromPoint(x, y);
-        if (hit && stage.contains(hit)) return { x, y };
+        for (const fy of steps) {
+          for (const fx of steps) {
+            const x = box.x + box.width * fx, y = box.y + box.height * fy;
+            const hit = document.elementFromPoint(x, y);
+            if (hit && stage.contains(hit)) return { x, y };
+          }
+        }
       }
     }
     return null;
@@ -2464,5 +2474,87 @@ test('a worm → belt train holds together at all four iso azimuths (§ rotation
   // Et ce qui appartient au DESSIN change bien : quatre azimuts, quatre
   // directions d'entrée.
   expect(new Set(Object.keys(readings).map(v => readings[v].input)).size).toBeGreaterThan(1);
+  expect(errors).toEqual([]);
+});
+
+test('four planetary stages stand side by side, not stacked (§ plan axial)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['planetary', 'planetary', 'planetary', 'planetary']);
+  await showView(page, 'teeth');
+
+  for (const view of ['front', 'iso', 'iso-90', 'iso-180', 'iso-270']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    const seen = await page.evaluate(() => {
+      const model = window.__viewer.renderer().model;
+      const stages = model.stages.map(entry => {
+        const bodies = entry.wheels.filter(w => w.role === 'sun' || w.role === 'ring' || w.role === 'planet');
+        return {
+          // Le plan de l'étage, dans le MONDE : c'est lui qui ne doit plus
+          // revenir à zéro pour les étages 2, 3 et 4.
+          axial: bodies.map(w => model.spatial.byId[w.memberId].axialPosition),
+          place: bodies.map(w => w.cx.toFixed(3) + ',' + w.cy.toFixed(3) + '@' + w.depth.toFixed(3))
+        };
+      });
+      return { stages: stages,
+        labels: Array.from(document.querySelectorAll('#svgContainer .stage-label'))
+          .map(t => t.getAttribute('x') + ',' + t.getAttribute('y')) };
+    });
+    expect(seen.stages.length, view).toBe(4);
+    const seats = seen.stages.map(stage => {
+      // Tous les corps d'un étage partagent UN plan axial.
+      const first = stage.axial[0];
+      stage.axial.forEach(at => expect(Math.abs(at - first), view + ' : corps hors du plan').toBeLessThan(1e-6));
+      return first;
+    });
+    // Et les quatre plans avancent le long de l'axe : aucun ne revient à zéro.
+    seats.forEach((seat, i) => {
+      if (i === 0) return;
+      expect(seat, view + ' : étage ' + (i + 1) + ' revenu en arrière').toBeGreaterThan(seats[i - 1]);
+    });
+    expect(new Set(seats).size, view + ' : deux étages dans le même plan').toBe(4);
+    // Le dessin le montre : quatre places distinctes, jamais quatre fois la
+    // même. C'est ce que la capture d'origine donnait — quatre mécanismes
+    // empilés au même endroit.
+    const places = seen.stages.map(stage => stage.place[0]);
+    expect(new Set(places).size, view + ' : deux étages au même endroit').toBe(4);
+    // Les libellés suivent, au lieu de s'accumuler sur le premier étage.
+    expect(new Set(seen.labels).size, view + ' : libellés empilés').toBe(seen.labels.length);
+  }
+  expect(errors).toEqual([]);
+});
+
+test('every reference chain survives all four iso azimuths (§ régression ISO)', async ({ page }) => {
+  const errors = watchErrors(page);
+  const chains = [
+    ['spur', 'belt'], ['worm', 'belt'], ['worm', 'spur'], ['bevel', 'spur'],
+    ['planetary', 'spur'], ['planetary', 'planetary'], ['spur', 'planetary', 'belt']
+  ];
+  for (const chain of chains) {
+    await mount(page, chain);
+    await showView(page, 'teeth');
+    const worlds = new Set();
+    for (const view of ['iso', 'iso-90', 'iso-180', 'iso-270']) {
+      await page.evaluate(id => window.__viewer.setProjection(id), view);
+      const seen = await page.evaluate(() => {
+        const model = window.__viewer.renderer().model;
+        const svg = document.querySelector('#svgContainer svg');
+        return {
+          // Le MONDE, inchangé d'un azimut à l'autre.
+          world: model.spatial.members.map(m => m.id + '@' + m.position.map(v => v.toFixed(6)).join(',')).join('|'),
+          // Le dessin, lui, change — et reste fini.
+          drawn: svg.querySelectorAll('.train-wheel').length,
+          nan: /NaN|Infinity/.test(svg.outerHTML),
+          // Aucun organe n'a perdu son arbre.
+          orphans: model.wheels.filter(w => !w.bodyId).length
+        };
+      });
+      worlds.add(seen.world);
+      expect(seen.drawn, chain.join('→') + ' / ' + view + ' : dessin vide').toBeGreaterThan(1);
+      expect(seen.nan, chain.join('→') + ' / ' + view + ' : géométrie non finie').toBe(false);
+      expect(seen.orphans, chain.join('→') + ' / ' + view + ' : organe sans arbre').toBe(0);
+    }
+    // Tourner la caméra n'a pas touché une seule pièce du mécanisme.
+    expect(worlds.size, chain.join('→') + ' : le monde a bougé avec la caméra').toBe(1);
+  }
   expect(errors).toEqual([]);
 });

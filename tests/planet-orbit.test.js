@@ -151,3 +151,79 @@ test('each satellite has its own depth, and two opposite ones are not confused',
     }
   }
 });
+
+// ===== Plusieurs planétaires à la suite ==============================
+
+const Engineering = require('../js/core/Engineering.js');
+const PLANET_STAGE = () => ({ type: 'planetary', sunTeeth: 24, ringTeeth: 72, planetTeeth: 24,
+  planetCount: 3, inputMember: 'S', outputMember: 'C', fixed: 'R', parameters: { module: 2, faceWidth: 20 } });
+function chainOf(count) {
+  const stages = Array.from({ length: count }, PLANET_STAGE);
+  return Engineering.analyzeSolution(stages.map(s => JSON.parse(JSON.stringify(s))),
+    Math.pow(4, count), { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+}
+
+test('four planetary stages keep four distinct planes, from every azimuth', () => {
+  for (const view of ['front', 'side', 'iso', 'iso-90', 'iso-180', 'iso-270']) {
+    const solution = chainOf(4);
+    const model = Layout.layout(solution.stages, solution.mechanical, { view, solution });
+    assert.equal(model.stages.length, 4);
+    const planes = model.stages.map(entry => {
+      const wheels = entry.wheels.filter(w => w.role === 'sun' || w.role === 'ring');
+      assert.ok(wheels.length >= 2, view + ' : étage incomplet');
+      return wheels;
+    });
+    // Les quatre étages ne se confondent NI dans le monde ni à l'écran.
+    const worlds = planes.map(wheels => model.spatial.byId[wheels[0].memberId].position.join(','));
+    assert.equal(new Set(worlds).size, 4, view + ' : deux étages au même endroit du monde');
+    // Ce que le DESSIN en fait : quatre places distinctes. Vue de face,
+    // l'axe est dans le plan de l'écran et les étages se rangent en largeur ;
+    // vue en bout, ils se projettent au même point et c'est leur profondeur
+    // qui les sépare. Aucun point de vue ne les confond tout à fait.
+    const places = planes.map(wheels =>
+      wheels[0].cx.toFixed(4) + ',' + wheels[0].cy.toFixed(4) + '@' + wheels[0].depth.toFixed(4));
+    assert.equal(new Set(places).size, 4, view + ' : deux étages à la même place');
+    const endOn = planes[0][0].presentation === 'face';
+    const seats = planes.map(wheels => wheels[0].cx.toFixed(4) + ',' + wheels[0].cy.toFixed(4));
+    if (endOn) assert.equal(new Set(seats).size, 1, view + ' : vue en bout, mais les plans se séparent');
+    else assert.equal(new Set(seats).size, 4, view + ' : deux étages au même endroit du dessin');
+    // À l'intérieur d'un étage, solaire et couronne partagent leur plan : ils
+    // sont coaxiaux, et c'est bien leur POINT de dessin qui coïncide.
+    planes.forEach((wheels, index) => {
+      const [first, ...rest] = wheels;
+      rest.forEach(other => {
+        assert.ok(Math.abs(other.cx - first.cx) < 1e-6 && Math.abs(other.cy - first.cy) < 1e-6,
+          view + ' étage ' + index + ' : ' + other.role + ' hors du plan');
+        assert.ok(Math.abs(other.depth - first.depth) < 1e-6,
+          view + ' étage ' + index + ' : ' + other.role + ' à une autre profondeur');
+      });
+    });
+  }
+});
+
+test('the satellites of one stage do not inherit the depth of the one before', () => {
+  for (const view of ['front', 'iso', 'iso-90']) {
+    const solution = chainOf(3);
+    const model = Layout.layout(solution.stages, solution.mechanical, { view, solution });
+    const perStage = model.stages.map(entry => entry.wheels.filter(w => w.role === 'planet'));
+    perStage.forEach(planets => assert.equal(planets.length, 3, view));
+    // La profondeur d'un satellite = celle du plan de SON étage, plus ce que
+    // son orbite y ajoute. Deux étages ne peuvent donc pas partager la leur.
+    const bases = perStage.map(planets =>
+      planets.reduce((sum, planet) => sum + planet.orbitDepth, 0) / planets.length);
+    for (let i = 1; i < bases.length; i++) {
+      assert.ok(Math.abs(bases[i] - bases[i - 1]) > 1e-6 || view === 'front',
+        view + ' : étages ' + (i - 1) + ' et ' + i + ' au même plan de profondeur');
+    }
+    // Et à l'intérieur d'un étage, les satellites restent répartis autour de
+    // leur propre plan : c'est l'orbite qui les sépare, pas l'étage.
+    perStage.forEach((planets, index) => {
+      assert.equal(new Set(planets.map(p => p.orbitDepth.toFixed(9))).size, 1,
+        view + ' étage ' + index + ' : satellites sur des plans différents');
+      if (view !== 'front') {
+        assert.ok(new Set(planets.map(p => p.depth.toFixed(6))).size > 1,
+          view + ' étage ' + index + ' : satellites tous à la même profondeur');
+      }
+    });
+  }
+});
