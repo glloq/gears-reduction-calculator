@@ -546,10 +546,15 @@ test('a satellite orbits in its plane, and its arm follows it (§6 de l’audit)
       const planet = entry.wheels.filter(w => w.role === 'planet')[0];
       const centre = [planet.orbitCenterX, planet.orbitCenterY];
       const det = basis.first[0] * basis.second[1] - basis.second[0] * basis.first[1];
-      const read = () => Array.from(document.querySelectorAll('.planet-seat')).map(el => {
-        const m = el.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
-        return [Number(m[1]) - centre[0], Number(m[2]) - centre[1]];
-      });
+      // Par NUMÉRO D'EXEMPLAIRE, pas par ordre du document : la pile est triée
+      // en profondeur et deux satellites y échangent leur place en orbitant.
+      const read = () => Array.from(document.querySelectorAll('.train-wheel.planet'))
+        .sort((a, b) => Number(a.dataset.instance) - Number(b.dataset.instance))
+        .map(host => {
+          const m = host.querySelector('.planet-seat').getAttribute('transform')
+            .match(/translate\(([-\d.]+) ([-\d.]+)\)/);
+          return [Number(m[1]) - centre[0], Number(m[2]) - centre[1]];
+        });
       const arms = () => Array.from(document.querySelector('.carrier-arms path').getAttribute('d')
         .matchAll(/L ([-\d.]+) ([-\d.]+)/g)).map(m => [Number(m[1]), Number(m[2])]);
       const frames = [];
@@ -2154,4 +2159,42 @@ test('a wheel seen edge-on does not spin like a disc (§4 de l’audit)', async 
   });
 
   expect(errors).toEqual([]);
+});
+
+test('a satellite passes behind the ring, then in front of it (§ profondeur planétaire)', async ({ page }) => {
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  for (const view of ['front', 'iso']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    const run = await page.evaluate(() => {
+      const teeth = window.__viewer.teeth;
+      const layer = document.querySelector('.geometry-layer');
+      // Le numéro d'exemplaire : cinq pièces qui portent le même `data-member`
+      // sont sinon indiscernables dans la pile.
+      const planets = Array.from(layer.querySelectorAll('.train-wheel.planet[data-instance]'));
+      const ring = layer.querySelector('[data-member$="-R"]');
+      const stack = () => Array.from(layer.children);
+      const sides = {};
+      const orders = [];
+      for (let a = 0; a <= 360; a += 30) {
+        teeth.setAnimationAngle(a);
+        const order = stack();
+        orders.push(order.map(el => el.getAttribute('data-instance') || '·').join(''));
+        const ringAt = order.indexOf(ring);
+        planets.forEach(el => {
+          const key = el.getAttribute('data-instance');
+          sides[key] = sides[key] || new Set();
+          sides[key].add(order.indexOf(el) > ringAt ? 'devant' : 'derrière');
+        });
+      }
+      return { count: planets.length, distinct: new Set(orders).size,
+        both: Object.keys(sides).filter(k => sides[k].size === 2).length };
+    });
+    expect(run.count).toBe(5);
+    // La pile CHANGE au cours d'un tour : un satellite qui garde sa place
+    // traverse la couronne au lieu d'en faire le tour.
+    expect(run.distinct).toBeGreaterThan(1);
+    // Et au moins un satellite est passé des deux côtés de la couronne.
+    expect(run.both).toBeGreaterThan(0);
+  }
 });

@@ -84,3 +84,63 @@ test('Transmission and Dimensions put the satellites in the same plane', () => {
     assert.ok(Math.abs(carrier.orbitBasis.second[1] - train.carrier.basis.second[1]) < 1e-12, view);
   }
 });
+
+const Projection = require('../js/visualization/core/ProjectionEngine.js');
+
+test('a point of an orbit carries its depth, not only its place on screen', () => {
+  // `phasePoint` ne rend que l'écran : deux satellites diamétralement opposés
+  // s'y confondent quand l'orbite est vue par la tranche, et rien ne dit lequel
+  // est devant. La profondeur du point est ce qui manque.
+  for (const view of ['front', 'top', 'side', 'iso', 'iso-rear']) {
+    const resolved = Projection.view(view);
+    for (const axis of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [2, -1, 3]]) {
+      const basis = ProjectedScene.phaseBasis(axis, resolved);
+      for (let i = 0; i < 8; i++) {
+        const theta = 2 * Math.PI * i / 8;
+        const seen = ProjectedScene.orbitPoint(basis, 37, theta);
+        // La vérité de référence : le point RÉEL de l'orbite, projeté et
+        // mesuré en profondeur indépendamment de la formule testée.
+        const world = [0, 1, 2].map(k =>
+          37 * (Math.cos(theta) * basis.e1[k] + Math.sin(theta) * basis.e2[k]));
+        const screen = Projection.project(world, resolved);
+        assert.ok(Math.abs(seen.x - screen[0]) < 1e-9 && Math.abs(seen.y - screen[1]) < 1e-9,
+          view + ' : le point d’orbite n’est pas celui de la projection');
+        assert.ok(Math.abs(seen.depth - Projection.depth(world, resolved)) < 1e-9,
+          view + ' : profondeur ' + seen.depth + ' ≠ ' + Projection.depth(world, resolved));
+      }
+      // Un tour complet est centré sur l'axe : ce qui s'éloigne d'un côté se
+      // rapproche de l'autre, exactement.
+      const round = [0, 1, 2, 3].reduce((sum, i) =>
+        sum + ProjectedScene.orbitPoint(basis, 37, Math.PI * i / 2).depth, 0);
+      assert.ok(Math.abs(round) < 1e-9, view + ' : orbite décentrée en profondeur');
+    }
+  }
+});
+
+test('each satellite has its own depth, and two opposite ones are not confused', () => {
+  for (const view of VIEWS) {
+    const sol = solution();
+    const model = Layout.layout(sol.stages, sol.mechanical, { view });
+    const entry = model.stages[0];
+    const planets = entry.wheels.filter(w => w.role === 'planet');
+    assert.equal(planets.length, 4);
+    planets.forEach(p => assert.ok(Number.isFinite(p.depth), view + ' : satellite sans profondeur'));
+    if (view === 'unfolded') continue;
+    // Le repère d'orbite dit lui-même ce que chaque satellite doit valoir.
+    const basis = planets[0].orbitBasis;
+    planets.forEach(p => {
+      const expected = ProjectedScene.orbitPoint(basis, p.orbit, p.phase).depth;
+      assert.ok(Math.abs(p.depth - p.orbitDepth - expected) < 1e-9,
+        view + ' : profondeur du satellite ' + p.phase.toFixed(2));
+    });
+    // Deux satellites qui se superposent à l'écran sont à des profondeurs
+    // DIFFÉRENTES : c'est la seule chose qui permet de dire lequel est devant.
+    for (let i = 0; i < planets.length; i++) {
+      for (let j = i + 1; j < planets.length; j++) {
+        const together = Math.hypot(planets[i].cx - planets[j].cx, planets[i].cy - planets[j].cy) < 1e-6;
+        if (together) assert.ok(Math.abs(planets[i].depth - planets[j].depth) > 1,
+          view + ' : deux satellites confondus à la même profondeur');
+      }
+    }
+  }
+});

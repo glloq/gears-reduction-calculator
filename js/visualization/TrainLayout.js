@@ -183,15 +183,29 @@
     var centre = seatOf(frame, (byRole.C || byRole.S || {}).id);
     var orbitAxis = planetShaft && frame.graph.byAxis[planetShaft.axisId];
     var basis = orbitBasis(frame, orbitAxis ? orbitAxis.direction : [1, 0, 0]);
+    // La profondeur de l'AXE d'orbite : c'est autour d'elle que les satellites
+    // se répartissent, l'un devant, l'autre derrière.
+    var seenPlanet = frame.projected.member(byRole.P && byRole.P.id);
+    var orbitDepth = seenPlanet ? finite(seenPlanet.depth, 0) : 0;
     for (var pi = 0; pi < count; pi++) {
       var a = 2 * Math.PI * pi / count;
-      var seat = ProjectedScene.phasePoint(basis, orbit, a);
+      var seat = ProjectedScene.orbitPoint(basis, orbit, a);
       entry.wheels.push(wheelAt(frame, byRole.P, {
         role: 'planet',
-        cx: centre.x + seat[0], cy: centre.y + seat[1],
+        // Un organe dessiné PLUSIEURS fois : le numéro d'exemplaire est la
+        // seule chose qui distingue quatre satellites portant le même
+        // identifiant de membre, et le tri en profondeur les mélange.
+        instance: pi,
+        cx: centre.x + seat.x, cy: centre.y + seat.y,
+        // Chaque satellite a SA position dans l'espace, donc SA profondeur.
+        // Ils héritaient tous de celle de leur axe commun : quatre satellites
+        // à la même profondeur, alors que deux sont devant la couronne et deux
+        // derrière — le tri global n'avait alors rien à trier.
+        depth: orbitDepth + seat.depth,
         // La base voyage avec le satellite : c'est elle, et non un `rotate()`
         // d'écran, qui donne sa place à chaque instant de l'animation.
         orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y, orbitBasis: basis,
+        orbitDepth: orbitDepth,
         orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
       }));
     }
@@ -266,6 +280,14 @@
     entry.attach = connection.axisRelation === 'coaxial' ? 'coaxial'
       : connection.axisRelation === 'perpendicular' ? 'break' : 'mesh';
 
+    // Un cône s'amincit vers le SOMMET COMMUN du couple. Le supposer toujours
+    // dans le sens de l'axe revient à parier sur l'orientation que le graphe a
+    // donnée à cet axe : l'un des deux cônes se dessinait donc pointe tournée
+    // vers l'extérieur du couple, sur toutes les vues.
+    if (stage.type === 'bevel') {
+      var sides = coneSides(frame, byRole.input, byRole.output);
+      if (sides) { wIn.apexSide = sides.sideA; wOut.apexSide = sides.sideB; }
+    }
     entry.wheels.push(wIn, wOut);
     if (isBeltLike) entry.links.push(flexibleLink(frame, connection, byRole, wIn, wOut, 's' + index + '-drive'));
     if (stage.type === 'bevel') {
@@ -282,6 +304,20 @@
       }
     }
     entry.stageRadius = Math.max(wIn.outsideD, wOut.outsideD) / 2;
+  }
+
+  /** De quel côté de chaque organe se trouve le sommet commun d'un couple. */
+  function coneSides(frame, input, output) {
+    if (!input || !output) return null;
+    function cone(entry) {
+      var placed = frame.spatial.byId[entry.id];
+      var back = SpatialLayout.coneBack(finite(entry.geometry.pitchDiameter, 0), entry.geometry.coneAngleDeg);
+      return placed && back ? { position: placed.position, axis: placed.axis, back: back } : null;
+    }
+    var apex = SpatialLayout.coneApex(cone(input), cone(output));
+    // Deux sommets qui ne se rejoignent pas ne sont pas un sommet : mieux vaut
+    // ne rien orienter que d'orienter d'après une coïncidence approximative.
+    return apex && apex.gap < 1e-6 * Math.max(1, Math.hypot(apex.point[0], apex.point[1], apex.point[2])) ? apex : null;
   }
 
   /** Le sommet commun de deux cônes primitifs, dans le repère du dessin. */

@@ -352,3 +352,124 @@ test('the helix hand reaches the drawing, for gears and for worms', () => {
   assert.notEqual(thread(Primitives.build(worm('right'), { lod: LEVELS.INVOLUTE })),
     thread(Primitives.build(worm('left'), { lod: LEVELS.INVOLUTE })));
 });
+
+// ===== Les familles vues DE BIAIS =====================================
+//
+// Une seule primitive générique servait à tout le monde en oblique : la
+// famille décidait du dessin de face et du dessin de profil, puis s'arrêtait
+// au seuil de l'iso, où une vis, un cône et une couronne devenaient trois
+// cylindres identiques.
+
+const OBLIQUE = { major: 1, minor: 0.5, rotationDeg: 0 };
+function obliqueOf(w, seen = OBLIQUE) {
+  return Primitives.build(w, { lod: LEVELS.INVOLUTE, presentation: 'oblique', apparent: seen });
+}
+function obliqueClasses(shapes) {
+  const out = new Set();
+  (function walk(list) {
+    list.forEach(s => {
+      String((s.attrs || {}).class || '').split(/\s+/).filter(Boolean).forEach(c => out.add(c));
+      if (s.children) walk(s.children);
+    });
+  })(shapes);
+  return out;
+}
+
+const FAMILIES = {
+  gear: () => wheel({ kind: 'gear', teeth: 20, pitchD: 40, module: 2, faceWidth: 20 }),
+  'internal-ring': () => wheel({ kind: 'internal-ring', teeth: 54, pitchD: 108, module: 2, faceWidth: 20 }),
+  pulley: () => wheel({ kind: 'pulley', teeth: 20, pitchD: 40, module: 2, faceWidth: 12 }),
+  sprocket: () => wheel({ kind: 'sprocket', teeth: 17, pitchD: 40, module: 2, faceWidth: 12 }),
+  worm: () => wheel({ kind: 'worm', teeth: 2, pitchD: 20, module: 2, leadAngle: 20, id: 's0-input' }),
+  cone: () => wheel({ kind: 'cone', teeth: 20, pitchD: 40, module: 2, coneAngleDeg: 26.6, faceWidth: 15 })
+};
+
+test('every family keeps its own drawing when seen obliquely', () => {
+  const signatures = new Map();
+  for (const [kind, make] of Object.entries(FAMILIES)) {
+    const built = obliqueOf(make());
+    allFinite(built.rotor.concat(built.fixed || []));
+    const classes = obliqueClasses(built.rotor);
+    assert.ok(classes.size > 0, kind + ' ne dessine rien');
+    signatures.set(kind, [...classes].sort().join('|'));
+  }
+  // Deux familles qui produisent EXACTEMENT le même jeu de classes sont deux
+  // familles que le dessin ne distingue pas. C'est ce que faisait la primitive
+  // générique unique : six familles, une seule signature.
+  const seen = new Map();
+  for (const [kind, signature] of signatures) {
+    assert.ok(!seen.has(signature),
+      kind + ' se dessine comme ' + seen.get(signature) + ' : ' + signature);
+    seen.set(signature, kind);
+  }
+});
+
+test('an internal ring seen obliquely keeps its bore open', () => {
+  const built = obliqueOf(FAMILIES['internal-ring']());
+  const face = built.rotor.find(s => /ring-oblique-face/.test((s.attrs || {}).class || ''));
+  assert.ok(face, 'pas de face annulaire');
+  // Deux sous-chemins et la règle evenodd : c'est ce qui fait un TROU. Un seul
+  // chemin, ou une règle nonzero, et l'alésage se remplit.
+  assert.equal(face.attrs['fill-rule'], 'evenodd');
+  assert.equal((face.attrs.d.match(/M /g) || []).length, 2);
+  // La jante ne barre pas l'alésage : les bandes de silhouette laissent la
+  // bande centrale libre, là où le pignon vient s'engrener.
+  const bands = built.rotor.filter(s => /ring-oblique-body/.test((s.attrs || {}).class || ''));
+  assert.equal(bands.length, 2, 'un cylindre creux a DEUX bandes');
+  assert.ok(built.rotor.some(s => /ring-oblique-bore/.test((s.attrs || {}).class || '')),
+    'l’alésage se poursuit jusqu’au fond');
+});
+
+test('a worm seen obliquely keeps its threads, squeezed along its axis', () => {
+  const seat = obliqueOf(FAMILIES.worm()).rotor
+    .find(s => /worm-oblique-seat/.test((s.attrs || {}).class || ''));
+  assert.ok(seat, 'la vis perd ses filets en oblique');
+  assert.ok(seat.children && seat.children.length, 'le repère comprimé est vide');
+  // Ce sont bien les FILETS qui sont dedans, pas un cylindre nu.
+  assert.ok(obliqueClasses(seat.children).has('worm-thread'), 'le repère comprimé ne porte pas de filet');
+  const [sx, sy] = /scale\(([-\d.]+) ([-\d.]+)\)/.exec(seat.attrs.transform).slice(1).map(Number);
+  // L'axe se raccourcit, la section ne bouge pas : sqrt(1 − minor²) le long de
+  // l'axe, `major` en travers.
+  assert.ok(Math.abs(sx - Math.sqrt(1 - 0.5 * 0.5)) < 1e-3, 'raccourci axial faux : ' + sx);
+  assert.ok(Math.abs(sy - 1) < 1e-3, 'la section ne se raccourcit pas : ' + sy);
+  // Plus la vis est vue en bout, plus elle est courte.
+  const endOn = obliqueOf(FAMILIES.worm(), { major: 1, minor: 0.9, rotationDeg: 0 }).rotor
+    .find(s => /worm-oblique-seat/.test((s.attrs || {}).class || ''));
+  assert.ok(Number(/scale\(([-\d.]+) /.exec(endOn.attrs.transform)[1]) < sx);
+});
+
+test('a bevel gear seen obliquely tapers towards the apex it shares', () => {
+  function cone(apexSide) {
+    const w = FAMILIES.cone();
+    w.apexSide = apexSide;
+    const built = obliqueOf(w);
+    const back = built.rotor.find(s => /cone-oblique-back/.test((s.attrs || {}).class || ''));
+    const front = built.rotor.find(s => /cone-oblique-face/.test((s.attrs || {}).class || ''));
+    assert.ok(back && front, 'un cône a deux bases');
+    return { back: back, front: front,
+      teeth: built.rotor.find(s => /cone-teeth/.test((s.attrs || {}).class || '')) };
+  }
+  const right = cone(1);
+  // Un tronc de cône, pas un cylindre : la petite base est plus petite.
+  assert.ok(Number(right.front.attrs.ry) < Number(right.back.attrs.ry) * 0.95,
+    'la petite base ne rétrécit pas');
+  assert.ok(right.teeth, 'aucune génératrice : le cône se lit comme un cylindre');
+  // Et elle est décalée le long de l'axe, du côté du sommet.
+  assert.ok(Number(right.front.attrs.cx) > 0);
+  const left = cone(-1);
+  assert.ok(Number(left.front.attrs.cx) < 0,
+    'les deux cônes d’un couple pointent du même côté : leurs sommets ne peuvent pas coïncider');
+  assert.equal(Number(left.front.attrs.cx), -Number(right.front.attrs.cx));
+});
+
+test('a chain sprocket is not drawn as a smooth pulley', () => {
+  const pulley = obliqueClasses(obliqueOf(FAMILIES.pulley()).rotor);
+  const sprocket = obliqueClasses(obliqueOf(FAMILIES.sprocket()).rotor);
+  // La poulie a une gorge lisse où la courroie adhère ; le pignon a des dents
+  // dans lesquelles les maillons se logent.
+  assert.ok(pulley.has('flexible-groove') && !pulley.has('sprocket-oblique-teeth'));
+  assert.ok(sprocket.has('sprocket-oblique-teeth') && !sprocket.has('flexible-groove'));
+  const teeth = obliqueOf(FAMILIES.sprocket()).rotor
+    .find(s => /sprocket-oblique-teeth/.test((s.attrs || {}).class || ''));
+  assert.equal((teeth.attrs.d.match(/M /g) || []).length, 17, 'une entaille par dent');
+});

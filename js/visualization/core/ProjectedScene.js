@@ -55,6 +55,13 @@
     var p2 = Projection.project(e2, view);
     var determinant = p1[0] * p2[1] - p1[1] * p2[0];
     return { first: p1, second: p2,
+      // Le repère GARDE ses deux directions d'espace et ce qu'elles pèsent en
+      // profondeur. Sans elles, un point de ce plan ne peut être situé qu'à
+      // l'écran : quatre satellites sur une même orbite héritaient tous de la
+      // profondeur de leur axe, donc de la même, alors que deux d'entre eux
+      // sont devant et deux derrière.
+      e1: e1, e2: e2, axis: axis,
+      depth1: Projection.depth(e1, view), depth2: Projection.depth(e2, view),
       // +1 ou −1 : le sens dans lequel les angles croissants tournent à
       // l'écran. 0 quand le plan est vu par la tranche — il n'y a alors plus
       // de sens à montrer, seulement un va-et-vient.
@@ -106,6 +113,24 @@
     var c = Math.cos(theta), s = Math.sin(theta);
     return [radius * (c * basis.first[0] + s * basis.second[0]),
       radius * (c * basis.first[1] + s * basis.second[1])];
+  }
+
+  /**
+   * UN POINT D'ORBITE — où il se dessine, ET à quelle profondeur il est.
+   *
+   * `phasePoint` ne rend que l'écran. C'est suffisant pour placer un satellite,
+   * pas pour savoir s'il passe devant ou derrière la couronne : la profondeur
+   * d'un point de l'orbite varie avec l'angle, et un satellite à midi n'est pas
+   * à la même distance de l'œil qu'un satellite à six heures.
+   *
+   * `depth` est RELATIF au centre de l'orbite : l'appelant y ajoute la
+   * profondeur de cet axe, comme il ajoute déjà son abscisse et son ordonnée.
+   */
+  function orbitPoint(basis, radius, theta) {
+    var c = Math.cos(theta), s = Math.sin(theta);
+    var seat = phasePoint(basis, radius, theta);
+    return { x: seat[0], y: seat[1],
+      depth: radius * (c * finite(basis.depth1, 0) + s * finite(basis.depth2, 0)) };
   }
 
   /**
@@ -186,6 +211,6 @@
       shaft: function (id) { return shafts[id] || null; } };
   }
 
-  return { build: build, phaseBasis: phaseBasis, phasePoint: phasePoint, ellipseOf: ellipseOf,
+  return { build: build, phaseBasis: phaseBasis, phasePoint: phasePoint, orbitPoint: orbitPoint, ellipseOf: ellipseOf,
     projectedCircle: projectedCircle };
 });

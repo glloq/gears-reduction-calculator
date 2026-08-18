@@ -243,11 +243,15 @@
     };
   }
 
-  function wormBody(wheel, lod) {
+  function wormBody(wheel, lod, options) {
     var g = wormGeometry(wheel);
     var radius = g.radius, length = g.length;
     // Cylindre vu de côté : pas de `rx`, donc pas d'extrémités arrondies.
-    var body = [node('rect', { class: 'tooth-profile worm-body', x: fixed(-length / 2), y: fixed(-radius),
+    // `options.bare` supprime ce rectangle : vue de biais, la silhouette de la
+    // vis est un cylindre à bouts elliptiques, et c'est elle qui la porte —
+    // seuls les filets, leur masque et l'axe viennent se poser dedans.
+    var bare = !!(options && options.bare);
+    var body = bare ? [] : [node('rect', { class: 'tooth-profile worm-body', x: fixed(-length / 2), y: fixed(-radius),
       width: fixed(length), height: fixed(2 * radius) })];
     if (lod <= LEVELS.SILHOUETTE) return body;
 
@@ -296,9 +300,14 @@
    */
   function coneBody(wheel, lod) {
     var r = radii(wheel);
+    // `apexSide` dit de quel côté de l'organe se trouve le sommet du couple.
+    // Sans lui, le cône s'amincit toujours dans le sens de l'axe, c'est-à-dire
+    // au hasard de l'orientation que le graphe a donnée à celui-ci : l'un des
+    // deux cônes d'un renvoi se dessinait pointe tournée vers l'extérieur.
+    var side = finite(wheel.apexSide, 1) < 0 ? -1 : 1;
     var delta = rad(finite(wheel.coneAngleDeg, 45));
     var face = Math.max(3 * r.module, finite(wheel.faceWidth, 8 * r.module));
-    var depth = Math.max(2 * r.module, face * Math.cos(delta));
+    var depth = Math.max(2 * r.module, face * Math.cos(delta)) * side;
     var back = r.pitch;
     var front = Math.max(r.module, r.pitch - face * Math.sin(delta));
     var pitchCone = 'M 0 ' + fixed(-back) + ' L ' + fixed(depth) + ' ' + fixed(-front) +
@@ -322,7 +331,7 @@
     if (lod >= LEVELS.TECHNICAL) {
       // Sommet du cône = intersection des axes, du côté vers lequel le cône se
       // rétrécit : c'est le repère de montage d'un couple conique.
-      var apex = back / Math.max(1e-6, Math.tan(delta));
+      var apex = side * back / Math.max(1e-6, Math.tan(delta));
       shapes.push(node('path', { class: 'cone-apex', d: 'M ' + fixed(apex) + ' 0 L 0 ' + fixed(-back) + ' M ' + fixed(apex) + ' 0 L 0 ' + fixed(back) }));
       shapes.push(node('circle', { class: 'cone-apex-point', cx: fixed(apex), cy: '0', r: fixed(Math.max(0.6, r.module * 0.6)) }));
     }
@@ -513,8 +522,52 @@
     }, attrs || {}));
   }
 
+  // ===== Corps vus DE BIAIS, par famille ================================
+  //
+  // Une seule primitive générique servait à toutes les familles : en iso, une
+  // vis sans fin, un cône et une couronne devenaient trois cylindres
+  // identiques. La famille décidait pourtant du dessin de face et du dessin de
+  // profil — elle s'arrêtait au seuil de l'oblique, où elle compte tout autant.
+  //
+  // Toutes travaillent dans le repère LOCAL (voir le contrat plus haut) : axe
+  // projeté sur +X, ellipse apparente `rx = R·minor, ry = R·major`. Ce qui
+  // suit l'axe se raccourcit de `axialScale`, ce qui le traverse ne bouge pas.
+
+  /** Ce qui reste d'une longueur portée par l'axe, une fois projetée. */
+  function axialScaleOf(apparent) {
+    var minor = Math.min(1, Math.max(0, finite(apparent && apparent.minor, 0.5)));
+    return Math.sqrt(Math.max(0, 1 - minor * minor));
+  }
+
   /**
-   * Vue oblique : ni un disque, ni un rectangle.
+   * Le cylindre nu.
+   *
+   * Sa silhouette n'est pas un rectangle : ses deux bouts sont des ellipses.
+   * Un rectangle laisse dépasser quatre coins là où la pièce est ronde — c'est
+   * visible dès que le raccourci est marqué. Le contour suit donc la moitié
+   * ARRIÈRE de la face du fond, les deux génératrices, puis la moitié AVANT de
+   * la face de devant.
+   */
+  function obliqueCylinder(radius, length, seen, classes, lod) {
+    var reach = radius * finite(seen.major, 1);
+    var flat = Math.max(0.2, radius * finite(seen.minor, 1));
+    var half = length / 2;
+    var shapes = [node('path', { class: classes.body,
+      d: 'M ' + fixed(-half) + ' ' + fixed(-reach) +
+         ' A ' + fixed(flat) + ' ' + fixed(reach) + ' 0 0 0 ' + fixed(-half) + ' ' + fixed(reach) +
+         ' L ' + fixed(half) + ' ' + fixed(reach) +
+         ' A ' + fixed(flat) + ' ' + fixed(reach) + ' 0 0 0 ' + fixed(half) + ' ' + fixed(-reach) + ' Z' })];
+    shapes.push(apparentEllipse(radius, seen, { class: classes.face, cx: fixed(half), cy: '0' }));
+    if (lod > LEVELS.SILHOUETTE) {
+      // La face arrière : c'est elle qui donne l'épaisseur, et qui distingue un
+      // cylindre vu de biais d'un disque tordu.
+      shapes.push(apparentEllipse(radius, seen, { class: classes.back, cx: fixed(-half), cy: '0' }));
+    }
+    return shapes;
+  }
+
+  /**
+   * Un engrenage vu de biais : un cylindre denté.
    *
    * On ne prétend pas faire de la 3D. Le cylindre est décrit par son ellipse
    * apparente — celle que ProjectedScene a calculée pour l'axe de la pièce —
@@ -522,27 +575,204 @@
    * n'est plus redérivé ici : c'est `apparent` qui le porte, et c'est la même
    * ellipse qui sert aux surfaces de construction et à la courroie.
    */
-  function obliqueBody(wheel, lod, apparent) {
+  function gearOblique(wheel, lod, apparent) {
     var r = radii(wheel);
     var seen = apparent || { major: 1, minor: 0.5 };
-    var squeeze = Math.min(1, Math.max(0.05, finite(seen.minor, 0.5)));
-    var b = faceWidthOf(wheel, r);
-    // L'épaisseur apparente d'une pièce est ce qui reste de sa largeur quand on
-    // ne la voit plus tout à fait de face.
-    var thickness = b * Math.sqrt(Math.max(0, 1 - squeeze * squeeze));
-    var reach = r.tip * finite(seen.major, 1);
-    var shapes = [
-      node('path', { class: 'tooth-profile oblique-body',
-        d: 'M ' + fixed(-thickness / 2) + ' ' + fixed(-reach) + ' h ' + fixed(thickness) +
-           ' v ' + fixed(2 * reach) + ' h ' + fixed(-thickness) + ' Z' }),
-      apparentEllipse(r.tip, seen, { class: 'tooth-profile oblique-face', cx: fixed(thickness / 2), cy: '0' })
-    ];
-    if (lod <= LEVELS.SILHOUETTE) return shapes;
-    shapes.push(apparentEllipse(r.tip, seen, { class: 'oblique-back', cx: fixed(-thickness / 2), cy: '0' }));
+    var thickness = faceWidthOf(wheel, r) * axialScaleOf(seen);
     // Plus de repère d'indexation FIXE en travers de l'ellipse : il ne bougeait
     // pas, et se lisait indifféremment comme un axe, un diamètre ou un sens de
     // rotation. La phase d'une roue oblique est portée par son repère mobile,
     // celui que la pose pilote — et lui seul.
+    return obliqueCylinder(r.tip, thickness, seen,
+      { body: 'tooth-profile oblique-body', face: 'tooth-profile oblique-face', back: 'oblique-back' }, lod);
+  }
+
+  /**
+   * Une couronne intérieure vue de biais reste ANNULAIRE.
+   *
+   * Le corps générique en faisait un cylindre plein : la pièce perdait
+   * exactement ce qui la définit — son alésage denté, dans lequel le pignon
+   * vient s'engrener. Sa face avant est donc une couronne évidée, et son
+   * alésage se poursuit visiblement jusqu'à la face arrière.
+   */
+  function ringOblique(wheel, lod, apparent) {
+    var r = radii(wheel);
+    var seen = apparent || { major: 1, minor: 0.5 };
+    var rim = r.pitch + 3 * r.module;
+    var bore = Math.min(r.tip, r.pitch - r.module);
+    var thickness = faceWidthOf(wheel, r) * axialScaleOf(seen);
+    var half = thickness / 2;
+    var outer = rim * finite(seen.major, 1);
+    var inner = bore * finite(seen.major, 1);
+    // La silhouette d'un cylindre CREUX, ce sont deux bandes : une jante pleine
+    // barrerait justement l'alésage dans lequel le pignon vient s'engrener.
+    var shapes = [-1, 1].map(function (side) {
+      var from = side < 0 ? -outer : inner;
+      return node('path', { class: 'tooth-profile ring-oblique-body',
+        d: 'M ' + fixed(-half) + ' ' + fixed(from) + ' h ' + fixed(thickness) +
+           ' v ' + fixed(outer - inner) + ' h ' + fixed(-thickness) + ' Z' });
+    });
+    // La face avant : jante moins alésage, en règle evenodd — le trou est un
+    // trou, pas un second disque posé par-dessus.
+    shapes.push(node('path', { class: 'tooth-profile ring-oblique-face', 'fill-rule': 'evenodd',
+      d: ellipsePath(half, 0, rim, seen) + ' ' + ellipsePath(half, 0, bore, seen) }));
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    shapes.push(apparentEllipse(rim, seen, { class: 'oblique-back', cx: fixed(-half), cy: '0' }));
+    // L'alésage traverse la pièce : on le voit au fond.
+    shapes.push(apparentEllipse(bore, seen, { class: 'bore-line ring-oblique-bore', cx: fixed(-half), cy: '0' }));
+    return shapes;
+  }
+
+  /** Un chemin d'ellipse fermé, dans le repère local. */
+  function ellipsePath(cx, cy, radius, seen) {
+    var rx = Math.max(0.2, radius * finite(seen.minor, 1));
+    var ry = Math.max(0.2, radius * finite(seen.major, 1));
+    return 'M ' + fixed(cx - rx) + ' ' + fixed(cy) +
+      ' a ' + fixed(rx) + ' ' + fixed(ry) + ' 0 1 0 ' + fixed(2 * rx) + ' 0' +
+      ' a ' + fixed(rx) + ' ' + fixed(ry) + ' 0 1 0 ' + fixed(-2 * rx) + ' 0 Z';
+  }
+
+  /**
+   * Poulie et pignon de chaîne vus de biais : un cylindre à GORGE.
+   *
+   * Sans elle, rien ne distingue une poulie d'un engrenage sur un dessin
+   * oblique — or c'est la gorge qui reçoit la courroie, et c'est elle qui
+   * explique où le brin s'appuie.
+   */
+  function flexibleOblique(wheel, lod, apparent) {
+    var r = radii(wheel);
+    var seen = apparent || { major: 1, minor: 0.5 };
+    var thickness = faceWidthOf(wheel, r) * axialScaleOf(seen);
+    var shapes = obliqueCylinder(r.tip, thickness, seen,
+      { body: 'tooth-profile oblique-body', face: 'tooth-profile oblique-face', back: 'oblique-back' }, lod);
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    // Le fond de gorge, à mi-largeur : la courroie s'appuie là.
+    shapes.push(apparentEllipse(r.root, seen, { class: 'flexible-groove', cx: '0', cy: '0' }));
+    return shapes;
+  }
+
+  /**
+   * Un pignon de chaîne vu de biais : un cylindre DENTÉ.
+   *
+   * Poulie et pignon de chaîne partagent le même cylindre, mais pas la même
+   * jante : la poulie a une gorge lisse où la courroie adhère, le pignon a des
+   * dents dans lesquelles les maillons se logent. Les confondre en oblique
+   * effaçait la seule différence que le dessin doit montrer.
+   */
+  function sprocketOblique(wheel, lod, apparent) {
+    var r = radii(wheel);
+    var seen = apparent || { major: 1, minor: 0.5 };
+    var thickness = faceWidthOf(wheel, r) * axialScaleOf(seen);
+    var shapes = obliqueCylinder(r.tip, thickness, seen,
+      { body: 'tooth-profile oblique-body', face: 'tooth-profile oblique-face', back: 'oblique-back' }, lod);
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    var half = thickness / 2;
+    // Le fond de denture, sur la face avant : c'est lui qui porte les maillons.
+    shapes.push(apparentEllipse(r.root, seen, { class: 'sprocket-oblique-root', cx: fixed(half), cy: '0' }));
+    // Et les dents elles-mêmes, en entailles radiales entre fond et tête.
+    var teeth = Math.max(6, Math.min(24, Math.round(finite(wheel.teeth, 18))));
+    var major = finite(seen.major, 1), minor = finite(seen.minor, 1);
+    var d = '';
+    for (var i = 0; i < teeth; i++) {
+      var a = 2 * Math.PI * i / teeth;
+      d += ' M ' + fixed(half + r.root * minor * Math.cos(a)) + ' ' + fixed(r.root * major * Math.sin(a)) +
+        ' L ' + fixed(half + r.tip * minor * Math.cos(a)) + ' ' + fixed(r.tip * major * Math.sin(a));
+    }
+    shapes.push(node('path', { class: 'sprocket-oblique-teeth', d: d.trim() }));
+    return shapes;
+  }
+
+  /**
+   * Une vis sans fin vue de biais : son cylindre RACCOURCI, ses filets, son
+   * sens d'hélice.
+   *
+   * Le corps de profil est déjà juste — filets, pas, sens, masque, groupe de
+   * phase animé. Le mettre dans un repère comprimé le long de l'axe suffit à
+   * l'amener en oblique sans en réécrire un second, et l'animation continue de
+   * défiler dans ce même repère : un pas dessiné reste un pas mécanique.
+   */
+  function wormOblique(wheel, lod, apparent) {
+    var seen = apparent || { major: 1, minor: 0.5 };
+    var g = wormGeometry(wheel);
+    var squeeze = axialScaleOf(seen);
+    // La silhouette d'abord : un cylindre à bouts elliptiques. Le rectangle du
+    // dessin de profil laissait quatre coins hors de la pièce dès que le bout
+    // s'ouvrait en ellipse.
+    var cylinder = obliqueCylinder(g.radius, g.length * squeeze, seen,
+      { body: 'tooth-profile worm-body', face: 'tooth-profile oblique-face', back: 'oblique-back' }, lod);
+    var shapes = cylinder.length > 2 ? [cylinder[2]] : [];
+    shapes.push(cylinder[0]);
+    if (lod > LEVELS.SILHOUETTE) {
+      // Puis les filets, dans le repère COMPRIMÉ le long de l'axe : un pas
+      // dessiné y reste un pas mécanique, et l'animation continue d'y défiler.
+      shapes.push(group({ class: 'worm-oblique-seat',
+        transform: 'scale(' + fixed(Math.max(0.02, squeeze), 4) + ' ' + fixed(finite(seen.major, 1), 4) + ')' },
+        wormBody(wheel, lod, { bare: true })));
+    }
+    // La face avant ferme la vis par-dessus les filets : c'est elle qui dit de
+    // quel côté on la regarde.
+    shapes.push(cylinder[1]);
+    return shapes;
+  }
+
+  /**
+   * Un cône vu de biais : deux ellipses et leurs génératrices.
+   *
+   * Le corps générique en faisait un cylindre — la famille conique disparaissait
+   * entièrement du dessin isométrique. La grande base et la petite base sont
+   * deux cercles PARALLÈLES portés par l'axe : leurs images sont deux ellipses
+   * de même forme, séparées par la longueur projetée du cône.
+   *
+   * Les génératrices sont tracées entre les extrémités du grand axe des deux
+   * ellipses. C'est la construction du dessin technique, exacte lorsque l'axe
+   * est dans le plan de l'écran et très proche partout ailleurs ; la silhouette
+   * exacte d'un cône demanderait de résoudre le contour apparent, ce que ce
+   * dessin ne prétend pas faire.
+   */
+  function coneOblique(wheel, lod, apparent) {
+    var r = radii(wheel);
+    var seen = apparent || { major: 1, minor: 0.5 };
+    var delta = rad(finite(wheel.coneAngleDeg, 45));
+    var face = Math.max(3 * r.module, finite(wheel.faceWidth, 8 * r.module));
+    var side = finite(wheel.apexSide, 1) < 0 ? -1 : 1;
+    var depth = Math.max(2 * r.module, face * Math.cos(delta)) * axialScaleOf(seen) * side;
+    var back = r.pitch;
+    var front = Math.max(r.module, r.pitch - face * Math.sin(delta));
+    var major = finite(seen.major, 1);
+    var minorScale = finite(seen.minor, 1);
+    var by = back * major, bx = Math.max(0.2, back * minorScale);
+    var fy = front * major, fx = Math.max(0.2, front * minorScale);
+    // Le contour suit la moitié ARRIÈRE de la grande base, les deux
+    // génératrices, puis la moitié AVANT de la petite : un trapèze laisserait
+    // quatre coins hors de la pièce, là où elle est ronde.
+    // Les demi-ellipses se retournent avec le cône : la grande base bombe du
+    // côté opposé au sommet, la petite du côté du sommet.
+    var sweepFront = side > 0 ? 1 : 0, sweepBack = side > 0 ? 1 : 0;
+    var shapes = [node('path', { class: 'tooth-profile cone-oblique-body',
+      d: 'M 0 ' + fixed(-by) +
+         ' L ' + fixed(depth) + ' ' + fixed(-fy) +
+         ' A ' + fixed(fx) + ' ' + fixed(fy) + ' 0 0 ' + sweepFront + ' ' + fixed(depth) + ' ' + fixed(fy) +
+         ' L 0 ' + fixed(by) +
+         ' A ' + fixed(bx) + ' ' + fixed(by) + ' 0 0 ' + sweepBack + ' 0 ' + fixed(-by) + ' Z' })];
+    // La grande base ferme le tronc du côté du sommet fuyant ; la petite base
+    // est celle qu'on voit en premier.
+    shapes.push(apparentEllipse(back, seen, { class: 'cone-oblique-back', cx: '0', cy: '0' }));
+    shapes.push(apparentEllipse(front, seen, { class: 'tooth-profile cone-oblique-face', cx: fixed(depth), cy: '0' }));
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    // La denture, en quelques génératrices : elle converge vers le sommet, ce
+    // qui est précisément ce qu'un cylindre ne fait pas.
+    // Seulement la moitié tournée vers la petite base : l'autre passe derrière
+    // le corps, et la dessiner ferait de la pièce un fil de fer.
+    var teeth = Math.max(4, Math.min(12, Math.round(finite(wheel.teeth, 16) / 2)));
+    var minor = finite(seen.minor, 1);
+    var d = '';
+    for (var i = 0; i <= teeth; i++) {
+      var a = -Math.PI / 2 + Math.PI * i / teeth;
+      var from = [back * minor * Math.cos(a), back * major * Math.sin(a)];
+      var to = [depth + front * minor * Math.cos(a), front * major * Math.sin(a)];
+      d += ' M ' + fixed(from[0]) + ' ' + fixed(from[1]) + ' L ' + fixed(to[0]) + ' ' + fixed(to[1]);
+    }
+    shapes.push(node('path', { class: 'cone-teeth', d: d.trim() }));
     return shapes;
   }
 
@@ -770,6 +1000,13 @@
   var FACES = { worm: wormEnd, cone: coneFace };
 
   /**
+   * Corps vus DE BIAIS. La famille s'arrêtait au seuil de l'oblique : une vis,
+   * un cône et une couronne y devenaient trois cylindres identiques.
+   */
+  var OBLIQUES = { gear: gearOblique, 'internal-ring': ringOblique, pulley: flexibleOblique,
+    sprocket: sprocketOblique, worm: wormOblique, cone: coneOblique, rack: rackBody };
+
+  /**
    * build(wheel, options) → { rotor, fixed }
    * `rotor` tourne avec la roue, `fixed` reste solidaire du centre (étiquettes).
    */
@@ -792,7 +1029,7 @@
       // `apparent` est la description complète de l'ellipse projetée. Le
       // raccourci seul en est un cas particulier — grand axe unitaire —, et
       // reste accepté pour les appelants qui n'ont que lui.
-      body = obliqueBody(wheel, lod, options.apparent ||
+      body = (OBLIQUES[wheel.kind] || gearOblique)(wheel, lod, options.apparent ||
         (Number.isFinite(options.foreshortening) ? { major: 1, minor: options.foreshortening } : null));
     } else if (presentation === 'profile') {
       body = (PROFILES[wheel.kind] || gearProfile)(wheel, lod);

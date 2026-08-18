@@ -47,8 +47,13 @@ test('the small axis of the apparent ellipse follows the projected axis', () => 
       assert.ok(closeAngle(apparent.rotationDeg, axisDeg + 90),
         view + ' / axe ' + axis + ' : grand axe à ' + mod180(apparent.rotationDeg).toFixed(3) +
         '° pour un axe à ' + mod180(axisDeg).toFixed(3) + '°');
-      // Et le petit axe vaut le cosinus de l'axe sur le regard.
-      const alignment = Math.abs(axis.reduce((sum, c, i) => sum + c * view === 0 ? 0 : 0, 0));
+      // Et le petit axe VAUT le cosinus de l'axe sur le regard : c'est ce
+      // cosinus qui écrase le cercle, et rien d'autre.
+      const unit = Math.hypot(axis[0], axis[1], axis[2]);
+      const gaze = Projection.view(view).w;
+      const cosine = Math.abs((axis[0] * gaze[0] + axis[1] * gaze[1] + axis[2] * gaze[2]) / unit);
+      assert.ok(Math.abs(apparent.minor - cosine) < 1e-9,
+        view + ' / axe ' + axis + ' : petit axe ' + apparent.minor + ' pour un cosinus de ' + cosine);
       assert.ok(apparent.minor <= apparent.major + 1e-9);
     });
   }
@@ -241,4 +246,28 @@ test('every strand really leaves its pulley tangentially, in every view', () => 
       });
     });
   }
+});
+
+test('the two cones of a bevel pair point at their common apex', () => {
+  // Deux cônes primitifs qui engrènent partagent UN sommet — c'est ce qui
+  // définit le couple. Le dessin les orientait pourtant tous les deux dans le
+  // même sens : l'un des deux s'éloignait de son propre sommet, et le couple
+  // ressemblait à deux cônes posés bout à bout au hasard.
+  const bevel = () => [stage('bevel', { input: { teeth: 20 }, output: { teeth: 40 },
+    parameters: { module: 2, shaftAngle: 90, faceWidth: 14 } })];
+  for (const view of VIEWS) {
+    const model = Layout.layout(bevel(), [{ ratio: 2 }], { view });
+    const wheels = model.stages[0].wheels;
+    assert.equal(wheels.length, 2);
+    wheels.forEach(w => assert.ok(w.apexSide === 1 || w.apexSide === -1,
+      view + ' : ' + w.role + ' sans côté de sommet (' + w.apexSide + ')'));
+    // Le sommet est commun : dans un couple à 90°, les deux cônes se tournent
+    // le dos le long de leurs axes respectifs.
+    assert.notEqual(wheels[0].apexSide, wheels[1].apexSide,
+      view + ' : les deux cônes pointent du même côté');
+  }
+  // Et hors d'un couple conique, rien n'est orienté au hasard.
+  const spur = Layout.layout([stage('spur', { input: { teeth: 15 }, output: { teeth: 60 },
+    parameters: { module: 2, faceWidth: 20 } })], [{ ratio: 4 }], { view: 'iso' });
+  spur.stages[0].wheels.forEach(w => assert.equal(w.apexSide, undefined));
 });
