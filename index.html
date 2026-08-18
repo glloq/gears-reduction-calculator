@@ -586,6 +586,13 @@
           <select id="viewerProjection" class="viewer-speed" title="D’où l’on regarde la transmission : les pièces ne bougent pas, seule leur image change"></select>
           <button id="viewerOpposite" type="button" class="btn-small" aria-pressed="false"
             title="Regarder le mécanisme de l’autre bord : l’autre extrémité des arbres, et les sens apparents de rotation inversés">⇄ Autre bord</button>
+          <span id="viewerIsoTurn" class="segmented view-iso-turn" role="group" aria-label="Tourner autour du mécanisme" hidden>
+            <button id="viewerIsoLeft" type="button" class="btn-small"
+              title="Tourner d’un quart de tour vers la gauche autour du mécanisme">↶</button>
+            <output id="viewerIsoCount" class="iso-turn-count" for="viewerIsoLeft viewerIsoRight">Iso 1/4</output>
+            <button id="viewerIsoRight" type="button" class="btn-small"
+              title="Tourner d’un quart de tour vers la droite autour du mécanisme">↷</button>
+          </span>
           <div class="segmented view-framing" role="group" aria-label="Cadrage">
             <button id="viewerReset" type="button" class="btn-small" title="Cadrer la transmission entière">Tout voir</button>
             <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>

@@ -33,86 +33,182 @@
   function norm(a) { return Math.sqrt(dot(a, a)); }
   function unit(a) { var n = norm(a); return n < 1e-9 ? [1, 0, 0] : [a[0] / n, a[1] / n, a[2] / n]; }
 
-  var ISO = 1 / Math.sqrt(2), ISO_V = 1 / Math.sqrt(6);
+  /**
+   * LA VERTICALE DU MONDE. Tout le reste de la caméra en découle : c'est elle
+   * qui décide de ce qui est en haut de l'écran, et elle ne bouge jamais.
+   */
+  var WORLD_UP = [0, 1, 0];
+  // Quand le regard est parallèle à la verticale — vue de dessus, de dessous —
+  // « le haut du monde » ne dit plus rien de l'écran. On prend alors une
+  // référence de secours : c'est le seul cas où le roulis est une convention.
+  var UP_FALLBACK = [0, 0, -1];
 
   /**
-   * Les vues. `u` est l'horizontale de l'écran, `v` la verticale, `w` la
-   * direction de regard — les trois forment un trièdre direct, ce que le test
-   * vérifie plutôt que de faire confiance aux constantes écrites ici.
+   * LA BASE CAMÉRA, DÉDUITE DU SEUL REGARD.
    *
-   * L'écran a son Y vers le bas : `v` porte donc l'opposé de la verticale
-   * monde, sans quoi tout serait dessiné à l'envers.
+   * Les quatre bases étaient écrites à la main, vue par vue. Une base écrite à
+   * la main peut être orthonormée et pourtant fausse : c'est ainsi que
+   * l'isométrie s'est retrouvée en IMAGE MIROIR des vues orthographiques
+   * pendant des mois — les longueurs y étaient justes, mais une hélice à droite
+   * s'y lisait à gauche. Une seule formule ne peut pas se tromper deux fois :
+   *
+   *   u = verticale monde × regard      la droite de l'écran, horizontale
+   *   v = u × regard                    le BAS de l'écran (Y écran vers le bas)
+   *
+   * D'où, automatiquement, `u × v = −w` pour toute vue : aucune ne peut être
+   * l'image miroir d'une autre, et la verticale du monde reste verticale à
+   * l'écran, sans roulis parasite.
+   */
+  function cameraBasisFromLook(look, worldUp) {
+    var w = unit(look);
+    var up = unit(worldUp || WORLD_UP);
+    if (Math.abs(dot(w, up)) > 1 - 1e-9) up = unit(UP_FALLBACK);
+    var u = unit(cross(up, w));
+    return { u: u, v: unit(cross(u, w)), w: w };
+  }
+
+  /** Une vue complète, décrite par son seul regard. */
+  function makeView(spec) {
+    var basis = cameraBasisFromLook(spec.w, spec.up);
+    return { id: spec.id, label: spec.label, help: spec.help, opposite: spec.opposite || null,
+      isoQuarter: spec.isoQuarter == null ? null : spec.isoQuarter,
+      u: basis.u, v: basis.v, w: basis.w };
+  }
+
+  /**
+   * Les vues proposées dans la liste. `u` est l'horizontale de l'écran, `v` la
+   * verticale, `w` la direction de regard — toutes trois calculées, jamais
+   * écrites.
    */
   // Les libellés disent ce que la vue MONTRE, et non un numéro de face. Le
   // regard de `front` est perpendiculaire à l'arbre d'entrée : cette vue en
   // donne la longueur, pas l'engrènement — ce que son ancien nom, « Entrée »
   // avec pour aide « suivant les axes », affirmait exactement à l'envers.
   var VIEWS = [
-    { id: 'front', label: 'De face', help: 'Le regard coupe les arbres : on y lit leur longueur et l’empilement axial.',
-      u: [1, 0, 0], v: [0, -1, 0], w: [0, 0, 1] },
-    { id: 'top', label: 'De dessus', help: 'Même chose vue du dessus : les décalages en profondeur deviennent visibles.',
-      u: [1, 0, 0], v: [0, 0, 1], w: [0, 1, 0] },
-    { id: 'side', label: 'En bout', help: 'Le regard suit l’arbre d’entrée : c’est la vue des dentures et des entraxes.',
-      u: [0, 0, -1], v: [0, -1, 0], w: [1, 0, 0] },
-    // ISOMÉTRIQUE au sens propre : le regard suit la diagonale du cube, si bien
-    // que les trois axes du monde se projettent à 120° les uns des autres et
-    // subissent le MÊME raccourcissement. La base précédente était orthonormée
-    // — donc une projection valable — mais séparait deux paires d'axes de 60° :
-    // une axonométrie quelconque, où X et Z n'étaient pas interchangeables et
-    // où deux directions se ressemblaient trop pour se distinguer.
-    { id: 'iso', label: 'Iso', help: 'Projection isométrique : les trois axes se valent, et les changements d’axe se lisent d’un coup.',
-      // `u` portait l'opposé de la droite de l'écran : l'isométrie était une
-      // IMAGE MIROIR des trois vues orthographiques. Les longueurs et les
-      // angles y étaient justes — c'est bien une isométrie —, mais le sens
-      // apparent de rotation s'y inversait, et une hélice à droite s'y lisait
-      // à gauche. Le critère est le même pour les quatre vues : u × v = −w,
-      // parce que `v` porte le BAS de l'écran et non le haut.
-      u: [ISO, 0, -ISO], v: [ISO_V, -2 * ISO_V, ISO_V], w: unit([1, 1, 1]) }
+    makeView({ id: 'front', label: 'De face', opposite: 'rear',
+      help: 'Le regard coupe les arbres : on y lit leur longueur et l’empilement axial.', w: [0, 0, 1] }),
+    makeView({ id: 'top', label: 'De dessus', opposite: 'bottom',
+      help: 'Même chose vue du dessus : les décalages en profondeur deviennent visibles.', w: [0, 1, 0] }),
+    makeView({ id: 'side', label: 'En bout', opposite: 'side-far',
+      help: 'Le regard suit l’arbre d’entrée : c’est la vue des dentures et des entraxes.', w: [1, 0, 0] }),
+    // ISOMÉTRIQUE au sens propre : le regard suit une diagonale du cube, si
+    // bien que les trois axes du monde subissent le MÊME raccourcissement et
+    // se projettent à 120° les uns des autres.
+    makeView({ id: 'iso', label: 'Iso', isoQuarter: 0,
+      help: 'Projection isométrique : les trois axes se valent, et les changements d’axe se lisent d’un coup.',
+      w: [1, 1, 1] })
   ];
 
   /**
-   * Les vues opposées : le même mécanisme, regardé de l'autre bord.
+   * L'AUTRE BORD — réservé aux vues orthographiques.
    *
-   * On ne les obtient pas en tournant le dessin : `u` — la droite de l'écran —
+   * On ne l'obtient pas en tournant le dessin : `u` — la droite de l'écran —
    * change de sens en même temps que le regard, sans quoi on obtiendrait une
-   * image miroir plutôt que l'autre face. C'est ce qui rend ces vues utiles :
-   * elles montrent l'autre extrémité des arbres, et le sens apparent de
-   * rotation s'y inverse, comme il le fait dans la réalité.
+   * image miroir plutôt que l'autre face. La formule s'en charge seule, le
+   * regard opposé suffit à la décrire.
+   *
+   * L'isométrie N'A PLUS d'autre bord. Elle en avait un — le coin
+   * diagonalement opposé du cube, [−1, −1, −1] — et il était branché sur la
+   * commande de changement d'angle. Or ce coin ne se trouve pas à côté du
+   * premier : il est SOUS le mécanisme. Un clic présenté comme « tourner »
+   * faisait donc passer d'une vue de dessus à une vue de dessous, inversait le
+   * signe de la verticale et retournait d'un coup TOUTE la profondeur du
+   * dessin. Tourner autour d'un mécanisme, c'est l'ORBITE ci-dessous.
    */
   var OPPOSITES = [
-    { id: 'rear', label: 'De derrière', opposite: 'front',
-      help: 'La même coupe, prise de l’autre bord : les sens apparents de rotation s’y inversent.',
-      u: [-1, 0, 0], v: [0, -1, 0], w: [0, 0, -1] },
-    { id: 'bottom', label: 'De dessous', opposite: 'top',
-      help: 'Le dessous du réducteur : ce que la vue de dessus cache.',
-      u: [-1, 0, 0], v: [0, 0, 1], w: [0, -1, 0] },
-    { id: 'side-far', label: 'En bout (autre extrémité)', opposite: 'side',
-      help: 'Le regard suit l’arbre d’entrée, mais depuis son autre extrémité.',
-      u: [0, 0, 1], v: [0, -1, 0], w: [-1, 0, 0] },
-    { id: 'iso-rear', label: 'Iso opposée', opposite: 'iso',
-      help: 'La même isométrie, prise du coin opposé du cube.',
-      u: [-ISO, 0, ISO], v: [ISO_V, -2 * ISO_V, ISO_V], w: unit([-1, -1, -1]) }
+    makeView({ id: 'rear', label: 'De derrière', opposite: 'front',
+      help: 'La même coupe, prise de l’autre bord : les sens apparents de rotation s’y inversent.', w: [0, 0, -1] }),
+    makeView({ id: 'bottom', label: 'De dessous', opposite: 'top',
+      help: 'Le dessous du réducteur : ce que la vue de dessus cache.', w: [0, -1, 0] }),
+    makeView({ id: 'side-far', label: 'En bout (autre extrémité)', opposite: 'side',
+      help: 'Le regard suit l’arbre d’entrée, mais depuis son autre extrémité.', w: [-1, 0, 0] })
   ];
-  VIEWS[0].opposite = 'rear';
-  VIEWS[1].opposite = 'bottom';
-  VIEWS[2].opposite = 'side-far';
-  VIEWS[3].opposite = 'iso-rear';
 
-  /** Toutes les vues, opposées comprises : `VIEWS` reste la liste proposée. */
-  var ALL = VIEWS.concat(OPPOSITES);
+  /**
+   * L'ORBITE ISOMÉTRIQUE : quatre azimuts, tous vus DE DESSUS.
+   *
+   * La caméra tourne autour de la verticale du monde. Sa hauteur ne change
+   * jamais — `w · [0,1,0] = +1/√3` pour les quatre —, si bien qu'un quart de
+   * tour montre l'autre côté du mécanisme sans jamais passer dessous. C'est la
+   * différence entre TOURNER AUTOUR et REGARDER DE L'AUTRE COIN.
+   *
+   * Chacune reste une vraie isométrie : le regard suit toujours une diagonale
+   * du cube, donc les trois axes du monde y sont également raccourcis.
+   */
+  var ISO_TURNS = [
+    { id: 'iso', w: [1, 1, 1] },
+    { id: 'iso-90', w: [-1, 1, 1] },
+    { id: 'iso-180', w: [-1, 1, -1] },
+    { id: 'iso-270', w: [1, 1, -1] }
+  ];
+  var ISO_VARIANTS = ISO_TURNS.slice(1).map(function (turn, i) {
+    return makeView({ id: turn.id, label: 'Iso', isoQuarter: i + 1,
+      help: 'La même isométrie, la caméra ayant tourné d’un quart de tour autour du mécanisme.',
+      w: turn.w });
+  });
+
+  /**
+   * `iso-rear` désignait le coin [−1, −1, −1], sous le mécanisme. Le nom est
+   * conservé pour ne pas casser les liens et les états enregistrés, mais il
+   * désigne désormais le demi-tour HORIZONTAL — l'autre côté, pas le dessous.
+   */
+  var ALIASES = { 'iso-rear': 'iso-180' };
+
+  /** Toutes les vues : `VIEWS` reste la liste proposée à l'utilisateur. */
+  var ALL = VIEWS.concat(OPPOSITES, ISO_VARIANTS);
+
+  function resolve(id) { return ALIASES[id] || id; }
 
   function view(id) {
-    for (var i = 0; i < ALL.length; i++) if (ALL[i].id === id) return ALL[i];
+    var wanted = resolve(id);
+    for (var i = 0; i < ALL.length; i++) if (ALL[i].id === wanted) return ALL[i];
     return VIEWS[0];
   }
 
+  /** Cette vue est-elle une isométrie, quel que soit son azimut ? */
+  function isIso(id) {
+    var found = view(id);
+    return found.isoQuarter != null && resolve(id) === found.id;
+  }
+
+  /** Le quart de tour courant : 0 à 3, ou null hors isométrie. */
+  function isoQuarter(id) { return isIso(id) ? view(id).isoQuarter : null; }
+
   /**
-   * L'autre bord de la même vue, ou l'identifiant reçu s'il n'y en a pas — la
-   * vue dépliée n'est pas une projection : elle n'a pas de bord à changer.
+   * TOURNER AUTOUR DU MÉCANISME, d'un quart de tour à la fois.
+   *
+   * `quarterTurns` est compté positivement dans le sens où l'azimut de la
+   * caméra décroît autour de la verticale — c'est-à-dire une rotation de −90°
+   * autour de [0,1,0] à chaque pas. Quatre pas ramènent EXACTEMENT à la vue de
+   * départ, et un pas dans un sens suivi d'un pas dans l'autre est l'identité.
+   *
+   * Hors isométrie, il n'y a pas d'azimut à faire tourner : l'identifiant
+   * revient tel quel plutôt que d'inventer une vue.
    */
-  function opposite(id) {
-    for (var i = 0; i < ALL.length; i++) if (ALL[i].id === id) return ALL[i].opposite || id;
-    return id;
+  function rotateIso(id, quarterTurns) {
+    if (!isIso(id)) return id;
+    var steps = Math.round(Number(quarterTurns) || 0);
+    var next = (((view(id).isoQuarter + steps) % 4) + 4) % 4;
+    return ISO_TURNS[next].id;
+  }
+
+  /**
+   * L'autre bord d'une vue ORTHOGRAPHIQUE, ou l'identifiant reçu s'il n'y en a
+   * pas — la vue dépliée n'est pas une projection, et une isométrie se tourne
+   * au lieu de se retourner.
+   */
+  function oppositeOrthographic(id) {
+    var found = view(resolve(id));
+    return found.id === resolve(id) && found.opposite ? found.opposite : id;
+  }
+
+  /** La vue de référence d'un identifiant : celle que la liste affiche. */
+  function baseView(id) {
+    if (isIso(id)) return 'iso';
+    var found = view(resolve(id));
+    if (found.id !== resolve(id)) return 'front';
+    return found.opposite && OPPOSITES.some(function (other) { return other.id === found.id; })
+      ? found.opposite : found.id;
   }
 
   /** project(point, view) → [x, y] écran. */
@@ -258,7 +354,12 @@
     return best || view('front');
   }
 
-  return { VIEWS: VIEWS, OPPOSITES: OPPOSITES, ALL: ALL, opposite: opposite,
+  return { VIEWS: VIEWS, OPPOSITES: OPPOSITES, ALL: ALL, WORLD_UP: WORLD_UP,
+    // `opposite` reste le nom historique de l'autre bord — mais il ne fait
+    // plus tourner une isométrie, il n'y a plus de coin opposé à lui donner.
+    opposite: oppositeOrthographic, oppositeOrthographic: oppositeOrthographic,
+    isIso: isIso, isoQuarter: isoQuarter, rotateIso: rotateIso, baseView: baseView,
+    cameraBasisFromLook: cameraBasisFromLook,
     view: view, project: project, presentation: presentation,
     foreshortening: foreshortening, facing: facing, depth: depth,
     auto: auto, engagement: engagement, penalty: penalty,

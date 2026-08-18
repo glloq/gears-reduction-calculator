@@ -145,8 +145,19 @@
    * non plus, les trois vues n'ayant ni la même échelle ni la même disposition.
    * Il est donc mémorisé PAR VUE, et seulement pour la solution en cours.
    */
+  /**
+   * La clé d'un cadrage : la vue ET le point de vue.
+   *
+   * Deux angles isométriques ne cadrent pas le même dessin — la boîte
+   * englobante tourne avec la caméra —, et la Denture n'a ni l'échelle ni la
+   * disposition des Dimensions. Un cadrage par vue seule mélangeait les deux.
+   */
+  ViewerToolbar.prototype._cameraKey = function () {
+    return this.currentView + ':' + (this.projection || 'unfolded');
+  };
+
   ViewerToolbar.prototype._restoreCamera = function (rendered) {
-    var saved = this.camera && this.camera[this.currentView];
+    var saved = this.camera && this.camera[this._cameraKey()];
     var viewport = rendered && rendered.viewport;
     if (!saved || !viewport || !viewport.setState) return this;
     viewport.setState({ viewBox: saved.slice() });
@@ -158,7 +169,7 @@
     var renderer = this.renderer(), viewport = renderer && renderer.viewport;
     if (!viewport || !viewport.getState) return this;
     this.camera = this.camera || {};
-    this.camera[this.currentView] = viewport.getState().viewBox.slice();
+    this.camera[this._cameraKey()] = viewport.getState().viewBox.slice();
     return this;
   };
 
@@ -210,6 +221,9 @@
    * sur un coin de l'ancien dessin.
    */
   ViewerToolbar.prototype.setProjection = function (id) {
+    // Le cadrage courant appartient à l'ANGLE qu'on quitte : on le range avant
+    // de changer, pour le retrouver en revenant.
+    if (this.solution) this._rememberCamera();
     this.projection = id || 'unfolded';
     // Les trois vues dessinent le même mécanisme depuis le même endroit. Une
     // commande par vue — un sélecteur ici, trois boutons dans la Cinématique —
@@ -221,7 +235,11 @@
     ['teeth', 'geometry'].forEach(function (name) {
       if (this[name]) this[name].projection = this.projection;
     }, this);
-    this.camera = {};
+    // La mémoire de cadrage n'est PLUS effacée. Elle l'était en bloc à chaque
+    // changement d'angle, si bien qu'un quart de tour perdait le cadrage de
+    // toutes les vues — y compris celles qu'on n'avait pas touchées. Chaque
+    // couple vue + point de vue a désormais sa propre entrée : revenir à
+    // l'angle précédent y retrouve exactement le cadrage qu'on y avait laissé.
     if (this.solution) this.render(this.solution);
     this._syncProjection();
     this.container.dispatchEvent(new CustomEvent('viewer:projection-changed',
@@ -278,24 +296,45 @@
         select.appendChild(option);
       });
     }
-    // Une vue opposée n'a pas d'entrée à elle : la liste montre sa vue de
-    // référence, et le bouton « autre bord » dit de quel côté on se trouve.
+    // Ni une vue opposée ni un azimut isométrique n'ont d'entrée à eux : la
+    // liste montre leur vue de RÉFÉRENCE, et deux commandes distinctes disent
+    // où l'on se trouve — de quel bord pour une projection orthographique, à
+    // quel quart de tour pour une isométrie. Confondre les deux, c'était
+    // présenter un passage sous le mécanisme comme une rotation.
     var current = this.projection || 'unfolded';
-    var known = typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine.view(current) : null;
-    var reversed = !!(known && known.id === current && (GearProjectionEngine.OPPOSITES || []).some(function (view) {
-      return view.id === current;
-    }));
-    select.value = reversed ? known.opposite : current;
+    var engine = typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine : null;
+    var spinning = !!(engine && engine.isIso(current));
+    var quarter = spinning ? engine.isoQuarter(current) : null;
+    var reversed = !!(engine && !spinning && current !== 'unfolded' &&
+      (engine.OPPOSITES || []).some(function (view) { return view.id === current; }));
+    select.value = engine && current !== 'unfolded' ? engine.baseView(current) : current;
     var flip = document.getElementById('viewerOpposite');
     if (flip) {
-      var flippable = this.currentView !== 'kinematic' && current !== 'unfolded';
+      // Une isométrie se tourne ; elle n'a pas d'autre bord à montrer. Le
+      // bouton disparaît donc plutôt que de proposer un demi-tour déguisé.
+      var flippable = this.currentView !== 'kinematic' && current !== 'unfolded' && !spinning;
+      flip.hidden = spinning;
       flip.disabled = !flippable;
       flip.setAttribute('aria-pressed', String(reversed));
       flip.classList.toggle('active', reversed);
       flip.title = !flippable
         ? 'La vue dépliée n’a pas de bord : elle n’est pas une projection'
-        : reversed ? 'Revenir du côté ' + GearProjectionEngine.view(known.opposite).label.toLowerCase()
+        : reversed ? 'Revenir du côté ' + engine.view(engine.baseView(current)).label.toLowerCase()
           : 'Regarder le mécanisme de l’autre bord : l’autre extrémité des arbres, et les sens apparents de rotation inversés';
+    }
+    var turn = document.getElementById('viewerIsoTurn');
+    if (turn) {
+      var turnable = spinning && this.currentView !== 'kinematic';
+      turn.hidden = !turnable;
+      var count = document.getElementById('viewerIsoCount');
+      // L'utilisateur doit savoir quelle orientation est active : une vue
+      // tournée était jusqu'ici indiscernable de la vue de référence, la liste
+      // affichant « Iso » dans les deux cas.
+      if (count) count.textContent = 'Iso ' + ((quarter || 0) + 1) + '/4';
+      ['viewerIsoLeft', 'viewerIsoRight'].forEach(function (id) {
+        var button = document.getElementById(id);
+        if (button) button.disabled = !turnable;
+      });
     }
     // La Cinématique n'a pas de point de vue à choisir : elle est un schéma,
     // et le dire vaut mieux que de laisser croire qu'on a mal cliqué.
@@ -643,8 +682,17 @@
       }
       if (event.target.id === 'viewerOpposite' && typeof GearProjectionEngine !== 'undefined') {
         // Un seul bouton plutôt que huit entrées dans la liste : « De face » et
-        // « De derrière » sont la même coupe, prise de l'autre bord.
-        self.setProjection(GearProjectionEngine.opposite(self.projection));
+        // « De derrière » sont la même coupe, prise de l'autre bord. Une
+        // isométrie, elle, n'a pas d'autre bord — elle se TOURNE.
+        self.setProjection(GearProjectionEngine.oppositeOrthographic(self.projection));
+      }
+      // Tourner AUTOUR du mécanisme : la caméra change d'azimut, le mécanisme
+      // ne bouge pas d'un millimètre. C'est ce que l'ancien « autre bord »
+      // faisait croire alors qu'il passait sous le réducteur.
+      if ((event.target.id === 'viewerIsoLeft' || event.target.id === 'viewerIsoRight') &&
+        typeof GearProjectionEngine !== 'undefined') {
+        self.setProjection(GearProjectionEngine.rotateIso(self.projection,
+          event.target.id === 'viewerIsoRight' ? 1 : -1));
       }
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();
       if (event.target.id === 'viewerFocus' && renderer.focusStage) renderer.focusStage(self.selectedStage);

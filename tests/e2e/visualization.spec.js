@@ -842,16 +842,22 @@ test('the drawing is painted from the back, and can be seen from the other side 
   expect(straight, 'les pièces restent rangées par étage').not.toBe(
     painted.map(p => p.stage).sort().join(''));
 
-  // L'autre bord : le même mécanisme, regardé de l'autre côté.
+  // L'autre bord : le même mécanisme, regardé de l'autre côté. C'est une
+  // notion ORTHOGRAPHIQUE — une isométrie n'a pas d'autre bord, elle a des
+  // azimuts, et le bouton s'efface donc en Iso plutôt que d'y faire passer la
+  // caméra sous le mécanisme.
+  await expect(flip).toBeHidden();
+  await select.selectOption('front');
+  await expect(flip).toBeVisible();
   const drawingOf = () => page.evaluate(() =>
     window.__viewer.renderer().model.wheels.map(w => w.cx.toFixed(3) + ',' + w.cy.toFixed(3)).join('|'));
   const before = await drawingOf();
   await expect(flip).toHaveAttribute('aria-pressed', 'false');
   await flip.click();
   await expect(flip).toHaveAttribute('aria-pressed', 'true');
-  // La liste montre toujours la vue de référence : « Iso » et « Iso opposée »
-  // sont la même vue, prise des deux bords.
-  await expect(select).toHaveValue('iso');
+  // La liste montre toujours la vue de référence : « De face » et « De
+  // derrière » sont la même coupe, prise des deux bords.
+  await expect(select).toHaveValue('front');
   const after = await drawingOf();
   expect(after).not.toBe(before);
   // Gauche et droite s'échangent, le haut ne bouge pas.
@@ -2318,4 +2324,145 @@ test('a crossed shaft passes in front of some parts and behind others (§ profon
   // son identifiant, donc s'allument ensemble.
   expect(seen.shafts).toBeGreaterThanOrEqual(2);
   expect(seen.shafts).toBeLessThan(seen.pieces);
+});
+
+test('turning the iso view orbits the mechanism instead of diving under it (§ rotation ISO)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['worm', 'belt']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+  const flip = page.locator('#viewerOpposite');
+  const left = page.locator('#viewerIsoLeft');
+  const right = page.locator('#viewerIsoRight');
+  const count = page.locator('#viewerIsoCount');
+
+  // Hors isométrie, on change de BORD ; il n'y a pas d'azimut à tourner.
+  await select.selectOption('front');
+  await expect(flip).toBeVisible();
+  await expect(page.locator('#viewerIsoTurn')).toBeHidden();
+
+  await select.selectOption('iso');
+  // En isométrie, c'est l'inverse : on TOURNE, et le bouton « autre bord »
+  // s'efface — il menait au coin diagonalement opposé du cube, c'est-à-dire
+  // sous le mécanisme, en inversant d'un coup toute la profondeur.
+  await expect(flip).toBeHidden();
+  await expect(count).toHaveText('Iso 1/4');
+
+  const state = () => page.evaluate(() => {
+    const engine = window.GearProjectionEngine;
+    const id = window.__viewer.projection;
+    const seen = engine.view(id);
+    const model = window.__viewer.renderer().model;
+    return { id: id, up: seen.w[1], handed:
+      engine.vector.dot(engine.vector.cross(seen.u, seen.v), seen.w),
+      // La verticale du monde, projetée : elle doit rester verticale et vers
+      // le haut de l'écran, à tous les azimuts.
+      screenUp: engine.project([0, 1, 0], id),
+      seats: model.wheels.map(w => w.cx.toFixed(3) + ',' + w.cy.toFixed(3)).join('|'),
+      world: model.spatial.members.map(m => m.position.join(',')).join('|') };
+  });
+
+  const turns = ['iso', 'iso-90', 'iso-180', 'iso-270'];
+  const seen = [];
+  for (let i = 0; i < 4; i++) {
+    const now = await state();
+    expect(now.id, 'quart de tour ' + i).toBe(turns[i]);
+    await expect(count).toHaveText('Iso ' + (i + 1) + '/4');
+    // La liste continue d'afficher « Iso » : l'utilisateur n'a pas huit noms
+    // techniques à démêler, le compteur lui dit où il en est.
+    await expect(select).toHaveValue('iso');
+    // Jamais sous le mécanisme : la caméra garde sa hauteur.
+    expect(now.up).toBeCloseTo(1 / Math.sqrt(3), 12);
+    // Jamais d'image miroir : le trièdre garde son sens.
+    expect(now.handed).toBeCloseTo(-1, 12);
+    // Le haut du monde reste le haut du dessin.
+    expect(Math.abs(now.screenUp[0])).toBeLessThan(1e-9);
+    expect(now.screenUp[1]).toBeLessThan(-0.8);
+    seen.push(now);
+    await right.click();
+  }
+  // Quatre quarts de tour reviennent exactement au départ.
+  expect((await state()).id).toBe('iso');
+  expect((await state()).seats).toBe(seen[0].seats);
+  // Chaque azimut dessine autre chose…
+  expect(new Set(seen.map(s => s.seats)).size).toBe(4);
+  // …mais le MONDE, lui, n'a pas bougé d'un millimètre.
+  seen.forEach(s => expect(s.world).toBe(seen[0].world));
+
+  // ↷ puis ↶ ramène exactement où l'on était, et réciproquement.
+  await right.click();
+  await left.click();
+  expect((await state()).id).toBe('iso');
+  await left.click();
+  expect((await state()).id).toBe('iso-270');
+  await right.click();
+  expect((await state()).id).toBe('iso');
+  expect(errors).toEqual([]);
+});
+
+test('a worm → belt train holds together at all four iso azimuths (§ rotation ISO)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['worm', 'belt']);
+  await showView(page, 'teeth');
+  const readings = {};
+  for (const view of ['iso', 'iso-90', 'iso-180', 'iso-270']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    const seen = await page.evaluate(() => {
+      const model = window.__viewer.renderer().model;
+      const wheels = {};
+      model.wheels.forEach(w => { wheels[w.memberId] = w; });
+      const link = model.stages[1].links[0];
+      const geometry = link && link.geometry;
+      const worm = model.wheels.filter(w => w.kind === 'worm')[0];
+      const wheel = model.wheels.filter(w => w.memberId === 's0-output')[0];
+      const io = model.io;
+      return {
+        // La vis garde son arbre, son sens d'hélice et sa place axiale : la
+        // caméra ne touche pas à la mécanique.
+        wormBody: worm && worm.bodyId, wormHand: worm && worm.handedness,
+        // La position AXIALE de la vis sur son arbre : une donnée du monde,
+        // que la caméra ne peut pas toucher.
+        wormSeat: (model.spatial.members.filter(m => m.id === (worm && worm.memberId))[0] || {}).axialPosition,
+        // La roue de la vis et la poulie de l'étage suivant partagent un arbre.
+        shared: wheel && wheels['s1-input'] ? wheel.bodyId === wheels['s1-input'].bodyId : null,
+        // La courroie garde ses deux poulies et leurs rayons : c'est ce qui
+        // fait qu'elle reste tangente, quel que soit l'azimut.
+        pulleys: geometry ? geometry.circles.map(c => c.radius.toFixed(3)).join('|') : null,
+        parts: geometry ? geometry.parts.length : 0,
+        // Les deux brins sont à des profondeurs différentes : l'un passe
+        // devant les poulies, l'autre derrière.
+        depths: geometry ? new Set(geometry.parts.map(p => p.depth.toFixed(3))).size : 0,
+        // ENTRÉE et SORTIE suivent l'ARBRE PROJETÉ : c'est la direction que
+        // la flèche porte, pas une règle gauche/droite d'écran.
+        input: (document.querySelector('#svgContainer .io-chip.in') || {}).dataset.along,
+        output: (document.querySelector('#svgContainer .io-chip.out') || {}).dataset.along,
+        // Le texte reste horizontal quel que soit l'azimut.
+        upright: Array.from(document.querySelectorAll('#svgContainer .io-chip text'))
+          .every(t => !t.getAttribute('transform')),
+        member: io.input ? io.input.memberId : null
+      };
+    });
+    expect(seen.wormBody, view).toBeTruthy();
+    expect(seen.wormHand, view).toBe('right');
+    expect(seen.shared, view + ' : la roue et la poulie ont perdu leur arbre commun').toBe(true);
+    expect(seen.parts, view + ' : la courroie n’a plus ses quatre portions').toBe(4);
+    expect(seen.depths, view + ' : les deux brins sont à la même profondeur').toBeGreaterThan(1);
+    expect(seen.input, view + ' : entrée sans direction').toMatch(/^-?[\d.]+,-?[\d.]+$/);
+    expect(seen.output, view + ' : sortie sans direction').toMatch(/^-?[\d.]+,-?[\d.]+$/);
+    expect(seen.upright, view + ' : le texte a tourné avec la caméra').toBe(true);
+    readings[view] = seen;
+  }
+  const first = readings.iso;
+  Object.keys(readings).forEach(view => {
+    // Ce qui appartient à la MÉCANIQUE ne bouge pas d'un azimut à l'autre :
+    // l'arbre de la vis, son sens d'hélice, sa position axiale, les rayons de
+    // poulie. Une vis à droite ne devient pas gauche par un miroir d'écran.
+    ['wormBody', 'wormHand', 'wormSeat', 'pulleys', 'shared', 'member'].forEach(key =>
+      expect(readings[view][key], view + ' : ' + key + ' a changé avec la caméra')
+        .toEqual(first[key]));
+  });
+  // Et ce qui appartient au DESSIN change bien : quatre azimuts, quatre
+  // directions d'entrée.
+  expect(new Set(Object.keys(readings).map(v => readings[v].input)).size).toBeGreaterThan(1);
+  expect(errors).toEqual([]);
 });
