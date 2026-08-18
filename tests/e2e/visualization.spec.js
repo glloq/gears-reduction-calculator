@@ -2558,3 +2558,65 @@ test('every reference chain survives all four iso azimuths (§ régression ISO)'
   }
   expect(errors).toEqual([]);
 });
+
+test('the view cube changes the point of view by showing it (§ cube de vue)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'belt']);
+  await showView(page, 'teeth');
+  const cube = page.locator('#viewerCube');
+  const select = page.locator('#viewerProjection');
+
+  await expect(cube).toBeVisible();
+  // De face, le cube n'offre qu'UNE face : c'est ce qu'un cube montre, et
+  // proposer celles de derrière n'aurait pas de sens.
+  await expect(cube.locator('.view-cube-face')).toHaveCount(1);
+
+  // Cliquer un COIN mène à l'isométrie, et le cube tourne avec la caméra.
+  const drawingOf = () => page.evaluate(() =>
+    Array.from(document.querySelectorAll('#viewerCube .view-cube-face'))
+      .map(f => f.dataset.view + ':' + f.getAttribute('d')).join('|'));
+  await cube.locator('.view-cube-corner').first().click();
+  await expect(select).toHaveValue('iso');
+  expect(await page.evaluate(() => window.__viewer.projection)).toMatch(/^iso/);
+  const first = await drawingOf();
+
+  // De biais, trois faces s'ouvrent : cliquer l'une d'elles mène à la vue
+  // qu'elle montre, sans passer par la liste.
+  await expect(cube.locator('.view-cube-face')).toHaveCount(3);
+  await cube.locator('[data-view="top"]').click();
+  await expect(select).toHaveValue('top');
+  await expect(cube.locator('.view-cube-face.is-active')).toHaveAttribute('data-view', 'top');
+  await cube.locator('.view-cube-corner').first().click();
+  await expect(select).toHaveValue('iso');
+
+  // Un coin de plus : un quart de tour, et un cube redessiné.
+  const before = await page.evaluate(() => window.__viewer.projection);
+  await cube.locator('.view-cube-corner').first().click();
+  const after = await page.evaluate(() => window.__viewer.projection);
+  expect(after).not.toBe(before);
+  expect(await drawingOf()).not.toBe(first);
+  // Le cube et le dessin regardent le même endroit : c'est la MÊME caméra.
+  const agreed = await page.evaluate(() => {
+    const seen = window.GearProjectionEngine.view(window.__viewer.projection);
+    const faces = Array.from(document.querySelectorAll('#viewerCube .view-cube-face'));
+    // Une face dessinée est une face que la caméra regarde.
+    return faces.every(face => {
+      const entry = window.GearViewCube.FACES.filter(f => f.view === face.dataset.view)[0];
+      const facing = -(entry.normal[0] * seen.w[0] + entry.normal[1] * seen.w[1] + entry.normal[2] * seen.w[2]);
+      return facing > 0;
+    }) && faces.length === 3;
+  });
+  expect(agreed, 'le cube ne regarde pas où regarde le dessin').toBe(true);
+
+  // Au clavier comme à la souris.
+  await cube.locator('[data-view="front"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(select).toHaveValue('front');
+
+  // La Cinématique est un schéma : elle n'a pas de point de vue à offrir.
+  await showView(page, 'kinematic');
+  await expect(cube).toBeHidden();
+  await showView(page, 'geometry');
+  await expect(cube).toBeVisible();
+  expect(errors).toEqual([]);
+});

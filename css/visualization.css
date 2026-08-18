@@ -292,7 +292,56 @@
    cacher, et le dessin reprend toute la largeur dès qu'on le referme. */
 .svg-container { position: relative; }
 .viewer-stage { display: flex; align-items: stretch; gap: var(--sp-3); }
-.viewer-stage > .svg-container { flex: 1 1 auto; min-width: 0; }
+.viewer-stage > .viewer-scene { flex: 1 1 auto; min-width: 0; position: relative; }
+.viewer-scene > .svg-container { width: 100%; }
+
+/* ----- Le cube de vue -----
+   Une commande qui montre ce qu'elle fait. Il se pose SUR le dessin, dans un
+   coin, parce que c'est du dessin qu'il parle — le reléguer dans la barre
+   d'outils l'aurait rendu aussi abstrait que la liste qu'il remplace. */
+.view-cube {
+  position: absolute; top: var(--sp-2); right: var(--sp-2);
+  width: 100px; z-index: 3; pointer-events: none;
+}
+.view-cube[hidden] { display: none; }
+.view-cube-svg { width: 100%; height: auto; overflow: visible; pointer-events: none; }
+.view-cube-face, .view-cube-corner { pointer-events: auto; cursor: pointer; }
+
+.view-cube-face {
+  fill: color-mix(in srgb, var(--surface-1) 88%, var(--ink));
+  stroke: var(--line); stroke-width: 1; stroke-linejoin: round;
+  transition: fill .12s ease;
+}
+.view-cube-face:hover { fill: color-mix(in srgb, var(--accent) 22%, var(--surface-1)); }
+.view-cube-face:focus-visible { outline: none; stroke: var(--accent); stroke-width: 1.8; }
+/* La face active porte la couleur d'accent : le cube dit où l'on est, pas
+   seulement où l'on peut aller. */
+.view-cube-face.is-active { fill: color-mix(in srgb, var(--accent) 34%, var(--surface-1)); stroke: var(--accent); }
+.view-cube-label {
+  font-size: 8px; letter-spacing: .04em; fill: var(--muted);
+  pointer-events: none; user-select: none;
+}
+.view-cube-face.is-active + .view-cube-label { fill: var(--accent); font-weight: 600; }
+
+.view-cube-corner {
+  fill: var(--surface-1); stroke: var(--muted); stroke-width: 1;
+}
+.view-cube-corner:hover { fill: var(--accent); stroke: var(--accent); }
+.view-cube-corner:focus-visible { outline: none; stroke: var(--accent); stroke-width: 2; }
+.view-cube-corner.is-active { fill: var(--accent); stroke: var(--accent); }
+
+/* Le trièdre : il explique, il ne se clique pas. */
+.view-cube-axes { pointer-events: none; }
+.view-cube-axis { stroke: var(--muted); stroke-width: 1.1; }
+.view-cube-axis-label { font-size: 8px; fill: var(--muted); user-select: none; }
+/* Un axe vu EN BOUT n'est plus un segment : son étiquette est tout ce qu'il
+   en reste, et un cercle le dit mieux qu'un trait de longueur nulle. */
+.view-cube-axis-label.is-end-on { font-weight: 700; fill: var(--ink); }
+
+@media (max-width: 720px) {
+  /* Sur un écran étroit, le cube prend une place que le dessin réclame. */
+  .view-cube { width: 68px; }
+}
 .stage-inspector {
   flex: 0 0 clamp(210px, 22%, 270px);
   align-self: stretch;

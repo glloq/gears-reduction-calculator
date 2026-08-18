@@ -346,6 +346,66 @@
         : (typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine.view(this.projection).help : '');
     var label = document.querySelector('.viewer-projection-label');
     if (label) label.classList.toggle('is-disabled', !spatial);
+    this._syncCube();
+    return this;
+  };
+
+  /**
+   * LE CUBE DE VUE — la commande qui n'a rien à mémoriser.
+   *
+   * Le point de vue se choisissait dans une liste et par deux boutons de
+   * rotation : exact, à condition d'avoir déjà en tête ce que « De dessus » ou
+   * « Iso 3/4 » vont donner. Le cube répond autrement : il montre l'orientation
+   * courante, et l'on clique la face ou le coin qu'on veut voir.
+   *
+   * Il est projeté par la MÊME caméra que le mécanisme : il tourne donc avec
+   * lui, et les deux ne peuvent pas se contredire.
+   */
+  ViewerToolbar.prototype._syncCube = function () {
+    var host = document.getElementById('viewerCube');
+    if (!host || typeof GearViewCube === 'undefined') return this;
+    // La Cinématique est un schéma : elle n'a pas de point de vue à offrir, et
+    // lui poser un cube laisserait croire le contraire.
+    var spatial = this.currentView !== 'kinematic';
+    host.hidden = !spatial;
+    if (!spatial) return this;
+    var built = GearViewCube.build(this.projection || 'unfolded', { size: 92 });
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + built.size + ' ' + (built.size * 1.45));
+    svg.setAttribute('class', 'view-cube-svg');
+    svg.setAttribute('aria-hidden', 'false');
+    // Le trièdre d'abord, sous le cube : il explique, il ne se clique pas.
+    var trihedron = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    trihedron.setAttribute('class', 'view-cube-axes');
+    built.axes.forEach(function (axis) {
+      if (!axis.endOn) {
+        var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('class', 'view-cube-axis axis-' + axis.id.toLowerCase());
+        line.setAttribute('x1', axis.x1.toFixed(2));
+        line.setAttribute('y1', axis.y1.toFixed(2));
+        line.setAttribute('x2', axis.x2.toFixed(2));
+        line.setAttribute('y2', axis.y2.toFixed(2));
+        trihedron.appendChild(line);
+      }
+      var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('class', 'view-cube-axis-label axis-' + axis.id.toLowerCase() +
+        (axis.endOn ? ' is-end-on' : ''));
+      text.setAttribute('x', axis.label[0].toFixed(2));
+      text.setAttribute('y', axis.label[1].toFixed(2));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dy', '0.34em');
+      text.textContent = axis.id;
+      trihedron.appendChild(text);
+    });
+    svg.appendChild(trihedron);
+    built.shapes.forEach(function (shape) {
+      var element = document.createElementNS('http://www.w3.org/2000/svg', shape.tag);
+      Object.keys(shape.attrs || {}).forEach(function (key) { element.setAttribute(key, shape.attrs[key]); });
+      if (shape.text != null) element.textContent = shape.text;
+      svg.appendChild(element);
+    });
+    host.innerHTML = '';
+    host.appendChild(svg);
     return this;
   };
 
@@ -657,6 +717,25 @@
     // ce qu'elle montre à quel palier — sans qu'aucune n'ait à connaître les
     // seuils.
     this.container.addEventListener('viewport:changed', function () { self._syncZoomTier(); self._rememberCamera(); });
+
+    // Le cube de vue : cliquer une face ou un coin, c'est aller s'y placer.
+    var cube = document.getElementById('viewerCube');
+    if (cube && !cube.dataset.bound) {
+      cube.dataset.bound = 'yes';
+      cube.addEventListener('click', function (event) {
+        var target = event.target.closest ? event.target.closest('[data-view]') : null;
+        if (target) self.setProjection(target.dataset.view);
+      });
+      // Au clavier comme à la souris : une face est un bouton, elle répond à
+      // Entrée et à Espace.
+      cube.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var target = event.target.closest ? event.target.closest('[data-view]') : null;
+        if (!target) return;
+        event.preventDefault();
+        self.setProjection(target.dataset.view);
+      });
+    }
     if (!controls) return;
     controls.addEventListener('click', function (event) {
       var view = event.target.closest('.view-mode');
