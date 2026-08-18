@@ -256,3 +256,119 @@ test('speeds come from the engine, never from a local recomputation', () => {
   const silent = Graph.build(Engineering.analyzeSolution([SPUR(20, 60)], 3, {}));
   assert.equal(silent.shafts[0].angularSpeed, null);
 });
+
+// ===== Le plan axial d'un étage planétaire ============================
+//
+// Chaque corps coaxial recevait son propre arbre, puis y était posé sans
+// abscisse. Un arbre neuf étant vide, `place` répondait ZÉRO : la couronne, le
+// porte-satellites et les satellites d'un étage revenaient à l'origine tandis
+// que son solaire, posé sur l'arbre venu de l'étage précédent, avançait
+// normalement. Quatre planétaires successifs s'empilaient donc tous autour de
+// zéro, à un plan près.
+
+function planetaryStages(graph) {
+  const stages = {};
+  graph.shafts.forEach(shaft => shaft.members.forEach(member => {
+    const match = /^s(\d+)-([SRCP])$/.exec(member.id);
+    if (!match) return;
+    (stages[match[1]] = stages[match[1]] || {})[match[2]] = member;
+  }));
+  return stages;
+}
+
+test('every body of a planetary stage shares one axial plane', () => {
+  const graph = graphOf([PLANETARY('S', 'C', 'R'), PLANETARY('S', 'C', 'R'),
+    PLANETARY('S', 'C', 'R'), PLANETARY('S', 'C', 'R')], 256);
+  const stages = planetaryStages(graph);
+  assert.equal(Object.keys(stages).length, 4);
+  Object.keys(stages).forEach(index => {
+    const bodies = stages[index];
+    ['S', 'R', 'C', 'P'].forEach(role => assert.ok(bodies[role], 'étage ' + index + ' sans ' + role));
+    const seat = bodies.S.axialPosition;
+    ['R', 'C', 'P'].forEach(role => assert.ok(Math.abs(bodies[role].axialPosition - seat) < 1e-6,
+      'étage ' + index + ' : ' + role + ' à ' + bodies[role].axialPosition + ' au lieu de ' + seat));
+    // Et la PROVENANCE du plan suit avec lui : une abscisse recopiée ne devient
+    // pas exacte parce qu'on l'a recopiée.
+    ['R', 'C', 'P'].forEach(role => assert.equal(bodies[role].axialPositionProvenance,
+      bodies.S.axialPositionProvenance, 'étage ' + index + ' : provenance de ' + role));
+  });
+});
+
+test('four planetaries in a row stand side by side, not on top of each other', () => {
+  const graph = graphOf([PLANETARY('S', 'C', 'R'), PLANETARY('S', 'C', 'R'),
+    PLANETARY('S', 'C', 'R'), PLANETARY('S', 'C', 'R')], 256);
+  const stages = planetaryStages(graph);
+  const seats = [0, 1, 2, 3].map(i => stages[i].S.axialPosition);
+  // Chaque étage avance : ils sont coaxiaux, pas confondus.
+  seats.forEach((seat, i) => {
+    if (i === 0) return;
+    assert.ok(seat > seats[i - 1] + 1e-6,
+      'étage ' + i + ' à ' + seat + ', étage ' + (i - 1) + ' à ' + seats[i - 1]);
+  });
+  // L'écart est celui de l'empilement : une demi-largeur, le jeu d'arbre, une
+  // demi-largeur. Il ne se dilate ni ne se tasse d'un étage à l'autre.
+  const gaps = seats.slice(1).map((seat, i) => seat - seats[i]);
+  gaps.forEach(gap => assert.ok(Math.abs(gap - gaps[0]) < 1e-6, 'écarts inégaux : ' + gaps.join(', ')));
+  // Deux étages ne se chevauchent pas : l'écart couvre la demi-largeur de
+  // chacun. Le porte-satellites n'ayant pas de denture, l'empilement partait
+  // d'une largeur nulle et les deux étages se recouvraient de moitié.
+  const width = index => Math.max(...['S', 'R', 'P'].map(role => stages[index][role].width));
+  seats.slice(1).forEach((seat, i) => assert.ok(seat - seats[i] >= (width(i) + width(i + 1)) / 2 - 1e-6,
+    'étages ' + i + ' et ' + (i + 1) + ' à cheval : ' + (seat - seats[i]) +
+    ' pour ' + ((width(i) + width(i + 1)) / 2)));
+  // Et AUCUN corps d'un étage suivant ne revient à l'origine.
+  [1, 2, 3].forEach(i => ['S', 'R', 'C', 'P'].forEach(role =>
+    assert.ok(stages[i][role].axialPosition > 1e-6,
+      'étage ' + i + ' : ' + role + ' est revenu à zéro')));
+});
+
+test('the stage plane does not depend on which member carries the input', () => {
+  // La boucle découvrait l'entrée au milieu du parcours de S, R, C : le plan
+  // dépendait donc de l'ORDRE de la table des rôles, et non de la topologie.
+  [['S', 'C', 'R'], ['R', 'C', 'S'], ['C', 'S', 'R']].forEach(([input, output, fixed]) => {
+    const label = input + '→' + output + ' (' + fixed + ' fixe)';
+    const graph = graphOf([PLANETARY('S', 'C', 'R'), PLANETARY(input, output, fixed)], 24);
+    const stages = planetaryStages(graph);
+    const bodies = stages[1];
+    const seat = bodies[input].axialPosition;
+    assert.ok(seat > 1e-6, label + ' : l’étage 2 est resté à l’origine');
+    ['S', 'R', 'C', 'P'].forEach(role => assert.ok(Math.abs(bodies[role].axialPosition - seat) < 1e-6,
+      label + ' : ' + role + ' hors du plan de l’étage'));
+  });
+});
+
+test('a planetary stage says where it is, so nothing has to guess it', () => {
+  const graph = graphOf([PLANETARY('S', 'C', 'R'), PLANETARY('S', 'C', 'R'),
+    PLANETARY('S', 'C', 'R')], 64);
+  const stages = planetaryStages(graph);
+  const mechanisms = graph.mechanisms.filter(m => m.relation === 'coaxial');
+  assert.equal(mechanisms.length, 3);
+  mechanisms.forEach((mechanism, i) => {
+    // Le plan est une donnée du MODÈLE : le dessin n'a plus à le reconstituer
+    // à partir des organes qu'il voit, ce qui l'empilait avec eux.
+    assert.equal(mechanism.axialPosition, stages[i].S.axialPosition, 'étage ' + i);
+    assert.equal(mechanism.axialPositionProvenance, stages[i].S.axialPositionProvenance, 'étage ' + i);
+    assert.ok(Array.isArray(mechanism.referencePoint) && mechanism.referencePoint.length === 3, 'étage ' + i);
+    // Et ce point est bien SUR l'axe de l'étage, à cette abscisse.
+    const axis = graph.byAxis[graph.byShaft[mechanism.inputPort.shaftId].axisId];
+    [0, 1, 2].forEach(k => assert.ok(Math.abs(mechanism.referencePoint[k] -
+      (axis.origin[k] + axis.direction[k] * mechanism.axialPosition)) < 1e-6, 'étage ' + i));
+  });
+  // Trois étages, trois points distincts.
+  const points = new Set(mechanisms.map(m => m.referencePoint.join(',')));
+  assert.equal(points.size, 3);
+});
+
+test('two members that turn together are still two places on their shaft', () => {
+  // La sortie d'un étage et l'entrée du suivant sont un seul corps tournant :
+  // même arbre, même vitesse. Cela ne les met pas au même endroit.
+  const graph = graphOf([PLANETARY('S', 'C', 'R'), PLANETARY('S', 'C', 'R')], 16);
+  const carrier = graph.shafts.filter(shaft =>
+    shaft.members.some(m => m.id === 's0-C') && shaft.members.some(m => m.id === 's1-S'))[0];
+  assert.ok(carrier, 'le porte-satellites de l’étage 1 ne porte pas le solaire de l’étage 2');
+  const out = carrier.members.filter(m => m.id === 's0-C')[0];
+  const next = carrier.members.filter(m => m.id === 's1-S')[0];
+  assert.equal(out.shaftId, next.shaftId);
+  assert.ok(next.axialPosition > out.axialPosition + 1e-6,
+    'ils tournent ensemble, donc on les a superposés : ' + out.axialPosition + ' / ' + next.axialPosition);
+});

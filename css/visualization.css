@@ -372,6 +372,18 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .view-framing button:disabled { opacity: .45; cursor: not-allowed; }
 .view-framing button:disabled:hover { color: var(--muted); }
 
+/* Tourner autour du mécanisme. Le compteur est là pour que l'orientation
+   active soit LISIBLE : la liste affiche « Iso » aux quatre azimuts, et rien
+   ne distinguait donc une vue tournée de la vue de référence. */
+.view-iso-turn { display: inline-flex; align-items: center; }
+.view-iso-turn[hidden] { display: none; }
+.view-iso-turn button { min-width: 2rem; font-size: 1rem; line-height: 1; }
+.view-iso-turn button:disabled { opacity: .45; cursor: not-allowed; }
+.iso-turn-count {
+  padding: 0 .45rem; font-size: .78rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
 /* ----- §4 : le HUD de survol, commun aux trois vues ----- */
 
 .svg-container { position: relative; }

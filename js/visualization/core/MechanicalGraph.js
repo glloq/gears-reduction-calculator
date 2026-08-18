@@ -99,7 +99,7 @@
    * se retrouvaient au même point, donc superposées : le dessin montrait une
    * roue là où il y en a deux, et l'arbre n'avait pas de longueur.
    */
-  function place(shaft, member, gap, at, gapIsExplicit) {
+  function place(shaft, member, gap, at, gapIsExplicit, provenanceOverride) {
     var width = finite(member.geometry && member.geometry.width, 0);
     var position = 0;
     var last = shaft.members.length ? shaft.members[shaft.members.length - 1] : null;
@@ -113,6 +113,12 @@
     var provenance = 'exact';
     if (Number.isFinite(at)) {
       position = at;
+      // Une abscisse RECOPIÉE n'est pas une abscisse mesurée. Les corps
+      // coaxiaux d'un planétaire reprennent le plan de leur organe d'entrée :
+      // si ce plan est une convention de dessin, il le reste pour tous, sans
+      // quoi le même plan serait annoncé « exact » sur trois pièces et
+      // « schématique » sur la quatrième.
+      if (provenanceOverride) provenance = provenanceOverride;
     } else if (last) {
       position = last.axialPosition + last.width / 2 + gap + width / 2;
       var known = exactWidth(member) && last.exactWidth;
@@ -125,6 +131,16 @@
       geometry: member.geometry || {}, mechanical: member.mechanical || {} };
     shaft.members.push(entry);
     return entry;
+  }
+
+  /**
+   * Pose un membre sur le PLAN DE RÉFÉRENCE d'un étage, provenance comprise.
+   *
+   * Plusieurs corps coaxiaux ne signifie pas plusieurs corps à l'abscisse
+   * zéro : ils partagent un axe ET un plan, et seule leur vitesse les sépare.
+   */
+  function placeAtReference(shaft, member, reference) {
+    return place(shaft, member, 0, reference.position, false, reference.provenance);
   }
 
   /** La largeur de denture vient-elle du moteur, ou d'une reconstruction ? */
@@ -247,19 +263,53 @@
     // c'est elle qui fait foi : recopier « sun » ou « ring » ici créerait un
     // second vocabulaire, qui finirait par ne plus correspondre.
     var bodies = {}, ports = {};
+
+    // LE PLAN AXIAL DE L'ÉTAGE, d'abord — et une seule fois.
+    //
+    // Chaque corps coaxial recevait son propre arbre, puis y était posé sans
+    // abscisse. Un arbre neuf étant vide, `place` répondait zéro : la couronne,
+    // le porte-satellites et les satellites d'un étage 3 se retrouvaient à
+    // l'origine, tandis que son solaire, posé sur l'arbre venu de l'étage
+    // précédent, avançait normalement. L'étage était géométriquement éclaté
+    // entre deux plans, et quatre planétaires successifs s'empilaient tous
+    // autour de zéro.
+    //
+    // Un étage planétaire occupe UN plan. On le détermine donc avant tout le
+    // reste, en posant l'organe d'entrée sur l'arbre amont — et on ne le pose
+    // qu'ici, quel que soit l'ordre de S, R et C dans la table des rôles.
+    var inputRole = null;
+    BODY_ROLES.forEach(function (role) {
+      if (!inputRole && byRole[role] && byRole[role].functionalRole === 'input') inputRole = role;
+    });
+    var reference = null;
+    if (inputRole) {
+      var placed = place(context.shaft, byRole[inputRole], context.gap, undefined, context.gapIsExplicit);
+      bodies[inputRole] = context.shaft;
+      reference = { position: placed.axialPosition, provenance: placed.axialPositionProvenance };
+    } else {
+      // Sans organe d'entrée identifié — un étage isolé —, le plan est celui
+      // que l'arbre amont a atteint : mieux vaut la suite de l'empilement que
+      // l'origine, qui ramènerait l'étage sur le précédent.
+      var tail = context.shaft.members[context.shaft.members.length - 1];
+      reference = tail
+        ? { position: tail.axialPosition + tail.width / 2 + context.gap, provenance: 'schematic' }
+        : { position: 0, provenance: 'exact' };
+    }
+
+    // Les autres corps coaxiaux : arbres DISTINCTS — ils tournent chacun à sa
+    // vitesse —, mais MÊME axe et MÊME plan. C'est exactement la distinction
+    // entre un axe et un arbre.
     BODY_ROLES.forEach(function (role) {
       var member = byRole[role];
-      if (!member) return;
+      if (!member || role === inputRole) return;
       var functional = member.functionalRole;
-      // L'organe d'ENTRÉE prolonge l'arbre amont : c'est le même corps tournant.
-      if (functional === 'input') { bodies[role] = context.shaft; place(context.shaft, member, context.gap, undefined, context.gapIsExplicit); return; }
       var grounded = functional === 'fixed';
       var shaft = makeShaft(graph, axis, {
         id: 'shaft-' + graph.shafts.length + '-' + role,
         role: grounded ? 'fixed' : functional === 'output' ? 'driven' : 'intermediate',
         grounded: grounded, angularSpeed: speedOf(member)
       });
-      place(shaft, member, context.gap, undefined, context.gapIsExplicit);
+      placeAtReference(shaft, member, reference);
       bodies[role] = shaft;
       if (grounded) graph.ground.memberIds.push(member.id);
     });
@@ -279,7 +329,10 @@
       // La scène décrit les satellites par UN membre : le nombre réel est une
       // propriété du corps, que le renderer instanciera autant de fois.
       shaft.count = Math.max(2, Math.round(finite(stage.planetCount, 3)));
-      place(shaft, planet, context.gap, undefined, context.gapIsExplicit);
+      // Les satellites appartiennent au plan de LEUR étage, comme les trois
+      // autres corps : leur arbre orbital étant neuf, ils repartaient de zéro
+      // et venaient se poser sur l'étage précédent.
+      placeAtReference(shaft, planet, reference);
     });
 
     BODY_ROLES.forEach(function (role) {
@@ -288,8 +341,34 @@
       ports[member.functionalRole || 'intermediate'] = { memberId: member.id, shaftId: bodies[role].id };
     });
 
+    // CE QU'UN ÉTAGE OCCUPE LE LONG DE SON AXE.
+    //
+    // Le porte-satellites n'a pas de denture, donc pas de largeur : c'est
+    // pourtant lui qui porte l'étage suivant. L'empilement se faisait donc à
+    // partir d'une largeur nulle, et deux planétaires successifs se
+    // chevauchaient de la moitié d'une largeur de denture. Le porte-satellites
+    // occupe en réalité tout l'étage — il tient les satellites d'un bout à
+    // l'autre : c'est cette étendue que l'étage suivant doit franchir.
+    var span = 0;
+    graph.shafts.forEach(function (shaft) {
+      shaft.members.forEach(function (entry) {
+        if (Math.abs(entry.axialPosition - reference.position) > 1e-6) return;
+        if (members.some(function (m) { return m.id === entry.id; })) span = Math.max(span, entry.width);
+      });
+    });
+    var carrierEntry = (bodies.C ? bodies.C.members : []).filter(function (entry) {
+      return byRole.C && entry.id === byRole.C.id;
+    })[0];
+    if (carrierEntry && span > carrierEntry.width) carrierEntry.width = span;
+
     graph.mechanisms.push({ id: 'planetary-' + index, stageIndex: index, type: stage.type,
       relation: 'coaxial', azimuthDeg: 0,
+      // OÙ SE TROUVE CET ÉTAGE, dans le monde. Le renderer recalculait le
+      // centre d'un étage à partir des organes qu'il y voyait ; quand ceux-ci
+      // se superposaient, les libellés et les alertes s'empilaient avec eux.
+      // Le plan est une donnée du modèle, et sa provenance avec lui.
+      axialPosition: reference.position, axialPositionProvenance: reference.provenance,
+      referencePoint: round(add(axis.origin, scale(axis.direction, reference.position))),
       inputPort: ports.input || null, outputPort: ports.output || null, fixedPort: ports.fixed || null });
 
     // C'est la SORTIE qui continue, quel que soit l'organe qui la porte : une
