@@ -48,26 +48,82 @@
   }
 
   /**
+   * L'image d'un cercle, telle qu'on la VOIT.
+   *
+   * Un cercle primitif était toujours tracé en `<circle>`. Un cercle n'est un
+   * cercle que vu de face : de biais c'est une ellipse, et par la tranche un
+   * segment. Coter un cercle là où la pièce se présente sur le champ, c'est
+   * coter une figure absente du dessin. `apparent` porte les deux demi-axes et
+   * l'inclinaison que la projection donne à ce cercle (ProjectedScene).
+   */
+  function apparentCircle(x, y, diameter, apparent, className, minimum) {
+    var value = Number(diameter) || 0;
+    var r = Math.max(finite(minimum, 0), value / 2);
+    if (!apparent || Math.abs(apparent.major - apparent.minor) < 1e-9) {
+      return node('circle', { cx: x, cy: y, r: r * (apparent ? apparent.major : 1),
+        class: className, 'data-diameter-mm': value });
+    }
+    if (apparent.minor < 1e-9) {
+      // Le plan du cercle passe par la tranche : il n'en reste qu'un segment,
+      // le diamètre vu en vraie grandeur. Un cercle y serait un mensonge.
+      var a = apparent.rotationDeg * Math.PI / 180;
+      var dx = r * apparent.major * Math.cos(a), dy = r * apparent.major * Math.sin(a);
+      return node('line', { x1: (x - dx).toFixed(3), y1: (y - dy).toFixed(3),
+        x2: (x + dx).toFixed(3), y2: (y + dy).toFixed(3), class: className, 'data-diameter-mm': value });
+    }
+    return node('ellipse', { cx: x, cy: y,
+      rx: (r * apparent.major).toFixed(3), ry: (r * apparent.minor).toFixed(3),
+      transform: 'rotate(' + apparent.rotationDeg.toFixed(3) + ' ' + Number(x).toFixed(3) + ' ' + Number(y).toFixed(3) + ')',
+      class: className, 'data-diameter-mm': value });
+  }
+
+  /**
    * Cercle primitif coté : c'est le repère de dimensionnement principal.
    * `label` est facultatif — le titre du membre est normalement porté par son
    * groupe, pour que la vis et le porte-satellites, qui n'ont pas de cercle,
    * soient lisibles comme les roues.
    */
-  function circle(group, x, y, diameter, className, label) {
-    var value = Number(diameter) || 0;
-    var element = node('circle', { cx: x, cy: y, r: Math.max(4, value / 2), class: className, 'data-diameter-mm': value });
-    if (label) element.appendChild(node('title', {}, label + ' — Ø primitif ' + fmt(value) + ' mm'));
+  function circle(group, x, y, diameter, className, label, apparent) {
+    var element = apparentCircle(x, y, diameter, apparent, className, 4);
+    if (label) element.appendChild(node('title', {}, label + ' — Ø primitif ' + fmt(Number(diameter) || 0) + ' mm'));
     group.appendChild(element);
     return element;
   }
 
   /** Diamètre secondaire (tête, pied, base) : couche « pitch » activable. */
-  function outline(group, x, y, diameter, className, label) {
+  function outline(group, x, y, diameter, className, label, apparent) {
     if (!Number.isFinite(diameter) || diameter <= 0) return null;
-    var element = node('circle', { cx: x, cy: y, r: diameter / 2, class: className, 'data-diameter-mm': diameter });
+    var element = apparentCircle(x, y, diameter, apparent, className, 0);
     if (label) element.appendChild(node('title', {}, label + ' ' + fmt(diameter) + ' mm'));
     group.appendChild(element);
     return element;
+  }
+
+  /**
+   * Une roue vue par la tranche : son encombrement est un rectangle b × Ø, et
+   * son cercle primitif deux génératrices. C'est le dessin d'un cylindre vu de
+   * côté — pas un disque, qui supposerait qu'on le regarde de face.
+   */
+  function profileBody(group, member, className) {
+    var width = Math.max(1.5, finite(member.width, 4));
+    var tip = finite(member.outsideDiameter, finite(member.pitchDiameter, 20));
+    var angle = finite(member.axisAngleDeg, 0);
+    var squeeze = finite(member.axialScale, 1);
+    var host = node('g', { class: 'profile-body',
+      transform: 'translate(' + finite(member.cx, 0).toFixed(3) + ' ' + finite(member.cy, 0).toFixed(3) +
+        ') rotate(' + angle.toFixed(3) + ')' + (Math.abs(squeeze - 1) < 1e-6 ? '' : ' scale(' + squeeze.toFixed(4) + ' 1)') });
+    host.appendChild(node('rect', { class: className, x: (-width / 2).toFixed(3), y: (-tip / 2).toFixed(3),
+      width: width.toFixed(3), height: tip.toFixed(3), 'data-diameter-mm': tip }));
+    var pitch = finite(member.pitchDiameter, 0);
+    if (pitch > 0) {
+      [-1, 1].forEach(function (side) {
+        host.appendChild(node('line', { class: 'pitch-generatrix construction-circle',
+          x1: (-width / 2 - 1).toFixed(3), y1: (side * pitch / 2).toFixed(3),
+          x2: (width / 2 + 1).toFixed(3), y2: (side * pitch / 2).toFixed(3), 'data-diameter-mm': pitch }));
+      });
+    }
+    group.appendChild(host);
+    return host;
   }
 
   function axis(group, x1, y1, x2, y2) {
@@ -186,5 +242,6 @@
     return group.appendChild(node('path', { class: 'geometry-member carrier-member', d: d.trim() }));
   }
 
-  return { node: node, label: label, circle: circle, outline: outline, axis: axis, rack: rack, cone: cone, worm: worm, carrier: carrier, format: fmt };
+  return { node: node, label: label, circle: circle, outline: outline, apparentCircle: apparentCircle,
+    profileBody: profileBody, axis: axis, rack: rack, cone: cone, worm: worm, carrier: carrier, format: fmt };
 });

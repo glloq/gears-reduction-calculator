@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 const Layout = require('../js/visualization/TrainLayout.js');
 const GeometryLayout = require('../js/visualization/geometry/GeometryLayout.js');
 const ProjectedScene = require('../js/visualization/core/ProjectedScene.js');
-const Flexible = require('../js/visualization/core/FlexibleDriveGeometry.js');
 const Registry = require('../js/transmissions/TransmissionRegistry.js');
 
 const PLANETARY = { type: 'planetary', sunTeeth: 24, ringTeeth: 72, planetTeeth: 24, planetCount: 4,
@@ -43,7 +42,7 @@ test('an orbit seen edge-on is a segment, and seen face-on a circle', () => {
     const planets = entry.wheels.filter(w => w.role === 'planet');
     // L'orbite dessinée est l'image d'un cercle : ses deux demi-axes disent à
     // eux seuls si on la voit de face, de biais ou par la tranche.
-    shape[view] = Object.assign(Flexible.ellipseOf(entry.carrier.basis.first, entry.carrier.basis.second),
+    shape[view] = Object.assign(ProjectedScene.ellipseOf(entry.carrier.basis.first, entry.carrier.basis.second),
       { radii: planets.map(p => Math.hypot(p.cx - p.orbitCenterX, p.cy - p.orbitCenterY)),
         orbit: planets[0].orbit });
   }

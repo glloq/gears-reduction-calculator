@@ -23,6 +23,7 @@
     this.layout = null;
     this.scene = null;
     this._rotors = [];
+    this._phaseMarks = [];
     this._orbits = [];
     this._arms = [];
     this._phases = [];
@@ -63,6 +64,20 @@
       (member.leadAngleDeg != null ? '\nAngle d’hélice ' + fmt(member.leadAngleDeg, 1) + '°' : '') +
       (speed && Number.isFinite(speed.relativeSpeed) ? '\nVitesse relative ' + fmt(speed.relativeSpeed, 3) + '×' : '');
   };
+
+  /**
+   * Le repère d'un organe COUCHÉ SUR SON AXE : on s'y place à sa position, on
+   * tourne dans la direction de son arbre, puis on raccourcit ce qui suit
+   * l'axe. Une silhouette dessinée en millimètres vrais dans une projection
+   * annoncerait une longueur qu'on ne voit pas.
+   */
+  function axisSeat(member, extraTurn) {
+    var angle = finite(member.axisAngleDeg, 0) + finite(extraTurn, 0);
+    var squeeze = finite(member.axialScale, 1);
+    return GearGeometryPrimitives.node('g', { class: 'axis-seat',
+      transform: 'translate(' + finite(member.cx, 0).toFixed(3) + ' ' + finite(member.cy, 0).toFixed(3) +
+        ') rotate(' + angle.toFixed(3) + ')' + (Math.abs(squeeze - 1) < 1e-6 ? '' : ' scale(' + squeeze.toFixed(4) + ' 1)') });
+  }
 
   /** Le tracé des bras d'un porte-satellites, à l'angle où il se trouve. */
   function armsPath(entry, theta) {
@@ -110,7 +125,11 @@
       // §15 : la vis est vue de profil. Pas d'aiguille radiale — elle
       // prétendrait une rotation dans le plan du dessin, que la pièce ne fait
       // pas. Seuls les filets défilent, comme dans la vue Denture.
-      var threads = p.worm(host, member.cx, member.cy, member.pitchDiameter,
+      // La vis est couchée SUR SON AXE : elle était toujours dessinée à
+      // l'horizontale, quelle que soit la direction de son arbre.
+      var wormSeat = axisSeat(member, 0);
+      host.appendChild(wormSeat);
+      var threads = p.worm(wormSeat, 0, 0, member.pitchDiameter,
         finite(item.stage.parameters && item.stage.parameters.module, 1), null,
         { starts: member.teeth, leadAngleDeg: member.leadAngleDeg,
           memberId: member.memberId || ('s' + item.index + '-' + member.role) });
@@ -119,8 +138,20 @@
       return host;
     }
     if (member.kind === 'cone') {
-      p.cone(host, member.cx, member.cy, member.pitchDiameter, member.coneAngleDeg,
-        member.width, 'geometry-member cone-member ' + (member.role === 'input' ? 'input-member' : 'output-member'));
+      var coneClass = 'geometry-member cone-member ' + (member.role === 'input' ? 'input-member' : 'output-member');
+      if (member.presentation === 'face') {
+        // Regardé dans l'axe, un cône primitif se voit par sa base : un cercle.
+        // La silhouette de côté y montrait un profil que personne ne voit.
+        p.circle(host, member.cx, member.cy, member.pitchDiameter, coneClass, null, member.apparent);
+      } else {
+        // La silhouette part du sommet vers la grande base : sans l'incliner
+        // sur son axe, deux cônes à 90° seraient dessinés parallèles.
+        // Le cône s'amincit vers le SOMMET du couple : `apexSide` dit de quel
+        // côté de l'organe il se trouve, ce que le sens de l'axe ne dit pas.
+        var tilt = axisSeat(member, member.apexSide < 0 ? 180 : 0);
+        host.appendChild(tilt);
+        p.cone(tilt, 0, 0, member.pitchDiameter, member.coneAngleDeg, member.width, coneClass);
+      }
       this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
       return host;
     }
@@ -139,15 +170,23 @@
 
     var roleClass = member.role === 'input' ? 'input-member' : member.role === 'output' ? 'output-member' : member.role;
     var kindClass = member.kind === 'internal-ring' ? 'internal-ring' : member.kind;
+    var construction = this._layers.pitch;
     // Le titre est porté par le groupe (voir _memberTitle) : le doubler ici
     // ferait dire deux choses différentes au même membre selon l'endroit pointé.
-    p.circle(host, member.cx, member.cy, member.pitchDiameter, 'geometry-member ' + kindClass + ' ' + roleClass);
-
-    // Couche « pitch » : tête, pied et base — masquables sans toucher au reste.
-    var construction = this._layers.pitch;
-    p.outline(construction, member.cx, member.cy, member.outsideDiameter, 'construction-circle tip-circle', 'Ø tête');
-    p.outline(construction, member.cx, member.cy, member.rootDiameter, 'construction-circle root-circle', 'Ø pied');
-    p.outline(construction, member.cx, member.cy, member.baseDiameter, 'construction-circle base-circle', 'Ø de base');
+    if (member.presentation === 'profile') {
+      // Vue par la tranche : un rectangle b × Ø tête, et le cercle primitif
+      // réduit à ses deux génératrices. Le disque tracé ici affirmait que
+      // toute roue est vue de face, y compris la roue d'une vis sans fin ou
+      // le pignon d'un couple conique, qui ne le sont jamais tous les deux.
+      p.profileBody(host, member, 'geometry-member ' + kindClass + ' ' + roleClass);
+    } else {
+      p.circle(host, member.cx, member.cy, member.pitchDiameter,
+        'geometry-member ' + kindClass + ' ' + roleClass, null, member.apparent);
+      // Couche « pitch » : tête, pied et base — masquables sans toucher au reste.
+      p.outline(construction, member.cx, member.cy, member.outsideDiameter, 'construction-circle tip-circle', 'Ø tête', member.apparent);
+      p.outline(construction, member.cx, member.cy, member.rootDiameter, 'construction-circle root-circle', 'Ø pied', member.apparent);
+      p.outline(construction, member.cx, member.cy, member.baseDiameter, 'construction-circle base-circle', 'Ø de base', member.apparent);
+    }
 
     this._indexMark(host, item, member, finite(member.pitchDiameter, 12) / 2);
     return host;
@@ -175,6 +214,19 @@
   GeometryRenderer.prototype._indexMark = function (host, item, member, radius) {
     var p = GearGeometryPrimitives;
     var r = Math.max(4, finite(radius, 6));
+    // Une aiguille radiale qui tourne dans le plan du dessin affirme que la
+    // pièce est vue de face. Dès qu'elle ne l'est plus, c'est un REPÈRE DE
+    // PHASE qui porte le mouvement : il suit l'image du cercle décrit par un
+    // point de la surface primitive — ellipse de biais, segment par la tranche.
+    if (member.presentation && member.presentation !== 'face' && member.phaseBasis) {
+      var mark = p.node('g', { class: 'phase-mark', 'data-member': member.memberId || '' });
+      mark.appendChild(p.node('circle', { class: 'phase-dot', cx: 0, cy: 0,
+        r: Math.max(0.6, finite(member.module, 1) * 0.7).toFixed(2) }));
+      host.appendChild(mark);
+      this._phaseMarks.push({ el: mark, memberId: member.memberId, basis: member.phaseBasis,
+        radius: r, cx: member.cx, cy: member.cy });
+      return mark;
+    }
     var rotor = p.node('g', { class: 'index-rotor', 'data-member': member.memberId || '',
       transform: 'translate(' + member.cx.toFixed(2) + ' ' + member.cy.toFixed(2) + ')' });
     rotor.appendChild(p.node('line', { class: 'index-mark', x1: 0, y1: 0, x2: r.toFixed(2), y2: 0 }));
@@ -247,6 +299,7 @@
     this.scene = GearSceneBuilder.build(solution);
     this.layout = GearGeometryLayout.build(solution, { scene: this.scene, view: this.projection });
     this._rotors = [];
+    this._phaseMarks = [];
     this._orbits = [];
     this._arms = [];
     this._phases = [];
@@ -275,12 +328,17 @@
       var axes = self._stageGroup(layers.shaft, item, false);
       var labels = self._stageGroup(layers.label, item, false);
 
-      // Une marque d'axe par corps : dans une vue de face, un axe se voit en
-      // bout, et c'est une croix — pas un trait qui traverserait l'étage en
-      // supposant que tous ses organes sont alignés.
+      // L'axe d'un corps est le SEGMENT que son arbre projette, pas une croix
+      // posée sur chaque organe : une croix ne dit ni la direction de l'arbre
+      // ni ce qu'il porte. Vu en bout — et là seulement — l'axe redevient une
+      // croix, qui est sa convention de dessin.
       (item.axes || []).forEach(function (mark) {
-        p.axis(axes, mark.x - mark.reach, mark.y, mark.x + mark.reach, mark.y);
-        p.axis(axes, mark.x, mark.y - mark.reach, mark.x, mark.y + mark.reach);
+        if (mark.endOn) {
+          p.axis(axes, mark.x - mark.reach, mark.y, mark.x + mark.reach, mark.y);
+          p.axis(axes, mark.x, mark.y - mark.reach, mark.x, mark.y + mark.reach);
+          return;
+        }
+        p.axis(axes, mark.x1, mark.y1, mark.x2, mark.y2);
       });
       if (item.type === 'belt' || item.type === 'chain') self._flexible(geometryGroup, item);
       (item.members || []).forEach(function (member) { self._member(geometryGroup, item, member); });
@@ -332,6 +390,16 @@
       var posed = members[rotor.memberId] || {};
       rotor.el.setAttribute('transform', 'translate(' + rotor.cx.toFixed(2) + ' ' + rotor.cy.toFixed(2) +
         ') rotate(' + finite(posed.angle, 0).toFixed(2) + ')');
+    });
+    // Le repère de phase d'un organe vu autrement que de face : il parcourt
+    // l'image du cercle primitif, sans jamais faire basculer la pièce.
+    this._phaseMarks.forEach(function (entry) {
+      var theta = finite((members[entry.memberId] || {}).angle, 0) * Math.PI / 180;
+      var point = GearProjectedScene.phasePoint(entry.basis, entry.radius, theta);
+      entry.el.setAttribute('transform', 'translate(' + (entry.cx + point[0]).toFixed(2) + ' ' + (entry.cy + point[1]).toFixed(2) + ')');
+      // De l'autre côté de la pièce, le repère passe derrière : l'estomper le
+      // dit sans prétendre le masquer.
+      entry.el.setAttribute('opacity', Math.cos(theta) >= 0 ? '1' : '0.35');
     });
     // Les satellites suivent le plan d'orbite, pas un cercle d'écran.
     this._orbits.forEach(function (entry) {

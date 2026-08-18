@@ -585,6 +585,73 @@ test('a satellite orbits in its plane, and its arm follows it (§6 de l’audit)
   expect(errors).toEqual([]);
 });
 
+test('the dimensioned view draws what it sees, not always a circle (§7 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'worm', 'bevel']);
+  await showView(page, 'geometry');
+  const select = page.locator('#viewerProjection');
+
+  const shot = () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const shape = selector => {
+      const host = svg.querySelector(selector);
+      if (!host) return 'absent';
+      if (host.querySelector('.profile-body')) return 'profile';
+      if (host.querySelector('ellipse')) return 'ellipse';
+      if (host.querySelector('circle:not(.phase-dot)')) return 'circle';
+      return 'autre';
+    };
+    return {
+      // La roue d'une vis sans fin et la vis ne peuvent pas être vues de face
+      // toutes les deux : c'est ce que la vue affirmait en les dessinant
+      // toutes deux en cercle.
+      wheel: shape('.geometry-stage[data-stage="1"] .role-output'),
+      pinion: shape('.geometry-stage[data-stage="0"] .role-input'),
+      needles: svg.querySelectorAll('.index-rotor').length,
+      phases: svg.querySelectorAll('.phase-mark').length,
+      axes: Array.from(svg.querySelectorAll('.shaft-layer line')).map(line =>
+        Math.hypot(line.getAttribute('x2') - line.getAttribute('x1'),
+          line.getAttribute('y2') - line.getAttribute('y1')))
+    };
+  });
+
+  const seen = {};
+  for (const view of ['unfolded', 'front', 'side', 'iso']) {
+    await select.selectOption(view);
+    seen[view] = await shot();
+    // Aucun axe de longueur nulle : un arbre qui ne se voit pas en bout est un
+    // segment, et un arbre vu en bout est une croix — jamais un trait mort.
+    seen[view].axes.forEach(length => expect(length, view + ' : axe de longueur nulle').toBeGreaterThan(0.5));
+  }
+  // Vue dépliée : la vis est vue de côté, donc sa roue est vue par la tranche.
+  expect(seen.unfolded.wheel).toBe('profile');
+  expect(seen.unfolded.pinion).toBe('circle');
+  // De biais, plus un seul cercle : des ellipses, et le repère radial cède la
+  // place à un repère de phase.
+  expect(seen.iso.wheel).toBe('ellipse');
+  expect(seen.iso.pinion).toBe('ellipse');
+  expect(seen.iso.needles, 'une aiguille radiale subsiste de biais').toBe(0);
+  expect(seen.iso.phases).toBeGreaterThan(0);
+  // Et en bout d'arbre d'entrée, c'est le pignon qui se voit de face.
+  expect(seen.side.pinion).toBe('circle');
+
+  // L'animation : de biais, le corps ne bascule pas — c'est la phase qui bouge.
+  await select.selectOption('iso');
+  const motion = await page.evaluate(() => {
+    const renderer = window.__viewer.geometry;
+    const mark = document.querySelector('#svgContainer .phase-mark');
+    const body = document.querySelector('#svgContainer .geometry-member-group.role-input ellipse');
+    const read = () => ({ phase: mark.getAttribute('transform'), body: body.getAttribute('transform') });
+    renderer.setAnimationAngle(0);
+    const start = read();
+    renderer.setAnimationAngle(90);
+    return { start, quarter: read() };
+  });
+  expect(motion.quarter.phase).not.toBe(motion.start.phase);
+  expect(motion.quarter.body).toBe(motion.start.body);
+  expect(errors).toEqual([]);
+});
+
 test('the animation cadence follows the mode, the poses never do', async ({ page }) => {
   await mount(page, ['spur']);
   await showView(page, 'teeth');

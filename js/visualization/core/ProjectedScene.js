@@ -56,6 +56,24 @@
       spin: Math.abs(determinant) < 1e-9 ? 0 : (determinant > 0 ? 1 : -1) };
   }
 
+  /**
+   * L'image d'un cercle unité par l'application [u v] : une ellipse.
+   *
+   * Ses deux demi-axes et son inclinaison sont les valeurs singulières de la
+   * matrice — décomposition analytique, exacte en 2×2. C'est ce qui permet de
+   * dessiner un cercle primitif vu de biais comme une VRAIE ellipse plutôt que
+   * comme un cercle, et de le voir se replier sur un segment quand son plan
+   * passe par la tranche : un demi-axe nul, ce que SVG trace comme une droite.
+   */
+  function ellipseOf(u, v) {
+    var a = u[0], b = v[0], c = u[1], d = v[1];
+    var e = (a + d) / 2, g = (a - d) / 2, h = (c + b) / 2, k = (c - b) / 2;
+    var q = Math.hypot(e, k), r = Math.hypot(g, h);
+    return { major: q + r, minor: Math.abs(q - r),
+      rotationDeg: (Math.atan2(k, e) + Math.atan2(h, g)) / 2 * 180 / Math.PI,
+      det: a * d - b * c };
+  }
+
   /** Le point à l'angle θ et au rayon R autour d'un axe, tel qu'on le voit. */
   function phasePoint(basis, radius, theta) {
     var c = Math.cos(theta), s = Math.sin(theta);
@@ -96,7 +114,11 @@
         // Un organe vu de face n'a pas d'inclinaison à l'écran : son axe pointe
         // vers l'œil, et lui en donner une ferait tourner ses étiquettes.
         axisAngleDeg: presentation !== 'face' && length > 1e-9 ? deg(Math.atan2(along[1], along[0])) : undefined,
-        basis: basis
+        basis: basis,
+        // L'ellipse apparente d'un cercle porté par cet axe : c'est elle que
+        // toute vue doit tracer au lieu d'un cercle, dès qu'on ne regarde plus
+        // l'organe de face.
+        apparent: ellipseOf(basis.first, basis.second)
       };
       order.push(member.id);
     });
@@ -137,5 +159,5 @@
       shaft: function (id) { return shafts[id] || null; } };
   }
 
-  return { build: build, phaseBasis: phaseBasis, phasePoint: phasePoint };
+  return { build: build, phaseBasis: phaseBasis, phasePoint: phasePoint, ellipseOf: ellipseOf };
 });

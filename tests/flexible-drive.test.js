@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const Flexible = require('../js/visualization/core/FlexibleDriveGeometry.js');
 const Geometry = require('../js/visualization/core/GeometryUtils.js');
 const Projection = require('../js/visualization/core/ProjectionEngine.js');
+const ProjectedScene = require('../js/visualization/core/ProjectedScene.js');
 const Layout = require('../js/visualization/TrainLayout.js');
 const GeometryLayout = require('../js/visualization/geometry/GeometryLayout.js');
 const Registry = require('../js/transmissions/TransmissionRegistry.js');
@@ -113,17 +114,17 @@ test('seen along its own plane a belt is a line, and it says so', () => {
 
 test('the image of a pulley is an ellipse, and its axes are exact', () => {
   // Cercle inchangé.
-  const identity = Flexible.ellipseOf([1, 0], [0, 1]);
+  const identity = ProjectedScene.ellipseOf([1, 0], [0, 1]);
   assert.ok(Math.abs(identity.major - 1) < 1e-12 && Math.abs(identity.minor - 1) < 1e-12);
   // Écrasement pur : un demi-axe conservé, l'autre réduit d'autant.
-  const flat = Flexible.ellipseOf([1, 0], [0, 0.4]);
+  const flat = ProjectedScene.ellipseOf([1, 0], [0, 0.4]);
   assert.ok(Math.abs(flat.major - 1) < 1e-12 && Math.abs(flat.minor - 0.4) < 1e-12);
   assert.ok(Math.abs(flat.rotationDeg) < 1e-9);
   // Plan vu par la tranche : plus de petit axe du tout.
-  assert.ok(Flexible.ellipseOf([1, 0], [0, 0]).minor < 1e-12);
+  assert.ok(ProjectedScene.ellipseOf([1, 0], [0, 0]).minor < 1e-12);
   // Le signe du déterminant dit si l'image retourne le sens de parcours.
-  assert.ok(Flexible.ellipseOf([1, 0], [0, -1]).det < 0);
-  assert.ok(Flexible.ellipseOf([1, 0], [0, 1]).det > 0);
+  assert.ok(ProjectedScene.ellipseOf([1, 0], [0, -1]).det < 0);
+  assert.ok(ProjectedScene.ellipseOf([1, 0], [0, 1]).det > 0);
 });
 
 test('an impossible belt is refused instead of being drawn wrong', () => {
@@ -149,7 +150,7 @@ test('the belt of the train view hangs on the pulleys the view actually drew', (
     // ellipse apparente. Sans cela, le brin quitterait la jante dessinée.
     const basis = wheels[0].phaseBasis;
     assert.ok(basis, 'la roue n’a pas de base de phase en ' + id);
-    const wheelEllipse = Flexible.ellipseOf(basis.first, basis.second);
+    const wheelEllipse = ProjectedScene.ellipseOf(basis.first, basis.second);
     assert.ok(Math.abs(wheelEllipse.major - link.geometry.ellipse.major) < 1e-9, 'grand axe ' + id);
     assert.ok(Math.abs(wheelEllipse.minor - link.geometry.ellipse.minor) < 1e-9, 'petit axe ' + id);
   }

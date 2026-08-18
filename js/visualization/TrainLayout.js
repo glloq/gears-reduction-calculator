@@ -90,12 +90,9 @@
    * voit en disque, en rectangle, ou entre les deux.
    */
   function frameOf(solution, scene, options) {
-    var frame = SpatialLayout.frame(MechanicalGraph.build(solution, scene), options);
-    // La scène projetée décrit une fois ce que chaque vue reconstruisait :
-    // présentation, raccourci, côté, profondeur, et le repère d'écran dans
-    // lequel tourne ce qui tourne autour de chaque axe.
-    frame.projected = ProjectedScene.build(frame.spatial, frame);
-    return frame;
+    // Le repère porte déjà sa scène projetée : présentation, raccourci, côté,
+    // profondeur et repères de phase sont calculés une fois pour les trois vues.
+    return SpatialLayout.frame(MechanicalGraph.build(solution, scene), options);
   }
 
   /** Le vecteur unitaire de l'écran qui porte l'arbre de ce membre. */

@@ -28,9 +28,10 @@
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('./GeometryUtils.js') : root.GearGeometryUtils,
-    common ? require('./ProjectionEngine.js') : root.GearProjectionEngine);
+    common ? require('./ProjectionEngine.js') : root.GearProjectionEngine,
+    common ? require('./ProjectedScene.js') : root.GearProjectedScene);
   if (common) module.exports = api; else root.GearFlexibleDriveGeometry = api;
-})(typeof self !== 'undefined' ? self : this, function (GeometryUtils, Projection) {
+})(typeof self !== 'undefined' ? self : this, function (GeometryUtils, Projection, ProjectedScene) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -44,24 +45,9 @@
   }
   function f2(v) { return v.toFixed(3); }
 
-  /**
-   * L'image d'un cercle par une application affine est une ellipse. Ses deux
-   * demi-axes et son inclinaison sont les valeurs singulières de la matrice
-   * [S1 S2] — décomposition analytique, exacte en 2×2.
-   *
-   * Le signe du déterminant dit si l'image conserve le sens de parcours : c'est
-   * lui qui décide du drapeau `sweep` des arcs SVG. Un demi-axe nul signifie
-   * que le plan de courroie est vu par la tranche ; SVG trace alors un segment,
-   * ce qui est précisément le dessin juste.
-   */
-  function ellipseOf(s1, s2) {
-    var a = s1[0], b = s2[0], c = s1[1], d = s2[1];
-    var e = (a + d) / 2, g = (a - d) / 2, h = (c + b) / 2, k = (c - b) / 2;
-    var q = Math.hypot(e, k), r = Math.hypot(g, h);
-    return { major: q + r, minor: Math.abs(q - r),
-      rotationDeg: (Math.atan2(k, e) + Math.atan2(h, g)) / 2 * 180 / Math.PI,
-      det: a * d - b * c };
-  }
+  // L'ellipse apparente d'un cercle est la même question ici et pour une roue
+  // vue de biais : elle se calcule une seule fois, dans la scène projetée.
+  var ellipseOf = ProjectedScene.ellipseOf;
 
   /**
    * build({ axis, centre1, centre2, r1, r2, crossed, view, drawn1, drawn2 })
@@ -170,5 +156,5 @@
     return d ? d + ' Z' : '';
   }
 
-  return { build: build, ellipseOf: ellipseOf };
+  return { build: build };
 });
