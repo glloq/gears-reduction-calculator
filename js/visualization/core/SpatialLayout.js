@@ -16,9 +16,10 @@
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('./MechanicalGraph.js') : root.GearMechanicalGraph,
-    common ? require('./ProjectionEngine.js') : root.GearProjectionEngine);
+    common ? require('./ProjectionEngine.js') : root.GearProjectionEngine,
+    common ? require('./ProjectedScene.js') : root.GearProjectedScene);
   if (common) module.exports = api; else root.GearSpatialLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (MechanicalGraph, Projection) {
+})(typeof self !== 'undefined' ? self : this, function (MechanicalGraph, Projection, ProjectedScene) {
   'use strict';
 
   function finite(v, fallback) { return Number.isFinite(v) ? v : fallback; }
@@ -77,6 +78,41 @@
 
     return { members: members, shafts: shafts, graph: graph,
       byId: members.reduce(function (map, m) { map[m.id] = m; return map; }, {}) };
+  }
+
+  /**
+   * Le sommet commun de deux cônes primitifs, et DE QUEL CÔTÉ de chaque organe
+   * il se trouve.
+   *
+   * Un cône se dessine en s'amincissant vers son sommet. Le supposer toujours
+   * dans le sens de l'axe revient à parier sur l'orientation que le graphe a
+   * donnée à cet axe : sur un couple conique, l'un des deux cônes se dessinait
+   * donc à l'envers, pointe tournée vers l'extérieur du couple. Les deux
+   * sommets doivent coïncider — c'est ce qui décide du sens, et rien d'autre.
+   *
+   * `gap` dit à quelle distance les deux sommets tombent l'un de l'autre : au
+   * delà d'un cheveu, le couple n'est pas un vrai couple conique et la vue ne
+   * doit rien affirmer de son sommet.
+   */
+  function coneApex(a, b) {
+    if (!a || !b || !(a.back > 0) || !(b.back > 0)) return null;
+    var best = null;
+    [1, -1].forEach(function (sideA) {
+      [1, -1].forEach(function (sideB) {
+        var pa = add(a.position, scale(a.axis, sideA * a.back));
+        var pb = add(b.position, scale(b.axis, sideB * b.back));
+        var gap = Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]);
+        if (!best || gap < best.gap) best = { gap: gap, point: pa, sideA: sideA, sideB: sideB };
+      });
+    });
+    return best;
+  }
+
+  /** La distance sommet-organe d'un cône primitif, sur son axe. */
+  function coneBack(pitchDiameter, coneAngleDeg) {
+    if (!Number.isFinite(coneAngleDeg) || !(pitchDiameter > 0)) return null;
+    var slope = Math.tan(coneAngleDeg * Math.PI / 180);
+    return Math.abs(slope) < 1e-6 ? null : (pitchDiameter / 2) / slope;
   }
 
   /**
@@ -270,14 +306,89 @@
    * `options.view` impose une projection ; 'auto' demande celle qui perd le
    * moins du mécanisme ; sans rien, celle qui montre le plus de denture.
    */
+  /**
+   * Les SIÈGES d'une vraie projection : la position de chaque organe est
+   * l'image de sa position, et rien d'autre.
+   *
+   * C'est la différence avec le dépliage, et elle est entière. Une distance qui
+   * possède une composante en profondeur DOIT apparaître raccourcie ; la
+   * rétablir à sa valeur vraie produit un dessin qu'aucun point de vue ne peut
+   * voir. Ici, un entraxe oblique se dessine plus court qu'il n'est — et c'est
+   * la cote, jamais le trait, qui en donne la valeur.
+   */
+  function projectedSeats(layout, viewId) {
+    var view = Projection.view(viewId);
+    var byId = {}, shafts = {};
+    (layout.members || []).forEach(function (member) {
+      var xy = Projection.project(member.position, view);
+      byId[member.id] = { x: xy[0], y: xy[1], shaftId: member.shaftId,
+        depth: Projection.depth(member.position, view) };
+    });
+    (layout.shafts || []).forEach(function (shaft) {
+      var axis = layout.graph && layout.graph.byAxis[shaft.axisId];
+      var origin = axis ? Projection.project(axis.origin, view) : [0, 0];
+      var raw = axis ? Projection.project(axis.direction, view) : [0, 0];
+      var length = Math.hypot(raw[0], raw[1]);
+      shafts[shaft.id] = {
+        origin: origin,
+        // `along` reste UNITAIRE : c'est une direction d'écran, elle sert à
+        // orienter un corps vu par la tranche. Le raccourcissement, lui, est
+        // déjà dans les positions — l'appliquer deux fois les décalerait.
+        along: length < 1e-9 ? [0, 0] : [raw[0] / length, raw[1] / length],
+        foreshortened: length
+      };
+    });
+    return { view: view, byId: byId, shafts: shafts, mode: 'projected' };
+  }
+
+  /**
+   * Le repère de dessin d'un graphe — et le CHOIX qui vient avec.
+   *
+   * Deux systèmes coexistaient sous un même nom. `front`, `top`, `side` et
+   * `iso` nommaient des projections, mais toutes passaient ensuite par le
+   * dépliage : on en gardait les directions et on rétablissait les longueurs.
+   * « Dessus » n'était donc pas une vue de dessus, et « Iso » pas une
+   * isométrie — c'étaient des vues dépliées orientées par ces regards. Le
+   * mélange se voyait à un détail qui aurait dû alerter : l'entraxe dessiné
+   * restait égal à l'entraxe vrai jusque dans l'axonométrie, ce qui ne peut
+   * pas arriver dans une projection.
+   *
+   * Les deux systèmes sont maintenant nommés :
+   *
+   *   'unfolded'                le dessin d'ensemble de réducteur — angles de
+   *                             la projection, longueurs vraies. Fait pour
+   *                             COMPRENDRE une transmission d'un coup d'œil ;
+   *   'front' | 'top' | 'side' | 'iso'
+   *                             une projection orthographique, sans le moindre
+   *                             rétablissement. Fait pour MESURER.
+   */
   function frame(graph, options) {
     options = options || {};
     var spatial = build(graph);
-    var view = options.view && options.view !== 'auto' ? Projection.view(options.view)
-      : options.view === 'auto' ? autoView(spatial) : Projection.engagement((graph && graph.axes) || []);
-    return { graph: graph, spatial: spatial, view: view, seats: unfold(spatial, view.id) };
+    var asked = options.view || 'unfolded';
+    var result;
+    if (asked === 'unfolded' || asked === 'auto' || asked === '') {
+      // Le dépliage a tout de même besoin d'un regard : c'est lui qui donne
+      // les DIRECTIONS. `auto` retient la vue la moins perdante, à défaut
+      // celle qui montre le plus de denture.
+      var basis = asked === 'auto' ? autoView(spatial) : Projection.engagement((graph && graph.axes) || []);
+      var seats = unfold(spatial, basis.id);
+      seats.mode = 'unfolded';
+      result = { graph: graph, spatial: spatial, view: basis, mode: 'unfolded', seats: seats };
+    } else {
+      var view = Projection.view(asked);
+      result = { graph: graph, spatial: spatial, view: view, mode: 'projected',
+        seats: projectedSeats(spatial, view.id) };
+    }
+    // Comment chaque pièce SE PRÉSENTE — de face, de profil, de biais, de quel
+    // côté, à quelle profondeur, et dans quel repère elle tourne — appartient
+    // au point de vue, pas à la vue qui dessine. Une seule vue le calculait,
+    // les autres le redemandaient au moteur de projection, chacune à sa façon.
+    result.projected = ProjectedScene.build(spatial, result);
+    return result;
   }
 
   return { build: build, project: project, unfold: unfold, autoView: autoView, frame: frame,
+    projectedSeats: projectedSeats, coneApex: coneApex, coneBack: coneBack,
     bounds: bounds, SHAFT_OVERHANG: SHAFT_OVERHANG };
 });

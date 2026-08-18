@@ -9,9 +9,12 @@
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('../core/SceneBuilder.js') : root.GearSceneBuilder,
     common ? require('../core/MechanicalGraph.js') : root.GearMechanicalGraph,
-    common ? require('../core/SpatialLayout.js') : root.GearSpatialLayout);
+    common ? require('../core/SpatialLayout.js') : root.GearSpatialLayout,
+    common ? require('../core/FlexibleDriveGeometry.js') : root.GearFlexibleDriveGeometry,
+    common ? require('../core/ProjectedScene.js') : root.GearProjectedScene,
+    common ? require('../overlays/ForceOverlay.js') : root.GearForceOverlay);
   if (common) module.exports = api; else root.GearGeometryLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout, FlexibleDrive, ProjectedScene, ForceOverlay) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -39,6 +42,27 @@
    * `schematic` propage la provenance : une cote reconstruite ne doit pas être
    * cotée comme si le moteur l'avait calculée.
    */
+  /**
+   * Comment cet organe SE PRÉSENTE dans la vue courante. La vue cotée dessinait
+   * toute roue en cercle : de biais un cercle primitif est une ellipse, et par
+   * la tranche un segment. Coter un cercle là où la pièce se voit sur le champ,
+   * c'est coter une figure que le dessin ne montre pas.
+   */
+  function orientation(frame, id) {
+    var seen = frame.projected && frame.projected.member(id);
+    if (!seen) return {};
+    // Ce qui suit l'axe se RACCOURCIT ; ce qui le traverse garde sa longueur.
+    // Le grand axe de l'ellipse apparente vaut toujours 1 — c'est la direction
+    // où un diamètre se mesure —, et son petit axe est le cosinus de l'axe sur
+    // le regard : la longueur apparente de l'axe en est le sinus. En vue
+    // dépliée, rien ne se raccourcit : c'est ce qu'elle promet.
+    var minor = seen.apparent ? seen.apparent.minor : 1;
+    return { presentation: seen.presentation, foreshortening: seen.foreshortening,
+      facing: seen.facing, phaseBasis: seen.basis, apparent: seen.apparent,
+      axisAngleDeg: seen.axisAngleDeg, depth: seen.depth,
+      axialScale: frame.mode === 'unfolded' ? 1 : Math.sqrt(Math.max(0, 1 - minor * minor)) };
+  }
+
   function place(entry, role, cx, cy, label, extra) {
     var g = entry ? entry.geometry : {};
     return Object.assign({
@@ -87,7 +111,7 @@
     function put(entry, role, label, extra) {
       if (!entry) return null;
       var at = seat(entry.id);
-      var placed = place(entry, role, at.x, at.y, label, extra);
+      var placed = place(entry, role, at.x, at.y, label, Object.assign(orientation(frame, entry.id), extra || {}));
       list.push(placed);
       return placed;
     }
@@ -97,17 +121,24 @@
       var orbit = finite(byRole.P && byRole.P.orbitRadius, 0);
       put(byRole.R, 'ring', memberLabel(byRole.R, 'R'));
       put(byRole.S, 'sun', memberLabel(byRole.S, 'S'));
-      // Les satellites tournent AUTOUR de l'axe : c'est la seule répartition
-      // que la cotation demande de voir, et son rayon vient de la scène.
-      var centre = seat((byRole.C || byRole.S || {}).id);
+      // Les satellites tournent AUTOUR de l'axe, dans le plan perpendiculaire
+      // à celui-ci. Ils étaient répartis en cos/sin d'écran : un cercle, même
+      // quand la vue montre leur plan de biais ou par la tranche.
+      var hub = (byRole.C || byRole.S || {}).id;
+      var centre = seat(hub);
+      var placedHub = frame.spatial.byId[hub];
+      var basis = ProjectedScene.phaseBasis(placedHub ? placedHub.axis : [1, 0, 0], frame.view);
+      var orbiting = { orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y, orbitBasis: basis };
       for (var i = 0; i < count; i++) {
         var a = 2 * Math.PI * i / count;
-        list.push(place(byRole.P, 'planet', centre.x + Math.cos(a) * orbit, centre.y + Math.sin(a) * orbit,
-          memberLabel(byRole.P, 'P')));
+        var offset = ProjectedScene.phasePoint(basis, orbit, a);
+        list.push(place(byRole.P, 'planet', centre.x + offset[0], centre.y + offset[1],
+          memberLabel(byRole.P, 'P'), Object.assign(orientation(frame, byRole.P.id), { phase: a }, orbiting)));
       }
       if (byRole.C) {
         list.push(place(byRole.C, 'carrier', centre.x, centre.y, memberLabel(byRole.C, 'C'),
-          { pitchDiameter: orbit ? 2 * orbit : null, count: count }));
+          Object.assign(orientation(frame, byRole.C.id),
+            { pitchDiameter: orbit ? 2 * orbit : null, count: count }, orbiting)));
       }
       return list;
     }
@@ -122,12 +153,17 @@
       var reach = finite(byRole.input && byRole.input.geometry.pitchDiameter, 20) / 2;
       if (byRole.rack && pinion) {
         list.push(place(byRole.rack, 'output', pinion.cx + normal[0] * reach, pinion.cy + normal[1] * reach,
-          'Crémaillère', { linearId: byRole.rack.id, slideAlong: direction }));
+          'Crémaillère', Object.assign(orientation(frame, byRole.rack.id),
+            { linearId: byRole.rack.id, slideAlong: direction })));
       }
       return list;
     }
 
     var labels = LABELS[type] || LABELS.pair;
+    // Couple conique : de quel côté de chaque organe se trouve le sommet
+    // commun. Sans cette réponse, l'un des deux cônes est dessiné pointe en
+    // dehors du couple, et le dessin montre deux cônes qui se tournent le dos.
+    var apex = coneSides(frame, byRole.input, byRole.output);
     // La couronne d'un train intérieur enveloppe son pignon : on la dessine
     // d'abord, pour que le pignon reste lisible par-dessus.
     if (type === 'internal') {
@@ -136,10 +172,77 @@
         { shaftAngleDeg: finite((scene.connections[index] || {}).shaftAngleDeg, null) });
     } else {
       put(byRole.input, 'input', labels.input,
-        { shaftAngleDeg: finite((scene.connections[index] || {}).shaftAngleDeg, null) });
-      put(byRole.output, 'output', labels.output);
+        { shaftAngleDeg: finite((scene.connections[index] || {}).shaftAngleDeg, null),
+          apexSide: apex ? apex.sideA : null });
+      put(byRole.output, 'output', labels.output, { apexSide: apex ? apex.sideB : null });
     }
     return list;
+  }
+
+  /**
+   * Le repère mécanique des efforts d'un étage, et leur point d'application —
+   * le point primitif, sur la ligne des centres dessinée. Sans ligne des
+   * centres, pas de repère, et donc aucune flèche : une direction inventée
+   * vaut moins que rien sur un dessin coté.
+   */
+  function forceFrameOf(frame, scene, index, list) {
+    var vector = MechanicalGraph.vector;
+    var byRole = {};
+    scene.stageMembers(index).forEach(function (entry) { byRole[entry.role] = entry; });
+    function placed(entry) { return entry && frame.spatial.byId[entry.id]; }
+    var driver = placed(byRole.input) || placed(byRole.S);
+    if (!driver) return null;
+    var driven = placed(byRole.output) || placed(byRole.P);
+    var mate = driven ? driven.position : null;
+    var planet = list.filter(function (m) { return m.role === 'planet'; })[0];
+    // Un satellite n'a pas encore de position propre dans le modèle spatial :
+    // sa ligne des centres est le rayon d'orbite qui sert à le dessiner.
+    if (mate && planet && planet.orbit > 0) {
+      var offset = [mate[0] - driver.position[0], mate[1] - driver.position[1], mate[2] - driver.position[2]];
+      var alongAxis = vector.dot(offset, driver.axis);
+      var across = vector.norm([offset[0] - driver.axis[0] * alongAxis,
+        offset[1] - driver.axis[1] * alongAxis, offset[2] - driver.axis[2] * alongAxis]);
+      if (across < 1e-9) {
+        mate = vector.add(driver.position,
+          vector.scale(vector.perpendicularDirection(driver.axis, 0), planet.orbit));
+      }
+    }
+    if (!mate) {
+      var slide = (frame.graph.slides || []).filter(function (s) { return s.stageIndex === index; })[0];
+      if (!slide) return null;
+      mate = vector.add(driver.position, vector.cross(driver.axis, slide.direction));
+    }
+    function drawn(id) { return list.filter(function (m) { return m.memberId === id; })[0] || null; }
+    var from = drawn(byRole.input ? byRole.input.id : (byRole.S || {}).id) ||
+      list.filter(function (m) { return m.role === 'sun'; })[0];
+    var to = planet || drawn(byRole.output ? byRole.output.id : null) ||
+      list.filter(function (m) { return m.kind === 'rack'; })[0];
+    if (!from) return null;
+    var origin = [from.cx, from.cy];
+    if (to) {
+      var dx = to.cx - from.cx, dy = to.cy - from.cy;
+      var span = Math.hypot(dx, dy);
+      if (span > 1e-9) {
+        var reach = Math.min(finite(from.pitchDiameter, 0) / 2, span);
+        origin = [from.cx + dx / span * reach, from.cy + dy / span * reach];
+      }
+    }
+    return ForceOverlay.frame({ axis: driver.axis, centre: driver.position, mate: mate,
+      view: frame.view, origin: origin });
+  }
+
+  /** Les deux côtés du sommet commun d'un couple conique, ou null. */
+  function coneSides(frame, input, output) {
+    if (!input || !output) return null;
+    function cone(entry) {
+      var placed = frame.spatial.byId[entry.id];
+      var back = SpatialLayout.coneBack(finite(entry.geometry.pitchDiameter, 0), entry.geometry.coneAngleDeg);
+      return placed && back ? { position: placed.position, axis: placed.axis, back: back } : null;
+    }
+    var apex = SpatialLayout.coneApex(cone(input), cone(output));
+    // Deux sommets qui ne se rejoignent pas ne sont pas un sommet : mieux vaut
+    // ne rien orienter que d'orienter d'après une coïncidence approximative.
+    return apex && apex.gap < 1e-6 * Math.max(1, Math.hypot(apex.point[0], apex.point[1], apex.point[2])) ? apex : null;
   }
 
   /** La direction d'une glissière, telle que la vue courante la projette. */
@@ -227,7 +330,12 @@
       // modèle, et poser un étage à côté d'un autre n'en change aucune.
       var shiftX = cursor - cluster.box.left;
       var shiftY = margin + headroom - cluster.box.top;
-      cluster.list.forEach(function (member) { member.cx += shiftX; member.cy += shiftY; });
+      cluster.list.forEach(function (member) {
+        member.cx += shiftX; member.cy += shiftY;
+        // Le centre d'orbite voyage avec l'amas : sans cela, les satellites
+        // tourneraient autour du point où l'étage se trouvait avant d'être posé.
+        if (Number.isFinite(member.orbitCenterX)) { member.orbitCenterX += shiftX; member.orbitCenterY += shiftY; }
+      });
 
       var anchor = cluster.list.filter(function (m) { return m.functionalRole === 'input'; })[0] || cluster.list[0];
       var item = { index: index, stage: stage, type: stage.type,
@@ -238,16 +346,17 @@
       item.schematic = scene.stageMembers(index).some(function (entry) { return entry.schematic; });
       item.members = cluster.list;
       item.dimensions = stageDimensions(stage, center);
-      // Un seul trait d'axe horizontal par étage supposait que tous ses organes
-      // soient alignés. Ils ne le sont pas dès qu'il y a un entraxe : chaque
-      // corps porte donc sa propre marque d'axe, à sa place.
-      var marks = [];
-      cluster.list.forEach(function (member) {
-        var key = member.cx.toFixed(2) + ',' + member.cy.toFixed(2);
-        if (marks.some(function (mark) { return mark.key === key; })) return;
-        marks.push({ key: key, x: member.cx, y: member.cy, reach: reachOf(member) * 1.18 });
-      });
-      item.axes = marks;
+      item.axes = axesOf(frame, cluster.list);
+      // La courroie de cette vue était reconstruite à l'horizontale, à partir
+      // de `x` et de l'entraxe : la deuxième poulie s'y retrouvait toujours à
+      // droite de la première, quelle que soit la position que le modèle lui
+      // donnait. C'est la MÊME géométrie que la vue Transmission qui la décrit
+      // maintenant — un seul plan de courroie, un seul enroulement.
+      item.flexible = flexibleOf(frame, stage, cluster.list);
+      // Les efforts vivent dans le repère de l'engrènement, pas dans celui de
+      // l'écran : la vue cotée dessinait la même rosace Ft/Fr/Fa que la vue
+      // Transmission, et toutes deux se trompaient de la même façon.
+      item.forceFrame = forceFrameOf(frame, scene, index, cluster.list);
       cursor += width + gap;
       bottom = Math.max(bottom, margin + headroom + height + headroom * 0.6);
       return item;
@@ -259,5 +368,67 @@
       envelope: { length: present(overall.length), maxDiameter: present(overall.maxDiameter), width: present(overall.width) } };
   }
 
-  return { build: build, members: members, place: place, stageDimensions: stageDimensions };
+  /**
+   * Les axes d'un étage : le SEGMENT que chaque arbre projette, et non une
+   * croix posée sur chaque organe.
+   *
+   * Une croix ne dit ni la direction de l'arbre, ni quels organes il porte —
+   * or c'est précisément ce qu'une vue cotée doit montrer d'un train composé.
+   * Les organes d'un même arbre se retrouvent ici sur un seul trait ; ceux qui
+   * partagent l'arbre mais pas la ligne — les satellites, tous portés par le
+   * même corps à des places différentes — gardent chacun le leur.
+   */
+  function axesOf(frame, list) {
+    var groups = [];
+    list.forEach(function (member) {
+      var seen = frame.projected && frame.projected.member(member.memberId);
+      if (!seen || !seen.shaftId) return;
+      var along = seen.along || [0, 0];
+      var endOn = Math.hypot(along[0], along[1]) < 1e-9;
+      // Deux organes ne partagent une ligne d'axe que s'ils sont sur le même
+      // arbre ET à la même distance de cette ligne.
+      var offset = endOn ? member.cx.toFixed(2) + ',' + member.cy.toFixed(2)
+        : (member.cx * -along[1] + member.cy * along[0]).toFixed(2);
+      var key = seen.shaftId + '#' + offset;
+      var found = null;
+      groups.forEach(function (group) { if (group.key === key) found = group; });
+      if (!found) { found = { key: key, along: along, endOn: endOn, members: [] }; groups.push(found); }
+      found.members.push(member);
+    });
+    return groups.map(function (group) {
+      var reach = group.members.reduce(function (max, member) { return Math.max(max, reachOf(member)); }, 4);
+      var base = group.members[0];
+      if (group.endOn) return { endOn: true, x: base.cx, y: base.cy, reach: reach * 1.18 };
+      var along = group.along;
+      var abscissa = group.members.map(function (m) { return m.cx * along[0] + m.cy * along[1]; });
+      var origin = base.cx * along[0] + base.cy * along[1];
+      var from = Math.min.apply(null, abscissa) - origin - reach * 0.55;
+      var to = Math.max.apply(null, abscissa) - origin + reach * 0.55;
+      return { endOn: false, reach: reach,
+        x1: base.cx + along[0] * from, y1: base.cy + along[1] * from,
+        x2: base.cx + along[0] * to, y2: base.cy + along[1] * to };
+    });
+  }
+
+  /**
+   * La courroie d'un étage, dans son plan de poulies puis à l'écran. Les
+   * organes ont déjà été translatés d'un bloc : leurs positions dessinées sont
+   * donc celles qu'il faut relier, tandis que le plan reste celui du monde.
+   */
+  function flexibleOf(frame, stage, list) {
+    if (stage.type !== 'belt' && stage.type !== 'chain') return null;
+    function at(role) { return list.filter(function (m) { return m.role === role; })[0] || null; }
+    var a = at('input'), b = at('output');
+    var placedA = a && frame.spatial.byId[a.memberId];
+    var placedB = b && frame.spatial.byId[b.memberId];
+    if (!placedA || !placedB) return null;
+    return FlexibleDrive.build({
+      axis: placedA.axis, centre1: placedA.position, centre2: placedB.position,
+      r1: finite(a.pitchDiameter, 0) / 2, r2: finite(b.pitchDiameter, 0) / 2,
+      crossed: !!(stage.parameters && stage.parameters.crossed),
+      view: frame.view, drawn1: [a.cx, a.cy], drawn2: [b.cx, b.cy] });
+  }
+
+  return { build: build, members: members, place: place, stageDimensions: stageDimensions,
+    flexibleOf: flexibleOf, axesOf: axesOf };
 });

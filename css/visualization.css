@@ -239,6 +239,15 @@
 .force-vector text { fill: var(--accent); font: 700 8px system-ui, sans-serif; paint-order: stroke; stroke: var(--surface-1); stroke-width: 2px; }
 .force-fr line { stroke: var(--success); }
 .force-fa line { stroke: var(--warning); }
+/* Un effort vu dans sa propre direction n'a plus de longueur à montrer : le
+   dessin technique le note ⊙ (vers l'observateur) ou ⊗ (vers le fond). */
+.force-end-on circle { fill: none; stroke: var(--accent); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.force-end-on .force-tip { fill: var(--accent); stroke: none; }
+.force-end-on line { stroke: var(--accent); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.force-fr.force-end-on circle, .force-fr.force-end-on line { stroke: var(--success); }
+.force-fr.force-end-on .force-tip { fill: var(--success); }
+.force-fa.force-end-on circle, .force-fa.force-end-on line { stroke: var(--warning); }
+.force-fa.force-end-on .force-tip { fill: var(--warning); }
 /* Les efforts n'encombrent le dessin que sur l'étage inspecté. */
 .train-stage:not(.selected) .force-vector { display: none; }
 
@@ -470,3 +479,8 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .svg-container.is-technical .train-stage.selected .worm-body,
 .svg-container.is-technical .train-stage.selected .cone-body { stroke-width: 1; }
 .svg-container.is-technical .train-stage.selected .d-selection-mark { display: inline; }
+
+/* Repère de phase : ce qui porte le mouvement d'un organe qu'on ne voit pas de
+   face. Son corps ne tourne pas — il ne le peut pas —, le repère si. */
+.phase-mark .phase-dot { fill: var(--accent); }
+.svg-container.is-technical .phase-mark .phase-dot { fill: var(--ink); }

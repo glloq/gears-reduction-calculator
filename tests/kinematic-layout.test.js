@@ -68,18 +68,25 @@ test('projected shafts are unique and retain stable S identifiers', () => {
   assert.equal(result.projectedShafts[0].role, 'INPUT');
 });
 
-test('auto projection selects the least colliding supported projection', () => {
+test('the schema keeps one presentation, whatever camera the viewer is on', () => {
+  // Lui appliquer les caméras du modèle spatial revenait à traiter sa
+  // disposition symbolique comme si c'était le vrai réducteur. Elle ne l'est
+  // pas : écartements constants, rien à l'échelle — et la vue l'annonce
+  // elle-même. Changer de point de vue ne doit donc pas la réorganiser.
   const engine = new Layout();
   const stages = [{ type: 'spur' }, { type: 'bevel' }, { type: 'spur' }, { type: 'worm' }];
-  const automatic = engine.layout(stages, 'auto');
-  assert.equal(automatic.requestedProjection, 'auto');
-  const offered = ['front', 'top', 'side', 'iso'];
-  assert.ok(offered.includes(automatic.projection));
-  const scores = offered.map(name => {
-    const points = engine.layout(stages, name).projectedShafts;
-    return { name, score: Layout.collisionScore(points) };
+  const drawing = model => model.projectedShafts
+    .map(shaft => shaft.id + ':' + shaft.x.toFixed(3) + ',' + shaft.y.toFixed(3)).join('|');
+
+  const reference = drawing(engine.layout(stages, 'schematic'));
+  ['auto', 'unfolded', '', undefined].forEach(asked => {
+    assert.equal(drawing(engine.layout(stages, asked)), reference, String(asked));
   });
-  assert.equal(automatic.projection, scores.sort((a, b) => a.score - b.score)[0].name);
+
+  // Les anciens noms restent compris : un réglage mémorisé ne cesse pas de
+  // fonctionner du jour au lendemain, même si plus rien ne les émet.
+  assert.equal(engine.layout(stages, 'main').projection, 'iso');
+  assert.equal(engine.layout(stages, 'orthogonal').projection, 'top');
 });
 
 test('every shaft carries the stage that drives it, coaxial ones included', () => {

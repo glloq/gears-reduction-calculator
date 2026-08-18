@@ -35,12 +35,25 @@
     return group;
   }
 
-  /** Cote de diamètre : trait traversant le cercle et valeur au bord. */
+  /**
+   * Cote de diamètre : trait traversant le cercle et valeur au bord.
+   *
+   * Le trait était toujours horizontal. Sur un organe vu de biais, le cercle
+   * primitif se projette en ellipse : l'horizontale n'y mesure plus le
+   * diamètre, et la cote se lisait sur une corde plus courte que sa valeur.
+   * Le trait suit donc le GRAND AXE de l'ellipse apparente — la seule
+   * direction où un diamètre se projette en vraie grandeur.
+   */
   function diameter(group, primitives, member, value, prefix, className, offset, scale) {
     if (!has(value)) return null;
     var r = value / 2;
+    var apparent = member.apparent;
+    var round = !apparent || Math.abs(apparent.major - apparent.minor) < 1e-9;
+    var angle = round ? 0 : apparent.rotationDeg * Math.PI / 180;
+    var dx = r * Math.cos(angle), dy = r * Math.sin(angle);
     var g = primitives.node('g', { class: 'diameter-dimension ' + (className || '') });
-    g.appendChild(primitives.node('line', { x1: (member.cx - r).toFixed(2), y1: member.cy, x2: (member.cx + r).toFixed(2), y2: member.cy,
+    g.appendChild(primitives.node('line', { x1: (member.cx - dx).toFixed(2), y1: (member.cy - dy).toFixed(2),
+      x2: (member.cx + dx).toFixed(2), y2: (member.cy + dy).toFixed(2),
       class: 'dimension-line', 'marker-start': 'url(#dimension-arrow-start)', 'marker-end': 'url(#dimension-arrow-end)' }));
     primitives.label(g, member.cx, member.cy + finite(offset, -3), (prefix || 'Ø') + ' ' + fmt(value) + ' mm', 'geometry-dimension', { scale: scale });
     group.appendChild(g);

@@ -110,6 +110,9 @@
     model.stages.forEach(function (entry, index) {
       viewport.appendChild(self._buildStage(entry, solution, index));
     });
+    // Du plus lointain au plus proche : le SVG peint dans l'ordre du document,
+    // qui était celui des étages — un ordre qui ne dit rien de la profondeur.
+    this._sortByDepth(viewport);
     this._drawIOChips(viewport, model);
 
     this.container.innerHTML = '';
@@ -162,8 +165,12 @@
     group.appendChild(meshOverlay);
     this._meshOverlays.push({ entry: entry, host: meshOverlay, lod: -1 });
 
-    var anchor = entry.wheels[0] || { cx: 0, cy: 0, outsideD: 20 };
-    GearForceOverlay.render(n, group, mech.forces, { x: anchor.cx, y: anchor.cy });
+    // Les efforts s'appliquent AU POINT PRIMITIF, dans le repère de
+    // l'engrènement : le modèle le donne, le renderer ne l'invente plus.
+    if (entry.forceFrame) {
+      GearForceOverlay.render(n, group, mech.forces,
+        { x: entry.forceFrame.origin[0], y: entry.forceFrame.origin[1] }, entry.forceFrame);
+    }
     // Les badges d'alerte se posent AU-DESSUS de l'étage, jamais sur les
     // dentures : ils signalent sans masquer ce qu'ils commentent.
     var top = entry.wheels.reduce(function (best, wheel) {
@@ -236,14 +243,20 @@
       '\nVitesse relative ' + fmt(wheel.speed, 3) + '×' +
       this._solidarity(wheel)));
 
-    // Un cône ne peut pas tourner dans le plan du dessin, mais son mouvement
-    // doit rester visible : un repère de phase tourne sur sa grande face.
     var phase = null;
-    if (wheel.kind === 'cone') {
-      var back = finite(wheel.pitchD, 20) / 2;
-      phase = n('g', { class: 'cone-phase' });
-      phase.appendChild(n('circle', { class: 'phase-dot', cx: (back * 0.55).toFixed(2), cy: '0',
-        r: Math.max(0.5, finite(wheel.module, 1) * 0.55).toFixed(2) }));
+
+    // Un organe vu autrement que de face ne peut pas tourner dans le plan du
+    // dessin : son corps reste fixe, et c'est un repère de phase qui porte le
+    // mouvement. Il suit la projection du cercle décrit par un point de la
+    // surface primitive — cercle de face, ellipse obliquement, segment par la
+    // tranche. Le faire tourner comme un disque, c'était affirmer que toute
+    // roue est vue de face, ce que le dessin ne suppose plus depuis longtemps.
+    // Une vis porte déjà sa phase dans ses filets, qui défilent : lui ajouter
+    // un repère revenait à poser sur le dessin une puce que rien n'anime.
+    if (wheel.presentation && wheel.presentation !== 'face' && wheel.kind !== 'rack' && wheel.kind !== 'worm') {
+      phase = n('g', { class: 'phase-mark' });
+      phase.appendChild(n('circle', { class: 'phase-dot', cx: '0', cy: '0',
+        r: Math.max(0.5, finite(wheel.module, 1) * 0.7).toFixed(2) }));
       seat.appendChild(phase);
     }
 
@@ -341,19 +354,76 @@
     return host;
   };
 
+  /**
+   * Les bras du porte-satellites, à l'angle où il se trouve.
+   *
+   * Ils étaient tracés en `cos(a)·orbite / sin(a)·orbite` : un cercle d'écran,
+   * qui ignorait la base d'orbite que le modèle spatial fournit pourtant. Vus
+   * de biais, les bras d'un porte-satellites parcourent une ellipse, et vus par
+   * la tranche ils se replient sur un segment — un `rotate()` d'écran ne sait
+   * représenter ni l'un ni l'autre.
+   */
+  TrainRenderer.prototype._carrierArms = function (carrier, angleDeg) {
+    var theta = finite(angleDeg, 0) * Math.PI / 180;
+    var orbit = finite(carrier.orbit, 0), d = '';
+    for (var i = 0; i < carrier.count; i++) {
+      var a = 2 * Math.PI * i / carrier.count + theta;
+      var point = carrier.basis
+        ? GearProjectedScene.phasePoint(carrier.basis, orbit, a)
+        : [Math.cos(a) * orbit, Math.sin(a) * orbit];
+      d += ' M 0 0 L ' + point[0].toFixed(2) + ' ' + point[1].toFixed(2);
+    }
+    return d.trim();
+  };
+
+  /**
+   * L'ordre de peinture, du plus lointain au plus proche.
+   *
+   * Les positions 3D étaient justes, mais le SVG était peint dans l'ordre des
+   * étages : de biais, une roue du fond pouvait recouvrir celle qui est devant
+   * elle, et le dessin devenait indéchiffrable dès qu'un train se croisait.
+   *
+   * Le tri se fait À L'INTÉRIEUR de chaque étage, entre ses roues. Les étages,
+   * eux, gardent leur ordre — celui du mécanisme —, parce qu'ils portent aussi
+   * leurs annotations : badges d'alerte, libellés, cotes. Les réordonner
+   * enterrerait l'alerte d'un étage sous la denture du voisin, et une alerte
+   * qu'on ne peut pas atteindre ne sert à rien. Les faire remonter dans un
+   * calque d'annotations propre reste à faire ; d'ici là, le tri s'arrête où
+   * il commencerait à cacher ce qui doit se lire.
+   */
+  TrainRenderer.prototype._sortByDepth = function (viewport) {
+    function reorder(host, list, depthOf) {
+      if (list.length < 2) return;
+      // Les éléments triés sont contigus : on les réinsère devant leur suivant,
+      // pour ne pas les faire passer par-dessus les calques posés après eux.
+      var after = list[list.length - 1].nextSibling;
+      list.slice().sort(function (a, b) { return depthOf(b) - depthOf(a); })
+        .forEach(function (element) { host.insertBefore(element, after); });
+    }
+    var byElement = new Map();
+    this._wheels.forEach(function (record) { byElement.set(record.group, finite(record.wheel.depth, 0)); });
+
+    var stages = [];
+    Array.prototype.forEach.call(viewport.childNodes, function (node) {
+      if (node.classList && node.classList.contains('train-stage')) stages.push(node);
+    });
+    stages.forEach(function (stage) {
+      var wheels = Array.prototype.filter.call(stage.childNodes, function (node) {
+        return node.classList && node.classList.contains('train-wheel');
+      });
+      reorder(stage, wheels, function (element) { return byElement.get(element) || 0; });
+    });
+  };
+
   /** Porte-satellites : bras reliant le centre à chaque satellite. */
   TrainRenderer.prototype._drawCarrier = function (group, entry) {
     var carrier = entry.carrier;
     var host = n('g', { class: 'planet-carrier' });
     if (carrier.bodyId) host.setAttribute('data-body', carrier.bodyId);
     if (carrier.memberId) host.setAttribute('data-member', carrier.memberId);
-    var d = '';
-    for (var i = 0; i < carrier.count; i++) {
-      var a = 2 * Math.PI * i / carrier.count;
-      d += ' M 0 0 L ' + (Math.cos(a) * carrier.orbit).toFixed(2) + ' ' + (Math.sin(a) * carrier.orbit).toFixed(2);
-    }
     var arms = n('g', { class: 'carrier-arms', transform: 'translate(' + carrier.cx.toFixed(2) + ' ' + carrier.cy.toFixed(2) + ')' });
-    arms.appendChild(n('path', { d: d.trim() }));
+    var spokes = n('path', { d: this._carrierArms(carrier, 0) });
+    arms.appendChild(spokes);
     arms.appendChild(n('circle', { class: 'carrier-hub', r: Math.max(1.5, carrier.orbit * 0.12).toFixed(2) }));
     host.appendChild(arms);
     // §18 : un porte-satellites bloqué est un bâti. Les hachures se posent sur
@@ -364,6 +434,7 @@
     }
     group.appendChild(host);
     entry.carrierElement = arms;
+    entry.carrierSpokes = spokes;
     return host;
   };
 
@@ -407,7 +478,7 @@
     record.built = lod;
     record.markers.textContent = '';
     record.marks = [];
-    if (lod <= LEVELS.SILHOUETTE || !link.path || !(link.length > 0)) return;
+    if (lod <= LEVELS.SILHOUETTE || !link.geometry || !(link.length > 0)) return;
     var pitch = Math.max(1.5, finite(link.pitch, 4));
     var count = Math.min(lod === LEVELS.SIMPLIFIED ? 32 : 90, Math.max(6, Math.round(link.length / pitch)));
     var chain = link.kind === 'chain-span';
@@ -630,6 +701,7 @@
   /** applyPose(pose) — seul point qui touche aux transformations animées. */
   TrainRenderer.prototype.applyPose = function (pose) {
     if (!this.svg || !pose) return;
+    var self = this;
     var members = pose.members || {}, linear = pose.linear || {}, flexible = pose.flexible || {};
     function angleOf(id) { var m = members[id]; return m && Number.isFinite(m.angle) ? m.angle : 0; }
 
@@ -638,14 +710,22 @@
       var posed = members[wheel.memberId] || {};
       var own = finite(posed.angle, 0);
       if (record.orbit) {
-        // Satellite : orbite du porte-satellites, puis rotation propre. La pose
-        // porte les deux angles ; le renderer ne fait que les composer.
-        var orbit = finite(posed.orbitAngle, 0);
-        record.orbit.setAttribute('transform',
-          'rotate(' + orbit.toFixed(2) + ' ' + finite(wheel.orbitCenterX, 0).toFixed(2) + ' ' + finite(wheel.orbitCenterY, 0).toFixed(2) + ')');
-        // La rotation propre est comptée dans le repère fixe : on retire
-        // l'entraînement de l'orbite déjà appliqué par le groupe parent.
-        record.rotor.setAttribute('transform', 'rotate(' + (own - orbit).toFixed(2) + ')');
+        // Satellite : l'orbite était un `rotate(angle cx cy)` d'écran, qui fait
+        // décrire un CERCLE au satellite. Vue de biais, une orbite est une
+        // ellipse, et vue par la tranche un va-et-vient sur un segment : le
+        // satellite quittait donc son plan dès qu'on changeait de point de vue.
+        // Sa place vient maintenant de la base d'orbite, comme sa phase.
+        var theta = finite(wheel.phase, 0) + finite(posed.orbitAngle, 0) * Math.PI / 180;
+        var radius = finite(wheel.orbit, 0);
+        var seat = wheel.orbitBasis
+          ? GearProjectedScene.phasePoint(wheel.orbitBasis, radius, theta)
+          : [Math.cos(theta) * radius, Math.sin(theta) * radius];
+        record.seat.setAttribute('transform',
+          'translate(' + (finite(wheel.orbitCenterX, 0) + seat[0]).toFixed(2) + ' ' +
+          (finite(wheel.orbitCenterY, 0) + seat[1]).toFixed(2) + ')');
+        // La rotation propre est comptée dans le repère fixe, et le groupe
+        // parent ne tourne plus : il n'y a donc plus rien à en retrancher.
+        self._spin(record, own);
         return;
       }
       if (wheel.kind === 'rack') {
@@ -663,14 +743,7 @@
           (finite(wheel.cy, 0) + slide[1] * travel).toFixed(2) + ')' + turn);
         return;
       }
-      if (wheel.kind === 'cone') {
-        // Faire pivoter une silhouette conique dans le plan du dessin serait un
-        // contresens : c'est un repère de phase, posé sur la grande face, qui
-        // porte le mouvement.
-        if (record.phase) record.phase.setAttribute('transform', 'rotate(' + (own % 360).toFixed(2) + ')');
-        return;
-      }
-      if (wheel.kind === 'worm') {
+      if (wheel.kind === 'worm' && wheel.presentation !== 'face') {
         // §11 : le groupe ENTIER était translaté — corps, axe et filets — donc
         // la vis se déplaçait le long de son arbre. Elle tourne autour de son
         // axe : le corps ne bouge pas, seuls les filets défilent.
@@ -687,13 +760,14 @@
         }
         return;
       }
-      record.rotor.setAttribute('transform', 'rotate(' + own.toFixed(2) + ')');
+      self._spin(record, own);
     });
 
     (this.model && this.model.stages || []).forEach(function (entry) {
-      if (entry.carrierElement && entry.carrier) {
-        entry.carrierElement.setAttribute('transform',
-          'translate(' + entry.carrier.cx.toFixed(2) + ' ' + entry.carrier.cy.toFixed(2) + ') rotate(' + angleOf(entry.carrier.memberId).toFixed(2) + ')');
+      // Les bras suivent la même base que les satellites qu'ils portent : ils
+      // sont retracés à leur angle, jamais tournés dans le plan de l'écran.
+      if (entry.carrierSpokes && entry.carrier) {
+        entry.carrierSpokes.setAttribute('d', self._carrierArms(entry.carrier, angleOf(entry.carrier.memberId)));
       }
     });
 
@@ -702,14 +776,58 @@
       // Défilement en millimètres réels issu de la pose : aucun produit
       // rayon × vitesse n'est refait ici.
       var offset = finite((flexible[link.driveId] || {}).offset, 0);
-      if (record.marks && link.path) {
+      if (record.marks && link.geometry) {
         record.marks.forEach(function (mark) {
-          var point = GearGeometryUtils.pointAlong(link.path, mark.s + offset);
-          if (point) mark.el.setAttribute('transform', 'translate(' + point.x.toFixed(2) + ' ' + point.y.toFixed(2) + ')');
+          // L'abscisse est comptée sur la courroie RÉELLE, en millimètres :
+          // c'est le plan de courroie qui transporte ensuite le point à
+          // l'écran. Un maillon ne parcourt donc pas un tracé d'écran, dont la
+          // longueur change avec le point de vue.
+          var point = link.geometry.point(mark.s + offset);
+          if (point) mark.el.setAttribute('transform', 'translate(' + point[0].toFixed(2) + ' ' + point[1].toFixed(2) + ')');
         });
       }
       record.path.setAttribute('stroke-dashoffset', (-offset).toFixed(1));
     });
+  };
+
+  /**
+   * La rotation d'un organe, telle qu'on la VOIT.
+   *
+   * Le renderer appliquait `rotate(angle)` à toute roue sans exception. Sur une
+   * roue vue par la tranche — dessinée en rectangle de largeur b — cela faisait
+   * basculer le rectangle en diagonale : mécaniquement absurde, et d'autant
+   * plus visible que le modèle spatial place désormais correctement les
+   * organes de profil.
+   *
+   * Trois cas, une seule source :
+   *
+   *   de face      le disque tourne réellement dans le plan, dans le sens que
+   *                le repère projeté donne — vue de l'autre bout, une roue
+   *                tourne à l'écran dans l'autre sens ;
+   *   de profil    le corps ne bouge pas ; un repère de phase va et vient le
+   *                long du segment que devient le cercle primitif ;
+   *   obliquement  le corps ne bouge pas ; le repère suit l'ellipse.
+   *
+   * Les deux derniers cas sont la même formule, et c'est la projection qui
+   * décide de laquelle il s'agit.
+   */
+  TrainRenderer.prototype._spin = function (record, angle) {
+    var wheel = record.wheel;
+    var theta = finite(angle, 0) * Math.PI / 180;
+    if (wheel.presentation === 'face' || !wheel.phaseBasis) {
+      // `spin` porte le côté : sans lui, les deux extrémités d'un réducteur
+      // tourneraient dans le même sens à l'écran.
+      var sense = wheel.phaseBasis && wheel.phaseBasis.spin ? wheel.phaseBasis.spin : 1;
+      record.rotor.setAttribute('transform', 'rotate(' + (finite(angle, 0) * sense).toFixed(2) + ')');
+      return;
+    }
+    record.rotor.removeAttribute('transform');
+    if (!record.phase) return;
+    var point = GearProjectedScene.phasePoint(wheel.phaseBasis, finite(wheel.pitchD, 20) / 2, theta);
+    record.phase.setAttribute('transform', 'translate(' + point[0].toFixed(2) + ' ' + point[1].toFixed(2) + ')');
+    // Devant ou derrière : un repère qui passe de l'autre côté de l'organe
+    // s'estompe, faute de quoi rien ne distingue l'aller du retour.
+    record.phase.setAttribute('opacity', Math.cos(theta) >= 0 ? '1' : '0.35');
   };
 
   TrainRenderer.prototype.setAnimationSpeed = function (speed) { this.animation.setSpeed(speed); };

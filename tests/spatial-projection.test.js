@@ -416,3 +416,113 @@ test('an axial abscissa says whether it was measured or conventional', () => {
   const loose = guessed.shafts.find(s => s.memberIds.length > 1);
   assert.equal(guessed.byId[loose.memberIds[1]].axialPositionProvenance, 'schematic');
 });
+
+// ===== Deux systèmes, deux noms (§1 de l'audit) =====
+
+test('an isometric view really is isometric', () => {
+  // La base précédente était orthonormée — donc une projection valable — mais
+  // séparait deux paires d'axes de 60° : une axonométrie quelconque, où X et Z
+  // n'étaient pas interchangeables. Une ISOMÉTRIE demande les trois axes à
+  // 120° et le même raccourcissement sur les trois.
+  const iso = Projection.view('iso');
+  const seen = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(axis => Projection.project(axis, iso));
+  const length = xy => Math.hypot(xy[0], xy[1]);
+  const [px, py, pz] = seen;
+
+  assert.ok(Math.abs(length(px) - length(py)) < 1e-9, 'X et Y également raccourcis');
+  assert.ok(Math.abs(length(py) - length(pz)) < 1e-9, 'Y et Z également raccourcis');
+
+  const angle = (a, b) => Math.acos((a[0] * b[0] + a[1] * b[1]) / (length(a) * length(b))) * 180 / Math.PI;
+  [[px, py], [py, pz], [pz, px]].forEach(([a, b], index) => {
+    assert.ok(Math.abs(angle(a, b) - 120) < 1e-6, 'paire ' + index + ' : ' + angle(a, b).toFixed(3) + '°');
+  });
+
+  // Le regard suit la diagonale du cube…
+  const gaze = unit([1, 1, 1]);
+  gaze.forEach((c, i) => assert.ok(Math.abs(c - iso.w[i]) < 1e-9));
+});
+
+test('no view is the mirror image of another', () => {
+  // `v` porte le BAS de l'écran : la droite de l'écran croisée avec le HAUT
+  // doit donner le regard, donc u × v = −w. L'isométrie portait l'opposé — une
+  // image miroir du mécanisme, où les longueurs et les angles restaient justes
+  // mais où le sens apparent de rotation s'inversait et une hélice à droite se
+  // lisait à gauche. C'est invisible sur une roue seule, et faux dès qu'on
+  // compare deux vues.
+  Projection.VIEWS.forEach(view => {
+    const handed = cross(view.u, view.v);
+    const alignment = handed[0] * view.w[0] + handed[1] * view.w[1] + handed[2] * view.w[2];
+    assert.ok(alignment < -0.999, view.id + ' est une image miroir : u × v · w = ' + alignment.toFixed(3));
+    // Et la base reste orthonormée : une projection, pas une déformation.
+    assert.ok(Math.abs(Math.hypot(view.u[0], view.u[1], view.u[2]) - 1) < 1e-9, view.id + ' u');
+    assert.ok(Math.abs(Math.hypot(view.v[0], view.v[1], view.v[2]) - 1) < 1e-9, view.id + ' v');
+    assert.ok(Math.abs(view.u[0] * view.v[0] + view.u[1] * view.v[1] + view.u[2] * view.v[2]) < 1e-9, view.id + ' u·v');
+  });
+});
+
+test('a projection projects, and only the unfolded view restores lengths', () => {
+  // C'était la confusion de fond : toutes les vues passaient par le dépliage,
+  // si bien que « Dessus » n'était pas une vue de dessus et « Iso » pas une
+  // isométrie — c'étaient des vues dépliées orientées par ces regards.
+  const layout = layoutOf([SPUR(20, 60), BEVEL()], 6);
+  const truth = layout.members.map(m => m.position);
+
+  const unfolded = Spatial.frame(layout.graph, { view: 'unfolded' });
+  assert.equal(unfolded.mode, 'unfolded');
+
+  ['front', 'top', 'side', 'iso'].forEach(id => {
+    const frame = Spatial.frame(layout.graph, { view: id });
+    assert.equal(frame.mode, 'projected', id);
+    assert.equal(frame.view.id, id);
+    // Chaque siège est EXACTEMENT l'image de la position, sans retouche.
+    layout.members.forEach((member, index) => {
+      const seat = frame.seats.byId[member.id];
+      const expected = Projection.project(truth[index], frame.view);
+      assert.ok(Math.abs(seat.x - expected[0]) < 1e-9 && Math.abs(seat.y - expected[1]) < 1e-9,
+        id + ' : ' + member.id);
+      // Et la profondeur est disponible : c'est ce qui permettra de trier.
+      assert.ok(Number.isFinite(seat.depth), id + ' : profondeur de ' + member.id);
+    });
+  });
+
+  // Une distance oblique DOIT apparaître raccourcie : c'est la définition.
+  const iso = Spatial.frame(layout.graph, { view: 'iso' });
+  const [a, b] = ['s0-input', 's0-output'].map(id => iso.seats.byId[id]);
+  const [wa, wb] = ['s0-input', 's0-output'].map(id => layout.byId[id].position);
+  const real = Math.hypot(...wa.map((c, i) => c - wb[i]));
+  const drawn = Math.hypot(b.x - a.x, b.y - a.y);
+  assert.ok(drawn < real - 1e-6, `iso doit raccourcir : ${drawn.toFixed(2)} pour ${real.toFixed(2)}`);
+
+  // Le dépliage, lui, garde la longueur vraie — c'est sa raison d'être.
+  const flat = unfolded.seats.byId;
+  assert.ok(Math.abs(Math.hypot(flat['s0-output'].x - flat['s0-input'].x,
+    flat['s0-output'].y - flat['s0-input'].y) - real) < 1e-6, 'la vue dépliée garde la longueur');
+});
+
+test('the world never moves, whichever system draws it', () => {
+  const layout = layoutOf([SPUR(20, 40), WORM(), SPUR(20, 40)], 160);
+  const reference = layout.members.map(m => m.id + ':' + m.position.join(','));
+  ['unfolded', 'front', 'top', 'side', 'iso'].forEach(view => {
+    const frame = Spatial.frame(layout.graph, { view });
+    assert.deepEqual(frame.spatial.members.map(m => m.id + ':' + m.position.join(',')), reference, view);
+    // Tout membre reçoit un siège, dans les deux systèmes.
+    layout.members.forEach(member => {
+      const seat = frame.seats.byId[member.id];
+      assert.ok(seat && Number.isFinite(seat.x) && Number.isFinite(seat.y), view + ' : ' + member.id);
+    });
+  });
+});
+
+test('which end you look from is not the same as how far off-axis you are', () => {
+  // `presentation` et `foreshortening` prennent la valeur ABSOLUE du produit
+  // scalaire. Cela suffit à dire « de face », et détruit une information qu'on
+  // ne peut pas reconstruire : une roue vue de son autre extrémité tourne, à
+  // l'écran, dans l'autre sens.
+  const front = Projection.view('front');
+  assert.equal(Projection.facing([0, 0, 1], front), 1);
+  assert.equal(Projection.facing([0, 0, -1], front), -1);
+  assert.equal(Projection.facing([1, 0, 0], front), 0, 'axe dans le plan de l’écran');
+  // Le raccourci, lui, ne distingue pas les deux bouts — et c'est normal.
+  assert.equal(Projection.foreshortening([0, 0, 1], front), Projection.foreshortening([0, 0, -1], front));
+  assert.equal(Projection.presentation([0, 0, 1], front), Projection.presentation([0, 0, -1], front));
+});

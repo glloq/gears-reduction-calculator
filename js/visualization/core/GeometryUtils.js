@@ -38,24 +38,6 @@
   }
 
   /**
-   * Chemin fermé de la courroie : deux brins droits reliés par les arcs
-   * d'enroulement. C'est ce tracé que parcourent les marqueurs animés.
-   */
-  function flexibleOutline(path, r1, r2) {
-    var t = path.tangents;
-    if (!t || t.length !== 2) return '';
-    function arc(radius, to, sweep) {
-      return ' A ' + radius.toFixed(3) + ' ' + radius.toFixed(3) + ' 0 ' + (path.crossed ? 1 : 0) + ' ' + sweep +
-        ' ' + to.x.toFixed(3) + ' ' + to.y.toFixed(3);
-    }
-    return 'M ' + t[0].from.x.toFixed(3) + ' ' + t[0].from.y.toFixed(3) +
-      ' L ' + t[0].to.x.toFixed(3) + ' ' + t[0].to.y.toFixed(3) +
-      arc(r2, t[1].to, path.crossed ? 0 : 1) +
-      ' L ' + t[1].from.x.toFixed(3) + ' ' + t[1].from.y.toFixed(3) +
-      arc(r1, t[0].from, path.crossed ? 0 : 1) + ' Z';
-  }
-
-  /**
    * Découpage cinématique du circuit fermé, dans l'ordre du défilement :
    *   brin 1 → arc sur la poulie 2 → brin 2 → arc sur la poulie 1.
    * C'est ce découpage — et non les seuls brins droits — qui donne l'abscisse
@@ -115,5 +97,5 @@
     return null;
   }
 
-  return { flexiblePath: flexiblePath, flexibleOutline: flexibleOutline, pointAlong: pointAlong, segments: segments };
+  return { flexiblePath: flexiblePath, pointAlong: pointAlong, segments: segments };
 });

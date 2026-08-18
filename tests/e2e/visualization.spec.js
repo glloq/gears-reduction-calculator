@@ -118,7 +118,10 @@ test('the rack is now drawn in the Denture view, not deflected to Geometry', asy
     return { transform: rack.getAttribute('transform'), rotor: document.querySelector('.train-wheel .rotor').getAttribute('transform') };
   });
   expect(travel.transform).toMatch(/translate/);
-  expect(travel.rotor).toMatch(/rotate\(360/);
+  // Le signe de l'angle dessiné porte désormais le CÔTÉ depuis lequel on
+  // regarde : une roue vue de son autre extrémité tourne, à l'écran, dans
+  // l'autre sens. Seule l'amplitude est ici en cause.
+  expect(travel.rotor).toMatch(/^rotate\(-?360/);
 });
 
 test('a planetary draws every real planet, its carrier and its three roles', async ({ page }) => {
@@ -134,11 +137,13 @@ test('a planetary draws every real planet, its carrier and its three roles', asy
     const teeth = window.__viewer.teeth;
     teeth.setAnimationAngle(0);
     const planet = document.querySelector('.train-wheel.planet');
-    const start = { orbit: planet.querySelector('.planet-orbit').getAttribute('transform'),
-      spin: planet.querySelector('.rotor').getAttribute('transform') };
+    // L'orbite est portée par la PLACE du satellite, plus par une rotation du
+    // groupe : elle suit le plan d'orbite, qu'un `rotate()` ne parcourt pas.
+    const read = () => ({ orbit: planet.querySelector('.planet-seat').getAttribute('transform'),
+      spin: planet.querySelector('.rotor').getAttribute('transform') });
+    const start = read();
     teeth.setAnimationAngle(180);
-    return { start, end: { orbit: planet.querySelector('.planet-orbit').getAttribute('transform'),
-      spin: planet.querySelector('.rotor').getAttribute('transform') } };
+    return { start, end: read() };
   });
   expect(motion.end.orbit).not.toBe(motion.start.orbit);
   expect(motion.end.spin).not.toBe(motion.start.spin);
@@ -440,12 +445,15 @@ test('belt markers travel around the pulleys, not only along the strands', async
     const renderer = window.__viewer.renderer();
     const marker = document.querySelector('.belt-tooth');
     const link = renderer.model.stages[0].links[0];
-    const centre1 = link.path.centre1, centre2 = link.path.centre2;
+    // Les centres sont ceux de la courroie DESSINÉE : la géométrie vit dans le
+    // plan des poulies, et c'est son image qu'on suit ici.
+    const centre1 = { x: link.geometry.centre1[0], y: link.geometry.centre1[1] };
+    const centre2 = { x: link.geometry.centre2[0], y: link.geometry.centre2[1] };
     const positions = [];
     // Un tour complet de COURROIE, pas d'arbre : la courroie est bien plus
     // longue que la circonférence de la petite poulie.
-    const perRevolution = Math.PI * 2 * link.path.radius1;
-    const span = 360 * link.path.length / perRevolution;
+    const perRevolution = Math.PI * 2 * link.r1;
+    const span = 360 * link.length / perRevolution;
     for (let i = 0; i <= 120; i++) {
       renderer.setAnimationAngle(i * span / 120);
       const t = marker.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
@@ -453,8 +461,11 @@ test('belt markers travel around the pulleys, not only along the strands', async
       positions.push({ x, y,
         d1: Math.hypot(x - centre1.x, y - centre1.y), d2: Math.hypot(x - centre2.x, y - centre2.y) });
     }
-    return { positions, r1: link.path.radius1, r2: link.path.radius2 };
+    return { positions, r1: link.r1, r2: link.r2, collapsed: link.collapsed };
   });
+  // La vue par défaut voit la courroie de face : ses poulies sont des cercles,
+  // et une distance au centre s'y compare à un rayon.
+  expect(trace.collapsed, 'la courroie est vue par la tranche').toBe(false);
   // Le marqueur touche les deux poulies au cours du parcours.
   const onPulley1 = trace.positions.filter(p => Math.abs(p.d1 - trace.r1) < 0.5).length;
   const onPulley2 = trace.positions.filter(p => Math.abs(p.d2 - trace.r2) < 0.5).length;
@@ -465,6 +476,392 @@ test('belt markers travel around the pulleys, not only along the strands', async
     expect(p.d1).toBeGreaterThan(trace.r1 - 0.5);
     expect(p.d2).toBeGreaterThan(trace.r2 - 0.5);
   });
+});
+
+test('a belt hangs on its pulleys, whatever the projection (§6 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['belt']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+  const known = await page.evaluate(() => GearProjectionEngine.VIEWS.map(v => v.id));
+
+  const shot = () => page.evaluate(() => {
+    const model = window.__viewer.renderer().model;
+    const link = model.stages[0].links[0], wheels = model.stages[0].wheels;
+    const g = link.geometry;
+    // Chaque point de tangence, ramené dans le plan de courroie : sa distance
+    // au centre doit valoir le rayon de la poulie. C'est la tangence même, et
+    // elle ne survit pas à un tracé reconstruit à l'horizontale.
+    const det = g.first[0] * g.second[1] - g.second[0] * g.first[1];
+    const radii = Math.abs(det) < 1e-9 ? null : g.tangentPoints.map((point, index) => {
+      const dx = point[0] - g.origin[0], dy = point[1] - g.origin[1];
+      const a = (dx * g.second[1] - dy * g.second[0]) / det;
+      const b = (dy * g.first[0] - dx * g.first[1]) / det;
+      const centre = index % 2 === 0 ? [0, 0] : [g.distance, 0];
+      return Math.hypot(a - centre[0], b - centre[1]) - (index % 2 === 0 ? link.r1 : link.r2);
+    });
+    return {
+      seat1: [wheels[0].cx, wheels[0].cy], seat2: [wheels[1].cx, wheels[1].cy],
+      centre1: g.centre1, centre2: g.centre2, radii: radii,
+      wrap: link.wrapAngle1Deg, length: link.length, distance: link.centerDistance,
+      d: document.querySelector('#svgContainer .belt-line').getAttribute('d')
+    };
+  });
+
+  const drawings = new Set();
+  let reference = null;
+  for (const id of ['unfolded'].concat(known)) {
+    await select.selectOption(id);
+    const seen = await shot();
+    if (!reference) reference = seen;
+    // La courroie s'accroche aux poulies TELLES QUE LA VUE LES A POSÉES.
+    expect(Math.hypot(seen.centre1[0] - seen.seat1[0], seen.centre1[1] - seen.seat1[1])).toBeLessThan(1e-6);
+    expect(Math.hypot(seen.centre2[0] - seen.seat2[0], seen.centre2[1] - seen.seat2[1])).toBeLessThan(1e-6);
+    if (seen.radii) seen.radii.forEach(gap => expect(Math.abs(gap), 'tangence en ' + id).toBeLessThan(1e-6));
+    // Les grandeurs mécaniques ne dépendent pas du point de vue.
+    expect(seen.wrap, 'enroulement en ' + id).toBeCloseTo(reference.wrap, 6);
+    expect(seen.length, 'longueur développée en ' + id).toBeCloseTo(reference.length, 6);
+    expect(seen.distance, 'entraxe en ' + id).toBeCloseTo(reference.distance, 6);
+    expect(seen.d).not.toMatch(/NaN|Infinity/);
+    drawings.add(seen.d);
+  }
+  // Et le dessin, lui, change : une courroie vue de biais n'est pas la même
+  // image qu'une courroie vue de face.
+  expect(drawings.size, 'la courroie se dessine pareil partout').toBeGreaterThan(1);
+  expect(errors).toEqual([]);
+});
+
+test('a satellite orbits in its plane, and its arm follows it (§6 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+
+  for (const view of ['unfolded', 'iso', 'front']) {
+    await select.selectOption(view);
+    const trace = await page.evaluate(() => {
+      const renderer = window.__viewer.renderer();
+      const entry = renderer.model.stages[0];
+      const basis = entry.carrier.basis;
+      const planet = entry.wheels.filter(w => w.role === 'planet')[0];
+      const centre = [planet.orbitCenterX, planet.orbitCenterY];
+      const det = basis.first[0] * basis.second[1] - basis.second[0] * basis.first[1];
+      const read = () => Array.from(document.querySelectorAll('.planet-seat')).map(el => {
+        const m = el.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
+        return [Number(m[1]) - centre[0], Number(m[2]) - centre[1]];
+      });
+      const arms = () => Array.from(document.querySelector('.carrier-arms path').getAttribute('d')
+        .matchAll(/L ([-\d.]+) ([-\d.]+)/g)).map(m => [Number(m[1]), Number(m[2])]);
+      const frames = [];
+      for (let a = 0; a <= 360; a += 15) {
+        renderer.setAnimationAngle(a);
+        frames.push({ seats: read(), arms: arms() });
+      }
+      return { frames, basis, det, orbit: planet.orbit };
+    });
+
+    const positions = new Set();
+    for (const frame of trace.frames) {
+      frame.seats.forEach((seat, index) => {
+        positions.add(seat.map(v => v.toFixed(2)).join(','));
+        // Le bras du porte-satellites finit sur le satellite qu'il porte.
+        const arm = frame.arms[index];
+        expect(Math.hypot(arm[0] - seat[0], arm[1] - seat[1]), view + ' bras ' + index).toBeLessThan(0.02);
+        if (Math.abs(trace.det) < 1e-9) return;
+        // Et surtout : ramené dans le PLAN D'ORBITE, le satellite reste à son
+        // rayon d'orbite, à tout instant. Une rotation d'écran le ferait sortir
+        // de son plan dès que celui-ci n'est plus perpendiculaire au regard.
+        const a = (seat[0] * trace.basis.second[1] - seat[1] * trace.basis.second[0]) / trace.det;
+        const b = (seat[1] * trace.basis.first[0] - seat[0] * trace.basis.first[1]) / trace.det;
+        // Tolérance : les transformations sont écrites au centième de mm.
+        expect(Math.hypot(a, b), view + ' satellite ' + index + ' hors de son orbite')
+          .toBeCloseTo(trace.orbit, 1);
+      });
+    }
+    // Le satellite bouge réellement : un plan d'orbite juste mais figé ne
+    // montrerait rien de plus qu'un dessin statique.
+    expect(positions.size, view + ' : les satellites ne bougent pas').toBeGreaterThan(4);
+  }
+  expect(errors).toEqual([]);
+});
+
+test('the dimensioned view draws what it sees, not always a circle (§7 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'worm', 'bevel']);
+  await showView(page, 'geometry');
+  const select = page.locator('#viewerProjection');
+
+  const shot = () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const shape = selector => {
+      const host = svg.querySelector(selector);
+      if (!host) return 'absent';
+      if (host.querySelector('.profile-body')) return 'profile';
+      if (host.querySelector('ellipse')) return 'ellipse';
+      if (host.querySelector('circle:not(.phase-dot)')) return 'circle';
+      return 'autre';
+    };
+    return {
+      // La roue d'une vis sans fin et la vis ne peuvent pas être vues de face
+      // toutes les deux : c'est ce que la vue affirmait en les dessinant
+      // toutes deux en cercle.
+      wheel: shape('.geometry-stage[data-stage="1"] .role-output'),
+      pinion: shape('.geometry-stage[data-stage="0"] .role-input'),
+      needles: svg.querySelectorAll('.index-rotor').length,
+      phases: svg.querySelectorAll('.phase-mark').length,
+      axes: Array.from(svg.querySelectorAll('.shaft-layer line')).map(line =>
+        Math.hypot(line.getAttribute('x2') - line.getAttribute('x1'),
+          line.getAttribute('y2') - line.getAttribute('y1')))
+    };
+  });
+
+  const seen = {};
+  for (const view of ['unfolded', 'front', 'side', 'iso']) {
+    await select.selectOption(view);
+    seen[view] = await shot();
+    // Aucun axe de longueur nulle : un arbre qui ne se voit pas en bout est un
+    // segment, et un arbre vu en bout est une croix — jamais un trait mort.
+    seen[view].axes.forEach(length => expect(length, view + ' : axe de longueur nulle').toBeGreaterThan(0.5));
+  }
+  // Vue dépliée : la vis est vue de côté, donc sa roue est vue par la tranche.
+  expect(seen.unfolded.wheel).toBe('profile');
+  expect(seen.unfolded.pinion).toBe('circle');
+  // De biais, plus un seul cercle : des ellipses, et le repère radial cède la
+  // place à un repère de phase.
+  expect(seen.iso.wheel).toBe('ellipse');
+  expect(seen.iso.pinion).toBe('ellipse');
+  expect(seen.iso.needles, 'une aiguille radiale subsiste de biais').toBe(0);
+  expect(seen.iso.phases).toBeGreaterThan(0);
+  // Et en bout d'arbre d'entrée, c'est le pignon qui se voit de face.
+  expect(seen.side.pinion).toBe('circle');
+
+  // L'animation : de biais, le corps ne bascule pas — c'est la phase qui bouge.
+  await select.selectOption('iso');
+  const motion = await page.evaluate(() => {
+    const renderer = window.__viewer.geometry;
+    const mark = document.querySelector('#svgContainer .phase-mark');
+    const body = document.querySelector('#svgContainer .geometry-member-group.role-input ellipse');
+    const read = () => ({ phase: mark.getAttribute('transform'), body: body.getAttribute('transform') });
+    renderer.setAnimationAngle(0);
+    const start = read();
+    renderer.setAnimationAngle(90);
+    return { start, quarter: read() };
+  });
+  expect(motion.quarter.phase).not.toBe(motion.start.phase);
+  expect(motion.quarter.body).toBe(motion.start.body);
+  expect(errors).toEqual([]);
+});
+
+test('every phase mark on the drawing really carries a movement (§8 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['worm']);
+  const select = page.locator('#viewerProjection');
+
+  // Une vis porte sa phase dans ses FILETS. Un repère de phase posé en plus
+  // restait immobile : une puce sur le dessin que rien n'animait.
+  await showView(page, 'teeth');
+  await select.selectOption('unfolded');
+  const worm = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    const host = document.querySelector('#svgContainer .train-wheel[data-role="input"]');
+    const read = () => ({
+      threads: host.querySelector('.worm-thread-phase').getAttribute('transform'),
+      marks: host.querySelectorAll('.phase-mark').length
+    });
+    renderer.setAnimationAngle(0);
+    const start = read();
+    renderer.setAnimationAngle(90);
+    return { start, quarter: read() };
+  });
+  expect(worm.start.marks, 'la vis porte un repère de phase que rien ne bouge').toBe(0);
+  expect(worm.quarter.threads).not.toBe(worm.start.threads);
+
+  // Vue dans son axe, la vis se voit par le bout : elle tourne, et c'est son
+  // repère de bout qui le montre.
+  await select.selectOption('side');
+  const endOn = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    const host = document.querySelector('#svgContainer .train-wheel[data-role="input"]');
+    const rotor = host.querySelector('.rotor');
+    renderer.setAnimationAngle(0);
+    const start = { rotor: rotor.getAttribute('transform'), end: host.querySelectorAll('.worm-end-phase').length };
+    renderer.setAnimationAngle(90);
+    return { start, quarter: rotor.getAttribute('transform') };
+  });
+  expect(endOn.start.end, 'pas de repère de bout sur une vis vue en bout').toBeGreaterThan(0);
+  expect(endOn.quarter).not.toBe(endOn.start.rotor);
+
+  // Et la vue cotée la dessine par le bout aussi : un cylindre couché y
+  // montrerait une longueur que cette vue ne voit pas.
+  await showView(page, 'geometry');
+  await select.selectOption('side');
+  const cotted = await page.evaluate(() => {
+    const host = document.querySelector('#svgContainer .geometry-member-group.role-input');
+    return { circle: !!host.querySelector('circle.worm-member'), body: host.querySelectorAll('rect').length };
+  });
+  expect(cotted.circle).toBe(true);
+  expect(cotted.body).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('the dimensioned rack slides on its slide, not along the screen (§8 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['rack']);
+  await showView(page, 'geometry');
+
+  const trace = await page.evaluate(() => {
+    const renderer = window.__viewer.geometry;
+    const member = renderer.layout.stages[0].members.filter(m => m.kind === 'rack')[0];
+    const slider = document.querySelector('#svgContainer .linear-slider');
+    const at = angle => {
+      renderer.setAnimationAngle(angle);
+      const m = slider.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
+      const pose = GearKinematicsEngine.pose(renderer.scene.kinematics, angle);
+      return { x: Number(m[1]), y: Number(m[2]),
+        travel: pose.linear[member.linearId].position };
+    };
+    return { along: member.slideAlong, frames: [0, 90, 180, 270].map(at) };
+  });
+
+  const along = trace.along;
+  expect(Math.hypot(along[0], along[1])).toBeCloseTo(1, 6);
+  trace.frames.forEach(frame => {
+    // La course dessinée est celle de la pose, en millimètres réels…
+    expect(Math.hypot(frame.x, frame.y)).toBeCloseTo(Math.abs(frame.travel), 1);
+    // …et elle suit la glissière : aucune composante en travers.
+    const across = frame.x * -along[1] + frame.y * along[0];
+    expect(Math.abs(across), 'la crémaillère glisse en travers de sa glissière').toBeLessThan(0.02);
+  });
+  // Elle bouge réellement.
+  expect(new Set(trace.frames.map(f => f.x.toFixed(2) + ',' + f.y.toFixed(2))).size).toBeGreaterThan(2);
+  expect(errors).toEqual([]);
+});
+
+test('the force arrows come from the mesh, not from a fixed rosette (§9 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['helical']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+
+  const shot = () => page.evaluate(() => {
+    const entry = window.__viewer.renderer().model.stages[0];
+    const host = document.querySelector('#svgContainer .force-overlay');
+    const read = label => {
+      const arrow = host.querySelector('.force-' + label);
+      if (!arrow) return null;
+      if (arrow.classList.contains('force-end-on')) return { endOn: true };
+      const line = arrow.querySelector('line');
+      return { endOn: false, x: Number(line.getAttribute('x2')), y: Number(line.getAttribute('y2')) };
+    };
+    return { anchor: [Number(host.dataset.anchorX), Number(host.dataset.anchorY)],
+      centres: entry.wheels.map(w => [w.cx, w.cy]), pitch: entry.wheels[0].pitchD,
+      ft: read('ft'), fr: read('fr'), fa: read('fa') };
+  });
+
+  const angles = new Set();
+  for (const view of ['unfolded', 'front', 'top', 'side', 'iso']) {
+    await select.selectOption(view);
+    const seen = await shot();
+    const [a, b] = seen.centres;
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const span = Math.hypot(dx, dy);
+    if (span > 1e-6) {
+      // Le point d'application est le point primitif, sur la ligne des centres.
+      const reach = Math.hypot(seen.anchor[0] - a[0], seen.anchor[1] - a[1]);
+      expect(reach, view + ' : point d’application').toBeCloseTo(Math.min(seen.pitch / 2, span), 3);
+      // Et Ft traverse cette ligne à angle droit — dans les vues qui montrent
+      // le plan d'engrènement sans le déformer.
+      if (seen.ft && !seen.ft.endOn && (view === 'unfolded' || view === 'front' || view === 'side')) {
+        const along = [dx / span, dy / span];
+        const cos = (seen.ft.x * along[0] + seen.ft.y * along[1]) / Math.hypot(seen.ft.x, seen.ft.y);
+        expect(Math.abs(cos), view + ' : Ft n’est pas perpendiculaire à la ligne des centres').toBeLessThan(1e-6);
+      }
+    }
+    if (seen.ft && !seen.ft.endOn) angles.add(Math.atan2(seen.ft.y, seen.ft.x).toFixed(4));
+  }
+  // Une rosace fixe donnerait le même angle partout.
+  expect(angles.size, 'les flèches ne bougent pas d’une vue à l’autre').toBeGreaterThan(1);
+
+  // Un effort vu dans sa propre direction n'est pas une flèche de longueur
+  // nulle : c'est ⊙ ou ⊗, la convention du dessin technique.
+  const endOn = await page.evaluate(() => {
+    const found = [];
+    for (const view of ['unfolded', 'front', 'top', 'side', 'iso']) {
+      window.__viewer.setProjection(view);
+      const arrow = document.querySelector('#svgContainer .force-overlay .force-end-on');
+      if (arrow) found.push({ view, symbols: arrow.querySelectorAll('circle').length });
+    }
+    return found;
+  });
+  expect(endOn.length, 'aucune vue ne regarde un effort dans son axe').toBeGreaterThan(0);
+  endOn.forEach(entry => expect(entry.symbols, entry.view).toBeGreaterThan(0));
+  expect(errors).toEqual([]);
+});
+
+test('the drawing is painted from the back, and can be seen from the other side (§10)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'spur', 'bevel']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+  const flip = page.locator('#viewerOpposite');
+
+  // Peinture du fond vers l'avant : les positions 3D étaient justes, mais le
+  // SVG était peint dans l'ordre des étages — de biais, une roue du fond
+  // pouvait recouvrir celle qui est devant elle.
+  await select.selectOption('iso');
+  const painted = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    const depthOf = element => {
+      const record = renderer._wheels.filter(w => w.group === element)[0];
+      return record ? record.wheel.depth : null;
+    };
+    const stages = Array.from(document.querySelectorAll('#svgContainer .train-stage'));
+    return stages.map(stage => ({
+      wheels: Array.from(stage.querySelectorAll(':scope > .train-wheel')).map(depthOf),
+      nearest: Math.min.apply(null, Array.from(stage.querySelectorAll(':scope > .train-wheel')).map(depthOf))
+    }));
+  });
+  painted.forEach((stage, index) => {
+    stage.wheels.forEach((depth, i) => {
+      if (i === 0) return;
+      expect(depth, 'étage ' + index + ' : roue peinte devant une plus proche')
+        .toBeLessThanOrEqual(stage.wheels[i - 1] + 1e-9);
+    });
+  });
+  // Les étages, eux, gardent leur ordre : ils portent leurs alertes et leurs
+  // libellés, et les réordonner enterrerait le badge d'un étage sous la
+  // denture du voisin.
+  expect(painted.length).toBeGreaterThan(1);
+
+  // L'autre bord : le même mécanisme, regardé de l'autre côté.
+  const drawingOf = () => page.evaluate(() =>
+    window.__viewer.renderer().model.wheels.map(w => w.cx.toFixed(3) + ',' + w.cy.toFixed(3)).join('|'));
+  const before = await drawingOf();
+  await expect(flip).toHaveAttribute('aria-pressed', 'false');
+  await flip.click();
+  await expect(flip).toHaveAttribute('aria-pressed', 'true');
+  // La liste montre toujours la vue de référence : « Iso » et « Iso opposée »
+  // sont la même vue, prise des deux bords.
+  await expect(select).toHaveValue('iso');
+  const after = await drawingOf();
+  expect(after).not.toBe(before);
+  // Gauche et droite s'échangent, le haut ne bouge pas.
+  const mirrored = before.split('|').map((seat, index) => {
+    const [x, y] = seat.split(',').map(Number);
+    const [ox, oy] = after.split('|')[index].split(',').map(Number);
+    return Math.abs(x + ox) < 1e-3 && Math.abs(y - oy) < 1e-3;
+  });
+  expect(mirrored.every(Boolean), 'le dessin ne s’est pas retourné : ' + after).toBe(true);
+
+  // Et l'on revient d'où l'on vient.
+  await flip.click();
+  await expect(flip).toHaveAttribute('aria-pressed', 'false');
+  expect(await drawingOf()).toBe(before);
+
+  // La vue dépliée n'est pas une projection : elle n'a pas de bord.
+  await select.selectOption('unfolded');
+  await expect(flip).toBeDisabled();
+  expect(errors).toEqual([]);
 });
 
 test('the animation cadence follows the mode, the poses never do', async ({ page }) => {
@@ -507,10 +904,15 @@ test('the three views share one animation clock across view switches', async ({ 
   await mount(page, ['spur', 'helical']);
   await showView(page, 'teeth');
   await page.evaluate(() => { window.__viewer.renderer().setAnimationAngle(90); window.__viewer.animationAngle = 90; });
-  const teeth = await page.locator('.train-wheel .rotor').first().getAttribute('transform');
-  expect(teeth).toMatch(/rotate\(90/);
+  // La roue d'ENTRÉE, désignée par son membre : les roues sont peintes du fond
+  // vers l'avant, et « la première du document » n'est plus la première du
+  // mécanisme — c'était même une roue menée, qui tourne trois fois moins vite.
+  const teeth = await page.locator('.train-wheel[data-member="s0-input"] .rotor').getAttribute('transform');
+  // Même horloge, donc même amplitude. Le signe, lui, dit de quel bout on
+  // regarde l'axe, et n'a pas à être le même dans deux vues différentes.
+  expect(teeth).toMatch(/^rotate\(-?90/);
   await showView(page, 'geometry');
-  expect(await page.locator('.index-rotor').first().getAttribute('transform')).toMatch(/rotate\(90/);
+  expect(await page.locator('.index-rotor[data-member="s0-input"]').getAttribute('transform')).toMatch(/rotate\(-?90/);
   await showView(page, 'kinematic');
   expect(await page.locator('.spin-mark').first().getAttribute('transform')).toMatch(/rotate\(90/);
 });
@@ -1310,21 +1712,28 @@ test('a chain that changes axis is drawn as one, not as a row of front views', a
 
   // Changer de point de vue change le dessin, jamais la mécanique.
   const seen = {};
-  for (const view of ['front', 'top', 'side', 'iso']) {
+  for (const view of ['unfolded', 'front', 'top', 'side', 'iso']) {
     seen[view] = await page.evaluate(v => {
       const renderer = window.__viewer.renderer();
       renderer.projection = v;
       renderer.render(renderer.solution);
       const model = renderer.model;
-      return { view: model.view.id,
+      return { view: model.view.id, mode: model.mode,
         drawing: model.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'),
         world: model.spatial.members.map(m => m.id + ':' + m.position.join(',')).join('|'),
         centres: model.stages.filter(s => Number.isFinite(s.centerDistance)).map(s =>
           Math.hypot(s.wheels[1].cx - s.wheels[0].cx, s.wheels[1].cy - s.wheels[0].cy) - s.centerDistance) };
     }, view);
-    expect(seen[view].view, 'la vue demandée est celle qui est rendue').toBe(view);
-    // Dans chaque vue, chaque engrènement reste à son entraxe calculé.
-    seen[view].centres.forEach(gap => expect(Math.abs(gap)).toBeLessThan(1e-6));
+    if (view !== 'unfolded') expect(seen[view].view, 'la vue demandée est celle qui est rendue').toBe(view);
+    if (seen[view].mode === 'unfolded') {
+      // La vue dépliée garde les longueurs vraies : c'est sa raison d'être.
+      seen[view].centres.forEach(gap => expect(Math.abs(gap)).toBeLessThan(1e-6));
+    } else {
+      // Une PROJECTION raccourcit ce qui a de la profondeur. Exiger l'entraxe
+      // vrai jusque dans l'axonométrie, c'était exiger un dessin qu'aucun
+      // point de vue ne peut voir.
+      seen[view].centres.forEach(gap => expect(gap).toBeLessThan(1e-6));
+    }
   }
   const worlds = new Set(Object.values(seen).map(s => s.world));
   expect(worlds.size, 'aucune pièce ne bouge quand on change de vue').toBe(1);
@@ -1341,34 +1750,40 @@ test('the point of view is a control, not a decoration (§28)', async ({ page })
 
   const select = page.locator('#viewerProjection');
   await expect(select).toBeEnabled();
-  await expect(select).toHaveValue('');
+  await expect(select).toHaveValue('unfolded');
   // La liste vient du moteur de projection : rien n'est réécrit dans l'UI.
   const offered = await select.locator('option').evaluateAll(list => list.map(o => o.value));
   const known = await page.evaluate(() => GearProjectionEngine.VIEWS.map(v => v.id));
-  expect(offered).toEqual([''].concat(known));
+  // « Dépliée » vient en tête, et sous son nom : ce n'est pas une projection,
+  // et la faire passer pour le comportement caché des autres était la source
+  // de la confusion entre comprendre et mesurer.
+  expect(offered).toEqual(['unfolded'].concat(known));
 
   const shot = () => page.evaluate(() => {
     const svg = document.querySelector('#svgContainer svg');
     const model = window.__viewer.renderer().model;
-    return { announced: svg.dataset.view,
+    return { announced: svg.dataset.view, mode: model.mode,
       drawing: model.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'),
       world: model.spatial.members.map(m => m.id + ':' + m.position.join(',')).join('|') };
   });
 
   const automatic = await shot();
+  expect(automatic.mode, 'la vue par défaut est la vue dépliée').toBe('unfolded');
   const drawings = new Set([automatic.drawing]);
   for (const id of known) {
     await select.selectOption(id);
     const seen = await shot();
     // Ce que la commande promet : le dessin change, la mécanique non.
     expect(seen.announced, id).toBe(id);
+    // Et une vue nommée comme une projection EST une projection.
+    expect(seen.mode, id + ' doit être une vraie projection').toBe('projected');
     expect(seen.world, id + ' : aucune pièce ne bouge').toBe(automatic.world);
     drawings.add(seen.drawing);
   }
   expect(drawings.size, 'chaque point de vue doit donner un dessin distinct').toBeGreaterThan(1);
 
-  // Retour à l'automatique : on retrouve exactement le dessin de départ.
-  await select.selectOption('');
+  // Retour à la vue dépliée : on retrouve exactement le dessin de départ.
+  await select.selectOption('unfolded');
   expect((await shot()).drawing).toBe(automatic.drawing);
 
   // Une seule commande pour les trois vues : elles dessinent le même
@@ -1385,17 +1800,16 @@ test('the point of view is a control, not a decoration (§28)', async ({ page })
   const flat = await drawn();
   await select.selectOption('side');
   expect(await drawn(), 'la vue cotée suit le point de vue choisi').not.toBe(flat);
-  await select.selectOption('');
+  await select.selectOption('unfolded');
 
-  // La Cinématique aussi, et elle annonce celui qu'elle a retenu.
+  // La Cinématique, elle, n'a pas de point de vue à choisir : c'est un schéma
+  // fonctionnel, et le réorganiser au gré d'une caméra reviendrait à le prendre
+  // pour une vue du mécanisme.
   await showView(page, 'kinematic');
-  await expect(select).toBeEnabled();
-  await select.selectOption('iso');
-  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'iso');
-  await select.selectOption('top');
-  await expect(page.locator('#svgContainer svg')).toHaveAttribute('data-projection', 'top');
-  await select.selectOption('');
+  await expect(select).toBeDisabled();
+  await expect(select).toHaveAttribute('title', /schéma cinématique est fonctionnel/);
   await showView(page, 'teeth');
+  await expect(select).toBeEnabled();
 
   expect(errors).toEqual([]);
 });
@@ -1512,6 +1926,109 @@ test('the technical style is a drawing language, not a grey filter (§2, §53)',
   const back = await read();
   expect(back.teeth).toBe(visual.teeth);
   expect(back.mechanics).toBe(visual.mechanics);
+
+  expect(errors).toEqual([]);
+});
+
+test('a wheel seen edge-on does not spin like a disc (§4 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'bevel']);
+  await showView(page, 'teeth');
+
+  // Le renderer appliquait `rotate(angle)` à toute roue sans exception. Sur une
+  // roue dessinée en rectangle de largeur b, cela faisait basculer le rectangle
+  // en diagonale : mécaniquement absurde, et d'autant plus visible depuis que le
+  // modèle spatial place correctement les organes de profil.
+  const trace = view => page.evaluate(v => {
+    const renderer = window.__viewer.renderer();
+    renderer.projection = v;
+    renderer.render(renderer.solution);
+    const out = [];
+    // Les roues sont peintes du fond vers l'avant : leur ordre dans le document
+    // n'est plus celui du modèle. On les apparie donc par leur identifiant.
+    Array.from(document.querySelectorAll('#svgContainer .train-wheel')).forEach(host => {
+      const wheel = renderer.model.wheels.filter(w => w.memberId === host.dataset.member)[0];
+      if (!wheel) return;
+      const rotor = host.querySelector('.rotor');
+      const mark = host.querySelector('.phase-mark');
+      const frames = [0, 90, 180, 270].map(angle => {
+        renderer.setAnimationAngle(angle);
+        return { rotor: rotor.getAttribute('transform') || '',
+          mark: mark ? mark.getAttribute('transform') || '' : null };
+      });
+      out.push({ presentation: wheel.presentation, kind: wheel.kind, frames });
+    });
+    return out;
+  }, view);
+
+  for (const view of ['unfolded', 'front', 'iso']) {
+    const wheels = await trace(view);
+    expect(wheels.length, view).toBeGreaterThan(0);
+    wheels.forEach((wheel, index) => {
+      const label = `${view} / roue ${index} (${wheel.presentation})`;
+      if (wheel.presentation === 'face') {
+        // De face, le disque tourne réellement dans le plan.
+        const angles = wheel.frames.map(f => f.rotor);
+        expect(new Set(angles).size, label + ' : le disque doit tourner').toBeGreaterThan(1);
+        angles.forEach(a => expect(a, label).toMatch(/^rotate\(/));
+      } else {
+        // De profil ou obliquement, le CORPS ne bouge pas : il ne le peut pas.
+        wheel.frames.forEach(frame => {
+          expect(frame.rotor, label + ' : le corps doit rester fixe').toBe('');
+        });
+        // C'est un repère de phase qui porte le mouvement.
+        expect(wheel.frames[0].mark, label + ' : il faut un repère de phase').not.toBeNull();
+        const marks = wheel.frames.map(f => f.mark);
+        expect(new Set(marks).size, label + ' : le repère doit bouger').toBeGreaterThan(1);
+
+        const points = marks.map(m => m.replace(/[^-\d. ]/g, '').trim().split(/\s+/).map(Number));
+        if (wheel.presentation === 'profile') {
+          // Le cercle primitif vu par la tranche est un SEGMENT : le repère y
+          // va et vient, sans jamais quitter la ligne.
+          const spread = new Set(points.map(p => p[0].toFixed(3)));
+          expect(spread.size, label + ' : un segment, pas un cercle').toBe(1);
+          expect(new Set(points.map(p => p[1].toFixed(3))).size, label).toBeGreaterThan(1);
+        } else {
+          // Obliquement, c'est une ellipse : les deux coordonnées varient.
+          expect(new Set(points.map(p => p[0].toFixed(3))).size, label + ' : ellipse en x').toBeGreaterThan(1);
+          expect(new Set(points.map(p => p[1].toFixed(3))).size, label + ' : ellipse en y').toBeGreaterThan(1);
+        }
+      }
+    });
+  }
+
+  // De quel BOUT on regarde : `abs(dot(...))` détruisait cette information, et
+  // elle ne se reconstruit pas après coup. Une roue vue de son autre extrémité
+  // tourne, à l'écran, dans l'autre sens — l'angle appliqué doit donc porter le
+  // signe que le repère projeté donne, et pas seulement celui de la cinématique.
+  const applied = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    renderer.projection = 'unfolded';
+    renderer.render(renderer.solution);
+    renderer.setAnimationAngle(90);
+    const pose = GearKinematicsEngine.pose(renderer.scene.kinematics, 90);
+    return Array.from(document.querySelectorAll('#svgContainer .train-wheel'))
+      .map(host => {
+        // Appariement par identifiant : les roues sont peintes par profondeur.
+        const wheel = renderer.model.wheels.filter(w => w.memberId === host.dataset.member)[0];
+        if (!wheel) return {};
+        const drawn = host.querySelector('.rotor').getAttribute('transform');
+        return { presentation: wheel.presentation,
+          spin: wheel.phaseBasis ? wheel.phaseBasis.spin : null,
+          own: (pose.members[wheel.memberId] || {}).angle,
+          drawn: drawn ? Number(drawn.replace(/[^-\d.]/g, '')) : null };
+      })
+      .filter(w => w.presentation === 'face' && Number.isFinite(w.own) && w.own !== 0);
+  });
+  expect(applied.length, 'au moins une roue vue de face').toBeGreaterThan(0);
+  applied.forEach((wheel, index) => {
+    expect(wheel.spin, 'roue ' + index + ' : un sens apparent').not.toBe(0);
+    // L'angle dessiné est l'angle mécanique, orienté par le côté depuis lequel
+    // on regarde. Ignorer `spin`, c'est affirmer le même sens des deux bouts.
+    expect(Math.sign(wheel.drawn), 'roue ' + index + ' : sens apparent')
+      .toBe(Math.sign(wheel.own * wheel.spin));
+    expect(Math.abs(Math.abs(wheel.drawn) - Math.abs(wheel.own)), 'roue ' + index).toBeLessThan(0.01);
+  });
 
   expect(errors).toEqual([]);
 });

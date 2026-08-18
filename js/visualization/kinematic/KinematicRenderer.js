@@ -93,7 +93,9 @@
     var stages = solution.stages || solution;
     // Le graphe est déjà construit pour la scène : le schéma en tire sa
     // topologie plutôt que de relire les étages une seconde fois.
-    var layout = this.layoutEngine.layout(stages, this.projection,
+    // Le schéma garde sa présentation quoi qu'il arrive : c'est un diagramme
+    // fonctionnel, pas une vue du mécanisme.
+    var layout = this.layoutEngine.layout(stages, 'schematic',
       { graph: typeof GearMechanicalGraph !== 'undefined' ? GearMechanicalGraph.build(solution, this.scene) : null });
     var svg = document.createElementNS(NS, 'svg');
     var viewport = document.createElementNS(NS, 'g');

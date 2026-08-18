@@ -21,12 +21,14 @@
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('./core/SceneBuilder.js') : root.GearSceneBuilder,
-    common ? require('./core/GeometryUtils.js') : root.GearGeometryUtils,
+    common ? require('./core/FlexibleDriveGeometry.js') : root.GearFlexibleDriveGeometry,
     common ? require('./core/MechanicalGraph.js') : root.GearMechanicalGraph,
     common ? require('./core/SpatialLayout.js') : root.GearSpatialLayout,
-    common ? require('./core/ProjectionEngine.js') : root.GearProjectionEngine);
+    common ? require('./core/ProjectionEngine.js') : root.GearProjectionEngine,
+    common ? require('./core/ProjectedScene.js') : root.GearProjectedScene,
+    common ? require('./overlays/ForceOverlay.js') : root.GearForceOverlay);
   if (common) module.exports = api; else root.GearTrainLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, GeometryUtils, MechanicalGraph, SpatialLayout, Projection) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, FlexibleDrive, MechanicalGraph, SpatialLayout, Projection, ProjectedScene, ForceOverlay) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -89,6 +91,8 @@
    * voit en disque, en rectangle, ou entre les deux.
    */
   function frameOf(solution, scene, options) {
+    // Le repère porte déjà sa scène projetée : présentation, raccourci, côté,
+    // profondeur et repères de phase sont calculés une fois pour les trois vues.
     return SpatialLayout.frame(MechanicalGraph.build(solution, scene), options);
   }
 
@@ -106,16 +110,13 @@
    * l'œil — et lui en donner une ferait tourner ses étiquettes pour rien.
    */
   function orientation(frame, member) {
-    var placed = frame.spatial.byId[member.id];
-    if (!placed) return {};
-    var presentation = Projection.presentation(placed.axis, frame.view);
-    var along = alongOf(frame, member.id);
-    var out = { presentation: presentation,
-      foreshortening: Projection.foreshortening(placed.axis, frame.view) };
-    if (presentation !== 'face' && Math.hypot(along[0], along[1]) > 1e-9) {
-      out.axisAngleDeg = deg(Math.atan2(along[1], along[0]));
-    }
-    return out;
+    var seen = frame.projected && frame.projected.member(member.id);
+    if (!seen) return {};
+    return { presentation: seen.presentation, foreshortening: seen.foreshortening,
+      // De quel BOUT on regarde, et dans quel repère d'écran tourne ce qui
+      // tourne : sans eux, l'animation suppose partout une roue vue de face.
+      facing: seen.facing, phaseBasis: seen.basis, depth: seen.depth,
+      axisAngleDeg: seen.axisAngleDeg };
   }
 
   function seatOf(frame, memberId) {
@@ -140,16 +141,14 @@
   }
 
   /**
-   * Les deux directions de l'écran qui portent le plan perpendiculaire à un
-   * axe : c'est dans ce plan que les satellites tournent. Vu de face l'orbite
-   * est un cercle ; vue en coupe elle se réduit à un segment, et deux
-   * satellites se retrouvent l'un derrière l'autre — ce que cette vue montre.
+   * La base de phase de l'axe d'orbite : c'est dans ce plan que les satellites
+   * tournent. Vu de face l'orbite est un cercle ; obliquement une ellipse ; en
+   * coupe un segment, et deux satellites se retrouvent l'un derrière l'autre —
+   * ce que cette vue montre. C'est la MÊME base que celle qui donne sa phase à
+   * une roue : une seule formule pour toutes les rotations du dessin.
    */
   function orbitBasis(frame, axisDirection) {
-    var vector = MechanicalGraph.vector;
-    var e1 = vector.perpendicularDirection(axisDirection, 0);
-    var e2 = vector.cross(axisDirection, e1);
-    return [Projection.project(e1, frame.view), Projection.project(e2, frame.view)];
+    return ProjectedScene.phaseBasis(axisDirection, frame.view);
   }
 
   // ===== Étages =====
@@ -181,11 +180,13 @@
     var basis = orbitBasis(frame, orbitAxis ? orbitAxis.direction : [1, 0, 0]);
     for (var pi = 0; pi < count; pi++) {
       var a = 2 * Math.PI * pi / count;
+      var seat = ProjectedScene.phasePoint(basis, orbit, a);
       entry.wheels.push(wheelAt(frame, byRole.P, {
         role: 'planet',
-        cx: centre.x + orbit * (Math.cos(a) * basis[0][0] + Math.sin(a) * basis[1][0]),
-        cy: centre.y + orbit * (Math.cos(a) * basis[0][1] + Math.sin(a) * basis[1][1]),
-        orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y,
+        cx: centre.x + seat[0], cy: centre.y + seat[1],
+        // La base voyage avec le satellite : c'est elle, et non un `rotate()`
+        // d'écran, qui donne sa place à chaque instant de l'animation.
+        orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y, orbitBasis: basis,
         orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
       }));
     }
@@ -257,7 +258,7 @@
       : connection.axisRelation === 'perpendicular' ? 'break' : 'mesh';
 
     entry.wheels.push(wIn, wOut);
-    if (isBeltLike) entry.links.push(flexibleLink(connection, wIn, wOut, 's' + index + '-drive'));
+    if (isBeltLike) entry.links.push(flexibleLink(frame, connection, byRole, wIn, wOut, 's' + index + '-drive'));
     if (stage.type === 'bevel') {
       // Les deux axes se coupent en un POINT unique : le sommet commun des
       // cônes primitifs. Le modèle spatial le connaît — c'est lui qui a servi
@@ -330,6 +331,9 @@
       else if (stage.type === 'planetary' || stage.type === 'epicyclic') planetaryStage(frame, scene, stage, index, byRole, entry);
       else pairStage(frame, connection, stage, index, byRole, entry);
 
+      // Le repère des efforts, une fois l'étage placé : il a besoin des roues
+      // dessinées pour savoir OÙ les flèches s'appliquent.
+      entry.forceFrame = forceFrameOf(frame, index, byRole, entry);
       out.push(entry);
     });
 
@@ -364,6 +368,10 @@
       wheels: wheels,
       shafts: shaftSegments(frame, scene),
       view: frame.view,
+      // 'unfolded' ou 'projected' : ce que la vue AFFIRME. La distinction
+      // décide de ce qu'on a le droit de lire sur le dessin.
+      mode: frame.mode,
+      projected: frame.projected,
       graph: frame.graph,
       spatial: frame.spatial,
       scene: scene,
@@ -373,6 +381,65 @@
         output: anchorFor(out.length - 1, 'output', last ? last.wheels[0] : null)
       }
     };
+  }
+
+  /**
+   * Le repère mécanique dans lequel vivent Ft, Fr et Fa, et le point où ils
+   * s'appliquent : le point primitif, là où les dents se touchent.
+   *
+   * Les trois directions étaient écrites en dur à l'écran — Ft horizontal, Fr
+   * vertical, Fa à 45° —, la même rosace pour toutes les familles et tous les
+   * points de vue. Elle vient maintenant de l'axe de l'organe menant et de la
+   * ligne des centres. Un étage dont on ne sait pas construire cette ligne n'a
+   * pas de repère, et ne reçoit donc aucune flèche.
+   */
+  /** Ce qui sépare deux points UNE FOIS l'écart le long de l'axe retiré. */
+  function distanceOffAxis(driver, mate) {
+    var vector = MechanicalGraph.vector;
+    var delta = [mate[0] - driver.position[0], mate[1] - driver.position[1], mate[2] - driver.position[2]];
+    var along = vector.dot(delta, driver.axis);
+    return vector.norm([delta[0] - driver.axis[0] * along, delta[1] - driver.axis[1] * along,
+      delta[2] - driver.axis[2] * along]);
+  }
+
+  function forceFrameOf(frame, index, byRole, entry) {
+    var vector = MechanicalGraph.vector;
+    function placed(member) { return member && frame.spatial.byId[member.id]; }
+    var driver = placed(byRole.input) || placed(byRole.S);
+    if (!driver) return null;
+    var driven = placed(byRole.output) || placed(byRole.P);
+    var mate = driven ? driven.position : null;
+    // Un satellite est placé sur l'axe du porte-satellites : le modèle spatial
+    // ne lui donne pas encore de position propre (les ports du planétaire
+    // restent à faire). Sa ligne des centres est celle qui sert à le DESSINER
+    // — le premier rayon d'orbite —, pas une direction inventée pour l'occasion.
+    if (mate && entry.carrier && entry.carrier.orbit > 0 &&
+        distanceOffAxis(driver, mate) < 1e-9) {
+      mate = vector.add(driver.position,
+        vector.scale(vector.perpendicularDirection(driver.axis, 0), entry.carrier.orbit));
+    }
+    if (!mate) {
+      // Une crémaillère n'a pas de centre : sa ligne des centres est la
+      // perpendiculaire commune à l'axe du pignon et à la glissière.
+      var slide = (frame.graph.slides || []).filter(function (s) { return s.stageIndex === index; })[0];
+      if (!slide) return null;
+      mate = vector.add(driver.position, vector.cross(driver.axis, slide.direction));
+    }
+    // Le point d'application, à l'écran : sur la ligne des centres DESSINÉE, à
+    // un rayon primitif du centre menant.
+    var from = entry.wheels[0];
+    var to = entry.wheels.filter(function (wheel) { return wheel.role === 'planet'; })[0] || entry.wheels[1];
+    var origin = [finite(from && from.cx, 0), finite(from && from.cy, 0)];
+    if (from && to) {
+      var dx = to.cx - from.cx, dy = to.cy - from.cy;
+      var span = Math.hypot(dx, dy);
+      if (span > 1e-9) {
+        var reach = Math.min(finite(from.pitchD, 0) / 2, span);
+        origin = [from.cx + dx / span * reach, from.cy + dy / span * reach];
+      }
+    }
+    return ForceOverlay.frame({ axis: driver.axis, centre: driver.position, mate: mate,
+      view: frame.view, origin: origin });
   }
 
   /**
@@ -405,11 +472,16 @@
   }
 
   /**
-   * Brin flexible exact : tangentes calculées, longueur développée et angles
-   * d'enroulement réels. En cas de géométrie dégénérée on retombe sur les deux
-   * segments sommet-à-sommet, qui restent finis.
+   * Brin flexible exact, construit DANS LE PLAN DE COURROIE puis projeté.
+   *
+   * Les deux centres étaient pris à l'écran, et la géométrie exacte calculée
+   * sur cette image : la courroie était donc plate même quand le mécanisme ne
+   * l'était pas, et son enroulement se lisait sur un cercle que la vue avait
+   * déjà déformé. Tangentes, arcs et longueur développée sont maintenant
+   * calculés en millimètres réels dans le plan des poulies ; seule leur image
+   * arrive à l'écran.
    */
-  function flexibleLink(connection, wIn, wOut, driveId) {
+  function flexibleLink(frame, connection, byRole, wIn, wOut, driveId) {
     var link = { kind: connection.type === 'belt' ? 'belt-span' : 'chain-span',
       crossed: !!connection.crossed,
       x1: wIn.cx, y1: wIn.cy, r1: wIn.pitchD / 2,
@@ -417,20 +489,27 @@
       pitch: finite(connection.pitch, Math.PI * finite(wIn.module, 1)),
       elements: finite(connection.elements, 0),
       driveId: driveId };
-    try {
-      var path = GeometryUtils.flexiblePath({ x: link.x1, y: link.y1 }, { x: link.x2, y: link.y2 }, link.r1, link.r2, link.crossed);
-      // Le chemin complet est conservé : c'est lui, et non les seuls brins
-      // droits, qui porte l'abscisse curviligne des éléments animés.
-      link.path = path;
-      link.tangents = path.tangents;
-      link.spanLength = path.spanLength;
-      link.wrapAngle1Deg = path.wrapAngle1 * 180 / Math.PI;
-      link.wrapAngle2Deg = path.wrapAngle2 * 180 / Math.PI;
-      link.length = path.length;
-      link.outline = GeometryUtils.flexibleOutline(path, link.r1, link.r2);
-    } catch (e) {
-      link.tangents = null;
-    }
+    var placedIn = byRole.input && frame.spatial.byId[byRole.input.id];
+    var placedOut = byRole.output && frame.spatial.byId[byRole.output.id];
+    if (!placedIn || !placedOut) return link;
+    var geometry = FlexibleDrive.build({
+      axis: placedIn.axis, centre1: placedIn.position, centre2: placedOut.position,
+      r1: link.r1, r2: link.r2, crossed: link.crossed, view: frame.view,
+      // La courroie doit toucher les poulies TELLES QUE LA VUE LES A POSÉES :
+      // en vue dépliée, celles-ci ne sont pas à leur projection stricte.
+      drawn1: [wIn.cx, wIn.cy], drawn2: [wOut.cx, wOut.cy] });
+    if (!geometry) return link;
+    link.geometry = geometry;
+    link.outline = geometry.outline;
+    link.tangents = geometry.tangentPoints;
+    link.spanLength = geometry.spanLength;
+    link.wrapAngle1Deg = geometry.wrapAngle1Deg;
+    link.wrapAngle2Deg = geometry.wrapAngle2Deg;
+    link.length = geometry.length;
+    link.centerDistance = geometry.distance;
+    // Plan de courroie vu par la tranche : il n'y a plus de surface enroulée à
+    // montrer, et le dire évite de coter un enroulement qu'on ne voit pas.
+    link.collapsed = geometry.collapsed;
     return link;
   }
 

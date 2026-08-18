@@ -583,9 +583,9 @@
               title="Vocabulaire du dessin d’ensemble : contours, axes, surfaces primitives, très peu de couleur">Technique</button>
           </span>
           <label class="viewer-projection-label" for="viewerProjection">Point de vue</label>
-          <select id="viewerProjection" class="viewer-speed" title="D’où l’on regarde la transmission : les pièces ne bougent pas, seule leur image change">
-            <option value="">Automatique</option>
-          </select>
+          <select id="viewerProjection" class="viewer-speed" title="D’où l’on regarde la transmission : les pièces ne bougent pas, seule leur image change"></select>
+          <button id="viewerOpposite" type="button" class="btn-small" aria-pressed="false"
+            title="Regarder le mécanisme de l’autre bord : l’autre extrémité des arbres, et les sens apparents de rotation inversés">⇄ Autre bord</button>
           <div class="segmented view-framing" role="group" aria-label="Cadrage">
             <button id="viewerReset" type="button" class="btn-small" title="Cadrer la transmission entière">Tout voir</button>
             <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>
@@ -741,6 +741,9 @@
   <script src="js/visualization/core/SceneBuilder.js" defer></script>
   <script src="js/visualization/core/MechanicalGraph.js" defer></script>
   <script src="js/visualization/core/ProjectionEngine.js" defer></script>
+  <!-- ProjectedScene avant SpatialLayout : c'est lui qui décrit comment chaque
+       pièce se présente, et le repère spatial le porte désormais. -->
+  <script src="js/visualization/core/ProjectedScene.js" defer></script>
   <script src="js/visualization/core/SpatialLayout.js" defer></script>
   <script src="js/visualization/technical/MechanicalDraftingTheme.js" defer></script>
   <script src="js/visualization/kinematic/KinematicLayoutEngine.js" defer></script>
@@ -750,8 +753,10 @@
   <script src="js/visualization/core/ViewportController.js" defer></script>
   <script src="js/visualization/core/SvgExport.js" defer></script>
   <script src="js/visualization/core/GeometryUtils.js" defer></script>
+  <script src="js/visualization/core/FlexibleDriveGeometry.js" defer></script>
   <script src="js/visualization/core/GroundSymbol.js" defer></script>
   <script src="js/visualization/core/ViewerHUD.js" defer></script>
+  <script src="js/visualization/overlays/ForceOverlay.js" defer></script>
   <script src="js/visualization/geometry/GeometryLayout.js" defer></script>
   <script src="js/visualization/geometry/GeometryPrimitives.js" defer></script>
   <script src="js/visualization/geometry/DimensionRenderer.js" defer></script>
@@ -760,7 +765,6 @@
   <script src="js/visualization/teeth/TeethPrimitives.js" defer></script>
   <script src="js/visualization/teeth/TeethOverlay.js" defer></script>
   <script src="js/visualization/StageInspector.js" defer></script>
-  <script src="js/visualization/overlays/ForceOverlay.js" defer></script>
   <script src="js/visualization/overlays/WarningOverlay.js" defer></script>
   <script src="js/visualization/TrainLayout.js" defer></script>
   <script src="js/visualization/TrainRenderer.js" defer></script>

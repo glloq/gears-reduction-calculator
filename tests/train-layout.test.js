@@ -49,7 +49,7 @@ test('mixed 8-type chain lays out with finite coordinates everywhere', () => {
   assert.equal(planetary.wheels.filter(w => w.role === 'planet').length, 4);
 });
 
-test('consecutive external pairs are compound: one shaft, two wheels, one truth per view', () => {
+test('consecutive external pairs are compound: one shaft, two wheels', () => {
   // L'ancienne version exigeait que les deux roues soient AU MÊME POINT. Elles
   // n'y sont que vues de bout : sur un arbre qui a une longueur, elles sont
   // séparées de leur écart axial. Exiger la superposition, c'était interdire
@@ -64,18 +64,32 @@ test('consecutive external pairs are compound: one shaft, two wheels, one truth 
   const body = model.graph.rigidBodyOf(out0.memberId);
   assert.ok(body.includes(in1.memberId), 'les deux roues appartiennent au même corps');
 
-  ['front', 'top', 'side', 'iso'].forEach(view => {
+  ['unfolded', 'front', 'top', 'side', 'iso'].forEach(view => {
     const seen = Layout.layout(stages, [mech(3), mech(3)], { view });
     const [a, b] = [seen.stages[0].wheels[1], seen.stages[1].wheels[0]];
-    const shaft = seen.shafts.find(s => s.memberIds.includes(a.memberId));
-    const drawn = Math.hypot(b.cx - a.cx, b.cy - a.cy);
-    const axial = Math.abs(seen.spatial.byId[b.memberId].axialPosition
-      - seen.spatial.byId[a.memberId].axialPosition);
+    const worldA = seen.spatial.byId[a.memberId], worldB = seen.spatial.byId[b.memberId];
+    const axial = Math.abs(worldB.axialPosition - worldA.axialPosition);
     assert.ok(axial > 0, 'les deux roues occupent deux places sur l’arbre');
-    // Vu en bout, l'arbre est un point et les roues sont concentriques : c'est
-    // ce que cette vue montre. Vu de côté, elles sont à leur écart réel.
-    assert.ok(Math.abs(drawn - (shaft.endOn ? 0 : axial)) < 1e-6,
-      `${view} : ${drawn.toFixed(2)} dessiné, ${shaft.endOn ? 0 : axial.toFixed(2)} attendu`);
+    const drawn = Math.hypot(b.cx - a.cx, b.cy - a.cy);
+
+    if (seen.mode === 'projected') {
+      // Une PROJECTION dessine l'image de l'écart, et rien d'autre : elle le
+      // raccourcit dès qu'il possède une composante en profondeur, et le
+      // réduit à zéro quand l'arbre pointe vers l'œil. C'est ce qu'une vue
+      // montre, et c'est justement ce que le dépliage refuse de faire.
+      const gap = [0, 1, 2].map(i => worldB.position[i] - worldA.position[i]);
+      const expected = Math.hypot(
+        gap.reduce((sum, c, i) => sum + c * seen.view.u[i], 0),
+        gap.reduce((sum, c, i) => sum + c * seen.view.v[i], 0));
+      assert.ok(Math.abs(drawn - expected) < 1e-6, `${view} : ${drawn.toFixed(2)} contre ${expected.toFixed(2)}`);
+      assert.ok(drawn <= axial + 1e-6, `${view} : une projection ne rallonge jamais`);
+    } else {
+      // DÉPLIÉE : la longueur reste vraie, ou nulle si l'arbre est vu en bout —
+      // ce qui est la seule superposition légitime.
+      const shaft = seen.shafts.find(s => s.memberIds.includes(a.memberId));
+      assert.ok(Math.abs(drawn - (shaft.endOn ? 0 : axial)) < 1e-6,
+        `${view} : ${drawn.toFixed(2)} dessiné, ${shaft.endOn ? 0 : axial.toFixed(2)} attendu`);
+    }
   });
 });
 
@@ -209,23 +223,47 @@ test('how a part is drawn follows the projection of its axis, and nothing else',
   });
 });
 
-test('changing the view changes the drawing, never the mechanism', () => {
+test('a projection shortens what is oblique; only the unfolded view refuses to', () => {
+  // C'était la confusion de fond : `front`, `top`, `side` et `iso` nommaient des
+  // projections, mais toutes passaient par le dépliage. L'entraxe dessiné
+  // restait donc égal à l'entraxe vrai jusque dans l'axonométrie — ce qui ne
+  // peut pas arriver dans une projection, et qu'un test exigeait pourtant.
   const stages = [pair('spur', 12, 36), pair('spur', 15, 45)];
-  const views = ['front', 'top', 'side', 'iso'].map(view => Layout.layout(stages, [mech(3), mech(3)], { view }));
+  const views = ['unfolded', 'front', 'top', 'side', 'iso']
+    .map(view => Layout.layout(stages, [mech(3), mech(3)], { view }));
   const reference = views[0].spatial.members.map(m => m.id + ':' + m.position.join(','));
+
   views.forEach(model => {
+    // Le monde ne bouge jamais : c'est l'invariant que la séparation protège.
     assert.deepEqual(model.spatial.members.map(m => m.id + ':' + m.position.join(',')), reference,
       model.view.id + ' : aucune pièce ne bouge dans l’espace');
-    // Et dans chaque vue, l'entraxe dessiné reste l'entraxe calculé.
+
     model.stages.forEach((entry, index) => {
       if (!Number.isFinite(entry.centerDistance)) return;
       const [a, b] = entry.wheels;
       const drawn = Math.hypot(b.cx - a.cx, b.cy - a.cy);
-      assert.ok(Math.abs(drawn - entry.centerDistance) < 1e-6,
-        `${model.view.id} / étage ${index} : ${drawn.toFixed(2)} pour ${entry.centerDistance.toFixed(2)}`);
+      if (model.mode === 'unfolded') {
+        assert.ok(Math.abs(drawn - entry.centerDistance) < 1e-6,
+          `déplié / étage ${index} : ${drawn.toFixed(2)} pour ${entry.centerDistance.toFixed(2)}`);
+      } else {
+        assert.ok(drawn <= entry.centerDistance + 1e-6,
+          `${model.view.id} / étage ${index} : ${drawn.toFixed(2)} > ${entry.centerDistance.toFixed(2)}`);
+      }
+      // Dans TOUS les cas, la valeur de la cote vient du modèle et pas du
+      // dessin : c'est elle qu'on lit, jamais le trait qu'on mesure.
+      assert.equal(entry.centerDistance, views[0].stages[index].centerDistance);
     });
   });
-  // Les dessins ne sont pas tous identiques : sinon la vue ne servirait à rien.
+
+  // L'isométrie raccourcit réellement : sinon elle n'en serait pas une.
+  const iso = views.find(m => m.view.id === 'iso');
+  const shortened = iso.stages.some((entry, index) => {
+    if (!Number.isFinite(entry.centerDistance)) return false;
+    const [a, b] = entry.wheels;
+    return Math.hypot(b.cx - a.cx, b.cy - a.cy) < entry.centerDistance - 1e-6;
+  });
+  assert.ok(shortened, 'une isométrie doit raccourcir ce qui a de la profondeur');
+
   const drawings = views.map(m => m.wheels.map(w => w.cx.toFixed(2) + ',' + w.cy.toFixed(2)).join('|'));
   assert.ok(new Set(drawings).size > 1, 'toutes les vues donnent le même dessin');
 });

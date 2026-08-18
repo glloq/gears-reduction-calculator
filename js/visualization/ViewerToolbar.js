@@ -86,7 +86,12 @@
     // qui montre le plus de denture. Le choix vaut pour toute la session : un
     // point de vue qui se réinitialiserait à chaque solution obligerait à le
     // reposer sans cesse pendant qu'on compare deux réducteurs.
-    this.projection = '';
+    // Le point de vue, et le SYSTÈME qui va avec. « Dépliée » conserve les
+    // longueurs vraies pour comprendre d'un coup d'œil ; les quatre autres
+    // sont de vraies projections, où une longueur oblique apparaît raccourcie.
+    // Les confondre sous un « Auto » ne rendait service à personne : on ne
+    // savait plus si le dessin mesurait ou expliquait.
+    this.projection = 'unfolded';
     // §2 : le STYLE de dessin. `visual` est ce que l'application montre depuis
     // toujours ; `technical` emprunte le vocabulaire du dessin d'ensemble. Le
     // style ne touche jamais à la mécanique — mêmes organes, mêmes rapports,
@@ -205,13 +210,16 @@
    * sur un coin de l'ancien dessin.
    */
   ViewerToolbar.prototype.setProjection = function (id) {
-    this.projection = id || '';
+    this.projection = id || 'unfolded';
     // Les trois vues dessinent le même mécanisme depuis le même endroit. Une
     // commande par vue — un sélecteur ici, trois boutons dans la Cinématique —
     // laissait croire à deux réglages indépendants, et il fallait les reposer
     // l'un après l'autre en changeant de vue.
-    ['teeth', 'geometry', 'kinematic'].forEach(function (name) {
-      if (this[name]) this[name].projection = this.projection || (name === 'kinematic' ? 'auto' : null);
+    // La Cinématique est délibérément absente : son schéma est fonctionnel, et
+    // le réorganiser au gré d'une caméra reviendrait à le prendre pour une vue
+    // du mécanisme.
+    ['teeth', 'geometry'].forEach(function (name) {
+      if (this[name]) this[name].projection = this.projection;
     }, this);
     this.camera = {};
     if (this.solution) this.render(this.solution);
@@ -257,8 +265,12 @@
   ViewerToolbar.prototype._syncProjection = function () {
     var select = document.getElementById('viewerProjection');
     if (!select) return this;
-    if (select.options.length <= 1 && typeof GearProjectionEngine !== 'undefined') {
-      GearProjectionEngine.VIEWS.forEach(function (view) {
+    if (!select.options.length && typeof GearProjectionEngine !== 'undefined') {
+      // La vue dépliée n'est pas une projection : elle vient donc en tête, et
+      // sous son nom, plutôt que d'être le comportement caché du reste.
+      var choices = [{ id: 'unfolded', label: 'Dépliée', help: UNFOLDED_HELP }]
+        .concat(GearProjectionEngine.VIEWS);
+      choices.forEach(function (view) {
         var option = document.createElement('option');
         option.value = view.id;
         option.textContent = view.label;
@@ -266,10 +278,35 @@
         select.appendChild(option);
       });
     }
-    select.value = this.projection || '';
-    var chosen = this.projection && typeof GearProjectionEngine !== 'undefined'
-      ? GearProjectionEngine.view(this.projection) : null;
-    select.title = chosen ? chosen.help : 'Automatique : chaque vue choisit le point de vue qui la sert';
+    // Une vue opposée n'a pas d'entrée à elle : la liste montre sa vue de
+    // référence, et le bouton « autre bord » dit de quel côté on se trouve.
+    var current = this.projection || 'unfolded';
+    var known = typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine.view(current) : null;
+    var reversed = !!(known && known.id === current && (GearProjectionEngine.OPPOSITES || []).some(function (view) {
+      return view.id === current;
+    }));
+    select.value = reversed ? known.opposite : current;
+    var flip = document.getElementById('viewerOpposite');
+    if (flip) {
+      var flippable = this.currentView !== 'kinematic' && current !== 'unfolded';
+      flip.disabled = !flippable;
+      flip.setAttribute('aria-pressed', String(reversed));
+      flip.classList.toggle('active', reversed);
+      flip.title = !flippable
+        ? 'La vue dépliée n’a pas de bord : elle n’est pas une projection'
+        : reversed ? 'Revenir du côté ' + GearProjectionEngine.view(known.opposite).label.toLowerCase()
+          : 'Regarder le mécanisme de l’autre bord : l’autre extrémité des arbres, et les sens apparents de rotation inversés';
+    }
+    // La Cinématique n'a pas de point de vue à choisir : elle est un schéma,
+    // et le dire vaut mieux que de laisser croire qu'on a mal cliqué.
+    var spatial = this.currentView !== 'kinematic';
+    select.disabled = !spatial;
+    select.title = !spatial
+      ? 'Le schéma cinématique est fonctionnel : sa disposition ne dépend d’aucun point de vue'
+      : this.projection === 'unfolded' || !this.projection ? UNFOLDED_HELP
+        : (typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine.view(this.projection).help : '');
+    var label = document.querySelector('.viewer-projection-label');
+    if (label) label.classList.toggle('is-disabled', !spatial);
     return this;
   };
 
@@ -306,7 +343,11 @@
    * membre, encore fallait-il le dire.
    */
   var FIDELITY = {
-    teeth: 'Dentures et entraxes à l’échelle réelle.',
+    // La phrase affirmait « dentures et entraxes à l'échelle réelle » quelle que
+    // soit la vue. C'est vrai de la vue dépliée, et faux d'une projection, qui
+    // raccourcit justement ce qui a de la profondeur : c'est `_systemFidelity`
+    // qui le dit maintenant, et lui seul.
+    teeth: 'Dentures à l’échelle réelle.',
     geometry: 'Vue cotée : diamètres, entraxes et courses sont ceux du calcul.',
     kinematic: 'Schéma symbolique : les positions et les tailles ne sont pas à l’échelle, seuls les liens et les vitesses ont un sens.'
   };
@@ -321,6 +362,28 @@
    * d'arbre par défaut, ou purement conventionnelle — et la vue dit la moins
    * bonne des trois, puisque c'est elle qui limite ce qu'on peut affirmer.
    */
+  var UNFOLDED_HELP = 'Vue dépliée : les orientations viennent de la projection, ' +
+    'les entraxes et les longueurs gardent leur valeur vraie.';
+
+  /**
+   * Lequel des deux systèmes le dessin utilise — et donc ce qu'on a le droit
+   * d'y lire.
+   *
+   * La distinction n'existait pas : toutes les vues passaient par le dépliage,
+   * et l'utilisateur croyait mesurer là où il comprenait. Une projection
+   * raccourcit ce qui a de la profondeur, et le dire vaut mieux que de laisser
+   * quelqu'un reporter une longueur prise sur l'écran.
+   */
+  ViewerToolbar.prototype._systemFidelity = function (rendered) {
+    var mode = rendered && rendered.model && rendered.model.mode;
+    if (mode === 'unfolded') return ' ' + UNFOLDED_HELP;
+    if (mode === 'projected') {
+      return ' Projection orthographique : les longueurs obliques apparaissent ' +
+        'raccourcies ; les cotes donnent leur valeur réelle.';
+    }
+    return '';
+  };
+
   ViewerToolbar.prototype._axialFidelity = function (rendered) {
     var wheels = rendered && rendered.model && rendered.model.wheels;
     if (!wheels || !wheels.length) return '';
@@ -338,6 +401,7 @@
     // dessin absent parlerait du précédent.
     if (!rendered) { host.textContent = ''; host.title = ''; host.hidden = true; host.classList.remove('has-derived'); return; }
     var text = FIDELITY[this.currentView] || '';
+    text += this._systemFidelity(rendered);
     text += this._axialFidelity(rendered);
     var scene = rendered && rendered.scene;
     // Une cote reconstruite faute de mieux ne doit pas être lue comme une cote
@@ -576,6 +640,11 @@
         event.target.setAttribute('aria-pressed', String(self.animationMode === 'relative'));
         event.target.textContent = self.animationMode === 'relative' ? 'Cadence réelle' : 'Cadence pédagogique';
         self.container.dispatchEvent(new CustomEvent('viewer:animation-changed', { detail: { mode: self.animationMode } }));
+      }
+      if (event.target.id === 'viewerOpposite' && typeof GearProjectionEngine !== 'undefined') {
+        // Un seul bouton plutôt que huit entrées dans la liste : « De face » et
+        // « De derrière » sont la même coupe, prise de l'autre bord.
+        self.setProjection(GearProjectionEngine.opposite(self.projection));
       }
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();
       if (event.target.id === 'viewerFocus' && renderer.focusStage) renderer.focusStage(self.selectedStage);
