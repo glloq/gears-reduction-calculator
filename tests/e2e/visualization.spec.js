@@ -443,12 +443,15 @@ test('belt markers travel around the pulleys, not only along the strands', async
     const renderer = window.__viewer.renderer();
     const marker = document.querySelector('.belt-tooth');
     const link = renderer.model.stages[0].links[0];
-    const centre1 = link.path.centre1, centre2 = link.path.centre2;
+    // Les centres sont ceux de la courroie DESSINÉE : la géométrie vit dans le
+    // plan des poulies, et c'est son image qu'on suit ici.
+    const centre1 = { x: link.geometry.centre1[0], y: link.geometry.centre1[1] };
+    const centre2 = { x: link.geometry.centre2[0], y: link.geometry.centre2[1] };
     const positions = [];
     // Un tour complet de COURROIE, pas d'arbre : la courroie est bien plus
     // longue que la circonférence de la petite poulie.
-    const perRevolution = Math.PI * 2 * link.path.radius1;
-    const span = 360 * link.path.length / perRevolution;
+    const perRevolution = Math.PI * 2 * link.r1;
+    const span = 360 * link.length / perRevolution;
     for (let i = 0; i <= 120; i++) {
       renderer.setAnimationAngle(i * span / 120);
       const t = marker.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
@@ -456,8 +459,11 @@ test('belt markers travel around the pulleys, not only along the strands', async
       positions.push({ x, y,
         d1: Math.hypot(x - centre1.x, y - centre1.y), d2: Math.hypot(x - centre2.x, y - centre2.y) });
     }
-    return { positions, r1: link.path.radius1, r2: link.path.radius2 };
+    return { positions, r1: link.r1, r2: link.r2, collapsed: link.collapsed };
   });
+  // La vue par défaut voit la courroie de face : ses poulies sont des cercles,
+  // et une distance au centre s'y compare à un rayon.
+  expect(trace.collapsed, 'la courroie est vue par la tranche').toBe(false);
   // Le marqueur touche les deux poulies au cours du parcours.
   const onPulley1 = trace.positions.filter(p => Math.abs(p.d1 - trace.r1) < 0.5).length;
   const onPulley2 = trace.positions.filter(p => Math.abs(p.d2 - trace.r2) < 0.5).length;
@@ -468,6 +474,59 @@ test('belt markers travel around the pulleys, not only along the strands', async
     expect(p.d1).toBeGreaterThan(trace.r1 - 0.5);
     expect(p.d2).toBeGreaterThan(trace.r2 - 0.5);
   });
+});
+
+test('a belt hangs on its pulleys, whatever the projection (§6 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['belt']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+  const known = await page.evaluate(() => GearProjectionEngine.VIEWS.map(v => v.id));
+
+  const shot = () => page.evaluate(() => {
+    const model = window.__viewer.renderer().model;
+    const link = model.stages[0].links[0], wheels = model.stages[0].wheels;
+    const g = link.geometry;
+    // Chaque point de tangence, ramené dans le plan de courroie : sa distance
+    // au centre doit valoir le rayon de la poulie. C'est la tangence même, et
+    // elle ne survit pas à un tracé reconstruit à l'horizontale.
+    const det = g.first[0] * g.second[1] - g.second[0] * g.first[1];
+    const radii = Math.abs(det) < 1e-9 ? null : g.tangentPoints.map((point, index) => {
+      const dx = point[0] - g.origin[0], dy = point[1] - g.origin[1];
+      const a = (dx * g.second[1] - dy * g.second[0]) / det;
+      const b = (dy * g.first[0] - dx * g.first[1]) / det;
+      const centre = index % 2 === 0 ? [0, 0] : [g.distance, 0];
+      return Math.hypot(a - centre[0], b - centre[1]) - (index % 2 === 0 ? link.r1 : link.r2);
+    });
+    return {
+      seat1: [wheels[0].cx, wheels[0].cy], seat2: [wheels[1].cx, wheels[1].cy],
+      centre1: g.centre1, centre2: g.centre2, radii: radii,
+      wrap: link.wrapAngle1Deg, length: link.length, distance: link.centerDistance,
+      d: document.querySelector('#svgContainer .belt-line').getAttribute('d')
+    };
+  });
+
+  const drawings = new Set();
+  let reference = null;
+  for (const id of ['unfolded'].concat(known)) {
+    await select.selectOption(id);
+    const seen = await shot();
+    if (!reference) reference = seen;
+    // La courroie s'accroche aux poulies TELLES QUE LA VUE LES A POSÉES.
+    expect(Math.hypot(seen.centre1[0] - seen.seat1[0], seen.centre1[1] - seen.seat1[1])).toBeLessThan(1e-6);
+    expect(Math.hypot(seen.centre2[0] - seen.seat2[0], seen.centre2[1] - seen.seat2[1])).toBeLessThan(1e-6);
+    if (seen.radii) seen.radii.forEach(gap => expect(Math.abs(gap), 'tangence en ' + id).toBeLessThan(1e-6));
+    // Les grandeurs mécaniques ne dépendent pas du point de vue.
+    expect(seen.wrap, 'enroulement en ' + id).toBeCloseTo(reference.wrap, 6);
+    expect(seen.length, 'longueur développée en ' + id).toBeCloseTo(reference.length, 6);
+    expect(seen.distance, 'entraxe en ' + id).toBeCloseTo(reference.distance, 6);
+    expect(seen.d).not.toMatch(/NaN|Infinity/);
+    drawings.add(seen.d);
+  }
+  // Et le dessin, lui, change : une courroie vue de biais n'est pas la même
+  // image qu'une courroie vue de face.
+  expect(drawings.size, 'la courroie se dessine pareil partout').toBeGreaterThan(1);
+  expect(errors).toEqual([]);
 });
 
 test('the animation cadence follows the mode, the poses never do', async ({ page }) => {

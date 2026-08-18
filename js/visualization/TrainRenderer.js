@@ -411,7 +411,7 @@
     record.built = lod;
     record.markers.textContent = '';
     record.marks = [];
-    if (lod <= LEVELS.SILHOUETTE || !link.path || !(link.length > 0)) return;
+    if (lod <= LEVELS.SILHOUETTE || !link.geometry || !(link.length > 0)) return;
     var pitch = Math.max(1.5, finite(link.pitch, 4));
     var count = Math.min(lod === LEVELS.SIMPLIFIED ? 32 : 90, Math.max(6, Math.round(link.length / pitch)));
     var chain = link.kind === 'chain-span';
@@ -700,10 +700,14 @@
       // Défilement en millimètres réels issu de la pose : aucun produit
       // rayon × vitesse n'est refait ici.
       var offset = finite((flexible[link.driveId] || {}).offset, 0);
-      if (record.marks && link.path) {
+      if (record.marks && link.geometry) {
         record.marks.forEach(function (mark) {
-          var point = GearGeometryUtils.pointAlong(link.path, mark.s + offset);
-          if (point) mark.el.setAttribute('transform', 'translate(' + point.x.toFixed(2) + ' ' + point.y.toFixed(2) + ')');
+          // L'abscisse est comptée sur la courroie RÉELLE, en millimètres :
+          // c'est le plan de courroie qui transporte ensuite le point à
+          // l'écran. Un maillon ne parcourt donc pas un tracé d'écran, dont la
+          // longueur change avec le point de vue.
+          var point = link.geometry.point(mark.s + offset);
+          if (point) mark.el.setAttribute('transform', 'translate(' + point[0].toFixed(2) + ' ' + point[1].toFixed(2) + ')');
         });
       }
       record.path.setAttribute('stroke-dashoffset', (-offset).toFixed(1));

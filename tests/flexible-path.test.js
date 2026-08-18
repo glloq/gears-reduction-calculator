@@ -33,11 +33,8 @@ test('the developed length is the two spans plus the two wrapped arcs', () => {
   assert.ok(Geometry.flexiblePath({ x: 0, y: 0 }, { x: 200, y: 0 }, r1, r2, true).length > path.length);
 });
 
-test('the outline is a closed path and points travel along it without NaN', () => {
+test('points travel along the whole circuit without NaN', () => {
   const path = Geometry.flexiblePath({ x: 0, y: 0 }, { x: 200, y: 0 }, 20, 60, false);
-  const outline = Geometry.flexibleOutline(path, 20, 60);
-  assert.match(outline, /^M .* Z$/);
-  assert.doesNotMatch(outline, /NaN|Infinity/);
   for (const s of [0, 37, path.spanLength, 2 * path.spanLength, -15, 5000]) {
     const point = Geometry.pointAlong(path, s);
     assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), 's=' + s);

@@ -154,28 +154,31 @@
     return rotor;
   };
 
-  /** Brin flexible exact : tangentes calculées, jamais un segment approché. */
+  /**
+   * Brin flexible : la géométrie du PLAN DE COURROIE, projetée.
+   *
+   * Cette vue reconstruisait son propre tracé, avec `centre2 = (x + entraxe, y)` :
+   * la deuxième poulie était donc forcée à l'horizontale, et le dessin coté
+   * décrivait une courroie que la vue Transmission ne montrait pas. Il n'y a
+   * plus qu'une géométrie, calculée une fois par `FlexibleDriveGeometry`.
+   */
   GeometryRenderer.prototype._flexible = function (group, item) {
     var p = GearGeometryPrimitives;
-    var stage = item.stage, geometry = stage.geometry || {};
-    var exact;
-    try {
-      exact = GearGeometryUtils.flexiblePath({ x: item.x, y: item.y }, { x: item.x + item.centerDistance, y: item.y },
-        finite(geometry.pitchDiameterInput, 20) / 2, finite(geometry.pitchDiameterOutput, 40) / 2,
-        !!(stage.parameters && stage.parameters.crossed));
-    } catch (e) { return; }
-    group.appendChild(p.node('path', { d: GearGeometryUtils.flexibleOutline(exact, finite(geometry.pitchDiameterInput, 20) / 2, finite(geometry.pitchDiameterOutput, 40) / 2),
-      class: stage.type === 'chain' ? 'chain-span' : 'belt-span' }));
-    exact.tangents.forEach(function (tangent) {
-      [tangent.from, tangent.to].forEach(function (point) {
-        group.appendChild(p.node('circle', { cx: point.x.toFixed(3), cy: point.y.toFixed(3), r: 1.6, class: 'tangency-point' }));
-      });
+    var exact = item.flexible;
+    if (!exact || !exact.outline) return;
+    group.appendChild(p.node('path', { d: exact.outline,
+      class: item.stage.type === 'chain' ? 'chain-span' : 'belt-span' }));
+    exact.tangentPoints.forEach(function (point) {
+      group.appendChild(p.node('circle', { cx: point[0].toFixed(3), cy: point[1].toFixed(3), r: 1.6, class: 'tangency-point' }));
     });
     group.dataset.centerDistanceMm = exact.distance.toFixed(3);
-    group.dataset.wrapAngleDeg = (exact.wrapAngle1 * 180 / Math.PI).toFixed(2);
+    group.dataset.wrapAngleDeg = exact.wrapAngle1Deg.toFixed(2);
     group.dataset.crossed = String(exact.crossed);
-    group.appendChild(p.node('title', {}, 'Enroulement ' + fmt(exact.wrapAngle1 * 180 / Math.PI, 1) + '° / ' +
-      fmt(exact.wrapAngle2 * 180 / Math.PI, 1) + '° — longueur développée ' + fmt(exact.length, 1) + ' mm'));
+    // Vue par la tranche, la courroie n'a plus de surface : l'annoncer évite de
+    // laisser croire que l'enroulement dessiné est mesurable ici.
+    group.dataset.beltPlane = exact.collapsed ? 'edge-on' : 'visible';
+    group.appendChild(p.node('title', {}, 'Enroulement ' + fmt(exact.wrapAngle1Deg, 1) + '° / ' +
+      fmt(exact.wrapAngle2Deg, 1) + '° — longueur développée ' + fmt(exact.length, 1) + ' mm'));
   };
 
   GeometryRenderer.prototype._stageGroup = function (layer, item, interactive) {

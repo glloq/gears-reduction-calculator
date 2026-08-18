@@ -21,13 +21,13 @@
 (function (root, factory) {
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('./core/SceneBuilder.js') : root.GearSceneBuilder,
-    common ? require('./core/GeometryUtils.js') : root.GearGeometryUtils,
+    common ? require('./core/FlexibleDriveGeometry.js') : root.GearFlexibleDriveGeometry,
     common ? require('./core/MechanicalGraph.js') : root.GearMechanicalGraph,
     common ? require('./core/SpatialLayout.js') : root.GearSpatialLayout,
     common ? require('./core/ProjectionEngine.js') : root.GearProjectionEngine,
     common ? require('./core/ProjectedScene.js') : root.GearProjectedScene);
   if (common) module.exports = api; else root.GearTrainLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, GeometryUtils, MechanicalGraph, SpatialLayout, Projection, ProjectedScene) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, FlexibleDrive, MechanicalGraph, SpatialLayout, Projection, ProjectedScene) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -260,7 +260,7 @@
       : connection.axisRelation === 'perpendicular' ? 'break' : 'mesh';
 
     entry.wheels.push(wIn, wOut);
-    if (isBeltLike) entry.links.push(flexibleLink(connection, wIn, wOut, 's' + index + '-drive'));
+    if (isBeltLike) entry.links.push(flexibleLink(frame, connection, byRole, wIn, wOut, 's' + index + '-drive'));
     if (stage.type === 'bevel') {
       // Les deux axes se coupent en un POINT unique : le sommet commun des
       // cônes primitifs. Le modèle spatial le connaît — c'est lui qui a servi
@@ -412,11 +412,16 @@
   }
 
   /**
-   * Brin flexible exact : tangentes calculées, longueur développée et angles
-   * d'enroulement réels. En cas de géométrie dégénérée on retombe sur les deux
-   * segments sommet-à-sommet, qui restent finis.
+   * Brin flexible exact, construit DANS LE PLAN DE COURROIE puis projeté.
+   *
+   * Les deux centres étaient pris à l'écran, et la géométrie exacte calculée
+   * sur cette image : la courroie était donc plate même quand le mécanisme ne
+   * l'était pas, et son enroulement se lisait sur un cercle que la vue avait
+   * déjà déformé. Tangentes, arcs et longueur développée sont maintenant
+   * calculés en millimètres réels dans le plan des poulies ; seule leur image
+   * arrive à l'écran.
    */
-  function flexibleLink(connection, wIn, wOut, driveId) {
+  function flexibleLink(frame, connection, byRole, wIn, wOut, driveId) {
     var link = { kind: connection.type === 'belt' ? 'belt-span' : 'chain-span',
       crossed: !!connection.crossed,
       x1: wIn.cx, y1: wIn.cy, r1: wIn.pitchD / 2,
@@ -424,20 +429,27 @@
       pitch: finite(connection.pitch, Math.PI * finite(wIn.module, 1)),
       elements: finite(connection.elements, 0),
       driveId: driveId };
-    try {
-      var path = GeometryUtils.flexiblePath({ x: link.x1, y: link.y1 }, { x: link.x2, y: link.y2 }, link.r1, link.r2, link.crossed);
-      // Le chemin complet est conservé : c'est lui, et non les seuls brins
-      // droits, qui porte l'abscisse curviligne des éléments animés.
-      link.path = path;
-      link.tangents = path.tangents;
-      link.spanLength = path.spanLength;
-      link.wrapAngle1Deg = path.wrapAngle1 * 180 / Math.PI;
-      link.wrapAngle2Deg = path.wrapAngle2 * 180 / Math.PI;
-      link.length = path.length;
-      link.outline = GeometryUtils.flexibleOutline(path, link.r1, link.r2);
-    } catch (e) {
-      link.tangents = null;
-    }
+    var placedIn = byRole.input && frame.spatial.byId[byRole.input.id];
+    var placedOut = byRole.output && frame.spatial.byId[byRole.output.id];
+    if (!placedIn || !placedOut) return link;
+    var geometry = FlexibleDrive.build({
+      axis: placedIn.axis, centre1: placedIn.position, centre2: placedOut.position,
+      r1: link.r1, r2: link.r2, crossed: link.crossed, view: frame.view,
+      // La courroie doit toucher les poulies TELLES QUE LA VUE LES A POSÉES :
+      // en vue dépliée, celles-ci ne sont pas à leur projection stricte.
+      drawn1: [wIn.cx, wIn.cy], drawn2: [wOut.cx, wOut.cy] });
+    if (!geometry) return link;
+    link.geometry = geometry;
+    link.outline = geometry.outline;
+    link.tangents = geometry.tangentPoints;
+    link.spanLength = geometry.spanLength;
+    link.wrapAngle1Deg = geometry.wrapAngle1Deg;
+    link.wrapAngle2Deg = geometry.wrapAngle2Deg;
+    link.length = geometry.length;
+    link.centerDistance = geometry.distance;
+    // Plan de courroie vu par la tranche : il n'y a plus de surface enroulée à
+    // montrer, et le dire évite de coter un enroulement qu'on ne voit pas.
+    link.collapsed = geometry.collapsed;
     return link;
   }
 

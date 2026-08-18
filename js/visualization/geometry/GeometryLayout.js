@@ -9,9 +9,10 @@
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('../core/SceneBuilder.js') : root.GearSceneBuilder,
     common ? require('../core/MechanicalGraph.js') : root.GearMechanicalGraph,
-    common ? require('../core/SpatialLayout.js') : root.GearSpatialLayout);
+    common ? require('../core/SpatialLayout.js') : root.GearSpatialLayout,
+    common ? require('../core/FlexibleDriveGeometry.js') : root.GearFlexibleDriveGeometry);
   if (common) module.exports = api; else root.GearGeometryLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout, FlexibleDrive) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -248,6 +249,12 @@
         marks.push({ key: key, x: member.cx, y: member.cy, reach: reachOf(member) * 1.18 });
       });
       item.axes = marks;
+      // La courroie de cette vue était reconstruite à l'horizontale, à partir
+      // de `x` et de l'entraxe : la deuxième poulie s'y retrouvait toujours à
+      // droite de la première, quelle que soit la position que le modèle lui
+      // donnait. C'est la MÊME géométrie que la vue Transmission qui la décrit
+      // maintenant — un seul plan de courroie, un seul enroulement.
+      item.flexible = flexibleOf(frame, stage, cluster.list);
       cursor += width + gap;
       bottom = Math.max(bottom, margin + headroom + height + headroom * 0.6);
       return item;
@@ -259,5 +266,25 @@
       envelope: { length: present(overall.length), maxDiameter: present(overall.maxDiameter), width: present(overall.width) } };
   }
 
-  return { build: build, members: members, place: place, stageDimensions: stageDimensions };
+  /**
+   * La courroie d'un étage, dans son plan de poulies puis à l'écran. Les
+   * organes ont déjà été translatés d'un bloc : leurs positions dessinées sont
+   * donc celles qu'il faut relier, tandis que le plan reste celui du monde.
+   */
+  function flexibleOf(frame, stage, list) {
+    if (stage.type !== 'belt' && stage.type !== 'chain') return null;
+    function at(role) { return list.filter(function (m) { return m.role === role; })[0] || null; }
+    var a = at('input'), b = at('output');
+    var placedA = a && frame.spatial.byId[a.memberId];
+    var placedB = b && frame.spatial.byId[b.memberId];
+    if (!placedA || !placedB) return null;
+    return FlexibleDrive.build({
+      axis: placedA.axis, centre1: placedA.position, centre2: placedB.position,
+      r1: finite(a.pitchDiameter, 0) / 2, r2: finite(b.pitchDiameter, 0) / 2,
+      crossed: !!(stage.parameters && stage.parameters.crossed),
+      view: frame.view, drawn1: [a.cx, a.cy], drawn2: [b.cx, b.cy] });
+  }
+
+  return { build: build, members: members, place: place, stageDimensions: stageDimensions,
+    flexibleOf: flexibleOf };
 });
