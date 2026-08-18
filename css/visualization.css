@@ -470,3 +470,8 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .svg-container.is-technical .train-stage.selected .worm-body,
 .svg-container.is-technical .train-stage.selected .cone-body { stroke-width: 1; }
 .svg-container.is-technical .train-stage.selected .d-selection-mark { display: inline; }
+
+/* Repère de phase : ce qui porte le mouvement d'un organe qu'on ne voit pas de
+   face. Son corps ne tourne pas — il ne le peut pas —, le repère si. */
+.phase-mark .phase-dot { fill: var(--accent); }
+.svg-container.is-technical .phase-mark .phase-dot { fill: var(--ink); }

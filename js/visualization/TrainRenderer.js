@@ -236,14 +236,18 @@
       '\nVitesse relative ' + fmt(wheel.speed, 3) + '×' +
       this._solidarity(wheel)));
 
-    // Un cône ne peut pas tourner dans le plan du dessin, mais son mouvement
-    // doit rester visible : un repère de phase tourne sur sa grande face.
     var phase = null;
-    if (wheel.kind === 'cone') {
-      var back = finite(wheel.pitchD, 20) / 2;
-      phase = n('g', { class: 'cone-phase' });
-      phase.appendChild(n('circle', { class: 'phase-dot', cx: (back * 0.55).toFixed(2), cy: '0',
-        r: Math.max(0.5, finite(wheel.module, 1) * 0.55).toFixed(2) }));
+
+    // Un organe vu autrement que de face ne peut pas tourner dans le plan du
+    // dessin : son corps reste fixe, et c'est un repère de phase qui porte le
+    // mouvement. Il suit la projection du cercle décrit par un point de la
+    // surface primitive — cercle de face, ellipse obliquement, segment par la
+    // tranche. Le faire tourner comme un disque, c'était affirmer que toute
+    // roue est vue de face, ce que le dessin ne suppose plus depuis longtemps.
+    if (!orbit && wheel.presentation && wheel.presentation !== 'face' && wheel.kind !== 'rack') {
+      phase = n('g', { class: 'phase-mark' });
+      phase.appendChild(n('circle', { class: 'phase-dot', cx: '0', cy: '0',
+        r: Math.max(0.5, finite(wheel.module, 1) * 0.7).toFixed(2) }));
       seat.appendChild(phase);
     }
 
@@ -630,6 +634,7 @@
   /** applyPose(pose) — seul point qui touche aux transformations animées. */
   TrainRenderer.prototype.applyPose = function (pose) {
     if (!this.svg || !pose) return;
+    var self = this;
     var members = pose.members || {}, linear = pose.linear || {}, flexible = pose.flexible || {};
     function angleOf(id) { var m = members[id]; return m && Number.isFinite(m.angle) ? m.angle : 0; }
 
@@ -663,14 +668,7 @@
           (finite(wheel.cy, 0) + slide[1] * travel).toFixed(2) + ')' + turn);
         return;
       }
-      if (wheel.kind === 'cone') {
-        // Faire pivoter une silhouette conique dans le plan du dessin serait un
-        // contresens : c'est un repère de phase, posé sur la grande face, qui
-        // porte le mouvement.
-        if (record.phase) record.phase.setAttribute('transform', 'rotate(' + (own % 360).toFixed(2) + ')');
-        return;
-      }
-      if (wheel.kind === 'worm') {
+      if (wheel.kind === 'worm' && wheel.presentation !== 'face') {
         // §11 : le groupe ENTIER était translaté — corps, axe et filets — donc
         // la vis se déplaçait le long de son arbre. Elle tourne autour de son
         // axe : le corps ne bouge pas, seuls les filets défilent.
@@ -687,7 +685,7 @@
         }
         return;
       }
-      record.rotor.setAttribute('transform', 'rotate(' + own.toFixed(2) + ')');
+      self._spin(record, own);
     });
 
     (this.model && this.model.stages || []).forEach(function (entry) {
@@ -710,6 +708,46 @@
       }
       record.path.setAttribute('stroke-dashoffset', (-offset).toFixed(1));
     });
+  };
+
+  /**
+   * La rotation d'un organe, telle qu'on la VOIT.
+   *
+   * Le renderer appliquait `rotate(angle)` à toute roue sans exception. Sur une
+   * roue vue par la tranche — dessinée en rectangle de largeur b — cela faisait
+   * basculer le rectangle en diagonale : mécaniquement absurde, et d'autant
+   * plus visible que le modèle spatial place désormais correctement les
+   * organes de profil.
+   *
+   * Trois cas, une seule source :
+   *
+   *   de face      le disque tourne réellement dans le plan, dans le sens que
+   *                le repère projeté donne — vue de l'autre bout, une roue
+   *                tourne à l'écran dans l'autre sens ;
+   *   de profil    le corps ne bouge pas ; un repère de phase va et vient le
+   *                long du segment que devient le cercle primitif ;
+   *   obliquement  le corps ne bouge pas ; le repère suit l'ellipse.
+   *
+   * Les deux derniers cas sont la même formule, et c'est la projection qui
+   * décide de laquelle il s'agit.
+   */
+  TrainRenderer.prototype._spin = function (record, angle) {
+    var wheel = record.wheel;
+    var theta = finite(angle, 0) * Math.PI / 180;
+    if (wheel.presentation === 'face' || !wheel.phaseBasis) {
+      // `spin` porte le côté : sans lui, les deux extrémités d'un réducteur
+      // tourneraient dans le même sens à l'écran.
+      var sense = wheel.phaseBasis && wheel.phaseBasis.spin ? wheel.phaseBasis.spin : 1;
+      record.rotor.setAttribute('transform', 'rotate(' + (finite(angle, 0) * sense).toFixed(2) + ')');
+      return;
+    }
+    record.rotor.removeAttribute('transform');
+    if (!record.phase) return;
+    var point = GearProjectedScene.phasePoint(wheel.phaseBasis, finite(wheel.pitchD, 20) / 2, theta);
+    record.phase.setAttribute('transform', 'translate(' + point[0].toFixed(2) + ' ' + point[1].toFixed(2) + ')');
+    // Devant ou derrière : un repère qui passe de l'autre côté de l'organe
+    // s'estompe, faute de quoi rien ne distingue l'aller du retour.
+    record.phase.setAttribute('opacity', Math.cos(theta) >= 0 ? '1' : '0.35');
   };
 
   TrainRenderer.prototype.setAnimationSpeed = function (speed) { this.animation.setSpeed(speed); };

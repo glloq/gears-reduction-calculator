@@ -118,7 +118,10 @@ test('the rack is now drawn in the Denture view, not deflected to Geometry', asy
     return { transform: rack.getAttribute('transform'), rotor: document.querySelector('.train-wheel .rotor').getAttribute('transform') };
   });
   expect(travel.transform).toMatch(/translate/);
-  expect(travel.rotor).toMatch(/rotate\(360/);
+  // Le signe de l'angle dessiné porte désormais le CÔTÉ depuis lequel on
+  // regarde : une roue vue de son autre extrémité tourne, à l'écran, dans
+  // l'autre sens. Seule l'amplitude est ici en cause.
+  expect(travel.rotor).toMatch(/^rotate\(-?360/);
 });
 
 test('a planetary draws every real planet, its carrier and its three roles', async ({ page }) => {
@@ -508,9 +511,11 @@ test('the three views share one animation clock across view switches', async ({ 
   await showView(page, 'teeth');
   await page.evaluate(() => { window.__viewer.renderer().setAnimationAngle(90); window.__viewer.animationAngle = 90; });
   const teeth = await page.locator('.train-wheel .rotor').first().getAttribute('transform');
-  expect(teeth).toMatch(/rotate\(90/);
+  // Même horloge, donc même amplitude. Le signe, lui, dit de quel bout on
+  // regarde l'axe, et n'a pas à être le même dans deux vues différentes.
+  expect(teeth).toMatch(/^rotate\(-?90/);
   await showView(page, 'geometry');
-  expect(await page.locator('.index-rotor').first().getAttribute('transform')).toMatch(/rotate\(90/);
+  expect(await page.locator('.index-rotor').first().getAttribute('transform')).toMatch(/rotate\(-?90/);
   await showView(page, 'kinematic');
   expect(await page.locator('.spin-mark').first().getAttribute('transform')).toMatch(/rotate\(90/);
 });
@@ -1524,6 +1529,104 @@ test('the technical style is a drawing language, not a grey filter (§2, §53)',
   const back = await read();
   expect(back.teeth).toBe(visual.teeth);
   expect(back.mechanics).toBe(visual.mechanics);
+
+  expect(errors).toEqual([]);
+});
+
+test('a wheel seen edge-on does not spin like a disc (§4 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'bevel']);
+  await showView(page, 'teeth');
+
+  // Le renderer appliquait `rotate(angle)` à toute roue sans exception. Sur une
+  // roue dessinée en rectangle de largeur b, cela faisait basculer le rectangle
+  // en diagonale : mécaniquement absurde, et d'autant plus visible depuis que le
+  // modèle spatial place correctement les organes de profil.
+  const trace = view => page.evaluate(v => {
+    const renderer = window.__viewer.renderer();
+    renderer.projection = v;
+    renderer.render(renderer.solution);
+    const out = [];
+    Array.from(document.querySelectorAll('#svgContainer .train-wheel')).forEach((host, index) => {
+      const wheel = renderer.model.wheels[index];
+      const rotor = host.querySelector('.rotor');
+      const mark = host.querySelector('.phase-mark');
+      const frames = [0, 90, 180, 270].map(angle => {
+        renderer.setAnimationAngle(angle);
+        return { rotor: rotor.getAttribute('transform') || '',
+          mark: mark ? mark.getAttribute('transform') || '' : null };
+      });
+      out.push({ presentation: wheel.presentation, kind: wheel.kind, frames });
+    });
+    return out;
+  }, view);
+
+  for (const view of ['unfolded', 'front', 'iso']) {
+    const wheels = await trace(view);
+    expect(wheels.length, view).toBeGreaterThan(0);
+    wheels.forEach((wheel, index) => {
+      const label = `${view} / roue ${index} (${wheel.presentation})`;
+      if (wheel.presentation === 'face') {
+        // De face, le disque tourne réellement dans le plan.
+        const angles = wheel.frames.map(f => f.rotor);
+        expect(new Set(angles).size, label + ' : le disque doit tourner').toBeGreaterThan(1);
+        angles.forEach(a => expect(a, label).toMatch(/^rotate\(/));
+      } else {
+        // De profil ou obliquement, le CORPS ne bouge pas : il ne le peut pas.
+        wheel.frames.forEach(frame => {
+          expect(frame.rotor, label + ' : le corps doit rester fixe').toBe('');
+        });
+        // C'est un repère de phase qui porte le mouvement.
+        expect(wheel.frames[0].mark, label + ' : il faut un repère de phase').not.toBeNull();
+        const marks = wheel.frames.map(f => f.mark);
+        expect(new Set(marks).size, label + ' : le repère doit bouger').toBeGreaterThan(1);
+
+        const points = marks.map(m => m.replace(/[^-\d. ]/g, '').trim().split(/\s+/).map(Number));
+        if (wheel.presentation === 'profile') {
+          // Le cercle primitif vu par la tranche est un SEGMENT : le repère y
+          // va et vient, sans jamais quitter la ligne.
+          const spread = new Set(points.map(p => p[0].toFixed(3)));
+          expect(spread.size, label + ' : un segment, pas un cercle').toBe(1);
+          expect(new Set(points.map(p => p[1].toFixed(3))).size, label).toBeGreaterThan(1);
+        } else {
+          // Obliquement, c'est une ellipse : les deux coordonnées varient.
+          expect(new Set(points.map(p => p[0].toFixed(3))).size, label + ' : ellipse en x').toBeGreaterThan(1);
+          expect(new Set(points.map(p => p[1].toFixed(3))).size, label + ' : ellipse en y').toBeGreaterThan(1);
+        }
+      }
+    });
+  }
+
+  // De quel BOUT on regarde : `abs(dot(...))` détruisait cette information, et
+  // elle ne se reconstruit pas après coup. Une roue vue de son autre extrémité
+  // tourne, à l'écran, dans l'autre sens — l'angle appliqué doit donc porter le
+  // signe que le repère projeté donne, et pas seulement celui de la cinématique.
+  const applied = await page.evaluate(() => {
+    const renderer = window.__viewer.renderer();
+    renderer.projection = 'unfolded';
+    renderer.render(renderer.solution);
+    renderer.setAnimationAngle(90);
+    const pose = GearKinematicsEngine.pose(renderer.scene.kinematics, 90);
+    return Array.from(document.querySelectorAll('#svgContainer .train-wheel'))
+      .map((host, index) => {
+        const wheel = renderer.model.wheels[index];
+        const drawn = host.querySelector('.rotor').getAttribute('transform');
+        return { presentation: wheel.presentation,
+          spin: wheel.phaseBasis ? wheel.phaseBasis.spin : null,
+          own: (pose.members[wheel.memberId] || {}).angle,
+          drawn: drawn ? Number(drawn.replace(/[^-\d.]/g, '')) : null };
+      })
+      .filter(w => w.presentation === 'face' && Number.isFinite(w.own) && w.own !== 0);
+  });
+  expect(applied.length, 'au moins une roue vue de face').toBeGreaterThan(0);
+  applied.forEach((wheel, index) => {
+    expect(wheel.spin, 'roue ' + index + ' : un sens apparent').not.toBe(0);
+    // L'angle dessiné est l'angle mécanique, orienté par le côté depuis lequel
+    // on regarde. Ignorer `spin`, c'est affirmer le même sens des deux bouts.
+    expect(Math.sign(wheel.drawn), 'roue ' + index + ' : sens apparent')
+      .toBe(Math.sign(wheel.own * wheel.spin));
+    expect(Math.abs(Math.abs(wheel.drawn) - Math.abs(wheel.own)), 'roue ' + index).toBeLessThan(0.01);
+  });
 
   expect(errors).toEqual([]);
 });

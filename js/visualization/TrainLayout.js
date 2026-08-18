@@ -24,9 +24,10 @@
     common ? require('./core/GeometryUtils.js') : root.GearGeometryUtils,
     common ? require('./core/MechanicalGraph.js') : root.GearMechanicalGraph,
     common ? require('./core/SpatialLayout.js') : root.GearSpatialLayout,
-    common ? require('./core/ProjectionEngine.js') : root.GearProjectionEngine);
+    common ? require('./core/ProjectionEngine.js') : root.GearProjectionEngine,
+    common ? require('./core/ProjectedScene.js') : root.GearProjectedScene);
   if (common) module.exports = api; else root.GearTrainLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, GeometryUtils, MechanicalGraph, SpatialLayout, Projection) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, GeometryUtils, MechanicalGraph, SpatialLayout, Projection, ProjectedScene) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -89,7 +90,12 @@
    * voit en disque, en rectangle, ou entre les deux.
    */
   function frameOf(solution, scene, options) {
-    return SpatialLayout.frame(MechanicalGraph.build(solution, scene), options);
+    var frame = SpatialLayout.frame(MechanicalGraph.build(solution, scene), options);
+    // La scène projetée décrit une fois ce que chaque vue reconstruisait :
+    // présentation, raccourci, côté, profondeur, et le repère d'écran dans
+    // lequel tourne ce qui tourne autour de chaque axe.
+    frame.projected = ProjectedScene.build(frame.spatial, frame);
+    return frame;
   }
 
   /** Le vecteur unitaire de l'écran qui porte l'arbre de ce membre. */
@@ -106,16 +112,13 @@
    * l'œil — et lui en donner une ferait tourner ses étiquettes pour rien.
    */
   function orientation(frame, member) {
-    var placed = frame.spatial.byId[member.id];
-    if (!placed) return {};
-    var presentation = Projection.presentation(placed.axis, frame.view);
-    var along = alongOf(frame, member.id);
-    var out = { presentation: presentation,
-      foreshortening: Projection.foreshortening(placed.axis, frame.view) };
-    if (presentation !== 'face' && Math.hypot(along[0], along[1]) > 1e-9) {
-      out.axisAngleDeg = deg(Math.atan2(along[1], along[0]));
-    }
-    return out;
+    var seen = frame.projected && frame.projected.member(member.id);
+    if (!seen) return {};
+    return { presentation: seen.presentation, foreshortening: seen.foreshortening,
+      // De quel BOUT on regarde, et dans quel repère d'écran tourne ce qui
+      // tourne : sans eux, l'animation suppose partout une roue vue de face.
+      facing: seen.facing, phaseBasis: seen.basis, depth: seen.depth,
+      axisAngleDeg: seen.axisAngleDeg };
   }
 
   function seatOf(frame, memberId) {
@@ -367,6 +370,7 @@
       // 'unfolded' ou 'projected' : ce que la vue AFFIRME. La distinction
       // décide de ce qu'on a le droit de lire sur le dessin.
       mode: frame.mode,
+      projected: frame.projected,
       graph: frame.graph,
       spatial: frame.spatial,
       scene: scene,
