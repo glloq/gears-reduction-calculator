@@ -137,11 +137,13 @@ test('a planetary draws every real planet, its carrier and its three roles', asy
     const teeth = window.__viewer.teeth;
     teeth.setAnimationAngle(0);
     const planet = document.querySelector('.train-wheel.planet');
-    const start = { orbit: planet.querySelector('.planet-orbit').getAttribute('transform'),
-      spin: planet.querySelector('.rotor').getAttribute('transform') };
+    // L'orbite est portée par la PLACE du satellite, plus par une rotation du
+    // groupe : elle suit le plan d'orbite, qu'un `rotate()` ne parcourt pas.
+    const read = () => ({ orbit: planet.querySelector('.planet-seat').getAttribute('transform'),
+      spin: planet.querySelector('.rotor').getAttribute('transform') });
+    const start = read();
     teeth.setAnimationAngle(180);
-    return { start, end: { orbit: planet.querySelector('.planet-orbit').getAttribute('transform'),
-      spin: planet.querySelector('.rotor').getAttribute('transform') } };
+    return { start, end: read() };
   });
   expect(motion.end.orbit).not.toBe(motion.start.orbit);
   expect(motion.end.spin).not.toBe(motion.start.spin);
@@ -526,6 +528,60 @@ test('a belt hangs on its pulleys, whatever the projection (§6 de l’audit)', 
   // Et le dessin, lui, change : une courroie vue de biais n'est pas la même
   // image qu'une courroie vue de face.
   expect(drawings.size, 'la courroie se dessine pareil partout').toBeGreaterThan(1);
+  expect(errors).toEqual([]);
+});
+
+test('a satellite orbits in its plane, and its arm follows it (§6 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+
+  for (const view of ['unfolded', 'iso', 'front']) {
+    await select.selectOption(view);
+    const trace = await page.evaluate(() => {
+      const renderer = window.__viewer.renderer();
+      const entry = renderer.model.stages[0];
+      const basis = entry.carrier.basis;
+      const planet = entry.wheels.filter(w => w.role === 'planet')[0];
+      const centre = [planet.orbitCenterX, planet.orbitCenterY];
+      const det = basis.first[0] * basis.second[1] - basis.second[0] * basis.first[1];
+      const read = () => Array.from(document.querySelectorAll('.planet-seat')).map(el => {
+        const m = el.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/);
+        return [Number(m[1]) - centre[0], Number(m[2]) - centre[1]];
+      });
+      const arms = () => Array.from(document.querySelector('.carrier-arms path').getAttribute('d')
+        .matchAll(/L ([-\d.]+) ([-\d.]+)/g)).map(m => [Number(m[1]), Number(m[2])]);
+      const frames = [];
+      for (let a = 0; a <= 360; a += 15) {
+        renderer.setAnimationAngle(a);
+        frames.push({ seats: read(), arms: arms() });
+      }
+      return { frames, basis, det, orbit: planet.orbit };
+    });
+
+    const positions = new Set();
+    for (const frame of trace.frames) {
+      frame.seats.forEach((seat, index) => {
+        positions.add(seat.map(v => v.toFixed(2)).join(','));
+        // Le bras du porte-satellites finit sur le satellite qu'il porte.
+        const arm = frame.arms[index];
+        expect(Math.hypot(arm[0] - seat[0], arm[1] - seat[1]), view + ' bras ' + index).toBeLessThan(0.02);
+        if (Math.abs(trace.det) < 1e-9) return;
+        // Et surtout : ramené dans le PLAN D'ORBITE, le satellite reste à son
+        // rayon d'orbite, à tout instant. Une rotation d'écran le ferait sortir
+        // de son plan dès que celui-ci n'est plus perpendiculaire au regard.
+        const a = (seat[0] * trace.basis.second[1] - seat[1] * trace.basis.second[0]) / trace.det;
+        const b = (seat[1] * trace.basis.first[0] - seat[0] * trace.basis.first[1]) / trace.det;
+        // Tolérance : les transformations sont écrites au centième de mm.
+        expect(Math.hypot(a, b), view + ' satellite ' + index + ' hors de son orbite')
+          .toBeCloseTo(trace.orbit, 1);
+      });
+    }
+    // Le satellite bouge réellement : un plan d'orbite juste mais figé ne
+    // montrerait rien de plus qu'un dessin statique.
+    expect(positions.size, view + ' : les satellites ne bougent pas').toBeGreaterThan(4);
+  }
   expect(errors).toEqual([]);
 });
 

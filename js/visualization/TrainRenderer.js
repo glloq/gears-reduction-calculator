@@ -244,7 +244,7 @@
     // surface primitive — cercle de face, ellipse obliquement, segment par la
     // tranche. Le faire tourner comme un disque, c'était affirmer que toute
     // roue est vue de face, ce que le dessin ne suppose plus depuis longtemps.
-    if (!orbit && wheel.presentation && wheel.presentation !== 'face' && wheel.kind !== 'rack') {
+    if (wheel.presentation && wheel.presentation !== 'face' && wheel.kind !== 'rack') {
       phase = n('g', { class: 'phase-mark' });
       phase.appendChild(n('circle', { class: 'phase-dot', cx: '0', cy: '0',
         r: Math.max(0.5, finite(wheel.module, 1) * 0.7).toFixed(2) }));
@@ -345,19 +345,37 @@
     return host;
   };
 
+  /**
+   * Les bras du porte-satellites, à l'angle où il se trouve.
+   *
+   * Ils étaient tracés en `cos(a)·orbite / sin(a)·orbite` : un cercle d'écran,
+   * qui ignorait la base d'orbite que le modèle spatial fournit pourtant. Vus
+   * de biais, les bras d'un porte-satellites parcourent une ellipse, et vus par
+   * la tranche ils se replient sur un segment — un `rotate()` d'écran ne sait
+   * représenter ni l'un ni l'autre.
+   */
+  TrainRenderer.prototype._carrierArms = function (carrier, angleDeg) {
+    var theta = finite(angleDeg, 0) * Math.PI / 180;
+    var orbit = finite(carrier.orbit, 0), d = '';
+    for (var i = 0; i < carrier.count; i++) {
+      var a = 2 * Math.PI * i / carrier.count + theta;
+      var point = carrier.basis
+        ? GearProjectedScene.phasePoint(carrier.basis, orbit, a)
+        : [Math.cos(a) * orbit, Math.sin(a) * orbit];
+      d += ' M 0 0 L ' + point[0].toFixed(2) + ' ' + point[1].toFixed(2);
+    }
+    return d.trim();
+  };
+
   /** Porte-satellites : bras reliant le centre à chaque satellite. */
   TrainRenderer.prototype._drawCarrier = function (group, entry) {
     var carrier = entry.carrier;
     var host = n('g', { class: 'planet-carrier' });
     if (carrier.bodyId) host.setAttribute('data-body', carrier.bodyId);
     if (carrier.memberId) host.setAttribute('data-member', carrier.memberId);
-    var d = '';
-    for (var i = 0; i < carrier.count; i++) {
-      var a = 2 * Math.PI * i / carrier.count;
-      d += ' M 0 0 L ' + (Math.cos(a) * carrier.orbit).toFixed(2) + ' ' + (Math.sin(a) * carrier.orbit).toFixed(2);
-    }
     var arms = n('g', { class: 'carrier-arms', transform: 'translate(' + carrier.cx.toFixed(2) + ' ' + carrier.cy.toFixed(2) + ')' });
-    arms.appendChild(n('path', { d: d.trim() }));
+    var spokes = n('path', { d: this._carrierArms(carrier, 0) });
+    arms.appendChild(spokes);
     arms.appendChild(n('circle', { class: 'carrier-hub', r: Math.max(1.5, carrier.orbit * 0.12).toFixed(2) }));
     host.appendChild(arms);
     // §18 : un porte-satellites bloqué est un bâti. Les hachures se posent sur
@@ -368,6 +386,7 @@
     }
     group.appendChild(host);
     entry.carrierElement = arms;
+    entry.carrierSpokes = spokes;
     return host;
   };
 
@@ -643,14 +662,22 @@
       var posed = members[wheel.memberId] || {};
       var own = finite(posed.angle, 0);
       if (record.orbit) {
-        // Satellite : orbite du porte-satellites, puis rotation propre. La pose
-        // porte les deux angles ; le renderer ne fait que les composer.
-        var orbit = finite(posed.orbitAngle, 0);
-        record.orbit.setAttribute('transform',
-          'rotate(' + orbit.toFixed(2) + ' ' + finite(wheel.orbitCenterX, 0).toFixed(2) + ' ' + finite(wheel.orbitCenterY, 0).toFixed(2) + ')');
-        // La rotation propre est comptée dans le repère fixe : on retire
-        // l'entraînement de l'orbite déjà appliqué par le groupe parent.
-        record.rotor.setAttribute('transform', 'rotate(' + (own - orbit).toFixed(2) + ')');
+        // Satellite : l'orbite était un `rotate(angle cx cy)` d'écran, qui fait
+        // décrire un CERCLE au satellite. Vue de biais, une orbite est une
+        // ellipse, et vue par la tranche un va-et-vient sur un segment : le
+        // satellite quittait donc son plan dès qu'on changeait de point de vue.
+        // Sa place vient maintenant de la base d'orbite, comme sa phase.
+        var theta = finite(wheel.phase, 0) + finite(posed.orbitAngle, 0) * Math.PI / 180;
+        var radius = finite(wheel.orbit, 0);
+        var seat = wheel.orbitBasis
+          ? GearProjectedScene.phasePoint(wheel.orbitBasis, radius, theta)
+          : [Math.cos(theta) * radius, Math.sin(theta) * radius];
+        record.seat.setAttribute('transform',
+          'translate(' + (finite(wheel.orbitCenterX, 0) + seat[0]).toFixed(2) + ' ' +
+          (finite(wheel.orbitCenterY, 0) + seat[1]).toFixed(2) + ')');
+        // La rotation propre est comptée dans le repère fixe, et le groupe
+        // parent ne tourne plus : il n'y a donc plus rien à en retrancher.
+        self._spin(record, own);
         return;
       }
       if (wheel.kind === 'rack') {
@@ -689,9 +716,10 @@
     });
 
     (this.model && this.model.stages || []).forEach(function (entry) {
-      if (entry.carrierElement && entry.carrier) {
-        entry.carrierElement.setAttribute('transform',
-          'translate(' + entry.carrier.cx.toFixed(2) + ' ' + entry.carrier.cy.toFixed(2) + ') rotate(' + angleOf(entry.carrier.memberId).toFixed(2) + ')');
+      // Les bras suivent la même base que les satellites qu'ils portent : ils
+      // sont retracés à leur angle, jamais tournés dans le plan de l'écran.
+      if (entry.carrierSpokes && entry.carrier) {
+        entry.carrierSpokes.setAttribute('d', self._carrierArms(entry.carrier, angleOf(entry.carrier.memberId)));
       }
     });
 

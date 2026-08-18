@@ -168,11 +168,20 @@
   }
 
   /** Bras du porte-satellites : rend le membre C lisible sans l'animer. */
-  function carrier(group, x, y, orbit, count) {
+  /**
+   * Les bras du porte-satellites. `basis` est la base de phase de son axe :
+   * sans elle les bras décriraient un cercle d'écran, alors qu'ils suivent le
+   * plan d'orbite — une ellipse de biais, un segment par la tranche.
+   */
+  function carrier(group, x, y, orbit, count, basis, angle) {
+    var theta = Number.isFinite(angle) ? angle : 0;
     var d = '';
     for (var i = 0; i < count; i++) {
-      var a = 2 * Math.PI * i / count;
-      d += ' M ' + x + ' ' + y + ' L ' + (x + Math.cos(a) * orbit).toFixed(2) + ' ' + (y + Math.sin(a) * orbit).toFixed(2);
+      var a = 2 * Math.PI * i / count + theta;
+      var point = basis ? [orbit * (Math.cos(a) * basis.first[0] + Math.sin(a) * basis.second[0]),
+        orbit * (Math.cos(a) * basis.first[1] + Math.sin(a) * basis.second[1])]
+        : [Math.cos(a) * orbit, Math.sin(a) * orbit];
+      d += ' M ' + x + ' ' + y + ' L ' + (x + point[0]).toFixed(2) + ' ' + (y + point[1]).toFixed(2);
     }
     return group.appendChild(node('path', { class: 'geometry-member carrier-member', d: d.trim() }));
   }

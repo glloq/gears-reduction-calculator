@@ -143,16 +143,14 @@
   }
 
   /**
-   * Les deux directions de l'écran qui portent le plan perpendiculaire à un
-   * axe : c'est dans ce plan que les satellites tournent. Vu de face l'orbite
-   * est un cercle ; vue en coupe elle se réduit à un segment, et deux
-   * satellites se retrouvent l'un derrière l'autre — ce que cette vue montre.
+   * La base de phase de l'axe d'orbite : c'est dans ce plan que les satellites
+   * tournent. Vu de face l'orbite est un cercle ; obliquement une ellipse ; en
+   * coupe un segment, et deux satellites se retrouvent l'un derrière l'autre —
+   * ce que cette vue montre. C'est la MÊME base que celle qui donne sa phase à
+   * une roue : une seule formule pour toutes les rotations du dessin.
    */
   function orbitBasis(frame, axisDirection) {
-    var vector = MechanicalGraph.vector;
-    var e1 = vector.perpendicularDirection(axisDirection, 0);
-    var e2 = vector.cross(axisDirection, e1);
-    return [Projection.project(e1, frame.view), Projection.project(e2, frame.view)];
+    return ProjectedScene.phaseBasis(axisDirection, frame.view);
   }
 
   // ===== Étages =====
@@ -184,11 +182,13 @@
     var basis = orbitBasis(frame, orbitAxis ? orbitAxis.direction : [1, 0, 0]);
     for (var pi = 0; pi < count; pi++) {
       var a = 2 * Math.PI * pi / count;
+      var seat = ProjectedScene.phasePoint(basis, orbit, a);
       entry.wheels.push(wheelAt(frame, byRole.P, {
         role: 'planet',
-        cx: centre.x + orbit * (Math.cos(a) * basis[0][0] + Math.sin(a) * basis[1][0]),
-        cy: centre.y + orbit * (Math.cos(a) * basis[0][1] + Math.sin(a) * basis[1][1]),
-        orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y,
+        cx: centre.x + seat[0], cy: centre.y + seat[1],
+        // La base voyage avec le satellite : c'est elle, et non un `rotate()`
+        // d'écran, qui donne sa place à chaque instant de l'animation.
+        orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y, orbitBasis: basis,
         orbitSpeed: finite(byRole.P && byRole.P.mechanical.orbitRelativeSpeed, 0), phase: a
       }));
     }

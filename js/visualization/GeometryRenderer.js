@@ -23,6 +23,8 @@
     this.layout = null;
     this.scene = null;
     this._rotors = [];
+    this._orbits = [];
+    this._arms = [];
     this._phases = [];
     this._linear = [];
     this._angle = 0;
@@ -62,12 +64,34 @@
       (speed && Number.isFinite(speed.relativeSpeed) ? '\nVitesse relative ' + fmt(speed.relativeSpeed, 3) + '×' : '');
   };
 
+  /** Le tracé des bras d'un porte-satellites, à l'angle où il se trouve. */
+  function armsPath(entry, theta) {
+    var d = '';
+    for (var i = 0; i < entry.count; i++) {
+      var a = 2 * Math.PI * i / entry.count + theta;
+      var point = entry.basis
+        ? GearProjectedScene.phasePoint(entry.basis, entry.orbit, a)
+        : [Math.cos(a) * entry.orbit, Math.sin(a) * entry.orbit];
+      d += ' M ' + entry.cx + ' ' + entry.cy + ' L ' + (entry.cx + point[0]).toFixed(2) + ' ' + (entry.cy + point[1]).toFixed(2);
+    }
+    return d.trim();
+  }
+
   GeometryRenderer.prototype._member = function (group, item, member) {
     var p = GearGeometryPrimitives;
     var host = p.node('g', { class: 'geometry-member-group role-' + member.role, 'data-role': member.role });
     host.appendChild(p.node('title', {}, this._memberTitle(member)));
     group.appendChild(host);
     this._ground(item, member);
+    // Un satellite orbite AVEC SON CORPS. Seule son aiguille d'indexation
+    // tournait autour du centre d'étage : le disque restait sur place pendant
+    // que son repère s'en allait faire le tour du dessin.
+    if (member.role === 'planet' && member.orbitBasis) {
+      this._orbits.push({ el: host, memberId: member.memberId, basis: member.orbitBasis,
+        orbit: finite(member.orbit, 0), phase: finite(member.phase, 0),
+        centreX: finite(member.orbitCenterX, member.cx), centreY: finite(member.orbitCenterY, member.cy),
+        seatX: member.cx, seatY: member.cy });
+    }
 
     if (member.kind === 'rack') {
       var geometry = item.stage.geometry || {};
@@ -101,8 +125,14 @@
       return host;
     }
     if (member.kind === 'carrier') {
-      p.carrier(host, member.cx, member.cy, finite(member.pitchDiameter, 20) / 2,
-        Math.max(2, Math.round(finite(item.stage.planetCount, 3))));
+      var count = Math.max(2, Math.round(finite(item.stage.planetCount, 3)));
+      var spokes = p.carrier(host, member.cx, member.cy, finite(member.pitchDiameter, 20) / 2,
+        count, member.orbitBasis, 0);
+      // Les bras sont RETRACÉS à chaque angle : ils suivent le plan d'orbite,
+      // qu'un `rotate()` d'écran ne saurait parcourir hors d'une vue de face.
+      this._arms.push({ el: spokes, memberId: member.memberId, count: count,
+        cx: member.cx, cy: member.cy, orbit: finite(member.pitchDiameter, 20) / 2,
+        basis: member.orbitBasis });
       this._indexMark(host, item, member, finite(member.pitchDiameter, 20) / 2);
       return host;
     }
@@ -149,8 +179,9 @@
       transform: 'translate(' + member.cx.toFixed(2) + ' ' + member.cy.toFixed(2) + ')' });
     rotor.appendChild(p.node('line', { class: 'index-mark', x1: 0, y1: 0, x2: r.toFixed(2), y2: 0 }));
     host.appendChild(rotor);
-    this._rotors.push({ el: rotor, cx: member.cx, cy: member.cy, memberId: member.memberId,
-      orbits: member.role === 'planet', orbitX: item.x, orbitY: item.y });
+    // L'orbite est portée par le GROUPE du satellite (voir _member) : le repère
+    // d'indexation n'a plus qu'à tourner sur lui-même, à sa place.
+    this._rotors.push({ el: rotor, cx: member.cx, cy: member.cy, memberId: member.memberId });
     return rotor;
   };
 
@@ -216,6 +247,8 @@
     this.scene = GearSceneBuilder.build(solution);
     this.layout = GearGeometryLayout.build(solution, { scene: this.scene, view: this.projection });
     this._rotors = [];
+    this._orbits = [];
+    this._arms = [];
     this._phases = [];
     this._linear = [];
     if (this.viewport) this.viewport.detach();
@@ -297,11 +330,19 @@
     var members = pose.members || {}, linear = pose.linear || {};
     this._rotors.forEach(function (rotor) {
       var posed = members[rotor.memberId] || {};
-      var transform = 'translate(' + rotor.cx.toFixed(2) + ' ' + rotor.cy.toFixed(2) + ') rotate(' + finite(posed.angle, 0).toFixed(2) + ')';
-      if (rotor.orbits && Number.isFinite(posed.orbitAngle)) {
-        transform = 'rotate(' + posed.orbitAngle.toFixed(2) + ' ' + rotor.orbitX.toFixed(2) + ' ' + rotor.orbitY.toFixed(2) + ') ' + transform;
-      }
-      rotor.el.setAttribute('transform', transform);
+      rotor.el.setAttribute('transform', 'translate(' + rotor.cx.toFixed(2) + ' ' + rotor.cy.toFixed(2) +
+        ') rotate(' + finite(posed.angle, 0).toFixed(2) + ')');
+    });
+    // Les satellites suivent le plan d'orbite, pas un cercle d'écran.
+    this._orbits.forEach(function (entry) {
+      var theta = entry.phase + finite((members[entry.memberId] || {}).orbitAngle, 0) * Math.PI / 180;
+      var seat = GearProjectedScene.phasePoint(entry.basis, entry.orbit, theta);
+      entry.el.setAttribute('transform', 'translate(' +
+        (entry.centreX + seat[0] - entry.seatX).toFixed(2) + ' ' +
+        (entry.centreY + seat[1] - entry.seatY).toFixed(2) + ')');
+    });
+    this._arms.forEach(function (entry) {
+      entry.el.setAttribute('d', armsPath(entry, finite((members[entry.memberId] || {}).angle, 0) * Math.PI / 180));
     });
     // §15 : la phase des filets d'une vis. Un tour d'entrée fait avancer le
     // motif d'exactement un pas, donc la boucle se referme sans saut.

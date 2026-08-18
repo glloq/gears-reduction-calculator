@@ -10,9 +10,10 @@
   var api = factory(common ? require('../core/SceneBuilder.js') : root.GearSceneBuilder,
     common ? require('../core/MechanicalGraph.js') : root.GearMechanicalGraph,
     common ? require('../core/SpatialLayout.js') : root.GearSpatialLayout,
-    common ? require('../core/FlexibleDriveGeometry.js') : root.GearFlexibleDriveGeometry);
+    common ? require('../core/FlexibleDriveGeometry.js') : root.GearFlexibleDriveGeometry,
+    common ? require('../core/ProjectedScene.js') : root.GearProjectedScene);
   if (common) module.exports = api; else root.GearGeometryLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout, FlexibleDrive) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout, FlexibleDrive, ProjectedScene) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -98,17 +99,23 @@
       var orbit = finite(byRole.P && byRole.P.orbitRadius, 0);
       put(byRole.R, 'ring', memberLabel(byRole.R, 'R'));
       put(byRole.S, 'sun', memberLabel(byRole.S, 'S'));
-      // Les satellites tournent AUTOUR de l'axe : c'est la seule répartition
-      // que la cotation demande de voir, et son rayon vient de la scène.
-      var centre = seat((byRole.C || byRole.S || {}).id);
+      // Les satellites tournent AUTOUR de l'axe, dans le plan perpendiculaire
+      // à celui-ci. Ils étaient répartis en cos/sin d'écran : un cercle, même
+      // quand la vue montre leur plan de biais ou par la tranche.
+      var hub = (byRole.C || byRole.S || {}).id;
+      var centre = seat(hub);
+      var placedHub = frame.spatial.byId[hub];
+      var basis = ProjectedScene.phaseBasis(placedHub ? placedHub.axis : [1, 0, 0], frame.view);
+      var orbiting = { orbit: orbit, orbitCenterX: centre.x, orbitCenterY: centre.y, orbitBasis: basis };
       for (var i = 0; i < count; i++) {
         var a = 2 * Math.PI * i / count;
-        list.push(place(byRole.P, 'planet', centre.x + Math.cos(a) * orbit, centre.y + Math.sin(a) * orbit,
-          memberLabel(byRole.P, 'P')));
+        var offset = ProjectedScene.phasePoint(basis, orbit, a);
+        list.push(place(byRole.P, 'planet', centre.x + offset[0], centre.y + offset[1],
+          memberLabel(byRole.P, 'P'), Object.assign({ phase: a }, orbiting)));
       }
       if (byRole.C) {
         list.push(place(byRole.C, 'carrier', centre.x, centre.y, memberLabel(byRole.C, 'C'),
-          { pitchDiameter: orbit ? 2 * orbit : null, count: count }));
+          Object.assign({ pitchDiameter: orbit ? 2 * orbit : null, count: count }, orbiting)));
       }
       return list;
     }
@@ -228,7 +235,12 @@
       // modèle, et poser un étage à côté d'un autre n'en change aucune.
       var shiftX = cursor - cluster.box.left;
       var shiftY = margin + headroom - cluster.box.top;
-      cluster.list.forEach(function (member) { member.cx += shiftX; member.cy += shiftY; });
+      cluster.list.forEach(function (member) {
+        member.cx += shiftX; member.cy += shiftY;
+        // Le centre d'orbite voyage avec l'amas : sans cela, les satellites
+        // tourneraient autour du point où l'étage se trouvait avant d'être posé.
+        if (Number.isFinite(member.orbitCenterX)) { member.orbitCenterX += shiftX; member.orbitCenterY += shiftY; }
+      });
 
       var anchor = cluster.list.filter(function (m) { return m.functionalRole === 'input'; })[0] || cluster.list[0];
       var item = { index: index, stage: stage, type: stage.type,
