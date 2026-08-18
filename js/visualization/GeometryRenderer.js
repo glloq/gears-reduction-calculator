@@ -365,7 +365,10 @@
       GearDimensionRenderer.stage(dimensions, item, p, { fontSize: fontSize, scale: unit });
 
       var mech = (solution.mechanical || [])[item.index] || {};
-      GearForceOverlay.render(p.node, layers.force, mech.forces, { x: item.x, y: item.y });
+      if (item.forceFrame) {
+        GearForceOverlay.render(p.node, layers.force, mech.forces,
+          { x: item.forceFrame.origin[0], y: item.forceFrame.origin[1] }, item.forceFrame);
+      }
       GearWarningOverlay.render(p.node, labels, solution.warnings, item.index,
         { x: item.x + item.diameter / 2 + fontSize, y: item.y - item.diameter / 2 },
         function (stageIndex) { self.selectStage(stageIndex); });

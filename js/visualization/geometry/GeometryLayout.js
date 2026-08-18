@@ -11,9 +11,10 @@
     common ? require('../core/MechanicalGraph.js') : root.GearMechanicalGraph,
     common ? require('../core/SpatialLayout.js') : root.GearSpatialLayout,
     common ? require('../core/FlexibleDriveGeometry.js') : root.GearFlexibleDriveGeometry,
-    common ? require('../core/ProjectedScene.js') : root.GearProjectedScene);
+    common ? require('../core/ProjectedScene.js') : root.GearProjectedScene,
+    common ? require('../overlays/ForceOverlay.js') : root.GearForceOverlay);
   if (common) module.exports = api; else root.GearGeometryLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout, FlexibleDrive, ProjectedScene) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, MechanicalGraph, SpatialLayout, FlexibleDrive, ProjectedScene, ForceOverlay) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -178,6 +179,58 @@
     return list;
   }
 
+  /**
+   * Le repère mécanique des efforts d'un étage, et leur point d'application —
+   * le point primitif, sur la ligne des centres dessinée. Sans ligne des
+   * centres, pas de repère, et donc aucune flèche : une direction inventée
+   * vaut moins que rien sur un dessin coté.
+   */
+  function forceFrameOf(frame, scene, index, list) {
+    var vector = MechanicalGraph.vector;
+    var byRole = {};
+    scene.stageMembers(index).forEach(function (entry) { byRole[entry.role] = entry; });
+    function placed(entry) { return entry && frame.spatial.byId[entry.id]; }
+    var driver = placed(byRole.input) || placed(byRole.S);
+    if (!driver) return null;
+    var driven = placed(byRole.output) || placed(byRole.P);
+    var mate = driven ? driven.position : null;
+    var planet = list.filter(function (m) { return m.role === 'planet'; })[0];
+    // Un satellite n'a pas encore de position propre dans le modèle spatial :
+    // sa ligne des centres est le rayon d'orbite qui sert à le dessiner.
+    if (mate && planet && planet.orbit > 0) {
+      var offset = [mate[0] - driver.position[0], mate[1] - driver.position[1], mate[2] - driver.position[2]];
+      var alongAxis = vector.dot(offset, driver.axis);
+      var across = vector.norm([offset[0] - driver.axis[0] * alongAxis,
+        offset[1] - driver.axis[1] * alongAxis, offset[2] - driver.axis[2] * alongAxis]);
+      if (across < 1e-9) {
+        mate = vector.add(driver.position,
+          vector.scale(vector.perpendicularDirection(driver.axis, 0), planet.orbit));
+      }
+    }
+    if (!mate) {
+      var slide = (frame.graph.slides || []).filter(function (s) { return s.stageIndex === index; })[0];
+      if (!slide) return null;
+      mate = vector.add(driver.position, vector.cross(driver.axis, slide.direction));
+    }
+    function drawn(id) { return list.filter(function (m) { return m.memberId === id; })[0] || null; }
+    var from = drawn(byRole.input ? byRole.input.id : (byRole.S || {}).id) ||
+      list.filter(function (m) { return m.role === 'sun'; })[0];
+    var to = planet || drawn(byRole.output ? byRole.output.id : null) ||
+      list.filter(function (m) { return m.kind === 'rack'; })[0];
+    if (!from) return null;
+    var origin = [from.cx, from.cy];
+    if (to) {
+      var dx = to.cx - from.cx, dy = to.cy - from.cy;
+      var span = Math.hypot(dx, dy);
+      if (span > 1e-9) {
+        var reach = Math.min(finite(from.pitchDiameter, 0) / 2, span);
+        origin = [from.cx + dx / span * reach, from.cy + dy / span * reach];
+      }
+    }
+    return ForceOverlay.frame({ axis: driver.axis, centre: driver.position, mate: mate,
+      view: frame.view, origin: origin });
+  }
+
   /** Les deux côtés du sommet commun d'un couple conique, ou null. */
   function coneSides(frame, input, output) {
     if (!input || !output) return null;
@@ -300,6 +353,10 @@
       // donnait. C'est la MÊME géométrie que la vue Transmission qui la décrit
       // maintenant — un seul plan de courroie, un seul enroulement.
       item.flexible = flexibleOf(frame, stage, cluster.list);
+      // Les efforts vivent dans le repère de l'engrènement, pas dans celui de
+      // l'écran : la vue cotée dessinait la même rosace Ft/Fr/Fa que la vue
+      // Transmission, et toutes deux se trompaient de la même façon.
+      item.forceFrame = forceFrameOf(frame, scene, index, cluster.list);
       cursor += width + gap;
       bottom = Math.max(bottom, margin + headroom + height + headroom * 0.6);
       return item;

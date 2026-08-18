@@ -162,8 +162,12 @@
     group.appendChild(meshOverlay);
     this._meshOverlays.push({ entry: entry, host: meshOverlay, lod: -1 });
 
-    var anchor = entry.wheels[0] || { cx: 0, cy: 0, outsideD: 20 };
-    GearForceOverlay.render(n, group, mech.forces, { x: anchor.cx, y: anchor.cy });
+    // Les efforts s'appliquent AU POINT PRIMITIF, dans le repère de
+    // l'engrènement : le modèle le donne, le renderer ne l'invente plus.
+    if (entry.forceFrame) {
+      GearForceOverlay.render(n, group, mech.forces,
+        { x: entry.forceFrame.origin[0], y: entry.forceFrame.origin[1] }, entry.forceFrame);
+    }
     // Les badges d'alerte se posent AU-DESSUS de l'étage, jamais sur les
     // dentures : ils signalent sans masquer ce qu'ils commentent.
     var top = entry.wheels.reduce(function (best, wheel) {

@@ -25,9 +25,10 @@
     common ? require('./core/MechanicalGraph.js') : root.GearMechanicalGraph,
     common ? require('./core/SpatialLayout.js') : root.GearSpatialLayout,
     common ? require('./core/ProjectionEngine.js') : root.GearProjectionEngine,
-    common ? require('./core/ProjectedScene.js') : root.GearProjectedScene);
+    common ? require('./core/ProjectedScene.js') : root.GearProjectedScene,
+    common ? require('./overlays/ForceOverlay.js') : root.GearForceOverlay);
   if (common) module.exports = api; else root.GearTrainLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, FlexibleDrive, MechanicalGraph, SpatialLayout, Projection, ProjectedScene) {
+})(typeof self !== 'undefined' ? self : this, function (SceneBuilder, FlexibleDrive, MechanicalGraph, SpatialLayout, Projection, ProjectedScene, ForceOverlay) {
   'use strict';
 
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
@@ -330,6 +331,9 @@
       else if (stage.type === 'planetary' || stage.type === 'epicyclic') planetaryStage(frame, scene, stage, index, byRole, entry);
       else pairStage(frame, connection, stage, index, byRole, entry);
 
+      // Le repère des efforts, une fois l'étage placé : il a besoin des roues
+      // dessinées pour savoir OÙ les flèches s'appliquent.
+      entry.forceFrame = forceFrameOf(frame, index, byRole, entry);
       out.push(entry);
     });
 
@@ -377,6 +381,65 @@
         output: anchorFor(out.length - 1, 'output', last ? last.wheels[0] : null)
       }
     };
+  }
+
+  /**
+   * Le repère mécanique dans lequel vivent Ft, Fr et Fa, et le point où ils
+   * s'appliquent : le point primitif, là où les dents se touchent.
+   *
+   * Les trois directions étaient écrites en dur à l'écran — Ft horizontal, Fr
+   * vertical, Fa à 45° —, la même rosace pour toutes les familles et tous les
+   * points de vue. Elle vient maintenant de l'axe de l'organe menant et de la
+   * ligne des centres. Un étage dont on ne sait pas construire cette ligne n'a
+   * pas de repère, et ne reçoit donc aucune flèche.
+   */
+  /** Ce qui sépare deux points UNE FOIS l'écart le long de l'axe retiré. */
+  function distanceOffAxis(driver, mate) {
+    var vector = MechanicalGraph.vector;
+    var delta = [mate[0] - driver.position[0], mate[1] - driver.position[1], mate[2] - driver.position[2]];
+    var along = vector.dot(delta, driver.axis);
+    return vector.norm([delta[0] - driver.axis[0] * along, delta[1] - driver.axis[1] * along,
+      delta[2] - driver.axis[2] * along]);
+  }
+
+  function forceFrameOf(frame, index, byRole, entry) {
+    var vector = MechanicalGraph.vector;
+    function placed(member) { return member && frame.spatial.byId[member.id]; }
+    var driver = placed(byRole.input) || placed(byRole.S);
+    if (!driver) return null;
+    var driven = placed(byRole.output) || placed(byRole.P);
+    var mate = driven ? driven.position : null;
+    // Un satellite est placé sur l'axe du porte-satellites : le modèle spatial
+    // ne lui donne pas encore de position propre (les ports du planétaire
+    // restent à faire). Sa ligne des centres est celle qui sert à le DESSINER
+    // — le premier rayon d'orbite —, pas une direction inventée pour l'occasion.
+    if (mate && entry.carrier && entry.carrier.orbit > 0 &&
+        distanceOffAxis(driver, mate) < 1e-9) {
+      mate = vector.add(driver.position,
+        vector.scale(vector.perpendicularDirection(driver.axis, 0), entry.carrier.orbit));
+    }
+    if (!mate) {
+      // Une crémaillère n'a pas de centre : sa ligne des centres est la
+      // perpendiculaire commune à l'axe du pignon et à la glissière.
+      var slide = (frame.graph.slides || []).filter(function (s) { return s.stageIndex === index; })[0];
+      if (!slide) return null;
+      mate = vector.add(driver.position, vector.cross(driver.axis, slide.direction));
+    }
+    // Le point d'application, à l'écran : sur la ligne des centres DESSINÉE, à
+    // un rayon primitif du centre menant.
+    var from = entry.wheels[0];
+    var to = entry.wheels.filter(function (wheel) { return wheel.role === 'planet'; })[0] || entry.wheels[1];
+    var origin = [finite(from && from.cx, 0), finite(from && from.cy, 0)];
+    if (from && to) {
+      var dx = to.cx - from.cx, dy = to.cy - from.cy;
+      var span = Math.hypot(dx, dy);
+      if (span > 1e-9) {
+        var reach = Math.min(finite(from.pitchD, 0) / 2, span);
+        origin = [from.cx + dx / span * reach, from.cy + dy / span * reach];
+      }
+    }
+    return ForceOverlay.frame({ axis: driver.axis, centre: driver.position, mate: mate,
+      view: frame.view, origin: origin });
   }
 
   /**

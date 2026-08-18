@@ -737,6 +737,67 @@ test('the dimensioned rack slides on its slide, not along the screen (§8 de l�
   expect(errors).toEqual([]);
 });
 
+test('the force arrows come from the mesh, not from a fixed rosette (§9 de l’audit)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['helical']);
+  await showView(page, 'teeth');
+  const select = page.locator('#viewerProjection');
+
+  const shot = () => page.evaluate(() => {
+    const entry = window.__viewer.renderer().model.stages[0];
+    const host = document.querySelector('#svgContainer .force-overlay');
+    const read = label => {
+      const arrow = host.querySelector('.force-' + label);
+      if (!arrow) return null;
+      if (arrow.classList.contains('force-end-on')) return { endOn: true };
+      const line = arrow.querySelector('line');
+      return { endOn: false, x: Number(line.getAttribute('x2')), y: Number(line.getAttribute('y2')) };
+    };
+    return { anchor: [Number(host.dataset.anchorX), Number(host.dataset.anchorY)],
+      centres: entry.wheels.map(w => [w.cx, w.cy]), pitch: entry.wheels[0].pitchD,
+      ft: read('ft'), fr: read('fr'), fa: read('fa') };
+  });
+
+  const angles = new Set();
+  for (const view of ['unfolded', 'front', 'top', 'side', 'iso']) {
+    await select.selectOption(view);
+    const seen = await shot();
+    const [a, b] = seen.centres;
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const span = Math.hypot(dx, dy);
+    if (span > 1e-6) {
+      // Le point d'application est le point primitif, sur la ligne des centres.
+      const reach = Math.hypot(seen.anchor[0] - a[0], seen.anchor[1] - a[1]);
+      expect(reach, view + ' : point d’application').toBeCloseTo(Math.min(seen.pitch / 2, span), 3);
+      // Et Ft traverse cette ligne à angle droit — dans les vues qui montrent
+      // le plan d'engrènement sans le déformer.
+      if (seen.ft && !seen.ft.endOn && (view === 'unfolded' || view === 'front' || view === 'side')) {
+        const along = [dx / span, dy / span];
+        const cos = (seen.ft.x * along[0] + seen.ft.y * along[1]) / Math.hypot(seen.ft.x, seen.ft.y);
+        expect(Math.abs(cos), view + ' : Ft n’est pas perpendiculaire à la ligne des centres').toBeLessThan(1e-6);
+      }
+    }
+    if (seen.ft && !seen.ft.endOn) angles.add(Math.atan2(seen.ft.y, seen.ft.x).toFixed(4));
+  }
+  // Une rosace fixe donnerait le même angle partout.
+  expect(angles.size, 'les flèches ne bougent pas d’une vue à l’autre').toBeGreaterThan(1);
+
+  // Un effort vu dans sa propre direction n'est pas une flèche de longueur
+  // nulle : c'est ⊙ ou ⊗, la convention du dessin technique.
+  const endOn = await page.evaluate(() => {
+    const found = [];
+    for (const view of ['unfolded', 'front', 'top', 'side', 'iso']) {
+      window.__viewer.setProjection(view);
+      const arrow = document.querySelector('#svgContainer .force-overlay .force-end-on');
+      if (arrow) found.push({ view, symbols: arrow.querySelectorAll('circle').length });
+    }
+    return found;
+  });
+  expect(endOn.length, 'aucune vue ne regarde un effort dans son axe').toBeGreaterThan(0);
+  endOn.forEach(entry => expect(entry.symbols, entry.view).toBeGreaterThan(0));
+  expect(errors).toEqual([]);
+});
+
 test('the animation cadence follows the mode, the poses never do', async ({ page }) => {
   await mount(page, ['spur']);
   await showView(page, 'teeth');
