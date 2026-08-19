@@ -79,7 +79,7 @@
         </div>
       </details>
       <button class="btn-icon" id="themeBtn" title="Mode sombre/clair" aria-label="Changer le thème">Thème</button>
-      <button class="btn-icon" id="shareBtn" title="Copier un lien partageable de la configuration" aria-label="Partager">Partager</button>
+      <button class="btn-icon" id="shareBtn" title="Copier un lien vers la solution affichée : le mécanisme, le point de vue, et le cahier des charges qui l’a produit" aria-label="Partager">Partager</button>
     </div>
   </header>
 
@@ -497,7 +497,7 @@
           <!-- §23 : une transmission analysée n'est pas un vivier de 1. Trier,
                filtrer et la comparer à elle-même n'ont aucun sens. -->
           <div id="analysedBanner" class="analysed-banner" hidden>
-            <strong>Transmission analysée</strong>
+            <strong id="analysedTitle">Transmission analysée</strong>
             <span id="analysedSummary" class="analysed-summary"></span>
             <button type="button" class="btn-small btn-primary" id="editTransmissionBtn">Modifier la transmission</button>
           </div>
@@ -820,6 +820,10 @@
   <script src="js/requirements/TechnologySelectionModel.js" defer></script>
   <script src="js/requirements/TechnicalSettingsModel.js" defer></script>
   <script src="js/ui/SessionStore.js" defer></script>
+  <!-- Le lien de partage porte la solution elle-même, pas une recherche à
+       relancer : il se charge à côté du rangement de session, dont il partage
+       la discipline de version. -->
+  <script src="js/ui/ShareLink.js" defer></script>
   <script src="js/ui/SearchSession.js" defer></script>
   <script src="js/ui/search/TypeStep.js" defer></script>
   <script src="js/ui/search/TypeParametersEditor.js" defer></script>

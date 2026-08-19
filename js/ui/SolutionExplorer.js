@@ -143,7 +143,12 @@
    * d'un élément, de la filtrer, ni de comparer une transmission à elle-même.
    */
   SolutionExplorer.prototype._isSingleTransmission = function () {
-    return this._pool.length === 1 && !!this._pool[0].isBuilt;
+    // Une solution REÇUE par un lien est dans le même cas qu'une chaîne
+    // construite : elle n'a pas été cherchée, et il n'y a rien autour d'elle.
+    // Un vivier d'une solution issu d'une VRAIE recherche, lui, garde sa barre
+    // d'affinage — c'est le résultat d'une recherche, si maigre soit-il.
+    var only = this._pool.length === 1 ? this._pool[0] : null;
+    return !!(only && (only.isBuilt || only.isShared));
   };
 
   SolutionExplorer.prototype._renderAnalysed = function () {
@@ -154,6 +159,12 @@
     banner.hidden = !single;
     if (!single) return;
     var solution = this._pool[0];
+    // D'où vient ce qu'on regarde : décrit ici, ou reçu par un lien. Les deux
+    // sont analysés de la même façon, mais dire « transmission analysée » à
+    // qui vient d'ouvrir le lien d'un collègue laisserait croire qu'il l'a
+    // saisie lui-même.
+    var title = el('analysedTitle');
+    if (title) title.textContent = solution.isShared ? 'Solution partagée' : 'Transmission analysée';
     var summary = el('analysedSummary');
     if (summary) {
       var architecture = (solution.stages || []).map(function (stage) {
@@ -175,6 +186,15 @@
   };
 
   SolutionExplorer.prototype.getPool = function () { return this._pool; };
+
+  /**
+   * La position, DANS LE VIVIER, de la solution affichée — ou null. C'est elle
+   * que désigne un partage ou un export : la position dans la liste filtrée
+   * changerait de sens au premier affinage.
+   */
+  SolutionExplorer.prototype.selectedIndex = function () {
+    return this._selectedIndex == null ? null : this._selectedIndex;
+  };
 
   SolutionExplorer.prototype.poolIndexOf = function (uid) {
     for (var i = 0; i < this._pool.length; i++) if (this._pool[i].uid === uid) return i;
@@ -206,6 +226,21 @@
     var stated = session.engineeringOptions();
     return { inputSpeedRpm: Number.isFinite(stated.inputSpeedRpm) ? stated.inputSpeedRpm : null,
       inputTorqueNm: Number.isFinite(stated.inputTorqueNm) ? stated.inputTorqueNm : null };
+  };
+
+  /**
+   * Adopte les paramètres d'une recherche SANS vivier.
+   *
+   * Le contexte de ré-analyse — régime, matériaux, fabrication — se lit dans
+   * ces paramètres. Une solution rouverte depuis un lien partagé doit être
+   * analysée dans ce contexte-là, et il faut donc pouvoir le poser AVANT
+   * d'avoir une solution à publier.
+   */
+  SolutionExplorer.prototype.useParams = function (searchParams) {
+    this._params = searchParams || null;
+    this._workerParams = searchParams && searchParams.toWorkerParams
+      ? searchParams.toWorkerParams() : null;
+    return this;
   };
 
   SolutionExplorer.prototype.getContext = function () {
