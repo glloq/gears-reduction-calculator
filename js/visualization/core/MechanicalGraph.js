@@ -77,6 +77,31 @@
     return round(unit(rotateAround(base, unit(direction), finite(azimuthDeg, 0) * Math.PI / 180)));
   }
 
+  /**
+   * L'ANGLE D'ARBRE d'un renvoi, en degrés.
+   *
+   * Il appartient à la géométrie de l'étage, pas à la famille : deux couples
+   * coniques de même denture peuvent se croiser à 90° ou à 60°. Une famille
+   * déclarée perpendiculaire — la vis sans fin — n'a pas d'angle à lire, et
+   * vaut 90 par définition.
+   */
+  function shaftAngleOf(stage, relation) {
+    if (relation === 'perpendicular') return 90;
+    var declared = stage && stage.geometry && stage.geometry.shaftAngleDeg;
+    return Number.isFinite(declared) ? declared : 90;
+  }
+
+  /**
+   * `direction` tournée de `angleDeg` autour de `axis`, dans le plan qu'elles
+   * définissent. À 90° elle rend exactement `direction × axis` — la
+   * construction du renvoi droit, qu'on ne veut pas voir changer.
+   */
+  function turnedBy(direction, axis, angleDeg) {
+    var theta = finite(angleDeg, 90) * Math.PI / 180;
+    var d = unit(direction), side = cross(d, unit(axis));
+    return round(unit(add(scale(d, Math.cos(theta)), scale(side, Math.sin(theta)))));
+  }
+
   function axisOffset(direction, distance, azimuthDeg) {
     if (!(Math.abs(distance) > 0)) return [0, 0, 0];
     return scale(perpendicularDirection(direction, azimuthDeg), distance);
@@ -219,12 +244,17 @@
       // Même axe, autre corps tournant : le mené est concentrique au menant.
       axis = inputAxis;
       drivenAt = seat;
-    } else if (relation === 'perpendicular') {
-      // Le renvoi part du point de contact, sur l'axe d'entrée, et repart
-      // perpendiculairement : c'est ce qui fait qu'un engrenage placé APRÈS un
-      // renvoi n'est plus dans le plan du précédent.
+    } else if (relation === 'perpendicular' || relation === 'crossed') {
+      // UN RENVOI D'ANGLE. Il part du point de contact, sur l'axe d'entrée, et
+      // repart sous l'ANGLE D'ARBRE de l'étage — 90° pour un couple conique
+      // droit ou une vis sans fin, mais un conique se taille sous n'importe
+      // quel angle. La famille `crossed` tombait jusqu'ici dans la branche
+      // « parallèle » : un renvoi à 60° se dessinait avec deux axes confondus,
+      // c'est-à-dire deux cônes posés bout à bout sur un même arbre, qui
+      // n'engrenaient rien.
       var turn = perpendicularDirection(inputAxis.direction, azimuth);
-      axis = makeAxis(graph, add(contact, scale(turn, distance)), cross(inputAxis.direction, turn));
+      axis = makeAxis(graph, add(contact, scale(turn, distance)),
+        turnedBy(inputAxis.direction, turn, shaftAngleOf(stage, relation)));
     } else {
       // Parallèle : même direction, décalé de l'entraxe, à la même abscisse.
       axis = makeAxis(graph, add(contact, axisOffset(inputAxis.direction, distance, azimuth)), inputAxis.direction);
@@ -384,10 +414,16 @@
     var pinion = members.filter(function (m) { return m.kind !== 'rack'; })[0] || members[0];
     var rack = members.filter(function (m) { return m.kind === 'rack'; })[0];
     place(context.shaft, pinion, context.gap, undefined, context.gapIsExplicit);
+    var travelDirection = perpendicularDirection(axis.direction, (stage.parameters && stage.parameters.azimuthDeg) || 0);
     var slide = { id: 'slide-' + index, stageIndex: index,
       // La translation se fait perpendiculairement à l'axe du pignon, dans le
       // plan de son cercle primitif.
-      direction: perpendicularDirection(axis.direction, (stage.parameters && stage.parameters.azimuthDeg) || 0),
+      direction: travelDirection,
+      // DE QUEL CÔTÉ du pignon la crémaillère est posée. C'est une donnée du
+      // mécanisme, et le dessin n'a pas à la deviner : la ligne primitive de la
+      // crémaillère passe par le point situé à un rayon primitif du centre,
+      // dans cette direction.
+      contact: round(unit(cross(axis.direction, travelDirection))),
       memberId: rack ? rack.id : null,
       travelPerRevolution: finite(stage.geometry && stage.geometry.travelPerRevolution, null) };
     graph.slides.push(slide);

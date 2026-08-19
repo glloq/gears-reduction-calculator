@@ -224,6 +224,10 @@
       // La profondeur du porte-satellites : c'est elle qui décide s'il passe
       // devant ou derrière une pièce voisine, comme pour toute autre pièce.
       depth: carrierSeen ? carrierSeen.depth : 0,
+      // Le porte-satellites tourne autour du MÊME axe que l'étage : son moyeu
+      // se voit donc sous la même ellipse que le solaire et la couronne.
+      apparent: carrierSeen ? carrierSeen.apparent : null,
+      axisAngleDeg: carrierSeen ? carrierSeen.axisAngleDeg : 0,
       bodyId: byRole.C && frame.spatial.byId[byRole.C.id] ? frame.spatial.byId[byRole.C.id].shaftId : null,
       functionalRole: byRole.C ? byRole.C.functionalRole : null,
       memberName: byRole.C ? byRole.C.memberName : null,
@@ -242,19 +246,29 @@
     var direction = slide ? Projection.project(slide.direction, frame.view) : [0, 1];
     var length = Math.hypot(direction[0], direction[1]) || 1;
     var along = [direction[0] / length, direction[1] / length];
-    var normal = [-along[1], along[0]];
+    // La ligne primitive de la crémaillère est TANGENTE au cercle primitif du
+    // pignon. Elle se pose donc à un rayon primitif du centre — un rayon porté
+    // par l'espace, qu'il faut projeter comme le reste. Reporté tel quel sur la
+    // normale d'écran, il laissait le pignon flotter à côté de sa crémaillère
+    // dès que la vue n'était plus de face.
+    var offset = slide && slide.contact
+      ? screenOffset(frame, slide.contact, pinion.pitchD / 2)
+      : [-along[1] * pinion.pitchD / 2, along[0] * pinion.pitchD / 2];
+    // La COURSE aussi se raccourcit : c'est une longueur de l'espace, portée
+    // par la glissière.
+    var drawnTravel = frame.mode === 'unfolded' ? travel : travel * length;
     var rack = wheelFromMember(byRole.rack, {
-      cx: pinion.cx + normal[0] * pinion.pitchD / 2,
-      cy: pinion.cy + normal[1] * pinion.pitchD / 2,
+      cx: pinion.cx + offset[0],
+      cy: pinion.cy + offset[1],
       axisAngleDeg: deg(Math.atan2(along[1], along[0])),
       pitchD: 0, outsideD: 4 * m, rootD: m, module: m,
-      teeth: Math.max(6, Math.round(travel / (Math.PI * m))), length: travel,
+      teeth: Math.max(6, Math.round(travel / (Math.PI * m))), length: drawnTravel,
       // Le pignon entraîne la crémaillère : mm parcourus par radian d'entrée.
       mmPerRadian: finite(byRole.rack && byRole.rack.mechanical.mmPerRadian, pinion.pitchD / 2),
       pinionSpeed: pinion.speed, linearId: 's' + index + '-rack',
       slideAlong: along,
       // La puce SORTIE s'écarte de toute la demi-course, pas du seul profil.
-      chipR: travel / 2 });
+      chipR: drawnTravel / 2 });
     entry.attach = 'linear';
     entry.wheels.push(pinion, rack);
     entry.stageRadius = Math.max(pinion.pitchD, travel) / 2;
@@ -284,23 +298,22 @@
     // dans le sens de l'axe revient à parier sur l'orientation que le graphe a
     // donnée à cet axe : l'un des deux cônes se dessinait donc pointe tournée
     // vers l'extérieur du couple, sur toutes les vues.
-    if (stage.type === 'bevel') {
-      var sides = coneSides(frame, byRole.input, byRole.output);
-      if (sides) { wIn.apexSide = sides.sideA; wOut.apexSide = sides.sideB; }
-    }
+    var coneApexSides = stage.type === 'bevel' ? coneSides(frame, byRole.input, byRole.output) : null;
+    if (coneApexSides) { wIn.apexSide = coneApexSides.sideA; wOut.apexSide = coneApexSides.sideB; }
     entry.wheels.push(wIn, wOut);
     if (isBeltLike) entry.links.push(flexibleLink(frame, connection, byRole, wIn, wOut, 's' + index + '-drive'));
     if (stage.type === 'bevel') {
       // Les deux axes se coupent en un POINT unique : le sommet commun des
       // cônes primitifs. Le modèle spatial le connaît — c'est lui qui a servi
       // à placer les deux roues.
-      var apex = apexOf(frame, byRole);
+      var apex = apexOf(frame, byRole, coneApexSides);
       if (apex) {
         entry.apex = apex;
         entry.links.push({ kind: 'bevel-axes', x: apex.x, y: apex.y,
           shaftAngleDeg: finite(connection.shaftAngleDeg, 90),
           inAlong: alongOf(frame, byRole.input.id), outAlong: alongOf(frame, byRole.output.id),
-          span: Math.max(apex.back1, apex.back2) + Math.max(wIn.pitchD, wOut.pitchD) / 2 });
+          inSpan: apex.inSpan, outSpan: apex.outSpan,
+          span: Math.max(apex.inSpan, apex.outSpan) });
       }
     }
     entry.stageRadius = Math.max(wIn.outsideD, wOut.outsideD) / 2;
@@ -314,27 +327,95 @@
       var back = SpatialLayout.coneBack(finite(entry.geometry.pitchDiameter, 0), entry.geometry.coneAngleDeg);
       return placed && back ? { position: placed.position, axis: placed.axis, back: back } : null;
     }
-    var apex = SpatialLayout.coneApex(cone(input), cone(output));
+    var a = cone(input), b = cone(output);
+    var apex = SpatialLayout.coneApex(a, b);
     // Deux sommets qui ne se rejoignent pas ne sont pas un sommet : mieux vaut
     // ne rien orienter que d'orienter d'après une coïncidence approximative.
-    return apex && apex.gap < 1e-6 * Math.max(1, Math.hypot(apex.point[0], apex.point[1], apex.point[2])) ? apex : null;
+    //
+    // L'écart se juge À L'ÉCHELLE DU COUPLE — un millième de la plus courte des
+    // deux distances sommet-organe. Un seuil absolu rapporté à la distance à
+    // l'origine se resserrait près du repère et se relâchait au loin, et un
+    // renvoi à 60°, dont les cosinus ne tombent pas juste, passait à quelques
+    // microns de le manquer : les deux cônes se seraient alors amincis du même
+    // côté, pointes tournées vers l'extérieur du couple.
+    if (!apex) return null;
+    var scale = Math.max(1e-6, Math.min(a.back, b.back));
+    return apex.gap < scale * 1e-3 ? apex : null;
   }
 
-  /** Le sommet commun de deux cônes primitifs, dans le repère du dessin. */
-  function apexOf(frame, byRole) {
+  /**
+   * CE QUI RESTE d'une longueur portée par l'axe, une fois projetée.
+   *
+   * La vue dépliée conserve les longueurs vraies — c'est sa définition. Une
+   * projection, elle, raccourcit ce qui a de la profondeur : `minor² + axialScale² = 1`
+   * relie exactement ce raccourci à l'ouverture de l'ellipse apparente, si bien
+   * qu'une seule valeur décrit les deux et qu'elles ne peuvent pas se contredire.
+   */
+  /**
+   * LE VECTEUR D'ÉCRAN d'un déplacement de `distance` dans la direction
+   * `direction` de l'espace.
+   *
+   * C'est la seule règle à connaître pour poser un point qui n'est pas un
+   * organe — un sommet de cône, une ligne primitive de crémaillère. Les deux
+   * systèmes de dessin y répondent différemment, et c'est tout le contrat :
+   * la vue DÉPLIÉE conserve la longueur vraie et ne prend de la projection que
+   * la direction ; une PROJECTION raccourcit la longueur avec elle. Reporter
+   * une longueur vraie sur une direction projetée — ce que faisait le sommet
+   * des cônes — revient à mélanger les deux, et rien ne tombe plus en face.
+   */
+  function scaled(vector, factor) {
+    return [vector[0] * factor, vector[1] * factor, vector[2] * factor];
+  }
+
+  function screenOffset(frame, direction, distance) {
+    if (!direction) return [0, 0];
+    var xy = Projection.project(direction, frame.view);
+    var length = Math.hypot(xy[0], xy[1]);
+    if (!(length > 1e-9)) return [0, 0];
+    var factor = frame.mode === 'unfolded' ? distance / length : distance;
+    return [xy[0] * factor, xy[1] * factor];
+  }
+
+  function axialScaleOf(frame, memberId) {
+    if (frame.mode === 'unfolded') return 1;
+    var seen = frame.projected && frame.projected.member(memberId);
+    var minor = seen && seen.apparent && seen.apparent.major > 0
+      ? seen.apparent.minor / seen.apparent.major : 0;
+    return Math.sqrt(Math.max(0, 1 - minor * minor));
+  }
+
+  /**
+   * Le sommet commun de deux cônes primitifs, dans le repère du dessin.
+   *
+   * La distance sommet-organe est une longueur VRAIE, portée par l'axe : la
+   * reporter telle quelle sur la direction d'écran de l'arbre revient à ignorer
+   * le raccourci de la projection. Le sommet tombait donc trop loin — en
+   * isométrie, une fois et demie trop loin — et les deux cônes, chacun dessiné
+   * autour du sien, ne se rejoignaient plus.
+   */
+  function apexOf(frame, byRole, sides) {
     var input = byRole.input, output = byRole.output;
     if (!input || !output) return null;
     function back(member) {
-      var delta = finite(member.geometry.coneAngleDeg, null);
-      var d = finite(member.geometry.pitchDiameter, 0);
-      if (delta === null || !(d > 0)) return null;
-      var slope = Math.tan(rad(delta));
-      return Math.abs(slope) < 1e-6 ? null : (d / 2) / slope;
+      return SpatialLayout.coneBack(finite(member.geometry.pitchDiameter, 0),
+        finite(member.geometry.coneAngleDeg, null));
     }
     var back1 = back(input), back2 = back(output);
     if (back1 === null || back2 === null) return null;
-    var seat = seatOf(frame, input.id), along = alongOf(frame, input.id);
-    return { x: seat.x + along[0] * back1, y: seat.y + along[1] * back1, back1: back1, back2: back2 };
+    // De quel CÔTÉ de l'organe se trouve le sommet : c'est le COUPLE qui le
+    // dit — le point où les deux axes se coupent —, pas le sens que le graphe a
+    // donné à l'axe d'entrée.
+    var sign = sides && sides.sideA < 0 ? -1 : 1;
+    var placed = frame.spatial.byId[input.id];
+    var seat = seatOf(frame, input.id);
+    var reach = screenOffset(frame, placed ? scaled(placed.axis, sign) : [1, 0, 0], back1);
+    return { x: seat.x + reach[0], y: seat.y + reach[1],
+      back1: back1, back2: back2,
+      // Les DEMI-LONGUEURS d'axe à tracer, chacune dans son propre raccourci :
+      // un axe de construction dépasse la pièce qu'il porte, il ne traverse pas
+      // le dessin entier.
+      inSpan: (back1 + finite(input.geometry.width, back1 * 0.2)) * axialScaleOf(frame, input.id),
+      outSpan: (back2 + finite(output.geometry.width, back2 * 0.2)) * axialScaleOf(frame, output.id) };
   }
 
   // ===== Assemblage =====

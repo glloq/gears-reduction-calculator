@@ -14,7 +14,10 @@ const STAGES = {
   belt: { type: 'belt', input: { teeth: 20 }, output: { teeth: 60 }, parameters: { pitch: 5, centerDistance: 150, profile: 'HTD-5M' } },
   chain: { type: 'chain', input: { teeth: 15 }, output: { teeth: 45 }, parameters: { pitch: 12.7, centerDistance: 250 } },
   planetary: { type: 'planetary', sunTeeth: 24, ringTeeth: 72, planetTeeth: 24, planetCount: 5, inputMember: 'S', outputMember: 'C', fixed: 'R', parameters: { module: 2, faceWidth: 20 } },
-  rack: { type: 'rack', pinionTeeth: 20, parameters: { module: 2, rpm: 1500, faceWidth: 20 } }
+  rack: { type: 'rack', pinionTeeth: 20, parameters: { module: 2, rpm: 1500, faceWidth: 20 } },
+  // Un couple conique ne se taille pas qu'à 90° : c'est le cas que le modèle
+  // rangeait avec les couples PARALLÈLES, faute d'une branche pour lui.
+  bevel60: { type: 'bevel', input: { teeth: 20 }, output: { teeth: 40 }, parameters: { module: 2, shaftAngle: 60, faceWidth: 15 } }
 };
 
 /** Monte un jeu d'étages dans le visualiseur et renvoie le contrôleur de vues. */
@@ -2947,5 +2950,249 @@ test('the exploded view opens what the mechanism hides, and says it is not to sc
   await expect(assembled).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#viewerFidelity')).not.toContainText('Vue éclatée');
   expect(spread(await drawn())).toBeCloseTo(spread(closed), 0);
+  expect(errors).toEqual([]);
+});
+
+// ===== L'ASSEMBLAGE, famille par famille =====
+//
+// Une transmission n'est pas un tas de roues. Ce qu'un dessin doit rendre
+// lisible, c'est la RELATION entre les organes : qui engrène avec qui, sur
+// quel axe, à quelle distance. Une roue posée au bon endroit dans un repère
+// faux ne montre rien — et c'est exactement ce qui arrivait aux satellites
+// d'un planétaire, dressés au milieu d'un étage couché.
+//
+// Ces vérifications portent sur le DESSIN, dans toutes les vues, et pour
+// toutes les familles : c'est là que les erreurs se voient, et c'est là
+// qu'elles doivent être empêchées.
+
+const FAMILIES = [['spur'], ['helical'], ['internal'], ['bevel'], ['bevel60'], ['worm'],
+  ['belt'], ['chain'], ['planetary'], ['rack'],
+  ['worm', 'worm'], ['spur', 'bevel'], ['bevel', 'spur'], ['belt', 'spur'], ['planetary', 'spur']];
+const CAMERAS = ['unfolded', 'iso', 'iso-90', 'iso-180', 'iso-270', 'front', 'top', 'side'];
+
+/** Tout ce qu'on peut reprocher au dessin courant, en une passe. */
+async function assemblyProblems(page) {
+  return page.evaluate(() => {
+    const model = window.__viewer.teeth.model;
+    const svg = document.querySelector('#svgContainer svg');
+    const problems = [];
+
+    // Un NaN dans un attribut SVG efface la pièce sans rien dire.
+    Array.from(svg.querySelectorAll('*')).forEach(el => {
+      Array.from(el.attributes || []).forEach(a => {
+        if (/NaN|Infinity|undefined/.test(a.value)) problems.push('attribut ' + a.name + ' de <' + el.tagName + '> = ' + a.value);
+      });
+    });
+
+    // (1) LA PLACE DESSINÉE d'un organe est la projection de sa place dans
+    //     l'espace. C'est l'invariant dont tous les autres découlent.
+    if (model.mode !== 'unfolded') {
+      model.wheels.forEach(w => {
+        const placed = model.spatial.byId[w.memberId];
+        if (!placed || (Number.isFinite(w.orbit) && w.orbit > 0)) return;
+        const xy = GearProjectionEngine.project(placed.position, model.view);
+        const gap = Math.hypot(xy[0] - w.cx, xy[1] - w.cy);
+        if (gap > 0.05) problems.push('organe ' + w.memberId + ' dessiné à ' + gap.toFixed(2) + ' mm de sa projection');
+      });
+    }
+
+    // (2) LE REPÈRE dans lequel une primitive dessine est posé SUR L'AXE de la
+    //     pièce. Une pièce dessinée dans le repère d'écran est couchée dans un
+    //     plan qui n'est pas le sien : c'est ce qui arrivait aux satellites.
+    Array.from(svg.querySelectorAll('g[data-member]')).forEach(g => {
+      const seen = model.projected && model.projected.member(g.dataset.member);
+      const probe = g.querySelector('ellipse, path.tooth-profile, path.oblique-body');
+      if (!seen || !probe || !Number.isFinite(seen.axisAngleDeg)) return;
+      const rel = svg.getCTM().inverse().multiply(probe.getCTM());
+      const drawn = Math.atan2(rel.b, rel.a) * 180 / Math.PI;
+      const off = ((drawn - seen.axisAngleDeg) % 180 + 270) % 180 - 90;
+      if (Math.abs(off) > 0.05) {
+        problems.push('organe ' + g.dataset.member + ' dessiné dans un repère à ' +
+          off.toFixed(2) + '° de son axe');
+      }
+      // Et l'ellipse qu'il trace est celle que la projection donne à un cercle
+      // porté par cet axe — pas un cercle, pas une autre ellipse.
+      const wanted = seen.apparent.minor / seen.apparent.major;
+      Array.from(g.querySelectorAll('ellipse')).forEach(e => {
+        const rx = Number(e.getAttribute('rx')), ry = Number(e.getAttribute('ry'));
+        if (!(ry > 0.01)) return;
+        if (Math.abs(rx / ry - wanted) > 0.02) {
+          problems.push('organe ' + g.dataset.member + ' : ellipse ' + (rx / ry).toFixed(3) +
+            ' au lieu de ' + wanted.toFixed(3));
+        }
+      });
+    });
+
+    // (3) DEUX ORGANES D'UN MÊME ARBRE sont alignés sur cet arbre : un décalage
+    //     en travers voudrait dire qu'ils ne tournent plus ensemble.
+    const byShaft = {};
+    model.wheels.forEach(w => {
+      if (!w.bodyId || (Number.isFinite(w.orbit) && w.orbit > 0)) return;
+      (byShaft[w.bodyId] = byShaft[w.bodyId] || []).push(w);
+    });
+    Object.keys(byShaft).forEach(id => {
+      const list = byShaft[id];
+      const shaft = model.shafts && model.shafts.filter(s => s.id === id)[0];
+      if (list.length < 2 || !shaft || !shaft.along) return;
+      list.slice(1).forEach(w => {
+        const dx = w.cx - list[0].cx, dy = w.cy - list[0].cy;
+        const across = Math.abs(dx * -shaft.along[1] + dy * shaft.along[0]);
+        if (across > 0.05) problems.push('arbre ' + id + ' : ' + w.memberId + ' est à ' +
+          across.toFixed(2) + ' mm en travers de son axe');
+      });
+    });
+
+    // (4) COUPLE CONIQUE : les deux cônes s'amincissent vers un sommet COMMUN.
+    //     Chacun autour du sien, ils ne se touchent nulle part.
+    model.stages.forEach(entry => {
+      if (entry.type !== 'bevel' || !entry.apex) return;
+      entry.wheels.filter(w => w.kind === 'cone').forEach(w => {
+        const delta = w.coneAngleDeg;
+        if (!Number.isFinite(delta)) return;
+        // Un axe vu EN BOUT n'a pas de direction à l'écran : la vue dépliée
+        // range alors les organes sur un point, et le sommet du cône n'a nulle
+        // part où aller. Ce n'est pas un défaut de placement, c'est ce que
+        // cette vue montre — et il n'y a rien à vérifier.
+        const shaft = model.shafts && model.shafts.filter(s => s.id === w.bodyId)[0];
+        if (model.mode === 'unfolded' && shaft && Math.hypot(shaft.along[0], shaft.along[1]) < 1e-9) return;
+        const back = (w.pitchD / 2) / Math.tan(delta * Math.PI / 180);
+        const minor = w.apparent ? w.apparent.minor / w.apparent.major : 0;
+        const squeeze = model.mode === 'unfolded' ? 1 : Math.sqrt(Math.max(0, 1 - minor * minor));
+        const t = (w.axisAngleDeg || 0) * Math.PI / 180, side = w.apexSide < 0 ? -1 : 1;
+        const gap = Math.hypot(w.cx + Math.cos(t) * back * squeeze * side - entry.apex.x,
+          w.cy + Math.sin(t) * back * squeeze * side - entry.apex.y);
+        if (gap > 0.05) problems.push('conique : sommet de ' + w.memberId + ' à ' + gap.toFixed(2) + ' mm du sommet commun');
+      });
+    });
+
+    // (5) COURROIE ET CHAÎNE : chaque brin est TANGENT aux deux cercles
+    //     primitifs projetés. La tangente d'une ellipse se mesure par sa
+    //     fonction d'appui, et non par son rayon dans cette direction — les
+    //     deux ne coïncident que sur un cercle.
+    model.stages.forEach(entry => {
+      (entry.links || []).forEach(link => {
+        if (link.kind !== 'belt-span' && link.kind !== 'chain-span') return;
+        const spans = ((link.geometry && link.geometry.parts) || []).filter(p => p.kind === 'line');
+        if (!spans.length) { problems.push(link.kind + ' : aucun brin droit'); return; }
+        spans.forEach(part => {
+          const m = /M\s*([-\d.]+)\s+([-\d.]+)\s*L\s*([-\d.]+)\s+([-\d.]+)/.exec(part.d || '');
+          if (!m) { problems.push(link.kind + ' : brin non rectiligne'); return; }
+          const p1 = [Number(m[1]), Number(m[2])], p2 = [Number(m[3]), Number(m[4])];
+          const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy) || 1;
+          const nx = -dy / len, ny = dx / len;
+          entry.wheels.forEach(w => {
+            if (!w.apparent) return;
+            const dist = Math.abs((w.cx - p1[0]) * nx + (w.cy - p1[1]) * ny);
+            const t = (w.axisAngleDeg || 0) * Math.PI / 180;
+            const a = w.pitchD / 2 * (w.apparent.minor / w.apparent.major), b = w.pitchD / 2;
+            const ux = nx * Math.cos(t) + ny * Math.sin(t), uy = -nx * Math.sin(t) + ny * Math.cos(t);
+            const support = Math.hypot(a * ux, b * uy);
+            if (Math.abs(dist - support) > 0.6) {
+              problems.push(link.kind + ' : brin à ' + dist.toFixed(2) + ' du centre de ' +
+                w.memberId + ', tangente attendue à ' + support.toFixed(2));
+            }
+          });
+        });
+      });
+    });
+    return problems;
+  });
+}
+
+test('every family holds together, from every point of view (§ assemblages)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur']);
+  await showView(page, 'teeth');
+  const found = [];
+  for (const names of FAMILIES) {
+    await page.evaluate(({ stages, names }) => {
+      const chosen = names.map(n => JSON.parse(JSON.stringify(stages[n])));
+      chosen.forEach(s => { if (s.type === 'rack') s.geometry = GearTransmissionRegistry.get('rack').calculateGeometry(s); });
+      window.__solution = GearEngineering.analyzeSolution(chosen, 10, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+    }, { stages: STAGES, names });
+    for (const camera of CAMERAS) {
+      await page.evaluate(view => {
+        window.__viewer.setProjection(view);
+        window.__viewer.render(window.__solution);
+      }, camera);
+      (await assemblyProblems(page)).forEach(p => found.push(names.join(' + ') + ' [' + camera + '] ' + p));
+    }
+  }
+  expect(found, found.slice(0, 8).join('\n')).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('the satellites of a planetary lie in the plane of their stage (§ assemblages)', async ({ page }) => {
+  // Le solaire et la couronne s'inclinaient avec l'étage ; les satellites,
+  // eux, restaient debout — quatre ellipses dressées au milieu d'un étage
+  // couché, qui ne pouvaient engrener avec rien.
+  const errors = watchErrors(page);
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  await page.evaluate(() => window.__viewer.setProjection('iso'));
+  const turns = await page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const angle = selector => {
+      const el = svg.querySelector(selector);
+      if (!el) return null;
+      const rel = svg.getCTM().inverse().multiply(el.getCTM());
+      return Math.round(Math.atan2(rel.b, rel.a) * 180 / Math.PI * 100) / 100;
+    };
+    return {
+      sun: angle('[data-member="s0-S"] ellipse'),
+      ring: angle('[data-member="s0-R"] ellipse'),
+      planet: angle('[data-member="s0-P"] ellipse')
+    };
+  });
+  expect(turns.sun).not.toBe(null);
+  expect(turns.planet).not.toBe(null);
+  expect(Math.abs(turns.sun)).toBeGreaterThan(1);
+  expect(turns.planet).toBeCloseTo(turns.sun, 1);
+  expect(turns.ring).toBeCloseTo(turns.sun, 1);
+  expect(errors).toEqual([]);
+});
+
+test('a pinion stays in mesh with its rack, seen from anywhere (§ assemblages)', async ({ page }) => {
+  // La ligne primitive d'une crémaillère est tangente au cercle primitif du
+  // pignon. Le rayon qui les sépare est porté par l'espace : reporté tel quel
+  // sur la normale d'écran, il laissait le pignon flotter à côté de sa
+  // crémaillère dès que la vue n'était plus de face.
+  const errors = watchErrors(page);
+  await mount(page, ['rack']);
+  await showView(page, 'teeth');
+  for (const camera of ['iso', 'iso-90', 'top', 'front']) {
+    const gap = await page.evaluate(view => {
+      window.__viewer.setProjection(view);
+      window.__viewer.render(window.__viewer.solution);
+      const model = window.__viewer.teeth.model;
+      const pinion = model.wheels.filter(w => w.kind !== 'rack')[0];
+      const rack = model.wheels.filter(w => w.kind === 'rack')[0];
+      if (!pinion || !rack) return null;
+      // Distance du centre du pignon à la ligne primitive de la crémaillère,
+      // comparée au rayon apparent du pignon dans cette direction.
+      const t = (rack.axisAngleDeg || 0) * Math.PI / 180;
+      const nx = -Math.sin(t), ny = Math.cos(t);
+      const dist = Math.abs((pinion.cx - rack.cx) * nx + (pinion.cy - rack.cy) * ny);
+      const a = pinion.pitchD / 2 * (pinion.apparent.minor / pinion.apparent.major);
+      const b = pinion.pitchD / 2;
+      const p = (pinion.axisAngleDeg || 0) * Math.PI / 180;
+      const ux = nx * Math.cos(p) + ny * Math.sin(p), uy = -nx * Math.sin(p) + ny * Math.cos(p);
+      // La COURSE dessinée : une longueur de l'espace, portée par la
+      // glissière, donc raccourcie comme elle.
+      const slide = model.graph.slides[0];
+      const xy = GearProjectionEngine.project(slide.direction, model.view);
+      const squeeze = model.mode === 'unfolded' ? 1 : Math.hypot(xy[0], xy[1]);
+      return { view: view, dist: dist, support: Math.hypot(a * ux, b * uy),
+        drawn: rack.length, wanted: slide.travelPerRevolution * squeeze };
+    }, camera);
+    expect(gap, camera).not.toBe(null);
+    expect(Math.abs(gap.dist - gap.support), camera + ' : ' + JSON.stringify(gap)).toBeLessThan(0.6);
+    // Une course dessinée à sa longueur vraie dans une vue qui la raccourcit
+    // ferait lire au réglet une valeur que le mécanisme n'a pas. Regardée
+    // EXACTEMENT dans l'axe de la glissière, la course ne se projette plus que
+    // sur un point : cette vue-là n'a pas de longueur à montrer, et le dessin
+    // retombe sur une longueur conventionnelle plutôt que d'effacer la pièce.
+    if (gap.wanted > 1e-6) expect(gap.drawn, camera + ' : course dessinée').toBeCloseTo(gap.wanted, 3);
+  }
   expect(errors).toEqual([]);
 });
