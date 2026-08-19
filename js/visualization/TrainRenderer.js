@@ -760,6 +760,91 @@
 
   // ===== Étiquettes en couloirs (anti-chevauchement) + cadrage =====
 
+  /**
+   * OÙ POSER LES LIBELLÉS D'ÉTAGE.
+   *
+   * Ils étaient rangés en deux couloirs — pairs au-dessus du dessin, impairs en
+   * dessous, poussés horizontalement quand deux se gênaient. C'est simple, et
+   * cela tient tant que les étages sont rangés côte à côte. Depuis qu'ils
+   * s'empilent sur leurs axes réels, deux étages peuvent partager la même
+   * abscisse : la poussée les mettait alors bout à bout très loin de ce qu'ils
+   * désignent, et la ligne de rappel traversait tout le mécanisme.
+   *
+   * Chaque libellé demande maintenant sa place autour de l'étage qu'il nomme,
+   * et le moteur la lui donne — la plus proche qui ne heurte rien.
+   */
+  TrainRenderer.prototype._placeLabels = function (bbox, fontSize) {
+    var svg = this.svg, self = this;
+    var labels = Array.from(svg.querySelectorAll('.train-label'));
+    if (!labels.length) return this;
+    Array.from(svg.querySelectorAll('.label-leader')).forEach(function (line) { line.remove(); });
+    var boxes = {};
+    var obstacles = [];
+    (this.model && this.model.stages || []).forEach(function (entry, index) {
+      var box = self._stageBox(index);
+      if (!box) return;
+      boxes[index] = box;
+      obstacles.push(box);
+    });
+    var selected = GearSelection.stageOf(this.selection || GearSelection.none());
+    var requests = labels.map(function (label) {
+      var index = Number(label.dataset.labelStage);
+      var box = boxes[index] || bbox;
+      return {
+        id: String(index),
+        anchor: { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+        // La largeur d'un texte sans le mesurer : à 0,62 em par caractère on
+        // majore un peu, ce qui est le bon sens pour éviter un chevauchement.
+        width: Math.max(fontSize * 3, label.textContent.length * fontSize * 0.62),
+        height: fontSize * 1.25,
+        // L'étage DÉSIGNÉ passe devant : c'est celui qu'on lit, et le perdre
+        // au profit d'un voisin serait exactement le contraire de ce qu'on
+        // demande au dessin.
+        priority: index === selected ? 1 : 4
+      };
+    });
+    var placed = GearLabelLayout.place(requests, {
+      obstacles: obstacles,
+      bounds: { x: bbox.x - bbox.width * 0.2, y: bbox.y - bbox.height * 0.35,
+        width: bbox.width * 1.4, height: bbox.height * 1.7 },
+      // Seul un libellé non désigné peut être abandonné, et seulement s'il ne
+      // reste vraiment aucune place : deux textes superposés n'en font pas un
+      // lisible, ils en font zéro.
+      dropAbove: 4
+    });
+    placed.forEach(function (seat, i) {
+      var label = labels[i];
+      if (seat.dropped) { label.setAttribute('display', 'none'); return; }
+      label.removeAttribute('display');
+      label.setAttribute('x', seat.x.toFixed(1));
+      label.setAttribute('y', seat.y.toFixed(1));
+      label.setAttribute('text-anchor', seat.textAnchor);
+      label.setAttribute('font-size', fontSize.toFixed(1));
+      if (!seat.leader) return;
+      // La ligne de rappel s'arrête AU BORD de l'étage, pas en son centre :
+      // menée jusqu'au centre, elle traverserait la pièce qu'elle désigne.
+      var edge = self._edgeOf(boxes[Number(seat.id)], seat.leader);
+      label.parentNode.insertBefore(n('line', { class: 'label-leader',
+        x1: seat.leader.x1.toFixed(1), y1: (seat.leader.y1 + fontSize * (seat.leader.y2 > seat.leader.y1 ? 0.45 : -0.9)).toFixed(1),
+        x2: edge[0].toFixed(1), y2: edge[1].toFixed(1) }), label);
+    });
+    return this;
+  };
+
+  /** Où la ligne de rappel touche la boîte de l'étage qu'elle désigne. */
+  TrainRenderer.prototype._edgeOf = function (box, leader) {
+    if (!box) return [leader.x2, leader.y2];
+    var cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    var dx = leader.x1 - cx, dy = leader.y1 - cy;
+    var span = Math.hypot(dx, dy);
+    if (span < 1e-6) return [cx, cy];
+    // Le point du bord dans la direction de l'étiquette : on avance jusqu'à
+    // sortir de la boîte, ce qui se résout en une seule division.
+    var t = Math.min(Math.abs(dx) > 1e-6 ? (box.width / 2) / Math.abs(dx) : Infinity,
+      Math.abs(dy) > 1e-6 ? (box.height / 2) / Math.abs(dy) : Infinity);
+    return [cx + dx * t, cy + dy * t];
+  };
+
   TrainRenderer.prototype._fit = function (keepView) {
     var svg = this.svg;
     var bbox;
@@ -778,35 +863,7 @@
     svg.querySelector('.train-viewport').setAttribute('font-size', fontSize.toFixed(3));
     GearViewportController.applyScreenScale(svg, unit);
 
-    // Couloirs d'étiquettes : pairs au-dessus du dessin, impairs en dessous,
-    // poussée horizontale si chevauchement dans un couloir.
-    var labels = Array.from(svg.querySelectorAll('.train-label'));
-    var lanes = { top: -Infinity, bottom: -Infinity };
-    var self = this;
-    labels.forEach(function (label, i) {
-      // L'étiquette vit dans le calque d'annotations : la boîte de son groupe
-      // ne dirait donc plus que la taille du texte. Elle vient du MODÈLE — les
-      // pièces de l'étage —, ce qui est de toute façon ce qu'elle désigne.
-      var stageBox = self._stageBox(Number(label.dataset.labelStage)) || bbox;
-      var top = i % 2 === 0;
-      var y = top ? bbox.y - fontSize * 1.6 : bbox.y + bbox.height + fontSize * 2.2;
-      var x = stageBox.x + stageBox.width / 2;
-      var width = label.textContent.length * fontSize * 0.62;
-      var lane = top ? 'top' : 'bottom';
-      if (x - width / 2 < lanes[lane]) x = lanes[lane] + width / 2 + fontSize;
-      lanes[lane] = x + width / 2;
-      label.setAttribute('x', x.toFixed(1));
-      label.setAttribute('y', y.toFixed(1));
-      label.setAttribute('text-anchor', 'middle');
-      label.setAttribute('font-size', fontSize.toFixed(1));
-      // Ligne de rappel vers le centre de l'étage.
-      var leader = n('line', {
-        class: 'label-leader',
-        x1: x, y1: top ? y + fontSize * 0.5 : y - fontSize,
-        x2: stageBox.x + stageBox.width / 2, y2: top ? stageBox.y : stageBox.y + stageBox.height
-      });
-      label.parentNode.insertBefore(leader, label);
-    });
+    this._placeLabels(bbox, fontSize);
 
     // Puces ENTRÉE/SORTIE et cotes : même unité écran que les étiquettes.
     Array.from(svg.querySelectorAll('.io-chip text')).forEach(function (t) { t.setAttribute('font-size', (fontSize * 0.95).toFixed(3)); });

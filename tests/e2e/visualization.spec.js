@@ -2840,3 +2840,51 @@ test('isolating keeps what you are reading and fades the rest (§ isoler)', asyn
   await expect(context).toBeDisabled();
   expect(errors).toEqual([]);
 });
+
+test('stage labels find their own place on a dense train (§ étiquettes)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Quatre planétaires COAXIAUX : ils partagent une abscisse, et c'est le cas
+  // que les deux couloirs — pairs au-dessus, impairs en dessous — mettaient
+  // bout à bout, très loin de ce qu'ils désignent.
+  await mount(page, ['planetary', 'planetary', 'planetary', 'planetary']);
+  await showView(page, 'teeth');
+  for (const view of ['front', 'iso', 'iso-90']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    const seen = await page.evaluate(() => {
+      const labels = Array.from(document.querySelectorAll('#svgContainer .train-label'));
+      const visible = labels.filter(l => l.getAttribute('display') !== 'none');
+      const boxes = visible.map(l => l.getBoundingClientRect());
+      let clashes = 0;
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i], b = boxes[j];
+          const wide = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const high = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (wide > 1 && high > 1) clashes++;
+        }
+      }
+      // Chaque libellé posé loin est RELIÉ à l'étage qu'il nomme : sans le
+      // trait, un texte à l'écart ne désigne plus rien.
+      const leaders = Array.from(document.querySelectorAll('#svgContainer .label-leader'));
+      return { total: labels.length, shown: visible.length, clashes, leaders: leaders.length,
+        texts: visible.map(l => l.textContent) };
+    });
+    expect(seen.total, view).toBe(4);
+    expect(seen.shown, view + ' : des libellés ont disparu').toBe(4);
+    expect(seen.clashes, view + ' : libellés superposés').toBe(0);
+    expect(seen.leaders, view + ' : libellés éloignés sans ligne de rappel').toBeGreaterThan(0);
+    // Les quatre étages sont nommés, chacun le sien.
+    expect(new Set(seen.texts).size).toBe(4);
+  }
+
+  // L'étage DÉSIGNÉ passe devant : c'est celui qu'on lit, et le perdre au
+  // profit d'un voisin serait le contraire de ce qu'on demande au dessin.
+  await page.evaluate(() => window.__viewer.selectStage(2));
+  const chosen = await page.evaluate(() => {
+    const label = document.querySelector('#svgContainer .train-label[data-label-stage="2"]');
+    return { hidden: label.getAttribute('display') === 'none', text: label.textContent };
+  });
+  expect(chosen.hidden).toBe(false);
+  expect(chosen.text).toContain('Étage 3');
+  expect(errors).toEqual([]);
+});
