@@ -523,6 +523,28 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .shaft-hit-point { fill: transparent; stroke: none; pointer-events: fill; cursor: pointer; }
 .train-shaft:hover .shaft-body { stroke-width: 1.4; }
 
+/* ----- ISOLER -----
+   Cadrer ne suffit pas sur une transmission dense : la pièce voisine reste au
+   premier plan, et sur un planétaire elle recouvre littéralement celle qu'on
+   vient de choisir. Rien n'est déplacé ni recalculé — c'est une affaire
+   d'opacité, et une pièce estompée reste exactement à sa place. */
+.is-isolating .is-far { opacity: .14; pointer-events: none; }
+.is-isolating .is-near { opacity: 1; }
+/* « Seul » va au bout : le reste disparaît, au lieu de rester en fantôme. */
+.is-isolating.isolate-only .is-far { opacity: 0; }
+/* La transition dit que c'est le MÊME dessin qu'on estompe, et non un autre
+   qu'on vient de charger. */
+.geometry-layer > *, .engineering-overlay-layer > *, .annotation-layer > * {
+  transition: opacity .16s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .geometry-layer > *, .engineering-overlay-layer > *, .annotation-layer > * { transition: none; }
+}
+.view-isolate[hidden] { display: none; }
+.view-isolate button[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;
+}
+
 /* La poignée d'engrènement : une cible, pas un décor. Invisible tant qu'on ne
    la cherche pas — la ligne d'action et le point primitif disent déjà ce qui
    s'y passe —, elle se révèle au survol et une fois choisie. */

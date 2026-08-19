@@ -74,6 +74,10 @@
     // `selectedStage` en découle et reste pour les modules qui ne connaissent
     // que les étages — désigner une roue désigne aussi l'étage où elle est.
     this.selection = GearSelection.none();
+    // ISOLER : null, 'context' ou 'only'. Le réglage vaut pour la session —
+    // quelqu'un qui explore un train dense veut rester en isolation pendant
+    // qu'il passe d'une pièce à l'autre.
+    this.isolate = null;
     this.selectedStage = -1;
     this.animationSpeed = 1;
     this.animationDirection = 1;
@@ -441,6 +445,23 @@
     return this;
   };
 
+  /**
+   * ISOLER ce qu'on regarde.
+   *
+   * Sans rien de sélectionné, il n'y a rien à isoler : les boutons restent
+   * désactivés plutôt que d'estomper la totalité du dessin, ce qui reviendrait
+   * à l'éteindre.
+   */
+  ViewerToolbar.prototype.setIsolation = function (mode) {
+    this.isolate = mode === 'context' || mode === 'only' ? mode : null;
+    var rendered = this.renderer();
+    if (rendered && rendered.setIsolation) rendered.setIsolation(this.isolate);
+    this._syncFraming();
+    this.container.dispatchEvent(new CustomEvent('viewer:isolation-changed',
+      { detail: { isolate: this.isolate } }));
+    return this;
+  };
+
   ViewerToolbar.prototype._syncFraming = function () {
     var focus = document.getElementById('viewerFocus');
     if (focus) {
@@ -448,6 +469,25 @@
       focus.disabled = !selected;
       focus.title = selected ? 'Cadrer l’étage ' + (this.selectedStage + 1)
         : 'Sélectionnez d’abord un étage sur le dessin';
+    }
+    var isolation = document.querySelector('.view-isolate');
+    if (isolation) {
+      // Sans rien de sélectionné, il n'y a rien à isoler : estomper la
+      // totalité du dessin reviendrait à l'éteindre. La Cinématique est un
+      // schéma — masquer une partie d'un schéma ne le rend pas plus clair.
+      var isolable = this.currentView !== 'kinematic';
+      isolation.hidden = !isolable;
+      var something = !!(this.selection && this.selection.type);
+      [['viewerIsolateContext', 'context'], ['viewerIsolateOnly', 'only']].forEach(function (pair) {
+        var button = document.getElementById(pair[0]);
+        if (!button) return;
+        var on = this.isolate === pair[1];
+        button.disabled = !something;
+        button.setAttribute('aria-pressed', String(on && something));
+        button.title = !something ? 'Choisissez d’abord une pièce, un arbre ou un étage'
+          : pair[1] === 'context' ? 'Estomper le reste du mécanisme, sans le faire disparaître'
+            : 'Ne garder que ce qui est sélectionné et son arbre';
+      }, this);
     }
     var actual = document.getElementById('viewerActualSize');
     if (actual) {
@@ -559,6 +599,7 @@
     if (!rendered) return;
     if (rendered.setAnimationSpeed) rendered.setAnimationSpeed(this.animationSpeed);
     if (rendered.setAnimationDirection) rendered.setAnimationDirection(this.animationDirection);
+    if (rendered.setIsolation) rendered.setIsolation(this.isolate);
     if (rendered.setAutoDetails) rendered.setAutoDetails(this.overlays.autoDetails);
     if (rendered.setAnimationMode) rendered.setAnimationMode(this.animationMode);
     // L'animation reprend au même angle : les trois vues racontent la même
@@ -810,6 +851,10 @@
         self.setProjection(GearProjectionEngine.rotateIso(self.projection,
           event.target.id === 'viewerIsoRight' ? 1 : -1));
       }
+      // Deux degrés d'isolation, et le même bouton pour en sortir : cliquer
+      // « Contexte » quand on y est déjà revient à tout remontrer.
+      if (event.target.id === 'viewerIsolateContext') self.setIsolation(self.isolate === 'context' ? null : 'context');
+      if (event.target.id === 'viewerIsolateOnly') self.setIsolation(self.isolate === 'only' ? null : 'only');
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();
       if (event.target.id === 'viewerFocus' && renderer.focusStage) renderer.focusStage(self.selectedStage);
       if (event.target.id === 'viewerActualSize' && renderer.viewport) renderer.viewport.actualSize();

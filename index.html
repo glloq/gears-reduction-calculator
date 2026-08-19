@@ -598,6 +598,14 @@
             <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>
             <button id="viewerActualSize" type="button" class="btn-small" title="Échelle réelle : un millimètre dessiné occupe un millimètre d’écran">1:1</button>
           </div>
+          <!-- Cadrer ne suffit pas sur une transmission dense : la pièce
+               voisine reste au premier plan. Isoler l'estompe. -->
+          <div class="segmented view-isolate" role="group" aria-label="Isolation" hidden>
+            <button id="viewerIsolateContext" type="button" class="btn-small" aria-pressed="false"
+              title="Estomper le reste du mécanisme, sans le faire disparaître">Contexte</button>
+            <button id="viewerIsolateOnly" type="button" class="btn-small" aria-pressed="false"
+              title="Ne garder que ce qui est sélectionné et son arbre">Seul</button>
+          </div>
           <details class="export-menu">
             <summary>Exporter</summary>
             <div>

@@ -1273,6 +1273,7 @@
     // Le survol le faisait déjà, mais il s'éteint dès qu'on bouge la souris ;
     // une sélection, elle, tient.
     this._lightBody(this._bodyOf(current), true);
+    this._applyIsolation();
     if (!silent) {
       this.container.dispatchEvent(new CustomEvent('viewer:selection-changed', { detail: { selection: current } }));
       // L'ancien événement reste émis : la navigation d'étages, l'éditeur et
@@ -1280,6 +1281,104 @@
       // aussi l'étage où elle se trouve.
       this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: stage } }));
     }
+    return this;
+  };
+
+  /**
+   * CE QUI TIENT À la chose désignée : ses organes, son arbre, son étage.
+   *
+   * Isoler demande de savoir ce qui reste et ce qui s'efface. La réponse n'est
+   * pas « le même étage » : désigner un arbre garde ses roues, qui peuvent
+   * appartenir à deux étages différents — c'est précisément ce qu'on veut voir.
+   */
+  TrainRenderer.prototype._relations = function (selection) {
+    var current = selection || GearSelection.none();
+    var model = this.model || {};
+    var wheels = model.wheels || [];
+    var shafts = model.shafts || [];
+    var members = {}, bodies = {}, stages = {};
+    function keepMember(id) {
+      if (!id) return;
+      members[id] = true;
+      wheels.forEach(function (wheel) {
+        if (wheel.memberId === id && wheel.bodyId) bodies[wheel.bodyId] = true;
+      });
+      // L'étage où cet organe se trouve : le modèle range ses roues par étage,
+      // et c'est la seule source — une roue ne porte pas son numéro d'étage.
+      (model.stages || []).forEach(function (entry, index) {
+        if ((entry.wheels || []).some(function (wheel) { return wheel.memberId === id; })) stages[index] = true;
+      });
+    }
+    function keepBody(id) {
+      if (!id) return;
+      bodies[id] = true;
+      wheels.forEach(function (wheel) { if (wheel.bodyId === id) members[wheel.memberId] = true; });
+      shafts.forEach(function (shaft) {
+        if (shaft.id !== id) return;
+        (shaft.memberIds || []).forEach(function (memberId) { members[memberId] = true; });
+      });
+    }
+    function keepStage(index) {
+      if (!(index >= 0)) return;
+      stages[index] = true;
+      var entry = (model.stages || [])[index];
+      (entry && entry.wheels || []).forEach(function (wheel) {
+        members[wheel.memberId] = true;
+        if (wheel.bodyId) bodies[wheel.bodyId] = true;
+      });
+    }
+    if (current.type === 'member') { keepMember(current.id); keepBody(this._bodyOf(current)); }
+    else if (current.type === 'shaft') keepBody(current.id);
+    else if (current.type === 'stage' || current.type === 'mesh') keepStage(GearSelection.stageOf(current));
+    return { members: members, bodies: bodies, stages: stages };
+  };
+
+  /**
+   * ISOLER : garder ce qu'on regarde au premier plan, estomper le reste.
+   *
+   * Cadrer ne suffit pas sur une transmission dense — la pièce voisine reste
+   * au premier plan, et sur un planétaire elle recouvre littéralement celle
+   * qu'on vient de choisir. Deux degrés :
+   *
+   *     contexte   le reste s'estompe mais reste là : on voit OÙ se trouve
+   *                la pièce dans le mécanisme ;
+   *     seul       le reste disparaît : on voit la pièce, et rien d'autre.
+   *
+   * Rien n'est déplacé ni recalculé : c'est une affaire d'opacité. Le dessin
+   * reste exactement le même, et une pièce estompée reste à sa place.
+   */
+  TrainRenderer.prototype.setIsolation = function (mode) {
+    this.isolate = mode === 'context' || mode === 'only' ? mode : null;
+    return this._applyIsolation();
+  };
+
+  TrainRenderer.prototype._applyIsolation = function () {
+    if (!this.svg) return this;
+    var current = this.selection || GearSelection.none();
+    var active = !!this.isolate && !!current.type;
+    var svg = this.svg;
+    svg.classList.toggle('is-isolating', active);
+    svg.classList.toggle('isolate-only', active && this.isolate === 'only');
+    var kept = active ? this._relations(current) : null;
+    var selected = active ? GearSelection.stageOf(current) : -1;
+    Array.from(svg.querySelectorAll('.is-near, .is-far')).forEach(function (part) {
+      part.classList.remove('is-near', 'is-far');
+    });
+    if (!active) return this;
+    var groups = svg.querySelectorAll(
+      '.geometry-layer > *, .engineering-overlay-layer > *, .annotation-layer > *');
+    Array.prototype.forEach.call(groups, function (group) {
+      var data = group.dataset || {};
+      var near = false;
+      if (data.member != null) near = !!kept.members[data.member];
+      else if (data.shaft != null) near = !!kept.bodies[data.shaft];
+      else if (data.mesh != null) near = !!kept.stages[Number(data.stage)];
+      else if (data.stage != null) near = !!kept.stages[Number(data.stage)];
+      // Ce qui n'appartient à rien de nommé — le groupe des tracés d'axe, une
+      // courroie — suit l'étage qui le porte quand il en a un.
+      else if (Number.isFinite(Number(data.stage))) near = Number(data.stage) === selected;
+      group.classList.add(near ? 'is-near' : 'is-far');
+    });
     return this;
   };
 

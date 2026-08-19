@@ -2735,3 +2735,108 @@ test('one satellite of five is one satellite, not five (§ sélection)', async (
   expect(seen.marked).toEqual(['2']);
   expect(errors).toEqual([]);
 });
+
+test('isolating keeps what you are reading and fades the rest (§ isoler)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'planetary', 'spur']);
+  await showView(page, 'teeth');
+  await page.evaluate(() => window.__viewer.setProjection('front'));
+  const context = page.locator('#viewerIsolateContext');
+  const only = page.locator('#viewerIsolateOnly');
+  const counts = () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const opacity = selector => {
+      const el = document.querySelector(selector);
+      return el ? Number(getComputedStyle(el).opacity) : null;
+    };
+    return {
+      near: svg.querySelectorAll('.is-near').length,
+      far: svg.querySelectorAll('.is-far').length,
+      isolating: svg.classList.contains('is-isolating'),
+      keptOpacity: opacity('#svgContainer .is-near'),
+      fadedOpacity: opacity('#svgContainer .is-far')
+    };
+  });
+
+  // Sans rien de sélectionné, il n'y a rien à isoler : estomper la totalité du
+  // dessin reviendrait à l'éteindre.
+  await expect(context).toBeDisabled();
+  await expect(only).toBeDisabled();
+  expect((await counts()).isolating).toBe(false);
+
+  // Le solaire d'un planétaire est derrière ses satellites : on le DÉSIGNE,
+  // au lieu de cliquer un point que le tri de profondeur donne à un autre —
+  // ce que teste déjà la sélection, et qui n'est pas le sujet ici.
+  await page.evaluate(() => window.__viewer.select(
+    window.GearSelection.of('member', 's1-S', { stageIndex: 1 })));
+  await expect(context).toBeEnabled();
+
+  await context.click();
+  // L'estompage est une TRANSITION : la mesurer avant qu'elle ne se termine
+  // relèverait l'opacité de départ, c'est-à-dire 1.
+  const settled = () => page.waitForFunction(() => {
+    const faded = document.querySelector('#svgContainer .is-far');
+    if (!faded) return false;
+    const value = Number(getComputedStyle(faded).opacity);
+    return value === 0 || value < 0.4;
+  });
+  await settled();
+  const ghosted = await counts();
+  expect(ghosted.isolating).toBe(true);
+  await expect(context).toHaveAttribute('aria-pressed', 'true');
+  // Ce qu'on lit reste net, le reste s'estompe — mais reste là : on voit OÙ
+  // se trouve la pièce dans le mécanisme.
+  expect(ghosted.near, 'rien n’est resté au premier plan').toBeGreaterThan(0);
+  expect(ghosted.far, 'rien n’a été estompé').toBeGreaterThan(0);
+  expect(ghosted.keptOpacity).toBe(1);
+  expect(ghosted.fadedOpacity).toBeGreaterThan(0);
+  expect(ghosted.fadedOpacity).toBeLessThan(0.4);
+
+  // « Seul » va au bout : le reste disparaît.
+  await only.click();
+  await page.waitForFunction(() => {
+    const faded = document.querySelector('#svgContainer .is-far');
+    return faded && Number(getComputedStyle(faded).opacity) === 0;
+  });
+  const alone = await counts();
+  await expect(only).toHaveAttribute('aria-pressed', 'true');
+  await expect(context).toHaveAttribute('aria-pressed', 'false');
+  expect(alone.keptOpacity).toBe(1);
+  expect(alone.fadedOpacity).toBe(0);
+  // Rien n'a été déplacé ni recalculé : c'est une affaire d'opacité, et une
+  // pièce estompée reste exactement à sa place.
+  expect(alone.near + alone.far).toBe(ghosted.near + ghosted.far);
+
+  // Ce qui TOURNE AVEC la pièce reste avec elle : isoler un organe ne le
+  // sépare pas de son arbre.
+  const kept = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .is-near'))
+    .map(el => el.dataset.member || el.dataset.shaft).filter(Boolean));
+  expect(kept).toContain('s1-S');
+  expect(kept.some(id => /shaft/.test(id)), 'l’arbre de la pièce a été estompé').toBe(true);
+
+  // Et ce qui est SOLIDAIRE reste avec elle. La roue menée du premier étage et
+  // le solaire du deuxième sont un seul corps tournant : isoler l'une sans
+  // l'autre montrerait une pièce coupée de ce qui l'entraîne.
+  await page.evaluate(() => window.__viewer.select(
+    window.GearSelection.of('member', 's0-output', { stageIndex: 0 })));
+  const solidary = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .is-near'))
+    .map(el => el.dataset.member).filter(Boolean));
+  expect(solidary).toContain('s0-output');
+  expect(solidary, 'le corps solidaire a été estompé').toContain('s1-S');
+  await page.evaluate(() => window.__viewer.select(
+    window.GearSelection.of('member', 's1-S', { stageIndex: 1 })));
+
+  // Le même bouton en sort.
+  await only.click();
+  const back = await counts();
+  expect(back.isolating).toBe(false);
+  expect(back.far).toBe(0);
+
+  // Et refermer la sélection referme l'isolation : il n'y a plus rien à isoler.
+  await context.click();
+  expect((await counts()).isolating).toBe(true);
+  await page.locator('#svgContainer svg').click({ position: { x: 4, y: 4 } });
+  expect((await counts()).isolating).toBe(false);
+  await expect(context).toBeDisabled();
+  expect(errors).toEqual([]);
+});
