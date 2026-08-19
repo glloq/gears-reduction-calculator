@@ -50,9 +50,24 @@
     // configuration rangée dans le localStorage par une version précédente
     // suffisait à faire croire à une session « non vide », donc à sauter le
     // modal — alors que l'utilisateur ouvrait l'application pour chercher.
-    var hasURLParams = GearApp.models.SearchParams.fromURL();
+    // §20 : un lien de partage porte la SOLUTION, pas une recherche à
+    // relancer. Il passe donc avant l'ancien format d'adresse, qui ne savait
+    // transporter que des valeurs de champs.
+    var shared = GearApp.ui.ShareLink.carries(window.location.search)
+      ? GearApp.ui.ShareLink.decode(window.location.search, _sessionDefaults()) : null;
+    var hasURLParams = !shared && GearApp.models.SearchParams.fromURL();
     var source = 'fresh';
-    if (hasURLParams) {
+    if (shared) {
+      // Un lien qui porte une SOLUTION la désigne explicitement : l'ouvrir sur
+      // le modal reviendrait à l'ignorer. Un lien qui ne porte qu'un cahier des
+      // charges, lui, n'a rien à montrer — c'est une recherche préremplie, et
+      // le modal est justement l'endroit où on la reprend.
+      source = shared.solution ? 'sharedUrl' : 'localStorage';
+      // Le cahier des charges du lien, s'il en porte un : le destinataire peut
+      // alors reprendre la recherche là où elle en était, au lieu de deviner.
+      if (shared.session) workbench.adoptStoredSession(shared.session);
+      else workbench.refreshAfterRestore(false);
+    } else if (hasURLParams) {
       source = 'sharedUrl';
       workbench.refreshAfterRestore(true);
     } else {
@@ -70,6 +85,10 @@
       }
     }
     workbench.openInitialSearchModal(source);
+    // La solution partagée est ouverte APRÈS le modal initial : elle doit
+    // pouvoir dessiner, et le point de vue ne s'applique qu'une fois le
+    // visualiseur en place.
+    if (shared) _openSharedSolution(shared);
 
     ui.paramForm.restoreTheme();
 
@@ -427,6 +446,133 @@
     ui.logger.log('Recherche précédente rechargée.');
   }
 
+  // ===== §20 : partager la solution qu'on regarde =====
+
+  /** La session neuve qui sert de référence : un lien ne porte que les écarts. */
+  function _sessionDefaults() {
+    try { return new GearApp.ui.SearchSession().toJSON(); } catch (ignore) { return null; }
+  }
+
+  /** Le viseur, s'il existe : il n'est construit qu'au premier dessin. */
+  function _viewer() { return GearApp.visualization.viewerToolbar || null; }
+
+  /**
+   * CE QU'ON EST EN TRAIN DE MONTRER : la solution affichée, le besoin qui l'a
+   * produite, et le point de vue depuis lequel on la regarde. Sans le point de
+   * vue, un lien rouvrirait le bon mécanisme sous un autre angle — c'est-à-dire
+   * pas ce qu'on montrait.
+   */
+  function _shareState() {
+    var session = workbench && workbench.session ? workbench.session : null;
+    var pool = explorer ? explorer.getPool() : [];
+    var chosen = explorer ? explorer.selectedIndex() : null;
+    var index = chosen == null ? 0 : chosen;
+    var solution = pool && pool.length ? (pool[index] || pool[0]) : null;
+    var view = _viewer();
+    // Le CONTEXTE de ré-analyse, tel que l'éditeur d'étages le prend : rapport
+    // visé, régime d'entrée, matériaux. Le demander à la session seule
+    // donnerait un régime vide quand l'utilisateur n'en a pas imposé, alors que
+    // la recherche, elle, a bien tourné avec les valeurs de service — et le
+    // destinataire lirait des couples nuls sous une transmission identique.
+    var context = explorer && explorer.getContext ? explorer.getContext() : null;
+    var regime = (context && context.engineeringOptions) || {};
+    return {
+      session: session ? session.toJSON() : null,
+      solution: solution ? {
+        stages: solution.stages,
+        // Le rapport VISÉ, et non celui de la chaîne : c'est lui qui donne son
+        // sens à l'écart affiché, et le recalculer chez le destinataire à
+        // partir des dentures rendrait tout écart nul.
+        target: Number.isFinite(solution.targetRatio) ? solution.targetRatio
+          : (context && Number.isFinite(context.target) ? context.target : null),
+        // LE RÉGIME DE LA SOLUTION, avant celui du contexte. Une recherche qui
+        // n'impose ni vitesse ni couple tourne tout de même avec les valeurs
+        // de service, et c'est ce régime-là qui a produit les couples
+        // affichés : le lire dans le cahier des charges renverrait « aucun »,
+        // et le destinataire lirait des couples nuls sous une transmission
+        // identique.
+        inputSpeedRpm: Number.isFinite(solution.inputSpeedRpm) ? solution.inputSpeedRpm : regime.inputSpeedRpm,
+        inputTorqueNm: Number.isFinite(solution.inputTorqueNm) ? solution.inputTorqueNm : regime.inputTorqueNm
+      } : null,
+      view: view ? {
+        view: view.currentView, projection: view.projection, explode: !!view.explode,
+        stage: view.selectedStage >= 0 ? view.selectedStage : null
+      } : {}
+    };
+  }
+
+  function _shareURL() {
+    var query = GearApp.ui.ShareLink.encode(_shareState(), _sessionDefaults());
+    return window.location.origin + window.location.pathname + '?' + query;
+  }
+
+  /**
+   * Rouvrir une solution partagée. Elle est RÉ-ANALYSÉE, avec exactement le
+   * code d'ingénierie de l'éditeur d'étages : le lien ne porte que ce qui
+   * DÉFINIT la chaîne — ses dentures, ses paramètres —, jamais des résultats
+   * qu'un moteur plus récent recalculerait autrement.
+   */
+  function _openSharedSolution(shared) {
+    if (!shared || !shared.solution || !workbench || !workbench.session) return;
+    var session = workbench.session;
+    var helpers = window.GearStageEditorHelpers;
+    if (!helpers) return;
+    // Le contexte du cahier des charges reçu, puis CE QUE LE LIEN AFFIRME.
+    // L'ordre compte : le régime porté par le lien a produit les couples que
+    // l'expéditeur avait sous les yeux, et c'est lui qui doit gagner — sans
+    // quoi un lien dont le cahier des charges s'est perdu en route rouvrirait
+    // la même chaîne sous un autre régime, donc avec d'autres efforts.
+    explorer.useParams(session.toSearchParams());
+    var context = explorer.getContext();
+    if (Number.isFinite(shared.solution.target) && shared.solution.target > 0) {
+      context.target = shared.solution.target;
+    }
+    if (Number.isFinite(shared.solution.inputSpeedRpm)) {
+      context.engineeringOptions.inputSpeedRpm = shared.solution.inputSpeedRpm;
+    }
+    if (Number.isFinite(shared.solution.inputTorqueNm)) {
+      context.engineeringOptions.inputTorqueNm = shared.solution.inputTorqueNm;
+    }
+    var result = helpers.reanalyze(shared.solution.stages, context,
+      { Engineering: window.GearEngineering, ManufacturingRules: window.ManufacturingRules,
+        Registry: window.GearTransmissionRegistry });
+    if (!result || !result.solution) {
+      ui.logger.setStatus('Le lien partagé décrit une transmission que ce calculateur ne sait pas analyser.');
+      return;
+    }
+    if (Number.isFinite(shared.solution.target) && shared.solution.target > 0) {
+      // Le rapport visé voyage AVEC la solution : un partage repris depuis
+      // cette page doit dire la même chose que le premier, même si le cahier
+      // des charges s'est perdu entre les deux.
+      result.solution.targetRatio = shared.solution.target;
+    }
+    // Une solution reçue n'est pas un vivier d'une solution : rien à trier,
+    // rien à filtrer, rien à comparer à soi-même. C'est la même remarque que
+    // pour une chaîne construite, et elle mérite le même écran.
+    result.solution.isShared = true;
+    explorer.setPool([result.solution], session.toSearchParams(), ui.lastStats(), null, { sort: null });
+    ui.logger.setStatus('Solution partagée ouverte.');
+    _applySharedView(shared.view);
+  }
+
+  /**
+   * Le point de vue du lien, une fois le dessin en place. Le visualiseur n'est
+   * construit qu'au premier rendu : on le rattrape au tour suivant plutôt que
+   * de perdre l'angle que l'expéditeur avait choisi.
+   */
+  function _applySharedView(view, retry) {
+    if (!view) return;
+    var viewer = _viewer();
+    if (!viewer) {
+      if (!retry) setTimeout(function () { _applySharedView(view, true); }, 0);
+      return;
+    }
+    if (view.view) viewer.setView(view.view);
+    if (view.projection) viewer.setProjection(view.projection);
+    if (view.explode && viewer.setExplode) viewer.setExplode(true);
+    if (view.stage != null && view.stage >= 0 && viewer.selectStage) viewer.selectStage(view.stage);
+  }
+
   // ===== Actions d'en-tête et d'espace de travail =====
 
   function _bindHeaderActions() {
@@ -436,11 +582,22 @@
     var share = document.getElementById('shareBtn');
     if (share) {
       share.addEventListener('click', function () {
-        var url = GearApp.models.SearchParams.toURL ? GearApp.models.SearchParams.toURL() : location.href;
+        // §20 : le lien porte la solution AFFICHÉE, et non les valeurs des
+        // champs de recherche. Sans elle, le destinataire recevait un
+        // formulaire à relancer, dont rien ne garantissait qu'il retrouverait
+        // la solution dont on lui parlait.
+        var url = _shareURL();
+        // La barre d'adresse suit : le lien qu'on vient de donner est celui de
+        // la page qu'on regarde, et un rechargement rouvre la même chose.
+        if (window.history && window.history.replaceState) window.history.replaceState(null, '', url);
+        var shared = explorer && explorer.getPool().length;
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(url).then(function () {
-            ui.logger.setStatus('Lien copié dans le presse-papiers.');
-          });
+            ui.logger.setStatus(shared ? 'Lien de cette solution copié dans le presse-papiers.'
+              : 'Lien du cahier des charges copié dans le presse-papiers.');
+          }, function () { ui.logger.setStatus('Lien affiché dans la barre d’adresse.'); });
+        } else {
+          ui.logger.setStatus('Lien affiché dans la barre d’adresse.');
         }
       });
     }

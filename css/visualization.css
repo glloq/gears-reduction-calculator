@@ -540,6 +540,12 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 @media (prefers-reduced-motion: reduce) {
   .geometry-layer > *, .engineering-overlay-layer > *, .annotation-layer > * { transition: none; }
 }
+/* Assemblé / Éclaté. Un état d'affichage, comme le point de vue : le bouton
+   actif porte donc la même marque que les autres commandes de dessin. */
+.view-explode[hidden] { display: none; }
+.view-explode button[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;
+}
 .view-isolate[hidden] { display: none; }
 .view-isolate button[aria-pressed="true"] {
   background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;

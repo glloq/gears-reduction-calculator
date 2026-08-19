@@ -385,26 +385,14 @@
   };
 
   // ===== URL partageable =====
-
-  SearchParams.toURL = function () {
-    var params = SearchParams.fromForm();
-    var q = new URLSearchParams();
-    q.set('r', params.rapportCible);
-    q.set('p', params.precision);
-    q.set('e', params.maxEtages);
-    q.set('s', params.maxSolutions);
-    q.set('t', params.typesActifs.join(','));
-    q.set('amin', params.dentMenanteMin);
-    q.set('amax', params.dentMenanteMax);
-    q.set('bmin', params.dentMeneeMin);
-    q.set('bmax', params.dentMeneeMax);
-    if (params.reductionOnly) q.set('red', '1');
-    if (params.module) q.set('mod', params.module);
-    if (params.dentMenanteFixe) q.set('fa', params.dentMenanteFixe);
-    if (params.dentMeneeFixe) q.set('fb', params.dentMeneeFixe);
-    var expert={};document.querySelectorAll('[data-persist]').forEach(function(el){if(el.id)expert[el.id]=el.type==='checkbox'?el.checked:el.value;});q.set('expert',JSON.stringify(expert));
-    return window.location.origin + window.location.pathname + '?' + q.toString();
-  };
+  //
+  // §20 : l'adresse de partage n'est plus fabriquée ici. Recopier des valeurs
+  // de CHAMPS rouvrait une RECHERCHE, à charge pour le destinataire de la
+  // relancer et de retrouver lui-même, dans quatre-vingts lignes, la solution
+  // dont on lui parlait. `ShareLink` porte la solution elle-même.
+  //
+  // `fromURL` reste : d'anciennes adresses circulent, et elles doivent encore
+  // ouvrir quelque chose plutôt qu'une page vide.
 
   SearchParams.fromURL = function () {
     var q = new URLSearchParams(window.location.search);

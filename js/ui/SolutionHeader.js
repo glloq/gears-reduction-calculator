@@ -239,6 +239,8 @@
     if (!solution) return null;
     // Une transmission décrite par l'utilisateur n'est pas « recommandée » : il
     // n'y a rien eu à recommander.
+    // Reçue par un lien : elle n'a été ni cherchée ici, ni décrite ici.
+    if (solution.isShared) return 'Partagée';
     if (solution.isBuilt) return 'Analysée';
     if (solution.isExisting) return 'Référence';
     var workbench = GearApp._workbench;
