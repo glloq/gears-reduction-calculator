@@ -44,6 +44,19 @@
   }
   function appendAll(host, descriptors) { (descriptors || []).forEach(function (d) { host.appendChild(materialize(d)); }); }
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
+
+  /**
+   * L'inclinaison de l'AXE d'un organe à l'écran, sous forme de transformation.
+   *
+   * Tout ce qu'une primitive dessine est écrit dans le repère LOCAL de la
+   * pièce — petit axe de l'ellipse le long de +X, longueur le long de l'axe.
+   * C'est cette rotation qui pose ce repère sur l'axe réel. L'oublier ne
+   * décale pas la pièce : elle la couche dans un plan qui n'est pas le sien.
+   */
+  function axisTurn(wheel) {
+    return Number.isFinite(wheel && wheel.axisAngleDeg) && wheel.axisAngleDeg
+      ? ' rotate(' + wheel.axisAngleDeg.toFixed(2) + ')' : '';
+  }
   function rad(deg) { return deg * Math.PI / 180; }
   function fmt(value, digits) { return Number.isFinite(value) ? value.toFixed(digits == null ? 2 : digits) : '—'; }
 
@@ -286,15 +299,20 @@
     if (wheel.memberId) host.setAttribute('data-member', wheel.memberId);
     if (Number.isFinite(wheel.instance)) host.setAttribute('data-instance', String(wheel.instance));
     if (wheel.bodyId) host.setAttribute('data-body', wheel.bodyId);
+    // Un organe est posé SUR SON AXE : sans cette rotation, deux roues coniques
+    // à 90° seraient dessinées parallèles, ce qui ne veut rien dire.
+    var axis = axisTurn(wheel);
     if (Number.isFinite(wheel.orbit) && wheel.orbit > 0) {
       orbit = n('g', { class: 'planet-orbit' });
-      orbit.appendChild(n('g', { class: 'planet-seat', transform: 'translate(' + finite(wheel.cx, 0).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')' }));
+      // Un satellite tourne autour du MÊME axe que son planétaire : il se
+      // dessine donc dans le même repère incliné. Seule sa PLACE change, le
+      // long de son orbite. La rotation manquait ici : le solaire et la
+      // couronne s'inclinaient, les satellites restaient debout — quatre
+      // ellipses dressées au milieu d'un étage couché.
+      orbit.appendChild(n('g', { class: 'planet-seat',
+        transform: 'translate(' + finite(wheel.cx, 0).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')' + axis }));
       host.appendChild(orbit);
     } else {
-      // Un cône est posé SUR SON AXE : sans cette rotation, deux roues coniques
-      // à 90° seraient dessinées parallèles, ce qui ne veut rien dire.
-      var axis = Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg
-        ? ' rotate(' + wheel.axisAngleDeg.toFixed(2) + ')' : '';
       host.setAttribute('transform', 'translate(' + finite(wheel.cx, 0).toFixed(2) + ' ' + finite(wheel.cy, 0).toFixed(2) + ')' + axis);
     }
     var seat = orbit ? orbit.firstChild : host;
@@ -516,7 +534,15 @@
     var arms = n('g', { class: 'carrier-arms', transform: 'translate(' + carrier.cx.toFixed(2) + ' ' + carrier.cy.toFixed(2) + ')' });
     var spokes = n('path', { d: this._carrierArms(carrier, 0) });
     arms.appendChild(spokes);
-    arms.appendChild(n('circle', { class: 'carrier-hub', r: Math.max(1.5, carrier.orbit * 0.12).toFixed(2) }));
+    // Le moyeu est un DISQUE perpendiculaire à l'axe : il se voit comme tout
+    // cercle porté par cet axe, c'est-à-dire selon l'ellipse apparente. Un
+    // cercle d'écran restait rond au milieu d'un étage couché.
+    var hub = Math.max(1.5, carrier.orbit * 0.12);
+    var seen = carrier.apparent && carrier.apparent.major > 0
+      ? { rx: hub * carrier.apparent.minor / carrier.apparent.major, ry: hub } : { rx: hub, ry: hub };
+    arms.appendChild(n('ellipse', { class: 'carrier-hub',
+      rx: seen.rx.toFixed(2), ry: seen.ry.toFixed(2),
+      transform: 'rotate(' + finite(carrier.axisAngleDeg, 0).toFixed(2) + ')' }));
     host.appendChild(arms);
     // §18 : un porte-satellites bloqué est un bâti. Les hachures se posent sur
     // le groupe FIXE, pas sur les bras — c'est justement qu'ils ne tournent pas.
@@ -568,9 +594,14 @@
       // ne sont plus déduites de l'angle d'arbre — elles viennent du modèle
       // spatial, qui les a projetées : un renvoi à 60° se dessine à 60°.
       var host = n('g', { class: 'stage-axes' });
-      var span = finite(link.span, 40);
-      [link.inAlong, link.outAlong].forEach(function (along) {
+      // Chaque axe a SA portée : celle du cône qu'il porte, raccourcie comme
+      // lui. Une portée commune calculée sur le plus grand des deux faisait
+      // traverser tout le dessin par deux traits, et l'on cherchait la pièce
+      // dans le quadrillage.
+      var reach = [finite(link.inSpan, link.span), finite(link.outSpan, link.span)];
+      [link.inAlong, link.outAlong].forEach(function (along, i) {
         if (!along || !Math.hypot(along[0], along[1])) return;
+        var span = Math.max(2, finite(reach[i], 40)) * 1.15;
         host.appendChild(n('path', { class: 'stage-axis',
           d: 'M ' + (link.x - along[0] * span).toFixed(2) + ' ' + (link.y - along[1] * span).toFixed(2) +
             ' L ' + (link.x + along[0] * span).toFixed(2) + ' ' + (link.y + along[1] * span).toFixed(2) }));
@@ -1007,7 +1038,7 @@
           : [Math.cos(theta) * radius, Math.sin(theta) * radius];
         record.seat.setAttribute('transform',
           'translate(' + (finite(wheel.orbitCenterX, 0) + seat[0]).toFixed(2) + ' ' +
-          (finite(wheel.orbitCenterY, 0) + seat[1]).toFixed(2) + ')');
+          (finite(wheel.orbitCenterY, 0) + seat[1]).toFixed(2) + ')' + axisTurn(wheel));
         // La rotation propre est comptée dans le repère fixe, et le groupe
         // parent ne tourne plus : il n'y a donc plus rien à en retrancher.
         self._spin(record, own);
@@ -1021,8 +1052,7 @@
         // plat, au travers de son pignon.
         var travel = finite((linear[wheel.linearId] || {}).position, 0);
         var slide = wheel.slideAlong || [1, 0];
-        var turn = Number.isFinite(wheel.axisAngleDeg) && wheel.axisAngleDeg
-          ? ' rotate(' + wheel.axisAngleDeg.toFixed(2) + ')' : '';
+        var turn = axisTurn(wheel);
         record.group.setAttribute('transform',
           'translate(' + (finite(wheel.cx, 0) + slide[0] * travel).toFixed(2) + ' ' +
           (finite(wheel.cy, 0) + slide[1] * travel).toFixed(2) + ')' + turn);

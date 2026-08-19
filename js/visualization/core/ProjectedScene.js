@@ -151,8 +151,20 @@
       var basis = phaseBasis(member.axis, view);
       var raw = Projection.project(member.axis, view);
       var length = Math.hypot(raw[0], raw[1]);
-      var along = length < 1e-9 ? [0, 0] : [raw[0] / length, raw[1] / length];
       var presentation = Projection.presentation(member.axis, view);
+      // LA DIRECTION D'ÉCRAN DE L'AXE vient de l'ARBRE, pas de la projection.
+      //
+      // Les deux coïncident dans une projection — c'est la même image du même
+      // axe. Elles divergent dans la vue DÉPLIÉE, qui reconstruit les
+      // directions pour conserver les angles vrais : après un renvoi à 90°,
+      // l'arbre repart à 90° à l'écran, là où l'image de son axe partirait
+      // ailleurs. Prendre l'image dans les deux cas couchait l'organe dans un
+      // plan que son propre arbre ne suivait pas — la roue conique se
+      // retrouvait de travers sur son axe, et le sommet des deux cônes ne
+      // tombait plus au même endroit.
+      var seated = frame.seats.shafts[member.shaftId];
+      var drawn = seated && Math.hypot(seated.along[0], seated.along[1]) > 1e-9 ? seated.along : null;
+      var along = drawn || (length < 1e-9 ? [0, 0] : [raw[0] / length, raw[1] / length]);
       members[member.id] = {
         id: member.id, shaftId: member.shaftId,
         x: seat.x, y: seat.y,
@@ -163,9 +175,10 @@
         foreshortening: Projection.foreshortening(member.axis, view),
         facing: Projection.facing(member.axis, view),
         along: along,
-        // Un organe vu de face n'a pas d'inclinaison à l'écran : son axe pointe
-        // vers l'œil, et lui en donner une ferait tourner ses étiquettes.
-        axisAngleDeg: presentation !== 'face' && length > 1e-9 ? deg(Math.atan2(along[1], along[0])) : undefined,
+        // Un axe SANS DIRECTION À L'ÉCRAN n'a pas d'inclinaison : il pointe vers
+        // l'œil, et lui en donner une ferait tourner ses étiquettes pour rien.
+        // En projection, c'est exactement le cas d'un organe vu de face.
+        axisAngleDeg: Math.hypot(along[0], along[1]) > 1e-9 ? deg(Math.atan2(along[1], along[0])) : undefined,
         basis: basis,
         // L'ellipse apparente d'un cercle porté par cet axe : c'est elle que
         // toute vue doit tracer au lieu d'un cercle, dès qu'on ne regarde plus
