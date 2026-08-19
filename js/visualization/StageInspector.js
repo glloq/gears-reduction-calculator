@@ -213,7 +213,16 @@
   }
 
   function Inspector(container, options) { this.container = container; this.options = options || {}; this.solution = null; this.element = null; }
-  Inspector.prototype.setSolution = function (solution, scene) { this.solution = solution; this.scene = scene || null; return this; };
+  Inspector.prototype.setSolution = function (solution, scene, model) {
+    this.solution = solution;
+    this.scene = scene || null;
+    // Le MODÈLE DESSINÉ : arbres, organes, étages tels que la vue les a posés.
+    // L'inspecteur ne savait parler que d'étages, et n'avait donc besoin que de
+    // la solution ; désigner un arbre demande de savoir ce qu'il porte, et
+    // c'est le modèle qui le sait.
+    this.model = model || null;
+    return this;
+  };
   Inspector.prototype._element = function () {
     if (this.element && this.element.isConnected) return this.element;
     // §6 : la page fournit un emplacement DOCKÉ, à côté du dessin. L'inspecteur
@@ -353,5 +362,270 @@
     close.addEventListener('click', function () { self.hide(); if (self.options.onClose) self.options.onClose(index); });
     edit.addEventListener('click', function () { if (self.options.onEdit) self.options.onEdit(index); });
   };
-  return { Inspector: Inspector, model: model };
+  /**
+   * Poser une fiche : un en-tête, des groupes, un bouton d'action.
+   *
+   * Les quatre fiches — étage, organe, arbre, engrènement — partagent la même
+   * charpente. Ce qui change est ce qu'on y met, et c'est bien la seule chose
+   * qui doit changer : quatre mises en page différentes pour quatre objets du
+   * même dessin donneraient quatre écrans à apprendre.
+   */
+  Inspector.prototype._card = function (options) {
+    var card = this._element(), self = this;
+    card.textContent = '';
+    var header = document.createElement('header');
+    var title = document.createElement('span');
+    title.className = 'type-badge ' + (options.badge || 'selection');
+    title.textContent = options.title;
+    var close = document.createElement('button');
+    close.type = 'button'; close.className = 'btn-small';
+    close.setAttribute('aria-label', 'Fermer'); close.textContent = '✕';
+    header.appendChild(title); header.appendChild(close); card.appendChild(header);
+    if (options.subtitle) {
+      var lead = document.createElement('p');
+      lead.className = 'inspector-lead';
+      lead.textContent = options.subtitle;
+      card.appendChild(lead);
+    }
+    var grid = document.createElement('div');
+    grid.className = 'inspector-grid';
+    (options.groups || []).filter(Boolean).forEach(function (group) {
+      var rows = (group.rows || []).filter(function (row) { return row[1] != null && row[1] !== ''; });
+      if (!rows.length) return;
+      if (group.title) {
+        var heading = document.createElement('h4');
+        heading.className = 'inspector-group';
+        heading.textContent = group.title;
+        grid.appendChild(heading);
+      }
+      rows.forEach(function (row) {
+        var line = document.createElement('div');
+        var label = document.createElement('span');
+        var value = document.createElement('strong');
+        label.textContent = row[0]; value.textContent = row[1];
+        line.appendChild(label); line.appendChild(value); grid.appendChild(line);
+      });
+    });
+    card.appendChild(grid);
+    (options.actions || []).forEach(function (action) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-small' + (action.primary ? ' btn-primary' : '');
+      if (action.id) button.id = action.id;
+      button.textContent = action.label;
+      button.addEventListener('click', action.run);
+      card.appendChild(button);
+    });
+    card.hidden = false;
+    close.addEventListener('click', function () { self.hide(); if (self.options.onClose) self.options.onClose(-1); });
+    return card;
+  };
+
+  /** L'organe dessiné qui porte cet identifiant, avec son numéro d'exemplaire. */
+  Inspector.prototype._wheel = function (memberId, instance) {
+    var wheels = (this.model && this.model.wheels) || [];
+    var matches = wheels.filter(function (wheel) { return wheel.memberId === memberId; });
+    if (instance != null) {
+      var exact = matches.filter(function (wheel) { return wheel.instance === instance; });
+      if (exact.length) return exact[0];
+    }
+    return matches[0] || null;
+  };
+
+  /**
+   * L'ORGANE : ce qu'il est, comment il est taillé, sur quel arbre il tourne.
+   *
+   * C'est la fiche qui manquait le plus : cliquer une roue répondait « étage 2 »
+   * quand la question était « quelle roue, et à quelle vitesse ? ».
+   */
+  Inspector.prototype.showMember = function (selection) {
+    var wheel = this._wheel(selection.id, selection.instance);
+    if (!wheel) return this.show(selection.stageIndex == null ? 0 : selection.stageIndex);
+    var member = this.scene && this.scene.member ? this.scene.member(selection.id) : null;
+    var mechanical = (member && member.mechanical) || {};
+    var stageIndex = selection.stageIndex;
+    var shaft = ((this.model && this.model.shafts) || []).filter(function (entry) {
+      return entry.id === wheel.bodyId;
+    })[0];
+    var self = this;
+    var name = wheel.memberName || (member && member.memberName) ||
+      kindLabel(wheel.kind) || 'Organe';
+    this._card({
+      badge: 'member',
+      title: name,
+      subtitle: wheel.localizedRole || (member && member.localizedRole) || null,
+      groups: [
+        { rows: [
+          ['Type', kindLabel(wheel.kind)],
+          ['Dents', finite(wheel.teeth) ? String(wheel.teeth) : null],
+          ['Module', finite(wheel.module) ? wheel.module + ' mm' : null],
+          ['Ø primitif', format(wheel.pitchD, 2, ' mm')],
+          ['Ø tête', format(wheel.outsideD, 2, ' mm')],
+          ['Largeur b', format(wheel.faceWidth, 1, ' mm')],
+          ['Angle d’hélice β', finite(wheel.helixAngle) && wheel.helixAngle ? format(wheel.helixAngle, 1, '°') : null]
+        ] },
+        { title: 'Mouvement', rows: [
+          ['Vitesse', finite(mechanical.rpm) ? format(Math.abs(mechanical.rpm), 0, ' rpm ') + (mechanical.rpm < 0 ? '↻' : '↺') : null],
+          ['Vitesse relative', finite(wheel.speed) ? format(wheel.speed, 3, ' ×') : null],
+          ['Couple', format(mechanical.torque, 1, ' N·m')]
+        ] },
+        { title: 'Montage', rows: [
+          ['Arbre', shaft ? shaftLabel(shaft, (this.model && this.model.shafts) || []) : null],
+          ['Solidaire de', shaft && shaft.memberNames && shaft.memberNames.length > 1
+            ? shaft.memberNames.filter(function (other) { return other !== name; }).join(', ') : null],
+          ['Étage', stageIndex == null ? null : 'Étage ' + (stageIndex + 1)],
+          ['Vue', presentationLabel(wheel.presentation)]
+        ] }
+      ],
+      actions: [
+        // Vu en bout, un arbre est un POINT, caché par la roue qui l'entoure :
+        // il n'y a alors aucun endroit où le cliquer. La fiche de l'organe y
+        // mène, ce qui le rend atteignable dans toutes les vues.
+        stageIndex == null ? null : { label: 'Voir l’étage',
+          run: function () { if (self.options.onSelectStage) self.options.onSelectStage(stageIndex); } },
+        // Vu en bout, un arbre est un POINT, caché par la roue qui l'entoure :
+        // il n'y a alors aucun endroit où le cliquer. La fiche de l'organe y
+        // mène, ce qui le rend atteignable dans toutes les vues.
+        shaft ? { label: 'Voir l’arbre',
+          run: function () { if (self.options.onSelectShaft) self.options.onSelectShaft(shaft.id); } } : null,
+        stageIndex == null ? null : { label: 'Modifier cet étage', id: 'stageInspectorEdit', primary: true,
+          run: function () { if (self.options.onEdit) self.options.onEdit(stageIndex); } }
+      ].filter(Boolean)
+    });
+    return this;
+  };
+
+  /**
+   * L'ARBRE : un corps tournant, sa vitesse, et TOUT ce qu'il porte.
+   *
+   * Aucune fiche ne parlait de lui, alors que c'est l'objet qu'on dimensionne :
+   * savoir que deux roues sont solidaires demandait de relire les étages un
+   * à un.
+   */
+  Inspector.prototype.showShaft = function (selection) {
+    var shaft = ((this.model && this.model.shafts) || []).filter(function (entry) {
+      return entry.id === selection.id;
+    })[0];
+    if (!shaft) return this.hide();
+    var wheels = ((this.model && this.model.wheels) || []).filter(function (wheel) {
+      return wheel.bodyId === shaft.id;
+    });
+    var speeds = wheels.map(function (wheel) {
+      var member = this.scene && this.scene.member ? this.scene.member(wheel.memberId) : null;
+      return member && finite(member.mechanical.rpm) ? member.mechanical.rpm : null;
+    }, this).filter(function (rpm) { return rpm != null; });
+    var rpm = speeds.length ? speeds[0] : null;
+    this._card({
+      badge: 'shaft',
+      title: shaftLabel(shaft, (this.model && this.model.shafts) || []),
+      subtitle: shaft.grounded ? 'Bloqué sur le bâti' : null,
+      groups: [
+        { rows: [
+          ['Vitesse', finite(rpm) ? format(Math.abs(rpm), 0, ' rpm ') + (rpm < 0 ? '↻' : '↺')
+            : (shaft.grounded ? '0 rpm' : null)],
+          ['Organes portés', String(shaft.memberIds ? shaft.memberIds.length : wheels.length)]
+        ] },
+        { title: 'Porte', rows: (shaft.memberNames || []).map(function (label, index) {
+          var wheel = wheels[index];
+          return [label, wheel && finite(wheel.teeth) ? wheel.teeth + ' dents' : '—'];
+        }) }
+      ],
+      actions: []
+    });
+    return this;
+  };
+
+  /**
+   * L'ENGRÈNEMENT : le couple de roues, son rapport, son entraxe, ses efforts.
+   *
+   * C'est l'endroit où la puissance passe d'un arbre à l'autre — et donc la
+   * seule maille à laquelle « Ft, Fr, Fa » veut dire quelque chose.
+   */
+  Inspector.prototype.showMesh = function (selection) {
+    var index = selection.stageIndex == null
+      ? Number(String(selection.id).replace(/\D/g, '')) : selection.stageIndex;
+    var data = model(this.solution, index, this.options.registry, this.scene);
+    if (!data) return this.hide();
+    var wheels = ((this.model && this.model.stages) || [])[index];
+    var pair = wheels ? wheels.wheels.filter(function (wheel) { return wheel.role !== 'planet'; }) : [];
+    var self = this;
+    var efforts = forceRows(data);
+    this._card({
+      badge: 'mesh',
+      title: 'Engrènement de l’étage ' + (index + 1),
+      subtitle: familyName(data.type, this.options.registry),
+      groups: [
+        { rows: [
+          ['Roues', pair.length >= 2 && finite(pair[0].teeth) && finite(pair[1].teeth)
+            ? pair[0].teeth + ' ↔ ' + pair[1].teeth + ' dents' : (data.teeth.join(' ↔ ') || null)],
+          ['Rapport', format(data.ratio, 3, ' : 1')],
+          ['Entraxe', format(data.centerDistance, 2, ' mm')],
+          ['Module', finite(data.module) ? data.module + ' mm' : null],
+          ['Rendement', finite(data.efficiency) ? format(data.efficiency * 100, 1, ' %') : null]
+        ] },
+        efforts ? { title: 'Efforts', rows: efforts } : null,
+        { title: 'Sécurité', rows: [
+          ['SF flexion', format(data.bendingSafety, 2)],
+          ['SH contact', format(data.contactSafety, 2)]
+        ] }
+      ],
+      actions: [
+        { label: 'Voir l’étage', run: function () { if (self.options.onSelectStage) self.options.onSelectStage(index); } },
+        { label: 'Modifier cet étage', id: 'stageInspectorEdit', primary: true,
+          run: function () { if (self.options.onEdit) self.options.onEdit(index); } }
+      ]
+    });
+    return this;
+  };
+
+  /**
+   * Ce que la SÉLECTION demande de montrer.
+   *
+   * Un seul point d'entrée : la fiche suit ce qui est désigné, au lieu que
+   * chaque appelant décide lui-même de quelle fiche il a besoin.
+   */
+  Inspector.prototype.showSelection = function (selection) {
+    var current = selection || { type: null };
+    if (!current.type) return this.hide();
+    if (current.type === 'member') return this.showMember(current);
+    if (current.type === 'shaft') return this.showShaft(current);
+    if (current.type === 'mesh') return this.showMesh(current);
+    return this.show(Number(current.id));
+  };
+
+  /**
+   * Le nom d'un arbre, tel qu'on le désigne à l'écran.
+   *
+   * Jamais son identifiant interne : « shaft-2-C » ne se lit pas, et la règle
+   * de la maison est que ce qui vient du code reste dans le code. Un arbre se
+   * nomme par son RÔLE, et par un rang quand plusieurs partagent le même.
+   */
+  /**
+   * Le nom français d'un TYPE D'ORGANE.
+   *
+   * `familyName` nomme une FAMILLE de transmission — « Droit », « Vis sans
+   * fin » —, pas une pièce. Lui passer le genre d'un organe rendait son
+   * identifiant interne tel quel : la fiche affichait « Famille gear ».
+   */
+  var MEMBER_KINDS = { gear: 'Roue dentée', 'internal-ring': 'Couronne intérieure',
+    pulley: 'Poulie', sprocket: 'Pignon de chaîne', worm: 'Vis sans fin',
+    cone: 'Roue conique', rack: 'Crémaillère', carrier: 'Porte-satellites' };
+  function kindLabel(kind) { return MEMBER_KINDS[kind] || null; }
+
+  var SHAFT_ROLES = { input: 'Arbre d’entrée', output: 'Arbre de sortie', driven: 'Arbre mené',
+    planet: 'Axe de satellite', fixed: 'Corps bloqué', intermediate: 'Arbre intermédiaire' };
+  function shaftLabel(shaft, shafts) {
+    if (!shaft) return null;
+    var name = SHAFT_ROLES[shaft.role] || 'Arbre';
+    var peers = (shafts || []).filter(function (other) { return other.role === shaft.role; });
+    if (peers.length < 2) return name;
+    var rank = peers.indexOf(shaft) + 1;
+    return name + ' ' + (rank > 0 ? rank : peers.length);
+  }
+
+  /** Comment cet organe se présente, en français. */
+  var PRESENTATIONS = { face: 'de face', profile: 'par la tranche', oblique: 'de biais' };
+  function presentationLabel(presentation) { return PRESENTATIONS[presentation] || null; }
+
+  return { Inspector: Inspector, model: model, shaftLabel: shaftLabel, kindLabel: kindLabel };
 });

@@ -233,9 +233,11 @@ test('the worm turns without walking, in the Denture and Geometry views (§15)',
 test('the inspector explains a planetary, and the analysis lets it be checked (§20, §21)', async ({ page }) => {
   await mount(page, ['planetary']);
   await showView(page, 'teeth');
+  // Cliquer une roue désigne LA ROUE — la fiche d'étage est à un bouton de là.
   await page.locator('.train-wheel[data-stage="0"]').first().click();
   const inspector = page.locator('#stageInspector');
   await expect(inspector).toBeVisible();
+  await inspector.getByRole('button', { name: 'Voir l’étage' }).click();
   // §20 : la relation qui EXPLIQUE le rapport, et le rapport de base — pas
   // seulement « 24 → 24 → 72 », qui ne dit pas qui mène.
   await expect(inspector).toContainText('Rapport de base');
@@ -2556,5 +2558,333 @@ test('every reference chain survives all four iso azimuths (§ régression ISO)'
     // Tourner la caméra n'a pas touché une seule pièce du mécanisme.
     expect(worlds.size, chain.join('→') + ' : le monde a bougé avec la caméra').toBe(1);
   }
+  expect(errors).toEqual([]);
+});
+
+test('the view cube changes the point of view by showing it (§ cube de vue)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'belt']);
+  await showView(page, 'teeth');
+  const cube = page.locator('#viewerCube');
+  const select = page.locator('#viewerProjection');
+
+  await expect(cube).toBeVisible();
+  // De face, le cube n'offre qu'UNE face : c'est ce qu'un cube montre, et
+  // proposer celles de derrière n'aurait pas de sens.
+  await expect(cube.locator('.view-cube-face')).toHaveCount(1);
+
+  // Cliquer un COIN mène à l'isométrie, et le cube tourne avec la caméra.
+  const drawingOf = () => page.evaluate(() =>
+    Array.from(document.querySelectorAll('#viewerCube .view-cube-face'))
+      .map(f => f.dataset.view + ':' + f.getAttribute('d')).join('|'));
+  await cube.locator('.view-cube-corner').first().click();
+  await expect(select).toHaveValue('iso');
+  expect(await page.evaluate(() => window.__viewer.projection)).toMatch(/^iso/);
+  const first = await drawingOf();
+
+  // De biais, trois faces s'ouvrent : cliquer l'une d'elles mène à la vue
+  // qu'elle montre, sans passer par la liste.
+  await expect(cube.locator('.view-cube-face')).toHaveCount(3);
+  await cube.locator('[data-view="top"]').click();
+  await expect(select).toHaveValue('top');
+  await expect(cube.locator('.view-cube-face.is-active')).toHaveAttribute('data-view', 'top');
+  await cube.locator('.view-cube-corner').first().click();
+  await expect(select).toHaveValue('iso');
+
+  // Un coin de plus : un quart de tour, et un cube redessiné.
+  const before = await page.evaluate(() => window.__viewer.projection);
+  await cube.locator('.view-cube-corner').first().click();
+  const after = await page.evaluate(() => window.__viewer.projection);
+  expect(after).not.toBe(before);
+  expect(await drawingOf()).not.toBe(first);
+  // Le cube et le dessin regardent le même endroit : c'est la MÊME caméra.
+  const agreed = await page.evaluate(() => {
+    const seen = window.GearProjectionEngine.view(window.__viewer.projection);
+    const faces = Array.from(document.querySelectorAll('#viewerCube .view-cube-face'));
+    // Une face dessinée est une face que la caméra regarde.
+    return faces.every(face => {
+      const entry = window.GearViewCube.FACES.filter(f => f.view === face.dataset.view)[0];
+      const facing = -(entry.normal[0] * seen.w[0] + entry.normal[1] * seen.w[1] + entry.normal[2] * seen.w[2]);
+      return facing > 0;
+    }) && faces.length === 3;
+  });
+  expect(agreed, 'le cube ne regarde pas où regarde le dessin').toBe(true);
+
+  // Au clavier comme à la souris.
+  await cube.locator('[data-view="front"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(select).toHaveValue('front');
+
+  // La Cinématique est un schéma : elle n'a pas de point de vue à offrir.
+  await showView(page, 'kinematic');
+  await expect(cube).toBeHidden();
+  await showView(page, 'geometry');
+  await expect(cube).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('clicking designates a part, a shaft or a mesh — not always its stage (§ sélection)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'planetary']);
+  await showView(page, 'teeth');
+  const state = () => page.evaluate(() => ({
+    selection: window.__viewer.selection,
+    stage: window.__viewer.selectedStage,
+    title: (document.querySelector('#stageInspector .type-badge') || {}).textContent,
+    rows: Array.from(document.querySelectorAll('#stageInspector .inspector-grid > div')).map(d => d.textContent),
+    marked: Array.from(document.querySelectorAll('#svgContainer .is-selected'))
+      .map(el => el.dataset.member || el.dataset.shaft || el.dataset.mesh),
+    lit: document.querySelectorAll('#svgContainer .rigid-highlight').length
+  }));
+
+  // UNE ROUE. Le dessin répondait « étage 2 » quand la question était
+  // « quelle roue, et à quelle vitesse ? ».
+  await page.locator('#svgContainer .train-wheel[data-member="s0-input"] .tooth-profile')
+    .first().click({ force: true });
+  const wheel = await state();
+  expect(wheel.selection.type).toBe('member');
+  expect(wheel.selection.id).toBe('s0-input');
+  // Désigner une roue désigne aussi l'étage où elle se trouve : les commandes
+  // qui ne connaissent qu'un étage continuent de fonctionner.
+  expect(wheel.stage).toBe(0);
+  expect(wheel.marked).toEqual(['s0-input']);
+  expect(wheel.rows.join(' ')).toContain('Dents');
+  expect(wheel.rows.join(' ')).toContain('15');
+  // Et tout ce qui tourne avec elle s'allume, sans qu'on ait à survoler.
+  expect(wheel.lit).toBeGreaterThan(0);
+
+  // UN ENGRÈNEMENT. La ligne d'action n'existe qu'au plus fin niveau de
+  // détail et seulement vu de face ; la poignée, elle, existe toujours.
+  await page.locator('#svgContainer .mesh-handle').first().click({ force: true });
+  const mesh = await state();
+  expect(mesh.selection.type).toBe('mesh');
+  expect(mesh.title).toContain('Engrènement');
+  expect(mesh.rows.join(' ')).toContain('Rapport');
+  expect(mesh.rows.join(' ')).toContain('Entraxe');
+
+  // UN ARBRE. Aucune fiche n'en parlait, alors que c'est l'objet qu'on
+  // dimensionne. Vu en bout il est caché par sa roue : on le désigne alors
+  // depuis la fiche de l'organe.
+  await page.evaluate(() => window.__viewer.setProjection('front'));
+  const spot = await page.evaluate(() => {
+    for (const shaft of document.querySelectorAll('#svgContainer .train-shaft')) {
+      for (const target of shaft.querySelectorAll('.shaft-hit, .shaft-hit-point')) {
+        const box = target.getBoundingClientRect();
+        if (!box.width && !box.height) continue;
+        for (const t of [0.5, 0.25, 0.75]) {
+          const x = box.x + box.width * t, y = box.y + box.height * 0.5;
+          const hit = document.elementFromPoint(x, y);
+          if (hit && shaft.contains(hit)) return { x, y };
+        }
+      }
+    }
+    return null;
+  });
+  expect(spot, 'un arbre doit pouvoir être désigné : un trait fin ne s’attrape pas').not.toBeNull();
+  // À CÔTÉ du trait, pas dessus. Un arbre se dessine en trait fin — c'est ce
+  // qu'il doit être — et à l'échelle d'un train entier ce trait fait moins
+  // d'un pixel : sans zone de prise, le curseur tombe toujours à côté.
+  await page.mouse.click(spot.x, spot.y + 2.5);
+  const shaft = await state();
+  expect(shaft.selection.type).toBe('shaft');
+  expect(shaft.title).toContain('Arbre');
+  expect(shaft.rows.join(' ')).toContain('rpm');
+  // Un arbre traverse plusieurs étages : il peut n'en désigner aucun, et
+  // prétendre le contraire ferait cadrer sur un étage choisi au hasard.
+  expect(shaft.selection.stageIndex).toBeNull();
+  // Tous ses organes sont marqués, pas seulement un.
+  expect(shaft.marked.length).toBeGreaterThan(0);
+
+  // LE VIDE, c'est l'ensemble : la fiche se referme. Un coin du dessin, où il
+  // n'y a rien — pas hors du dessin, qui ne serait plus le viewer du tout.
+  await page.locator('#svgContainer svg').click({ position: { x: 4, y: 4 } });
+  const empty = await page.evaluate(() => ({
+    type: window.__viewer.selection.type,
+    hidden: document.getElementById('stageInspector').hidden
+  }));
+  expect(empty.type).toBeNull();
+  expect(empty.hidden).toBe(true);
+
+  // La sélection TRAVERSE le re-rendu : changer de point de vue ne fait pas
+  // perdre la pièce qu'on lisait.
+  await page.locator('#svgContainer .train-wheel[data-member="s0-output"] .tooth-profile')
+    .first().click({ force: true });
+  await page.evaluate(() => window.__viewer.setProjection('iso'));
+  const kept = await state();
+  expect(kept.selection.id).toBe('s0-output');
+  expect(kept.marked).toEqual(['s0-output']);
+  expect(errors).toEqual([]);
+});
+
+test('one satellite of five is one satellite, not five (§ sélection)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  // Cinq satellites portent le même identifiant de membre : sans le numéro
+  // d'exemplaire, en désigner un les allumerait tous.
+  const planets = page.locator('#svgContainer .train-wheel.planet[data-instance]');
+  await expect(planets).toHaveCount(5);
+  await planets.nth(2).locator('.tooth-profile').first().click({ force: true });
+  const seen = await page.evaluate(() => ({
+    selection: window.__viewer.selection,
+    marked: Array.from(document.querySelectorAll('#svgContainer .train-wheel.is-selected'))
+      .map(el => el.dataset.instance)
+  }));
+  expect(seen.selection.type).toBe('member');
+  expect(seen.selection.instance).toBe(2);
+  expect(seen.marked).toEqual(['2']);
+  expect(errors).toEqual([]);
+});
+
+test('isolating keeps what you are reading and fades the rest (§ isoler)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'planetary', 'spur']);
+  await showView(page, 'teeth');
+  await page.evaluate(() => window.__viewer.setProjection('front'));
+  const context = page.locator('#viewerIsolateContext');
+  const only = page.locator('#viewerIsolateOnly');
+  const counts = () => page.evaluate(() => {
+    const svg = document.querySelector('#svgContainer svg');
+    const opacity = selector => {
+      const el = document.querySelector(selector);
+      return el ? Number(getComputedStyle(el).opacity) : null;
+    };
+    return {
+      near: svg.querySelectorAll('.is-near').length,
+      far: svg.querySelectorAll('.is-far').length,
+      isolating: svg.classList.contains('is-isolating'),
+      keptOpacity: opacity('#svgContainer .is-near'),
+      fadedOpacity: opacity('#svgContainer .is-far')
+    };
+  });
+
+  // Sans rien de sélectionné, il n'y a rien à isoler : estomper la totalité du
+  // dessin reviendrait à l'éteindre.
+  await expect(context).toBeDisabled();
+  await expect(only).toBeDisabled();
+  expect((await counts()).isolating).toBe(false);
+
+  // Le solaire d'un planétaire est derrière ses satellites : on le DÉSIGNE,
+  // au lieu de cliquer un point que le tri de profondeur donne à un autre —
+  // ce que teste déjà la sélection, et qui n'est pas le sujet ici.
+  await page.evaluate(() => window.__viewer.select(
+    window.GearSelection.of('member', 's1-S', { stageIndex: 1 })));
+  await expect(context).toBeEnabled();
+
+  await context.click();
+  // L'estompage est une TRANSITION : la mesurer avant qu'elle ne se termine
+  // relèverait l'opacité de départ, c'est-à-dire 1.
+  const settled = () => page.waitForFunction(() => {
+    const faded = document.querySelector('#svgContainer .is-far');
+    if (!faded) return false;
+    const value = Number(getComputedStyle(faded).opacity);
+    return value === 0 || value < 0.4;
+  });
+  await settled();
+  const ghosted = await counts();
+  expect(ghosted.isolating).toBe(true);
+  await expect(context).toHaveAttribute('aria-pressed', 'true');
+  // Ce qu'on lit reste net, le reste s'estompe — mais reste là : on voit OÙ
+  // se trouve la pièce dans le mécanisme.
+  expect(ghosted.near, 'rien n’est resté au premier plan').toBeGreaterThan(0);
+  expect(ghosted.far, 'rien n’a été estompé').toBeGreaterThan(0);
+  expect(ghosted.keptOpacity).toBe(1);
+  expect(ghosted.fadedOpacity).toBeGreaterThan(0);
+  expect(ghosted.fadedOpacity).toBeLessThan(0.4);
+
+  // « Seul » va au bout : le reste disparaît.
+  await only.click();
+  await page.waitForFunction(() => {
+    const faded = document.querySelector('#svgContainer .is-far');
+    return faded && Number(getComputedStyle(faded).opacity) === 0;
+  });
+  const alone = await counts();
+  await expect(only).toHaveAttribute('aria-pressed', 'true');
+  await expect(context).toHaveAttribute('aria-pressed', 'false');
+  expect(alone.keptOpacity).toBe(1);
+  expect(alone.fadedOpacity).toBe(0);
+  // Rien n'a été déplacé ni recalculé : c'est une affaire d'opacité, et une
+  // pièce estompée reste exactement à sa place.
+  expect(alone.near + alone.far).toBe(ghosted.near + ghosted.far);
+
+  // Ce qui TOURNE AVEC la pièce reste avec elle : isoler un organe ne le
+  // sépare pas de son arbre.
+  const kept = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .is-near'))
+    .map(el => el.dataset.member || el.dataset.shaft).filter(Boolean));
+  expect(kept).toContain('s1-S');
+  expect(kept.some(id => /shaft/.test(id)), 'l’arbre de la pièce a été estompé').toBe(true);
+
+  // Et ce qui est SOLIDAIRE reste avec elle. La roue menée du premier étage et
+  // le solaire du deuxième sont un seul corps tournant : isoler l'une sans
+  // l'autre montrerait une pièce coupée de ce qui l'entraîne.
+  await page.evaluate(() => window.__viewer.select(
+    window.GearSelection.of('member', 's0-output', { stageIndex: 0 })));
+  const solidary = await page.evaluate(() => Array.from(document.querySelectorAll('#svgContainer .is-near'))
+    .map(el => el.dataset.member).filter(Boolean));
+  expect(solidary).toContain('s0-output');
+  expect(solidary, 'le corps solidaire a été estompé').toContain('s1-S');
+  await page.evaluate(() => window.__viewer.select(
+    window.GearSelection.of('member', 's1-S', { stageIndex: 1 })));
+
+  // Le même bouton en sort.
+  await only.click();
+  const back = await counts();
+  expect(back.isolating).toBe(false);
+  expect(back.far).toBe(0);
+
+  // Et refermer la sélection referme l'isolation : il n'y a plus rien à isoler.
+  await context.click();
+  expect((await counts()).isolating).toBe(true);
+  await page.locator('#svgContainer svg').click({ position: { x: 4, y: 4 } });
+  expect((await counts()).isolating).toBe(false);
+  await expect(context).toBeDisabled();
+  expect(errors).toEqual([]);
+});
+
+test('stage labels find their own place on a dense train (§ étiquettes)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Quatre planétaires COAXIAUX : ils partagent une abscisse, et c'est le cas
+  // que les deux couloirs — pairs au-dessus, impairs en dessous — mettaient
+  // bout à bout, très loin de ce qu'ils désignent.
+  await mount(page, ['planetary', 'planetary', 'planetary', 'planetary']);
+  await showView(page, 'teeth');
+  for (const view of ['front', 'iso', 'iso-90']) {
+    await page.evaluate(id => window.__viewer.setProjection(id), view);
+    const seen = await page.evaluate(() => {
+      const labels = Array.from(document.querySelectorAll('#svgContainer .train-label'));
+      const visible = labels.filter(l => l.getAttribute('display') !== 'none');
+      const boxes = visible.map(l => l.getBoundingClientRect());
+      let clashes = 0;
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i], b = boxes[j];
+          const wide = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const high = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (wide > 1 && high > 1) clashes++;
+        }
+      }
+      // Chaque libellé posé loin est RELIÉ à l'étage qu'il nomme : sans le
+      // trait, un texte à l'écart ne désigne plus rien.
+      const leaders = Array.from(document.querySelectorAll('#svgContainer .label-leader'));
+      return { total: labels.length, shown: visible.length, clashes, leaders: leaders.length,
+        texts: visible.map(l => l.textContent) };
+    });
+    expect(seen.total, view).toBe(4);
+    expect(seen.shown, view + ' : des libellés ont disparu').toBe(4);
+    expect(seen.clashes, view + ' : libellés superposés').toBe(0);
+    expect(seen.leaders, view + ' : libellés éloignés sans ligne de rappel').toBeGreaterThan(0);
+    // Les quatre étages sont nommés, chacun le sien.
+    expect(new Set(seen.texts).size).toBe(4);
+  }
+
+  // L'étage DÉSIGNÉ passe devant : c'est celui qu'on lit, et le perdre au
+  // profit d'un voisin serait le contraire de ce qu'on demande au dessin.
+  await page.evaluate(() => window.__viewer.selectStage(2));
+  const chosen = await page.evaluate(() => {
+    const label = document.querySelector('#svgContainer .train-label[data-label-stage="2"]');
+    return { hidden: label.getAttribute('display') === 'none', text: label.textContent };
+  });
+  expect(chosen.hidden).toBe(false);
+  expect(chosen.text).toContain('Étage 3');
   expect(errors).toEqual([]);
 });

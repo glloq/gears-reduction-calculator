@@ -17,6 +17,10 @@ test('clicking a stage in the hero opens the inspector and bridges to the editor
   // les centres de groupes, le centre du bbox n'est pas cliquable.
   await page.locator('.train-wheel[data-stage="0"] .gear-hub').first().click({ force: true });
   await expect(page.locator('#stageInspector')).toBeVisible();
+  // Cliquer une roue désigne LA ROUE : la fiche donne ses cotes et sa vitesse,
+  // et mène à l'étage qui la contient.
+  await expect(page.locator('#stageInspector')).toContainText('Ø primitif');
+  await page.locator('#stageInspector').getByRole('button', { name: 'Voir l’étage' }).click();
   await expect(page.locator('#stageInspector')).toContainText('Rapport');
   await expect(page.locator('.train-stage.selected')).toHaveCount(1);
 

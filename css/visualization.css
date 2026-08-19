@@ -292,7 +292,61 @@
    cacher, et le dessin reprend toute la largeur dès qu'on le referme. */
 .svg-container { position: relative; }
 .viewer-stage { display: flex; align-items: stretch; gap: var(--sp-3); }
-.viewer-stage > .svg-container { flex: 1 1 auto; min-width: 0; }
+.viewer-stage > .viewer-scene { flex: 1 1 auto; min-width: 0; position: relative; }
+.viewer-scene > .svg-container { width: 100%; }
+
+/* ----- Le cube de vue -----
+   Une commande qui montre ce qu'elle fait. Il se pose SUR le dessin, dans un
+   coin, parce que c'est du dessin qu'il parle — le reléguer dans la barre
+   d'outils l'aurait rendu aussi abstrait que la liste qu'il remplace. */
+.view-cube {
+  position: absolute; top: var(--sp-2); right: var(--sp-2);
+  width: 100px; z-index: 3; pointer-events: none;
+}
+.view-cube[hidden] { display: none; }
+.view-cube-svg { width: 100%; height: auto; overflow: visible; pointer-events: none; }
+.view-cube-face, .view-cube-corner { pointer-events: auto; cursor: pointer; }
+
+.view-cube-face {
+  fill: color-mix(in srgb, var(--surface-1) 88%, var(--ink));
+  stroke: var(--line); stroke-width: 1; stroke-linejoin: round;
+  transition: fill .12s ease;
+}
+.view-cube-face:hover { fill: color-mix(in srgb, var(--accent) 22%, var(--surface-1)); }
+.view-cube-face:focus-visible { outline: none; stroke: var(--accent); stroke-width: 1.8; }
+/* La face active porte la couleur d'accent : le cube dit où l'on est, pas
+   seulement où l'on peut aller. */
+.view-cube-face.is-active { fill: color-mix(in srgb, var(--accent) 34%, var(--surface-1)); stroke: var(--accent); }
+.view-cube-label {
+  font-size: 8px; letter-spacing: .04em; fill: var(--muted);
+  pointer-events: none; user-select: none;
+}
+.view-cube-face.is-active + .view-cube-label { fill: var(--accent); font-weight: 600; }
+
+.view-cube-corner {
+  fill: var(--surface-1); stroke: var(--muted); stroke-width: 1;
+}
+.view-cube-corner:hover { fill: var(--accent); stroke: var(--accent); }
+.view-cube-corner:focus-visible { outline: none; stroke: var(--accent); stroke-width: 2; }
+.view-cube-corner.is-active { fill: var(--accent); stroke: var(--accent); }
+
+/* Le trièdre : il explique, il ne se clique pas. */
+.view-cube-axes { pointer-events: none; }
+.view-cube-axis { stroke: var(--muted); stroke-width: 1.1; }
+.view-cube-axis-label { font-size: 8px; fill: var(--muted); user-select: none; }
+/* Un axe vu EN BOUT n'est plus un segment : son étiquette est tout ce qu'il
+   en reste, et un cercle le dit mieux qu'un trait de longueur nulle. */
+.view-cube-axis-label.is-end-on { font-weight: 700; fill: var(--ink); }
+
+@media (max-width: 720px) {
+  /* Sur un écran étroit, le cube prend une place que le dessin réclame. */
+  .view-cube { width: 68px; }
+}
+/* L'inspecteur parle de quatre objets — étage, organe, arbre, engrènement.
+   Le titre dit lequel ; la ligne de tête, sous l'en-tête, dit son rôle dans le
+   mécanisme, qui est la première chose qu'on cherche. */
+.inspector-lead { margin: 0 0 var(--sp-2); color: var(--muted); font-size: var(--font-sm); }
+
 .stage-inspector {
   flex: 0 0 clamp(210px, 22%, 270px);
   align-self: stretch;
@@ -446,6 +500,66 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .planet-carrier.rigid-highlight path { stroke-width: 1.8; }
 .train-shaft.rigid-highlight .shaft-body { stroke-width: 1.8; opacity: 1; }
 .train-shaft.rigid-highlight .shaft-centre { stroke-width: .9; opacity: 1; }
+
+/* ----- Ce que l'on a DÉSIGNÉ -----
+   `selected` marque la région — l'étage —, `is-selected` la pièce elle-même.
+   Les deux coexistent : cliquer une roue désigne aussi l'étage où elle est, et
+   perdre le cadre de l'étage ferait clignoter tout l'habillage. */
+.train-wheel.is-selected .tooth-profile,
+.train-wheel.is-selected .gear-profile,
+.train-wheel.is-selected .oblique-body,
+.train-wheel.is-selected .worm-body,
+.train-wheel.is-selected .cone-oblique-body,
+.train-wheel.is-selected .ring-oblique-body {
+  stroke: var(--accent); stroke-width: 1.6;
+}
+.train-shaft.is-selected .shaft-body { stroke: var(--accent); stroke-width: 2.2; opacity: 1; }
+.train-shaft.is-selected .shaft-centre { stroke: var(--accent); opacity: 1; }
+
+/* La zone de prise d'un arbre : invisible, et large. Le trait qui la porte
+   fait moins d'un pixel à l'échelle d'un train entier — le dessiner ainsi est
+   juste, mais il faut pouvoir le désigner. */
+.shaft-hit { stroke: transparent; stroke-width: 7; fill: none; pointer-events: stroke; cursor: pointer; }
+.shaft-hit-point { fill: transparent; stroke: none; pointer-events: fill; cursor: pointer; }
+.train-shaft:hover .shaft-body { stroke-width: 1.4; }
+
+/* ----- ISOLER -----
+   Cadrer ne suffit pas sur une transmission dense : la pièce voisine reste au
+   premier plan, et sur un planétaire elle recouvre littéralement celle qu'on
+   vient de choisir. Rien n'est déplacé ni recalculé — c'est une affaire
+   d'opacité, et une pièce estompée reste exactement à sa place. */
+.is-isolating .is-far { opacity: .14; pointer-events: none; }
+.is-isolating .is-near { opacity: 1; }
+/* « Seul » va au bout : le reste disparaît, au lieu de rester en fantôme. */
+.is-isolating.isolate-only .is-far { opacity: 0; }
+/* La transition dit que c'est le MÊME dessin qu'on estompe, et non un autre
+   qu'on vient de charger. */
+.geometry-layer > *, .engineering-overlay-layer > *, .annotation-layer > * {
+  transition: opacity .16s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .geometry-layer > *, .engineering-overlay-layer > *, .annotation-layer > * { transition: none; }
+}
+.view-isolate[hidden] { display: none; }
+.view-isolate button[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;
+}
+
+/* La poignée d'engrènement : une cible, pas un décor. Invisible tant qu'on ne
+   la cherche pas — la ligne d'action et le point primitif disent déjà ce qui
+   s'y passe —, elle se révèle au survol et une fois choisie. */
+.mesh-handle { cursor: pointer; }
+.mesh-handle-target { fill: transparent; stroke: none; }
+.mesh-handle:hover .mesh-handle-target,
+.mesh-handle:focus-visible .mesh-handle-target {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: var(--accent); stroke-width: .5; stroke-dasharray: 2 2;
+}
+.mesh-handle:focus-visible { outline: none; }
+.mesh-handle.is-selected .mesh-handle-target {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+  stroke: var(--accent); stroke-width: .8;
+}
 
 /* ===== Style de dessin : visuel ou technique =====
 

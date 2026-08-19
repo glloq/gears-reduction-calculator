@@ -70,6 +70,14 @@
     // La denture réaliste est la vue par défaut : elle supporte désormais tous
     // les types, crémaillère comprise.
     this.currentView = 'teeth';
+    // La sélection CANONIQUE : ce qu'on a désigné, quel que soit son type.
+    // `selectedStage` en découle et reste pour les modules qui ne connaissent
+    // que les étages — désigner une roue désigne aussi l'étage où elle est.
+    this.selection = GearSelection.none();
+    // ISOLER : null, 'context' ou 'only'. Le réglage vaut pour la session —
+    // quelqu'un qui explore un train dense veut rester en isolation pendant
+    // qu'il passe d'une pièce à l'autre.
+    this.isolate = null;
     this.selectedStage = -1;
     this.animationSpeed = 1;
     this.animationDirection = 1;
@@ -108,9 +116,37 @@
     this.inspector = new GearStageInspector.Inspector(container, {
       registry: GearTransmissionRegistry,
       onEdit: function (index) { self.container.dispatchEvent(new CustomEvent('viewer:stage-edit', { detail: { index: index } })); },
-      onClose: function () { self.selectedStage = -1; self._syncFraming(); }
+      // Depuis une fiche d'organe ou d'engrènement, remonter à l'étage entier.
+      onSelectStage: function (index) { if (index != null && index >= 0) self.selectStage(index); },
+      onSelectShaft: function (id) { if (id) self.select(GearSelection.of('shaft', id)); },
+      onClose: function () { self.select(GearSelection.none()); self._syncFraming(); }
     });
   }
+
+  /**
+   * DÉSIGNER, depuis n'importe où dans l'application.
+   *
+   * La barre d'outils est le point d'entrée commun : la vue applique, les
+   * autres panneaux écoutent. Sans elle, chaque module devrait connaître la
+   * vue courante pour lui parler.
+   */
+  ViewerToolbar.prototype.select = function (selection) {
+    var current = selection && selection.type !== undefined ? selection : GearSelection.none();
+    this.selection = current;
+    this.selectedStage = GearSelection.stageOf(current);
+    var rendered = this.renderer();
+    if (rendered && rendered.select) rendered.select(current, true);
+    else if (rendered && rendered.selectStage) rendered.selectStage(this.selectedStage, true);
+    this.inspector.showSelection(current);
+    this._syncFraming();
+    this.container.dispatchEvent(new CustomEvent('viewer:selection-changed', { detail: { selection: current } }));
+    return this;
+  };
+
+  ViewerToolbar.prototype.selectStage = function (index) {
+    return this.select(Number(index) >= 0
+      ? GearSelection.of('stage', index, { stageIndex: index }) : GearSelection.none());
+  };
 
   ViewerToolbar.prototype.renderer = function () {
     if (this.currentView === 'kinematic') return this.kinematic;
@@ -126,7 +162,7 @@
     var rendered = this.renderer().render(solution);
     // L'inspecteur lit la scène de la vue courante : mêmes vitesses, même
     // instant, quelle que soit la vue affichée.
-    this.inspector.setSolution(solution, rendered && rendered.scene);
+    this.inspector.setSolution(solution, rendered && rendered.scene, rendered && rendered.model);
     this._applyState(rendered);
     this._restoreCamera(rendered);
     this._renderFidelity(rendered);
@@ -346,6 +382,83 @@
         : (typeof GearProjectionEngine !== 'undefined' ? GearProjectionEngine.view(this.projection).help : '');
     var label = document.querySelector('.viewer-projection-label');
     if (label) label.classList.toggle('is-disabled', !spatial);
+    this._syncCube();
+    return this;
+  };
+
+  /**
+   * LE CUBE DE VUE — la commande qui n'a rien à mémoriser.
+   *
+   * Le point de vue se choisissait dans une liste et par deux boutons de
+   * rotation : exact, à condition d'avoir déjà en tête ce que « De dessus » ou
+   * « Iso 3/4 » vont donner. Le cube répond autrement : il montre l'orientation
+   * courante, et l'on clique la face ou le coin qu'on veut voir.
+   *
+   * Il est projeté par la MÊME caméra que le mécanisme : il tourne donc avec
+   * lui, et les deux ne peuvent pas se contredire.
+   */
+  ViewerToolbar.prototype._syncCube = function () {
+    var host = document.getElementById('viewerCube');
+    if (!host || typeof GearViewCube === 'undefined') return this;
+    // La Cinématique est un schéma : elle n'a pas de point de vue à offrir, et
+    // lui poser un cube laisserait croire le contraire.
+    var spatial = this.currentView !== 'kinematic';
+    host.hidden = !spatial;
+    if (!spatial) return this;
+    var built = GearViewCube.build(this.projection || 'unfolded', { size: 92 });
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + built.size + ' ' + (built.size * 1.45));
+    svg.setAttribute('class', 'view-cube-svg');
+    svg.setAttribute('aria-hidden', 'false');
+    // Le trièdre d'abord, sous le cube : il explique, il ne se clique pas.
+    var trihedron = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    trihedron.setAttribute('class', 'view-cube-axes');
+    built.axes.forEach(function (axis) {
+      if (!axis.endOn) {
+        var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('class', 'view-cube-axis axis-' + axis.id.toLowerCase());
+        line.setAttribute('x1', axis.x1.toFixed(2));
+        line.setAttribute('y1', axis.y1.toFixed(2));
+        line.setAttribute('x2', axis.x2.toFixed(2));
+        line.setAttribute('y2', axis.y2.toFixed(2));
+        trihedron.appendChild(line);
+      }
+      var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('class', 'view-cube-axis-label axis-' + axis.id.toLowerCase() +
+        (axis.endOn ? ' is-end-on' : ''));
+      text.setAttribute('x', axis.label[0].toFixed(2));
+      text.setAttribute('y', axis.label[1].toFixed(2));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dy', '0.34em');
+      text.textContent = axis.id;
+      trihedron.appendChild(text);
+    });
+    svg.appendChild(trihedron);
+    built.shapes.forEach(function (shape) {
+      var element = document.createElementNS('http://www.w3.org/2000/svg', shape.tag);
+      Object.keys(shape.attrs || {}).forEach(function (key) { element.setAttribute(key, shape.attrs[key]); });
+      if (shape.text != null) element.textContent = shape.text;
+      svg.appendChild(element);
+    });
+    host.innerHTML = '';
+    host.appendChild(svg);
+    return this;
+  };
+
+  /**
+   * ISOLER ce qu'on regarde.
+   *
+   * Sans rien de sélectionné, il n'y a rien à isoler : les boutons restent
+   * désactivés plutôt que d'estomper la totalité du dessin, ce qui reviendrait
+   * à l'éteindre.
+   */
+  ViewerToolbar.prototype.setIsolation = function (mode) {
+    this.isolate = mode === 'context' || mode === 'only' ? mode : null;
+    var rendered = this.renderer();
+    if (rendered && rendered.setIsolation) rendered.setIsolation(this.isolate);
+    this._syncFraming();
+    this.container.dispatchEvent(new CustomEvent('viewer:isolation-changed',
+      { detail: { isolate: this.isolate } }));
     return this;
   };
 
@@ -356,6 +469,25 @@
       focus.disabled = !selected;
       focus.title = selected ? 'Cadrer l’étage ' + (this.selectedStage + 1)
         : 'Sélectionnez d’abord un étage sur le dessin';
+    }
+    var isolation = document.querySelector('.view-isolate');
+    if (isolation) {
+      // Sans rien de sélectionné, il n'y a rien à isoler : estomper la
+      // totalité du dessin reviendrait à l'éteindre. La Cinématique est un
+      // schéma — masquer une partie d'un schéma ne le rend pas plus clair.
+      var isolable = this.currentView !== 'kinematic';
+      isolation.hidden = !isolable;
+      var something = !!(this.selection && this.selection.type);
+      [['viewerIsolateContext', 'context'], ['viewerIsolateOnly', 'only']].forEach(function (pair) {
+        var button = document.getElementById(pair[0]);
+        if (!button) return;
+        var on = this.isolate === pair[1];
+        button.disabled = !something;
+        button.setAttribute('aria-pressed', String(on && something));
+        button.title = !something ? 'Choisissez d’abord une pièce, un arbre ou un étage'
+          : pair[1] === 'context' ? 'Estomper le reste du mécanisme, sans le faire disparaître'
+            : 'Ne garder que ce qui est sélectionné et son arbre';
+      }, this);
     }
     var actual = document.getElementById('viewerActualSize');
     if (actual) {
@@ -467,6 +599,7 @@
     if (!rendered) return;
     if (rendered.setAnimationSpeed) rendered.setAnimationSpeed(this.animationSpeed);
     if (rendered.setAnimationDirection) rendered.setAnimationDirection(this.animationDirection);
+    if (rendered.setIsolation) rendered.setIsolation(this.isolate);
     if (rendered.setAutoDetails) rendered.setAutoDetails(this.overlays.autoDetails);
     if (rendered.setAnimationMode) rendered.setAnimationMode(this.animationMode);
     // L'animation reprend au même angle : les trois vues racontent la même
@@ -477,7 +610,12 @@
       rendered.toggleAnimation();
     }
     this._applyOverlayClasses();
-    if (this.selectedStage >= 0 && rendered.selectStage) {
+    // La sélection traverse le re-rendu : changer de vue ou de point de vue ne
+    // doit pas faire perdre la pièce qu'on était en train de lire.
+    if (this.selection && this.selection.type && rendered.select) {
+      rendered.select(this.selection, true);
+      this.inspector.showSelection(this.selection);
+    } else if (this.selectedStage >= 0 && rendered.selectStage) {
       rendered.selectStage(this.selectedStage, true);
       this.inspector.show(this.selectedStage);
     }
@@ -657,6 +795,25 @@
     // ce qu'elle montre à quel palier — sans qu'aucune n'ait à connaître les
     // seuils.
     this.container.addEventListener('viewport:changed', function () { self._syncZoomTier(); self._rememberCamera(); });
+
+    // Le cube de vue : cliquer une face ou un coin, c'est aller s'y placer.
+    var cube = document.getElementById('viewerCube');
+    if (cube && !cube.dataset.bound) {
+      cube.dataset.bound = 'yes';
+      cube.addEventListener('click', function (event) {
+        var target = event.target.closest ? event.target.closest('[data-view]') : null;
+        if (target) self.setProjection(target.dataset.view);
+      });
+      // Au clavier comme à la souris : une face est un bouton, elle répond à
+      // Entrée et à Espace.
+      cube.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var target = event.target.closest ? event.target.closest('[data-view]') : null;
+        if (!target) return;
+        event.preventDefault();
+        self.setProjection(target.dataset.view);
+      });
+    }
     if (!controls) return;
     controls.addEventListener('click', function (event) {
       var view = event.target.closest('.view-mode');
@@ -694,6 +851,10 @@
         self.setProjection(GearProjectionEngine.rotateIso(self.projection,
           event.target.id === 'viewerIsoRight' ? 1 : -1));
       }
+      // Deux degrés d'isolation, et le même bouton pour en sortir : cliquer
+      // « Contexte » quand on y est déjà revient à tout remontrer.
+      if (event.target.id === 'viewerIsolateContext') self.setIsolation(self.isolate === 'context' ? null : 'context');
+      if (event.target.id === 'viewerIsolateOnly') self.setIsolation(self.isolate === 'only' ? null : 'only');
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();
       if (event.target.id === 'viewerFocus' && renderer.focusStage) renderer.focusStage(self.selectedStage);
       if (event.target.id === 'viewerActualSize' && renderer.viewport) renderer.viewport.actualSize();
@@ -712,9 +873,26 @@
       }
       if (event.target.matches('[data-overlay]')) self.setOverlay(event.target.dataset.overlay, event.target.checked);
     });
+    // La sélection canonique fait foi ; l'événement d'étage reste écouté pour
+    // les vues qui n'émettent que lui.
+    this.container.addEventListener('viewer:selection-changed', function (event) {
+      self.selection = event.detail.selection || GearSelection.none();
+      self.selectedStage = GearSelection.stageOf(self.selection);
+      self.inspector.showSelection(self.selection);
+      self._syncFraming();
+    });
     this.container.addEventListener('viewer:stage-selected', function (event) {
       self.selectedStage = event.detail.index;
-      self.inspector.show(event.detail.index);
+      // Une vue qui n'émet que l'étage — la Cinématique — pose une sélection
+      // d'étage ; une vue qui sait désigner plus fin a déjà parlé, et sa fiche
+      // ne doit pas être écrasée par celle de l'étage qui la contient.
+      if (!self.selection || !self.selection.type || self.selection.type === 'stage') {
+        self.selection = event.detail.index >= 0
+          ? GearSelection.of('stage', event.detail.index, { stageIndex: event.detail.index })
+          : GearSelection.none();
+        if (event.detail.index >= 0) self.inspector.show(event.detail.index);
+        else self.inspector.hide();
+      }
       self._syncFraming();
     });
     this._applyOverlayClasses();

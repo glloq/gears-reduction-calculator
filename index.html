@@ -598,6 +598,14 @@
             <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>
             <button id="viewerActualSize" type="button" class="btn-small" title="Échelle réelle : un millimètre dessiné occupe un millimètre d’écran">1:1</button>
           </div>
+          <!-- Cadrer ne suffit pas sur une transmission dense : la pièce
+               voisine reste au premier plan. Isoler l'estompe. -->
+          <div class="segmented view-isolate" role="group" aria-label="Isolation" hidden>
+            <button id="viewerIsolateContext" type="button" class="btn-small" aria-pressed="false"
+              title="Estomper le reste du mécanisme, sans le faire disparaître">Contexte</button>
+            <button id="viewerIsolateOnly" type="button" class="btn-small" aria-pressed="false"
+              title="Ne garder que ce qui est sélectionné et son arbre">Seul</button>
+          </div>
           <details class="export-menu">
             <summary>Exporter</summary>
             <div>
@@ -619,7 +627,13 @@
              composé il recouvrait les étages voisins — jusqu'à intercepter
              le clic suivant. -->
         <div class="viewer-stage">
-          <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+          <div class="viewer-scene">
+            <div id="svgContainer" class="svg-container" role="img" aria-label="Schéma interactif des engrenages"></div>
+            <!-- Le cube de vue répond « d'où regarde-t-on ? » en le montrant.
+                 Il vit à côté du conteneur de dessin, que les renderers vident
+                 à chaque rendu — l'y placer reviendrait à le perdre. -->
+            <div id="viewerCube" class="view-cube" role="group" aria-label="Point de vue" hidden></div>
+          </div>
           <aside id="stageInspector" class="stage-inspector" aria-live="polite" hidden></aside>
         </div>
         <!-- §22, §23 : ce que la vue courante montre à l'échelle, et ce qu'elle
@@ -751,6 +765,9 @@
   <!-- ProjectedScene avant SpatialLayout : c'est lui qui décrit comment chaque
        pièce se présente, et le repère spatial le porte désormais. -->
   <script src="js/visualization/core/ProjectedScene.js" defer></script>
+  <script src="js/visualization/core/ViewCube.js" defer></script>
+  <script src="js/visualization/core/Selection.js" defer></script>
+  <script src="js/visualization/core/LabelLayout.js" defer></script>
   <script src="js/visualization/core/SpatialLayout.js" defer></script>
   <script src="js/visualization/technical/MechanicalDraftingTheme.js" defer></script>
   <script src="js/visualization/kinematic/KinematicLayoutEngine.js" defer></script>
@@ -795,6 +812,7 @@
   <script src="js/ui/RequirementSheet.js" defer></script>
   <script src="js/ui/ConstraintChips.js" defer></script>
   <script src="js/ui/Logger.js" defer></script>
+  <script src="js/core/SolutionGrouping.js" defer></script>
   <script src="js/ui/ColumnPreferences.js" defer></script>
   <script src="js/ui/SolutionFilter.js" defer></script>
   <script src="js/ui/ResultsTable.js" defer></script>

@@ -290,3 +290,21 @@ body.linear-objective .transmission-filters { display: none; }
    d'arrondir en silence. */
 .sizing-note { display: block; margin-top: .2rem; font-size: .72rem; color: var(--muted); }
 .sizing-note.is-conflict { color: var(--warning); }
+
+
+/* ----- Résultats groupés par architecture -----
+   Une recherche rend couramment quatre-vingts solutions dont soixante sont
+   « Droit → Droit » à quelques dents près. La ligne de groupe porte la
+   meilleure de sa famille ; ses variantes se déplient en retrait. */
+tr.group-head { font-weight: 600; }
+tr.group-head td { border-top: 1px solid var(--line); }
+tr.group-variant { font-weight: 400; color: var(--muted); }
+tr.group-variant .variant-cell { padding-left: var(--sp-4); }
+.group-toggle {
+  margin-left: var(--sp-2); padding: 1px 6px; font-size: var(--font-xs);
+  font-weight: 400; color: var(--muted); white-space: nowrap;
+}
+.group-toggle:hover { color: var(--accent); }
+#resultsGroup.active {
+  background: var(--accent); border-color: var(--accent); color: var(--surface-1); font-weight: 600;
+}

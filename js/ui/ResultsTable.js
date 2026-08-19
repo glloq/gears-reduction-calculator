@@ -20,6 +20,10 @@
     this._tbody = document.getElementById(tbodyId); this._table = this._tbody && this._tbody.closest('table');
     this._eventBus = eventBus || GearApp.eventBus; this._solutions = []; this._filtered = [];
     this._sortColumn = 'score'; this._sortDirection = 'asc'; this._currentPage = 0; this._searchText = ''; this._selectedIndex = 0;
+    // Regroupement par architecture. Une recherche rend couramment quatre-vingts
+    // solutions dont soixante sont « Droit → Droit » à quelques dents près :
+    // les lire une à une ne dit rien de plus que la première.
+    this._grouped = false; this._expanded = {};
     this._visibleColumns = ResultsColumnPreferences.load(localStorage, STORAGE_KEY, ids());
     this._initHeaders();
   }
@@ -73,13 +77,119 @@
     var previous = document.createElement('button'); previous.className = 'btn-small'; previous.textContent = '←'; previous.onclick = function () { if (self._currentPage > 0) { self._currentPage--; self._render(); } };
     this._pageStatus = document.createElement('span'); this._pageStatus.className = 'pagination-status';
     var next = document.createElement('button'); next.className = 'btn-small'; next.textContent = '→'; next.onclick = function () { if ((self._currentPage + 1) * PAGE_SIZE < self._filtered.length) { self._currentPage++; self._render(); } };
-    this._previousButton = previous; this._nextButton = next; bar.append(input, csv, this._buildColumnMenu(), previous, this._pageStatus, next); host.insertBefore(bar, host.querySelector('.table-scroll'));
+    this._previousButton = previous; this._nextButton = next; var groupToggle = document.createElement('button'); groupToggle.className = 'btn-small' + (this._grouped ? ' active' : ''); groupToggle.id = 'resultsGroup';
+    groupToggle.textContent = 'Grouper'; groupToggle.setAttribute('aria-pressed', String(this._grouped));
+    groupToggle.title = 'Une ligne par architecture, avec sa meilleure solution et ses variantes';
+    groupToggle.onclick = function () { self._grouped = !self._grouped; self._expanded = {}; self._currentPage = 0; self._buildToolbar(); self._render(); };
+    bar.append(input, groupToggle, csv, this._buildColumnMenu(), previous, this._pageStatus, next); host.insertBefore(bar, host.querySelector('.table-scroll'));
   };
+  /**
+   * UNE LIGNE PAR ARCHITECTURE.
+   *
+   * La ligne de groupe porte la MEILLEURE solution de sa famille, avec le
+   * nombre de variantes et ce qui les sépare. La déplier montre les autres,
+   * en retrait, dans le même ordre que la liste complète.
+   *
+   * La pagination compte alors les GROUPES, pas les solutions : c'est ce qu'on
+   * parcourt, et paginer sur soixante variantes repliées donnerait des pages
+   * vides.
+   */
+  ResultsTable.prototype._renderGrouped = function (items) {
+    var self = this;
+    var groups = GearSolutionGrouping.group(items.map(function (item) { return item.solution; }),
+      { indices: items.map(function (item) { return item.index; }) });
+    var pages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+    this._currentPage = Math.min(this._currentPage, pages - 1);
+    if (this._pageStatus) {
+      this._pageStatus.textContent = 'Page ' + (this._currentPage + 1) + ' / ' + pages + ' · ' +
+        groups.length + ' architecture' + (groups.length > 1 ? 's' : '') + ' · ' + items.length + ' solutions';
+    }
+    if (this._previousButton) this._previousButton.disabled = this._currentPage === 0;
+    if (this._nextButton) this._nextButton.disabled = this._currentPage >= pages - 1;
+    this._tbody.innerHTML = '';
+    groups.slice(this._currentPage * PAGE_SIZE, (this._currentPage + 1) * PAGE_SIZE).forEach(function (entry) {
+      var open = !!self._expanded[entry.key];
+      var head = self._row({ solution: entry.best, index: entry.bestIndex }, {
+        group: entry, expanded: open,
+        onToggle: function () { self._expanded[entry.key] = !open; self._render(); }
+      });
+      self._tbody.appendChild(head);
+      if (!open || entry.count < 2) return;
+      // Les variantes, en retrait : la meilleure est déjà en tête de groupe.
+      entry.members.slice(1).forEach(function (item) {
+        self._tbody.appendChild(self._row(item, { variant: true }));
+      });
+    });
+  };
+
+  /** Une ligne de tableau — de groupe, de variante, ou de solution simple. */
+  ResultsTable.prototype._row = function (item, options) {
+    var self = this, settings = options || {};
+    var row = document.createElement('tr');
+    row.classList.toggle('selected', item.index === this._selectedIndex);
+    if (settings.group) row.classList.add('group-head');
+    if (settings.variant) row.classList.add('group-variant');
+    row.tabIndex = 0;
+    var select = function () {
+      self._selectedIndex = item.index;
+      self._eventBus.emit('solution:selected', { index: item.index, solution: item.solution });
+      self._render();
+    };
+    row.addEventListener('click', select);
+    row.addEventListener('keydown', function (event) { if (event.key === 'Enter') select(); });
+    COLUMNS.filter(function (column) { return self._isVisible(column.id); }).forEach(function (column) {
+      var cell = document.createElement('td');
+      if (column.id === 'action') {
+        var button = document.createElement('button');
+        button.className = 'btn-small'; button.textContent = 'Voir';
+        button.addEventListener('click', function (event) { event.stopPropagation(); select(); });
+        cell.appendChild(button);
+        var pin = document.createElement('button');
+        pin.className = 'btn-small'; pin.textContent = '☆'; pin.title = 'Épingler pour comparer';
+        pin.addEventListener('click', function (event) { event.stopPropagation(); self._eventBus.emit('solution:pin-toggled', { solution: item.solution }); });
+        cell.appendChild(pin);
+      } else if (column.id === 'architecture' && settings.group) {
+        cell.appendChild(document.createTextNode(self._displayValue(item.solution, column.id)));
+        var entry = settings.group;
+        if (entry.count > 1) {
+          var toggle = document.createElement('button');
+          toggle.className = 'btn-small group-toggle';
+          toggle.setAttribute('aria-expanded', String(!!settings.expanded));
+          toggle.textContent = (settings.expanded ? '▾ ' : '▸ ') + entry.count + ' variantes';
+          toggle.title = self._spreadHint(entry);
+          toggle.addEventListener('click', function (event) { event.stopPropagation(); settings.onToggle(); });
+          cell.appendChild(toggle);
+        }
+      } else if (column.id === 'architecture' && settings.variant) {
+        cell.className = 'variant-cell';
+        cell.textContent = self._displayValue(item.solution, column.id);
+      } else cell.textContent = self._displayValue(item.solution, column.id);
+      row.appendChild(cell);
+    });
+    return row;
+  };
+
+  /** Ce que déplier apporterait : l'étendue de ce qui sépare les variantes. */
+  ResultsTable.prototype._spreadHint = function (entry) {
+    var spread = entry.spread;
+    if (!spread) return 'Une seule solution de cette architecture';
+    var parts = [];
+    if (spread.error && spread.error.span > 1e-9) parts.push('écart ' + number(spread.error.min, 2) + ' à ' + number(spread.error.max, 2) + ' %');
+    if (spread.efficiency && spread.efficiency.span > 1e-9) parts.push('rendement ' + number(spread.efficiency.min * 100, 0) + ' à ' + number(spread.efficiency.max * 100, 0) + ' %');
+    if (spread.diameter && spread.diameter.span > 1e-9) parts.push('Ø ' + number(spread.diameter.min, 0) + ' à ' + number(spread.diameter.max, 0) + ' mm');
+    // Des variantes qui ne se distinguent par rien de mesurable ne demandent
+    // pas d'être lues une à une, et le dire vaut mieux que de laisser croire
+    // qu'on cache quelque chose.
+    return parts.length ? 'Ces variantes vont de ' + parts.join(', ') : 'Variantes de denture, à performances identiques';
+  };
+
   ResultsTable.prototype._render = function () {
     var self = this; this._filtered = this._solutions.map(function (solution, i) { return { solution: solution, index: self._baseIndices ? self._baseIndices[i] : i }; }).filter(function (item) { return !self._searchText || types(item.solution).join(' ').toLowerCase().indexOf(self._searchText) >= 0; });
     this._filtered.sort(function (a, b) { var av = self._rawValue(a.solution, self._sortColumn), bv = self._rawValue(b.solution, self._sortColumn), result = typeof av === 'string' ? av.localeCompare(bv) : av - bv; return self._sortDirection === 'asc' ? result : -result; });
-    var pages = Math.max(1, Math.ceil(this._filtered.length / PAGE_SIZE)); this._currentPage = Math.min(this._currentPage, pages - 1); if (this._pageStatus) this._pageStatus.textContent = 'Page ' + (this._currentPage + 1) + ' / ' + pages + ' · ' + this._filtered.length + ' résultats'; if (this._previousButton) this._previousButton.disabled = this._currentPage === 0; if (this._nextButton) this._nextButton.disabled = this._currentPage >= pages - 1; if (!this._tbody) return; this._tbody.innerHTML = '';
-    this._filtered.slice(this._currentPage * PAGE_SIZE, (this._currentPage + 1) * PAGE_SIZE).forEach(function (item) { var row = document.createElement('tr'); row.classList.toggle('selected',item.index===self._selectedIndex); row.tabIndex=0; var select=function(){self._selectedIndex=item.index;self._eventBus.emit('solution:selected',{index:item.index,solution:item.solution});self._render();};row.addEventListener('click',select);row.addEventListener('keydown',function(event){if(event.key==='Enter'){select();}}); COLUMNS.filter(function (column) { return self._isVisible(column.id); }).forEach(function (column) { var cell = document.createElement('td'); if (column.id === 'action') { var button = document.createElement('button'); button.className = 'btn-small'; button.textContent = 'Voir'; button.addEventListener('click',function(event){event.stopPropagation();select();}); cell.appendChild(button); var pin = document.createElement('button'); pin.className = 'btn-small'; pin.textContent = '☆'; pin.title = 'Épingler pour comparer'; pin.addEventListener('click',function(event){event.stopPropagation();self._eventBus.emit('solution:pin-toggled',{solution:item.solution});}); cell.appendChild(pin); } else cell.textContent = self._displayValue(item.solution, column.id); row.appendChild(cell); }); self._tbody.appendChild(row); });
+    if (!this._tbody) return;
+    if (this._grouped && typeof GearSolutionGrouping !== 'undefined') return this._renderGrouped(this._filtered);
+    var pages = Math.max(1, Math.ceil(this._filtered.length / PAGE_SIZE)); this._currentPage = Math.min(this._currentPage, pages - 1); if (this._pageStatus) this._pageStatus.textContent = 'Page ' + (this._currentPage + 1) + ' / ' + pages + ' · ' + this._filtered.length + ' résultats'; if (this._previousButton) this._previousButton.disabled = this._currentPage === 0; if (this._nextButton) this._nextButton.disabled = this._currentPage >= pages - 1; this._tbody.innerHTML = '';
+    this._filtered.slice(this._currentPage * PAGE_SIZE, (this._currentPage + 1) * PAGE_SIZE).forEach(function (item) { self._tbody.appendChild(self._row(item)); });
   };
   ResultsTable.prototype.exportCSV = function () { var rows = ['score,architecture,ratio,error_percent,stages,efficiency,length_mm,max_diameter_mm,width_mm,output_rpm,output_torque_nm,warnings']; this._filtered.forEach(function (item) { var s = item.solution; rows.push([s.score.value, types(s).join('|'), s.ratio, s.errorPercent, s.stages.length, s.efficiency, s.dimensions.length, s.dimensions.maxDiameter, s.dimensions.width, s.outputSpeedRpm, s.outputTorqueNm, s.warnings.length].join(',')); }); var blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' }), link = document.createElement('a'), url = URL.createObjectURL(blob); link.href = url; link.download = 'solutions.csv'; link.click(); URL.revokeObjectURL(url); };
   GearApp.ui.ResultsTable = ResultsTable;
