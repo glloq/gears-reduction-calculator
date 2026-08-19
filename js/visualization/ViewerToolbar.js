@@ -100,6 +100,11 @@
     // Les confondre sous un « Auto » ne rendait service à personne : on ne
     // savait plus si le dessin mesurait ou expliquait.
     this.projection = 'unfolded';
+    // Assemblé ou éclaté. C'est un état d'AFFICHAGE, comme le point de vue :
+    // il ne décrit pas le mécanisme, il décrit ce que le dessin en montre. Il
+    // vaut pour la session, de sorte qu'on peut comparer deux solutions
+    // ouvertes de la même façon.
+    this.explode = false;
     // §2 : le STYLE de dessin. `visual` est ce que l'application montre depuis
     // toujours ; `technical` emprunte le vocabulaire du dessin d'ensemble. Le
     // style ne touche jamais à la mécanique — mêmes organes, mêmes rapports,
@@ -189,7 +194,7 @@
    * disposition des Dimensions. Un cadrage par vue seule mélangeait les deux.
    */
   ViewerToolbar.prototype._cameraKey = function () {
-    return this.currentView + ':' + (this.projection || 'unfolded');
+    return this.currentView + ':' + (this.projection || 'unfolded') + (this.explode ? ':exploded' : '');
   };
 
   ViewerToolbar.prototype._restoreCamera = function (rendered) {
@@ -256,6 +261,50 @@
    * mémorisé pour cette vue ne s'y applique plus, et le conserver ramènerait
    * sur un coin de l'ancien dessin.
    */
+  /**
+   * ASSEMBLÉ ↔ ÉCLATÉ.
+   *
+   * L'éclatement écarte les organes le long de leur axe, entre la position
+   * monde et la projection. Rien du mécanisme ne change : ni un entraxe, ni un
+   * diamètre, ni un rapport. C'est la raison pour laquelle il vit ici, avec le
+   * point de vue, et non dans le modèle.
+   *
+   * Le cadrage courant appartient au dessin qu'on quitte — un dessin ouvert
+   * occupe deux à trois fois la place du dessin fermé, et conserver la fenêtre
+   * ramènerait sur un coin.
+   */
+  ViewerToolbar.prototype.setExplode = function (on) {
+    var wanted = !!on;
+    if (wanted === this.explode) return this;
+    if (this.solution) this._rememberCamera();
+    this.explode = wanted;
+    ['teeth', 'geometry'].forEach(function (name) {
+      if (this[name]) this[name].explode = this.explode;
+    }, this);
+    if (this.solution) this.render(this.solution);
+    this._syncExplode();
+    this.container.dispatchEvent(new CustomEvent('viewer:explode-changed',
+      { detail: { exploded: this.explode } }));
+    return this;
+  };
+
+  ViewerToolbar.prototype._syncExplode = function () {
+    var group = document.querySelector('.view-explode');
+    if (!group) return this;
+    // La Cinématique est un schéma fonctionnel : il n'y a pas d'axe le long
+    // duquel écarter quoi que ce soit, et prétendre le contraire donnerait un
+    // bouton sans effet.
+    group.hidden = this.currentView === 'kinematic';
+    [['viewerAssembled', false], ['viewerExploded', true]].forEach(function (pair) {
+      var button = document.getElementById(pair[0]);
+      if (!button) return;
+      var on = this.explode === pair[1];
+      button.classList.toggle('active', on);
+      button.setAttribute('aria-pressed', String(on));
+    }, this);
+    return this;
+  };
+
   ViewerToolbar.prototype.setProjection = function (id) {
     // Le cadrage courant appartient à l'ANGLE qu'on quitte : on le range avant
     // de changer, pour le retrouver en revenant.
@@ -470,6 +519,7 @@
       focus.title = selected ? 'Cadrer l’étage ' + (this.selectedStage + 1)
         : 'Sélectionnez d’abord un étage sur le dessin';
     }
+    this._syncExplode();
     var isolation = document.querySelector('.view-isolate');
     if (isolation) {
       // Sans rien de sélectionné, il n'y a rien à isoler : estomper la
@@ -555,6 +605,33 @@
     return '';
   };
 
+  /**
+   * CE QU'ON N'A PAS LE DROIT DE MESURER sur un éclaté.
+   *
+   * Un dessin ouvert montre des distances axiales qui ne sont pas celles du
+   * mécanisme : c'est tout son intérêt, et c'est aussi ce qui le rend
+   * dangereux si on l'oublie. La phrase n'est donc pas facultative.
+   *
+   * Elle dit aussi le cas où l'écartement ne se VOIT pas : regardés en bout,
+   * les axes projettent le glissement sur un point, et le dessin est identique
+   * au dessin fermé. Le taire ferait passer la commande pour inopérante.
+   */
+  ViewerToolbar.prototype._explodeFidelity = function (rendered) {
+    // La vue Denture porte son modèle sous `model`, la vue Dimensions sous
+    // `layout` : c'est le même repère, sous deux noms hérités.
+    var drawn = rendered && (rendered.model || rendered.layout);
+    var exploded = drawn && drawn.exploded;
+    if (!exploded) return '';
+    var notice = (typeof GearExplodedView !== 'undefined' && GearExplodedView.NOTICE)
+      || 'Vue éclatée — espacement non à l’échelle';
+    if (exploded.visible === false) {
+      return ' ' + notice + '. Ce point de vue regarde les axes en bout : ' +
+        'l’écartement s’y projette sur un point et ne se voit pas.';
+    }
+    return ' ' + notice + " : les organes sont écartés le long de leur axe pour " +
+      'se dégager ; les entraxes et les diamètres, eux, restent vrais.';
+  };
+
   ViewerToolbar.prototype._axialFidelity = function (rendered) {
     var wheels = rendered && rendered.model && rendered.model.wheels;
     if (!wheels || !wheels.length) return '';
@@ -573,6 +650,7 @@
     if (!rendered) { host.textContent = ''; host.title = ''; host.hidden = true; host.classList.remove('has-derived'); return; }
     var text = FIDELITY[this.currentView] || '';
     text += this._systemFidelity(rendered);
+    text += this._explodeFidelity(rendered);
     text += this._axialFidelity(rendered);
     var scene = rendered && rendered.scene;
     // Une cote reconstruite faute de mieux ne doit pas être lue comme une cote
@@ -853,6 +931,8 @@
       }
       // Deux degrés d'isolation, et le même bouton pour en sortir : cliquer
       // « Contexte » quand on y est déjà revient à tout remontrer.
+      if (event.target.id === 'viewerAssembled') { self.setExplode(false); return; }
+      if (event.target.id === 'viewerExploded') { self.setExplode(true); return; }
       if (event.target.id === 'viewerIsolateContext') self.setIsolation(self.isolate === 'context' ? null : 'context');
       if (event.target.id === 'viewerIsolateOnly') self.setIsolation(self.isolate === 'only' ? null : 'only');
       if (event.target.id === 'viewerReset' && renderer.resetView) renderer.resetView();

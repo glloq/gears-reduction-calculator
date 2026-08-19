@@ -344,7 +344,8 @@
   GeometryRenderer.prototype.render = function (solution) {
     this.solution = solution;
     this.scene = GearSceneBuilder.build(solution);
-    this.layout = GearGeometryLayout.build(solution, { scene: this.scene, view: this.projection });
+    this.layout = GearGeometryLayout.build(solution, { scene: this.scene, view: this.projection,
+      explode: this.explode });
     this._rotors = [];
     this._phaseMarks = [];
     this._orbits = [];

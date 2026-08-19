@@ -368,6 +368,7 @@
 
     var overall = (solution && solution.dimensions) || {};
     return { stages: stages, scene: scene, frame: frame, view: frame.view, margin: margin, headroom: headroom,
+      exploded: frame.exploded || null,
       bounds: { x: 0, y: 0, width: Math.max(4 * margin, cursor - gap + margin), height: Math.max(3 * margin, bottom + margin) },
       envelope: { length: present(overall.length), maxDiameter: present(overall.maxDiameter), width: present(overall.width) } };
   }

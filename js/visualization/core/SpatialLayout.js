@@ -17,9 +17,10 @@
   var common = typeof module === 'object' && module.exports;
   var api = factory(common ? require('./MechanicalGraph.js') : root.GearMechanicalGraph,
     common ? require('./ProjectionEngine.js') : root.GearProjectionEngine,
-    common ? require('./ProjectedScene.js') : root.GearProjectedScene);
+    common ? require('./ProjectedScene.js') : root.GearProjectedScene,
+    common ? require('./ExplodedView.js') : root.GearExplodedView);
   if (common) module.exports = api; else root.GearSpatialLayout = api;
-})(typeof self !== 'undefined' ? self : this, function (MechanicalGraph, Projection, ProjectedScene) {
+})(typeof self !== 'undefined' ? self : this, function (MechanicalGraph, Projection, ProjectedScene, ExplodedView) {
   'use strict';
 
   function finite(v, fallback) { return Number.isFinite(v) ? v : fallback; }
@@ -214,12 +215,23 @@
       return [along[0] * cosine - along[1] * sine, along[0] * sine + along[1] * cosine];
     }
 
+    // Les abscisses viennent du GRAPHE, qu'aucune vue ne modifie. Une vue
+    // éclatée écarte pourtant les organes le long de leur axe : elle dépose ses
+    // décalages sur le placement, et c'est ici qu'on les ajoute — le graphe
+    // reste ce qu'il est, et le dessin ouvre ce qu'il faut ouvrir.
+    var offsets = (layout && layout.axialOffsets) || null;
+    function seatOf(member) {
+      var base = finite(member.axialPosition, 0);
+      return offsets && Number.isFinite(offsets[member.id]) ? base + offsets[member.id] : base;
+    }
+
     var shafts = {}, byId = {};
     function draw(shaft, origin, along) {
       shafts[shaft.id] = { origin: origin, along: along };
       shaft.members.forEach(function (member) {
-        byId[member.id] = { x: origin[0] + along[0] * member.axialPosition,
-          y: origin[1] + along[1] * member.axialPosition, shaftId: shaft.id };
+        var at = seatOf(member);
+        byId[member.id] = { x: origin[0] + along[0] * at, y: origin[1] + along[1] * at,
+          shaftId: shaft.id };
       });
     }
 
@@ -365,13 +377,33 @@
   function frame(graph, options) {
     options = options || {};
     var spatial = build(graph);
+    // ÉCLATER est une transformation de PRÉSENTATION, et elle a lieu ici : le
+    // graphe mécanique n'en sait rien, et le placement d'origine non plus — on
+    // en construit un second, écarté, dont tout le reste de la chaîne hérite
+    // sans rien changer à son propre travail.
+    //
+    //     position monde  →  décalage d'éclatement  →  projection
+    //
+    // Le placer plus loin — dans un renderer qui ajouterait un décalage au
+    // moment de dessiner — donnerait un dessin dont les arbres, les cotes et la
+    // profondeur ne suivraient pas.
+    if (ExplodedView) {
+      spatial = ExplodedView.apply(spatial, Object.assign({ overhang: SHAFT_OVERHANG }, options));
+    }
     var asked = options.view || 'unfolded';
     var result;
     if (asked === 'unfolded' || asked === 'auto' || asked === '') {
       // Le dépliage a tout de même besoin d'un regard : c'est lui qui donne
       // les DIRECTIONS. `auto` retient la vue la moins perdante, à défaut
       // celle qui montre le plus de denture.
-      var basis = asked === 'auto' ? autoView(spatial) : Projection.engagement((graph && graph.axes) || []);
+      // Un éclaté ne se regarde PAS dans l'axe. La vue dépliée retient d'ordinaire
+      // le regard qui montre le plus de denture — pour un train d'axes
+      // parallèles, c'est celui qui les voit en bout, où les organes se
+      // superposent : les écarter le long d'une direction qui se projette sur
+      // un point ne montrerait rien. On lui préfère alors le regard qui perd le
+      // moins du mécanisme, c'est-à-dire celui qui montre les axes.
+      var basis = asked === 'auto' || spatial.exploded
+        ? autoView(spatial) : Projection.engagement((graph && graph.axes) || []);
       var seats = unfold(spatial, basis.id);
       seats.mode = 'unfolded';
       result = { graph: graph, spatial: spatial, view: basis, mode: 'unfolded', seats: seats };
@@ -385,10 +417,32 @@
     // au point de vue, pas à la vue qui dessine. Une seule vue le calculait,
     // les autres le redemandaient au moteur de projection, chacune à sa façon.
     result.projected = ProjectedScene.build(spatial, result);
+    // Ce dessin ne se cote pas, et il doit le dire lui-même : la vue y lit de
+    // quoi l'annoncer plutôt que de deviner qu'on lui a demandé un éclatement.
+    result.exploded = spatial.exploded
+      ? Object.assign({}, spatial.exploded, { visible: explodeShows(spatial, result.view) })
+      : null;
     return result;
+  }
+
+  /**
+   * L'écartement SE VOIT-IL d'ici ?
+   *
+   * Un organe écarté glisse sur son axe ; si ce point de vue regarde cet axe
+   * en bout, le glissement se projette sur un point et le dessin est identique
+   * au dessin fermé. Ce n'est pas un défaut de l'éclatement — c'est ce que
+   * cette vue montre —, mais il faut pouvoir le DIRE, faute de quoi la commande
+   * paraît sans effet.
+   */
+  function explodeShows(spatial, view) {
+    return (spatial.members || []).some(function (member) {
+      if (!Number.isFinite(member.explodeOffset) || Math.abs(member.explodeOffset) < 1e-9) return false;
+      var xy = Projection.project(member.axis, view);
+      return Math.hypot(xy[0], xy[1]) > 1e-6;
+    });
   }
 
   return { build: build, project: project, unfold: unfold, autoView: autoView, frame: frame,
     projectedSeats: projectedSeats, coneApex: coneApex, coneBack: coneBack,
-    bounds: bounds, SHAFT_OVERHANG: SHAFT_OVERHANG };
+    bounds: bounds, explode: ExplodedView, SHAFT_OVERHANG: SHAFT_OVERHANG };
 });

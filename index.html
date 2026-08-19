@@ -598,6 +598,17 @@
             <button id="viewerFocus" type="button" class="btn-small" title="Cadrer l’étage sélectionné" disabled>Cadrer l’étage</button>
             <button id="viewerActualSize" type="button" class="btn-small" title="Échelle réelle : un millimètre dessiné occupe un millimètre d’écran">1:1</button>
           </div>
+          <!-- Ce qui est réellement au même endroit ne se sépare par aucun
+               cadrage : sur un train épicycloïdal, planétaire, couronne et
+               porte-satellites occupent le même plan. L'éclaté les écarte le
+               long de leur axe — un écartement de DESSIN, jamais du mécanisme,
+               et le dessin le dit. -->
+          <span class="segmented view-explode" role="group" aria-label="Éclatement" hidden>
+            <button id="viewerAssembled" type="button" class="btn-small active" aria-pressed="true"
+              title="Les organes à leur place : les distances axiales sont celles du calcul">Assemblé</button>
+            <button id="viewerExploded" type="button" class="btn-small" aria-pressed="false"
+              title="Écarter les organes le long de leur axe pour voir ce qu’ils se cachent — espacement non à l’échelle">Éclaté</button>
+          </span>
           <!-- Cadrer ne suffit pas sur une transmission dense : la pièce
                voisine reste au premier plan. Isoler l'estompe. -->
           <div class="segmented view-isolate" role="group" aria-label="Isolation" hidden>
@@ -768,6 +779,10 @@
   <script src="js/visualization/core/ViewCube.js" defer></script>
   <script src="js/visualization/core/Selection.js" defer></script>
   <script src="js/visualization/core/LabelLayout.js" defer></script>
+  <!-- L'éclatement est une transformation de PRÉSENTATION appliquée entre la
+       position monde et la projection : il se charge donc avant le placement
+       spatial, qui s'en sert, et jamais après. -->
+  <script src="js/visualization/core/ExplodedView.js" defer></script>
   <script src="js/visualization/core/SpatialLayout.js" defer></script>
   <script src="js/visualization/technical/MechanicalDraftingTheme.js" defer></script>
   <script src="js/visualization/kinematic/KinematicLayoutEngine.js" defer></script>

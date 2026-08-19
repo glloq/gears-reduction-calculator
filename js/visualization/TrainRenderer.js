@@ -96,7 +96,7 @@
     this.animation.setScene(this.scene);
 
     var model = GearTrainLayout.layout(solution.stages || [], solution.mechanical || [],
-      { scene: this.scene, solution: solution, view: this.projection });
+      { scene: this.scene, solution: solution, view: this.projection, explode: this.explode });
     this.model = model;
     var svg = n('svg', { class: 'train-svg', role: 'img',
       'data-view': model.view.id,

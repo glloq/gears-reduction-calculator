@@ -416,6 +416,9 @@
       // 'unfolded' ou 'projected' : ce que la vue AFFIRME. La distinction
       // décide de ce qu'on a le droit de lire sur le dessin.
       mode: frame.mode,
+      // Non nul quand le dessin est ÉCLATÉ : la vue doit alors l'annoncer, et
+      // personne ne doit prendre une distance axiale sur ce dessin.
+      exploded: frame.exploded || null,
       projected: frame.projected,
       graph: frame.graph,
       spatial: frame.spatial,

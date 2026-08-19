@@ -2888,3 +2888,64 @@ test('stage labels find their own place on a dense train (§ étiquettes)', asyn
   expect(chosen.text).toContain('Étage 3');
   expect(errors).toEqual([]);
 });
+
+test('the exploded view opens what the mechanism hides, and says it is not to scale (§9)', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Un train épicycloïdal est le cas qui justifie la commande : planétaire,
+  // couronne, porte-satellites et satellites occupent le MÊME plan axial.
+  // Aucun cadrage, aucun point de vue ne les sépare — ils sont réellement au
+  // même endroit.
+  await mount(page, ['planetary', 'planetary']);
+  await showView(page, 'teeth');
+  const assembled = page.locator('#viewerAssembled');
+  const exploded = page.locator('#viewerExploded');
+  await expect(exploded).toBeVisible();
+  await expect(assembled).toHaveAttribute('aria-pressed', 'true');
+
+  // Les abscisses DESSINÉES de chaque organe, prises sur le SVG lui-même : ce
+  // qui compte est ce que l'utilisateur voit, pas ce que le modèle contient.
+  const drawn = () => page.evaluate(() => {
+    const out = {};
+    document.querySelectorAll('#svgContainer [data-member]').forEach(node => {
+      const box = node.getBoundingClientRect();
+      if (box.width || box.height) out[node.dataset.member] = box.x + box.width / 2;
+    });
+    return out;
+  });
+  // Les abscisses du MODÈLE mécanique, qu'aucun dessin n'a le droit de changer.
+  const model = () => page.evaluate(() => JSON.stringify(window.__viewer.teeth.model.graph.shafts
+    .map(shaft => shaft.members.map(member => member.axialPosition))));
+
+  const closed = await drawn();
+  const before = await model();
+  expect(Object.keys(closed).length, 'aucun organe identifié dans le dessin').toBeGreaterThan(3);
+
+  await exploded.click();
+  await expect(exploded).toHaveAttribute('aria-pressed', 'true');
+  await expect(assembled).toHaveAttribute('aria-pressed', 'false');
+  const open = await drawn();
+
+  // Le modèle n'a pas bougé d'un millimètre : c'est une transformation de
+  // PRÉSENTATION, et elle doit le rester.
+  expect(await model()).toBe(before);
+
+  // Le dessin, lui, s'est ouvert : les organes qui se recouvraient ont chacun
+  // leur place.
+  const spread = places => {
+    const xs = Object.keys(places).map(id => places[id]);
+    return Math.max(...xs) - Math.min(...xs);
+  };
+  expect(spread(open), 'le dessin ne s’est pas ouvert').toBeGreaterThan(spread(closed) + 10);
+  // Et deux corps d'un même étage, confondus jusqu'ici, se distinguent.
+  expect(Math.abs(open['s0-S'] - open['s0-R'])).toBeGreaterThan(4);
+
+  // Ce dessin ne se cote pas, et il le dit lui-même.
+  await expect(page.locator('#viewerFidelity')).toContainText('Vue éclatée — espacement non à l’échelle');
+
+  // Refermer revient exactement d'où l'on vient.
+  await assembled.click();
+  await expect(assembled).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#viewerFidelity')).not.toContainText('Vue éclatée');
+  expect(spread(await drawn())).toBeCloseTo(spread(closed), 0);
+  expect(errors).toEqual([]);
+});
