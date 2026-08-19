@@ -70,6 +70,10 @@
     // La denture réaliste est la vue par défaut : elle supporte désormais tous
     // les types, crémaillère comprise.
     this.currentView = 'teeth';
+    // La sélection CANONIQUE : ce qu'on a désigné, quel que soit son type.
+    // `selectedStage` en découle et reste pour les modules qui ne connaissent
+    // que les étages — désigner une roue désigne aussi l'étage où elle est.
+    this.selection = GearSelection.none();
     this.selectedStage = -1;
     this.animationSpeed = 1;
     this.animationDirection = 1;
@@ -108,9 +112,37 @@
     this.inspector = new GearStageInspector.Inspector(container, {
       registry: GearTransmissionRegistry,
       onEdit: function (index) { self.container.dispatchEvent(new CustomEvent('viewer:stage-edit', { detail: { index: index } })); },
-      onClose: function () { self.selectedStage = -1; self._syncFraming(); }
+      // Depuis une fiche d'organe ou d'engrènement, remonter à l'étage entier.
+      onSelectStage: function (index) { if (index != null && index >= 0) self.selectStage(index); },
+      onSelectShaft: function (id) { if (id) self.select(GearSelection.of('shaft', id)); },
+      onClose: function () { self.select(GearSelection.none()); self._syncFraming(); }
     });
   }
+
+  /**
+   * DÉSIGNER, depuis n'importe où dans l'application.
+   *
+   * La barre d'outils est le point d'entrée commun : la vue applique, les
+   * autres panneaux écoutent. Sans elle, chaque module devrait connaître la
+   * vue courante pour lui parler.
+   */
+  ViewerToolbar.prototype.select = function (selection) {
+    var current = selection && selection.type !== undefined ? selection : GearSelection.none();
+    this.selection = current;
+    this.selectedStage = GearSelection.stageOf(current);
+    var rendered = this.renderer();
+    if (rendered && rendered.select) rendered.select(current, true);
+    else if (rendered && rendered.selectStage) rendered.selectStage(this.selectedStage, true);
+    this.inspector.showSelection(current);
+    this._syncFraming();
+    this.container.dispatchEvent(new CustomEvent('viewer:selection-changed', { detail: { selection: current } }));
+    return this;
+  };
+
+  ViewerToolbar.prototype.selectStage = function (index) {
+    return this.select(Number(index) >= 0
+      ? GearSelection.of('stage', index, { stageIndex: index }) : GearSelection.none());
+  };
 
   ViewerToolbar.prototype.renderer = function () {
     if (this.currentView === 'kinematic') return this.kinematic;
@@ -126,7 +158,7 @@
     var rendered = this.renderer().render(solution);
     // L'inspecteur lit la scène de la vue courante : mêmes vitesses, même
     // instant, quelle que soit la vue affichée.
-    this.inspector.setSolution(solution, rendered && rendered.scene);
+    this.inspector.setSolution(solution, rendered && rendered.scene, rendered && rendered.model);
     this._applyState(rendered);
     this._restoreCamera(rendered);
     this._renderFidelity(rendered);
@@ -537,7 +569,12 @@
       rendered.toggleAnimation();
     }
     this._applyOverlayClasses();
-    if (this.selectedStage >= 0 && rendered.selectStage) {
+    // La sélection traverse le re-rendu : changer de vue ou de point de vue ne
+    // doit pas faire perdre la pièce qu'on était en train de lire.
+    if (this.selection && this.selection.type && rendered.select) {
+      rendered.select(this.selection, true);
+      this.inspector.showSelection(this.selection);
+    } else if (this.selectedStage >= 0 && rendered.selectStage) {
       rendered.selectStage(this.selectedStage, true);
       this.inspector.show(this.selectedStage);
     }
@@ -791,9 +828,26 @@
       }
       if (event.target.matches('[data-overlay]')) self.setOverlay(event.target.dataset.overlay, event.target.checked);
     });
+    // La sélection canonique fait foi ; l'événement d'étage reste écouté pour
+    // les vues qui n'émettent que lui.
+    this.container.addEventListener('viewer:selection-changed', function (event) {
+      self.selection = event.detail.selection || GearSelection.none();
+      self.selectedStage = GearSelection.stageOf(self.selection);
+      self.inspector.showSelection(self.selection);
+      self._syncFraming();
+    });
     this.container.addEventListener('viewer:stage-selected', function (event) {
       self.selectedStage = event.detail.index;
-      self.inspector.show(event.detail.index);
+      // Une vue qui n'émet que l'étage — la Cinématique — pose une sélection
+      // d'étage ; une vue qui sait désigner plus fin a déjà parlé, et sa fiche
+      // ne doit pas être écrasée par celle de l'étage qui la contient.
+      if (!self.selection || !self.selection.type || self.selection.type === 'stage') {
+        self.selection = event.detail.index >= 0
+          ? GearSelection.of('stage', event.detail.index, { stageIndex: event.detail.index })
+          : GearSelection.none();
+        if (event.detail.index >= 0) self.inspector.show(event.detail.index);
+        else self.inspector.hide();
+      }
       self._syncFraming();
     });
     this._applyOverlayClasses();

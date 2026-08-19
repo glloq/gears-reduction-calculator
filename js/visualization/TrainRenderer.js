@@ -233,6 +233,14 @@
     var meshOverlay = n('g', { class: 'mesh-overlay' });
     engineering.appendChild(meshOverlay);
     this._meshOverlays.push({ entry: entry, host: meshOverlay, lod: -1 });
+    // LA POIGNÉE D'ENGRÈNEMENT : la zone de contact, cliquable.
+    //
+    // La ligne d'action n'existe qu'au plus fin niveau de détail, et seulement
+    // vu de face — c'est une construction qui ne veut rien dire de biais. Or
+    // l'engrènement, lui, existe toujours : c'est l'objet dont on veut lire le
+    // rapport, l'entraxe et les efforts. Il lui faut donc une cible propre,
+    // présente à tous les zooms et sous tous les points de vue.
+    this._drawMeshHandle(engineering, entry, index);
     // Les efforts s'appliquent AU POINT PRIMITIF, dans le repère de
     // l'engrènement : le modèle le donne, le renderer ne l'invente plus.
     if (entry.forceFrame) {
@@ -448,7 +456,10 @@
         var arm = Math.max(2, reach * 0.16);
         // Vu en bout, l'arbre est un POINT : il n'a qu'une profondeur, et sa
         // croix d'axe est une convention de dessin, pas un morceau de métal.
-        group(null).appendChild(n('path', { class: 'shaft-centre',
+        var endHost = group(null);
+        endHost.appendChild(n('circle', { class: 'shaft-hit-point',
+          cx: shaft.x1.toFixed(2), cy: shaft.y1.toFixed(2), r: Math.max(3, arm).toFixed(2) }));
+        endHost.appendChild(n('path', { class: 'shaft-centre',
           d: 'M ' + (shaft.x1 - arm).toFixed(2) + ' ' + shaft.y1.toFixed(2) + ' H ' + (shaft.x1 + arm).toFixed(2) +
             ' M ' + shaft.x1.toFixed(2) + ' ' + (shaft.y1 - arm).toFixed(2) + ' V ' + (shaft.y1 + arm).toFixed(2) }));
         return;
@@ -457,7 +468,16 @@
       // liste vide est une réponse, pas une absence de réponse.
       var parts = shaft.parts || [{ x1: shaft.x1, y1: shaft.y1, x2: shaft.x2, y2: shaft.y2, depth: shaft.depth }];
       parts.forEach(function (part) {
-        group(part.depth).appendChild(n('line', { class: 'shaft-body',
+        var host = group(part.depth);
+        // UNE ZONE DE PRISE, sous le trait. Un arbre se dessine en trait fin —
+        // c'est ce qu'il doit être — et un trait fin ne s'attrape pas : à
+        // l'échelle d'un train entier, il fait moins d'un pixel, et le curseur
+        // tombe toujours à côté. La zone est transparente et ne se voit donc
+        // jamais ; elle rend seulement l'arbre désignable.
+        host.appendChild(n('line', { class: 'shaft-hit',
+          x1: part.x1.toFixed(2), y1: part.y1.toFixed(2),
+          x2: part.x2.toFixed(2), y2: part.y2.toFixed(2) }));
+        host.appendChild(n('line', { class: 'shaft-body',
           x1: part.x1.toFixed(2), y1: part.y1.toFixed(2),
           x2: part.x2.toFixed(2), y2: part.y2.toFixed(2) }));
       });
@@ -640,6 +660,49 @@
    * l'entrée. Le TEXTE, lui, reste horizontal : c'est une annotation d'écran,
    * pas une géométrie, et un mot couché à 30° ne se lit plus.
    */
+  /**
+   * Le point de contact d'un couple, comme cible de sélection.
+   *
+   * Il est posé sur la ligne des centres, partagée dans le rapport des rayons
+   * primitifs : c'est exact quand les deux roues sont également raccourcies —
+   * le cas de deux axes parallèles — et approché sinon. On ne s'en sert que
+   * pour ATTRAPER l'engrènement ; ce qu'il vaut est lu dans le modèle, pas
+   * mesuré sur ce point.
+   */
+  TrainRenderer.prototype._drawMeshHandle = function (host, entry, index) {
+    // Un étage COAXIAL n'a pas un engrènement mais deux — solaire/satellite et
+    // satellite/couronne —, et ses corps partagent un centre : une poignée
+    // unique y serait posée sur le solaire, sans rien désigner de précis, et
+    // volerait le survol de la roue qu'elle recouvre.
+    if (entry.attach === 'coaxial') return null;
+    var wheels = (entry.wheels || []).filter(function (wheel) { return wheel.role !== 'planet'; });
+    var a = wheels[0], b = wheels[1];
+    if (!a || !b) return null;
+    var apart = Math.hypot(finite(b.cx, 0) - finite(a.cx, 0), finite(b.cy, 0) - finite(a.cy, 0));
+    // Deux centres confondus à l'écran — un couple vu en bout de sa ligne des
+    // centres : il n'y a pas de zone de contact à montrer.
+    if (apart < 1e-6) return null;
+    var ra = finite(a.pitchD, 0) / 2, rb = finite(b.pitchD, 0) / 2;
+    var total = ra + rb;
+    if (!(total > 0)) return null;
+    // Engrènement intérieur : le point primitif n'est pas ENTRE les deux
+    // centres, il est au-delà du petit — la couronne enveloppe le pignon.
+    var inside = entry.type === 'internal' || b.kind === 'internal-ring' || a.kind === 'internal-ring';
+    var t = inside ? (rb > ra ? ra / Math.max(1e-6, rb - ra) : 1) : ra / total;
+    var x = finite(a.cx, 0) + (finite(b.cx, 0) - finite(a.cx, 0)) * t;
+    var y = finite(a.cy, 0) + (finite(b.cy, 0) - finite(a.cy, 0)) * t;
+    var reach = Math.max(2, Math.min(finite(a.outsideD, 20), finite(b.outsideD, 20)) * 0.16);
+    // Le survol passe par `data-hud`, jamais par un `<title>` : l'infobulle
+    // native se superposerait au panneau une seconde plus tard.
+    var label = 'Engrènement de l’étage ' + (index + 1);
+    var handle = n('g', { class: 'mesh-handle', 'data-mesh': 'm' + index, 'data-stage': String(index),
+      tabindex: '0', role: 'button', 'data-hud': label, 'aria-label': label });
+    handle.appendChild(n('circle', { class: 'mesh-handle-target',
+      cx: x.toFixed(2), cy: y.toFixed(2), r: reach.toFixed(2) }));
+    host.appendChild(handle);
+    return handle;
+  };
+
   TrainRenderer.prototype._drawIOChips = function (viewport, model) {
     if (!model.io.input || !model.io.output) return;
     // Le centre du dessin : il dit de quel côté d'une roue se trouve le
@@ -1059,29 +1122,57 @@
 
   // ===== Sélection d'étage + inspecteur =====
 
+  /**
+   * CE QUE LE CURSEUR DÉSIGNE, en remontant le dessin.
+   *
+   * Un clic tombe sur un tracé, qui vit dans une roue, qui vit dans un étage.
+   * On relève donc le premier porteur de chaque type rencontré en remontant,
+   * et c'est `Selection` qui tranche — le plus précis gagne. Le dessin ne
+   * décide pas de la règle : il rapporte ce qu'il a trouvé.
+   */
+  TrainRenderer.prototype._found = function (target) {
+    var found = {};
+    var node = target;
+    while (node && node !== this.svg) {
+      if (node.dataset) {
+        Object.keys(GearSelection.ATTRIBUTES).forEach(function (type) {
+          var key = GearSelection.ATTRIBUTES[type];
+          if (found[key] == null && node.dataset[key] != null) found[key] = node.dataset[key];
+        });
+        if (found.instance == null && node.dataset.instance != null) found.instance = node.dataset.instance;
+      }
+      node = node.parentNode;
+    }
+    return found;
+  };
+
   TrainRenderer.prototype._bindStageInteractions = function () {
     var self = this;
-    // Tous les calques : cliquer une pièce, sa flèche d'effort ou son libellé
-    // désigne le même étage.
-    Array.from(this.svg.querySelectorAll('[data-stage]')).forEach(function (group) {
-      var index = Number(group.dataset.stage);
-      group.addEventListener('click', function (event) {
-        if (self.viewport && self.viewport.dragged) { self.viewport.dragged = false; return; }
-        event.stopPropagation();
-        self.selectStage(index);
-      });
-      // §7 : le double-clic CADRE l'étage. C'était le geste d'édition, mais
-      // dans un dessin qu'on explore c'est « montre-moi ça de plus près » qui
-      // revient à chaque instant, alors que modifier un étage est un acte
-      // délibéré — et l'inspecteur porte déjà le bouton qui le fait.
-      group.addEventListener('dblclick', function (event) {
-        event.stopPropagation();
-        self.selectStage(index);
-        self.focusStage(index);
-      });
-      group.addEventListener('keydown', function (event) {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); self.selectStage(index); }
-      });
+    // UN SEUL écouteur, sur le SVG. Un par groupe ne survivrait pas au
+    // re-rendu, coûterait cher sur un train de six étages, et surtout obligeait
+    // chaque groupe à savoir ce qu'il désigne — alors que c'est le point
+    // TOUCHÉ qui le sait.
+    this.svg.addEventListener('click', function (event) {
+      if (self.viewport && self.viewport.dragged) { self.viewport.dragged = false; return; }
+      self.select(GearSelection.resolve(self._found(event.target)));
+    });
+    // §7 : le double-clic CADRE. C'était le geste d'édition, mais dans un
+    // dessin qu'on explore c'est « montre-moi ça de plus près » qui revient à
+    // chaque instant, alors que modifier est un acte délibéré — et l'inspecteur
+    // porte déjà le bouton qui le fait.
+    this.svg.addEventListener('dblclick', function (event) {
+      var selection = GearSelection.resolve(self._found(event.target));
+      self.select(selection);
+      var stage = GearSelection.stageOf(selection);
+      // Double-clic dans le vide : on revient à l'ensemble plutôt que de ne
+      // rien faire — c'est le geste qui dit « montre-moi tout ».
+      if (stage < 0) { self.resetView(); return; }
+      self.focusStage(stage);
+    });
+    this.svg.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      self.select(GearSelection.resolve(self._found(event.target)));
     });
   };
 
@@ -1096,25 +1187,40 @@
    * Le surlignage est purement visuel et ne remplace pas la sélection : on
    * survole pour comprendre, on clique pour choisir.
    */
+  /**
+   * Allumer TOUT CE QUI TOURNE AVEC un corps : ses organes et son arbre.
+   *
+   * Partagé par le survol et par la sélection. Le survol répond à « qu'est-ce
+   * qui est solidaire de ça ? » le temps d'un geste ; la sélection tient la
+   * réponse allumée pendant qu'on lit l'inspecteur.
+   */
+  TrainRenderer.prototype._lightBody = function (bodyId, sticky) {
+    if (!this.svg) return this;
+    var wanted = bodyId || this._heldBody || null;
+    if (sticky) this._heldBody = bodyId || null;
+    if (this._litBody === wanted) return this;
+    this._litBody = wanted;
+    Array.prototype.forEach.call(this.svg.querySelectorAll('[data-body]'), function (part) {
+      part.classList.toggle('rigid-highlight', !!wanted && part.dataset.body === wanted);
+    });
+    Array.prototype.forEach.call(this.svg.querySelectorAll('.train-shaft'), function (shaft) {
+      shaft.classList.toggle('rigid-highlight', !!wanted && shaft.dataset.shaft === wanted);
+    });
+    return this;
+  };
+
   TrainRenderer.prototype._bindRigidBodies = function () {
     var self = this;
-    function light(bodyId) {
-      if (self._litBody === bodyId) return;
-      self._litBody = bodyId;
-      Array.prototype.forEach.call(self.svg.querySelectorAll('[data-body]'), function (part) {
-        part.classList.toggle('rigid-highlight', !!bodyId && part.dataset.body === bodyId);
-      });
-      Array.prototype.forEach.call(self.svg.querySelectorAll('.train-shaft'), function (shaft) {
-        shaft.classList.toggle('rigid-highlight', !!bodyId && shaft.dataset.shaft === bodyId);
-      });
-    }
     // Un seul écouteur sur le SVG : un par organe ne survivrait pas au re-rendu
     // et coûterait cher sur un train de six étages.
     this.svg.addEventListener('mousemove', function (event) {
       var owner = event.target.closest ? event.target.closest('[data-body], .train-shaft') : null;
-      light(owner ? (owner.dataset.body || owner.dataset.shaft) : null);
+      self._lightBody(owner ? (owner.dataset.body || owner.dataset.shaft) : null);
     });
-    this.svg.addEventListener('mouseleave', function () { light(null); });
+    // En quittant le dessin, le corps SÉLECTIONNÉ reste allumé : c'est un
+    // choix, pas un survol, et l'éteindre laisserait l'inspecteur parler d'un
+    // corps que le dessin ne montre plus.
+    this.svg.addEventListener('mouseleave', function () { self._lightBody(null); });
     this._litBody = null;
   };
 
@@ -1125,13 +1231,71 @@
       this.svg.querySelector('[data-stage="' + index + '"]');
   };
 
-  TrainRenderer.prototype.selectStage = function (index, silent) {
-    if (!this.svg) return;
-    this._selected = index;
-    Array.from(this.svg.querySelectorAll('[data-stage]')).forEach(function (group) {
-      group.classList.toggle('selected', Number(group.dataset.stage) === index);
+  /**
+   * DÉSIGNER quelque chose — une pièce, un arbre, un engrènement, un étage.
+   *
+   * Une seule sélection, un seul événement. Chaque module tenait auparavant sa
+   * propre idée de ce qui était choisi ; il aurait fallu en ajouter trois
+   * autres pour désigner autre chose qu'un étage, donc trois occasions de plus
+   * de diverger.
+   */
+  TrainRenderer.prototype.select = function (selection, silent) {
+    if (!this.svg) return this;
+    var current = selection && selection.type !== undefined ? selection : GearSelection.none();
+    this.selection = current;
+    var stage = GearSelection.stageOf(current);
+    this._selected = stage;
+    var svg = this.svg;
+    // L'étage reste marqué, même quand on a désigné plus fin : c'est lui qui
+    // porte le cadre, le libellé et la cote, et le perdre en cliquant une roue
+    // ferait clignoter tout l'habillage.
+    Array.from(svg.querySelectorAll('[data-stage]')).forEach(function (group) {
+      group.classList.toggle('selected', Number(group.dataset.stage) === stage);
     });
-    if (!silent) this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: index } }));
+    // Puis l'objet lui-même. `is-selected` désigne CE qu'on a choisi ;
+    // `selected` désigne la région à laquelle il appartient.
+    Array.from(svg.querySelectorAll('.is-selected')).forEach(function (part) {
+      part.classList.remove('is-selected');
+    });
+    svg.classList.toggle('has-selection', !!current.type);
+    if (current.type && current.type !== 'stage') {
+      var key = GearSelection.ATTRIBUTES[current.type];
+      Array.from(svg.querySelectorAll('[data-' + key + ']')).forEach(function (part) {
+        if (part.dataset[key] !== current.id) return;
+        // Cinq satellites portent le même identifiant de membre : sans le
+        // numéro d'exemplaire, en désigner un les allumerait tous.
+        if (current.instance != null && part.dataset.instance != null &&
+          Number(part.dataset.instance) !== current.instance) return;
+        part.classList.add('is-selected');
+      });
+    }
+    // Un organe ou un arbre désigné éclaire aussi TOUT CE QUI TOURNE AVEC LUI.
+    // Le survol le faisait déjà, mais il s'éteint dès qu'on bouge la souris ;
+    // une sélection, elle, tient.
+    this._lightBody(this._bodyOf(current), true);
+    if (!silent) {
+      this.container.dispatchEvent(new CustomEvent('viewer:selection-changed', { detail: { selection: current } }));
+      // L'ancien événement reste émis : la navigation d'étages, l'éditeur et
+      // le panneau mécanique s'y sont abonnés, et désigner une roue désigne
+      // aussi l'étage où elle se trouve.
+      this.container.dispatchEvent(new CustomEvent('viewer:stage-selected', { detail: { index: stage } }));
+    }
+    return this;
+  };
+
+  /** L'arbre auquel appartient ce qu'on a désigné, s'il y en a un. */
+  TrainRenderer.prototype._bodyOf = function (selection) {
+    var current = selection || GearSelection.none();
+    if (current.type === 'shaft') return current.id;
+    if (current.type !== 'member' || !this.svg) return null;
+    var host = this.svg.querySelector('[data-member="' + current.id + '"][data-body]');
+    return host ? host.dataset.body : null;
+  };
+
+  /** Rétrocompatible : désigner un étage, c'est une sélection comme une autre. */
+  TrainRenderer.prototype.selectStage = function (index, silent) {
+    return this.select(Number(index) >= 0 ? GearSelection.of('stage', index, { stageIndex: index })
+      : GearSelection.none(), silent);
   };
 
   /**

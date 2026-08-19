@@ -233,9 +233,11 @@ test('the worm turns without walking, in the Denture and Geometry views (§15)',
 test('the inspector explains a planetary, and the analysis lets it be checked (§20, §21)', async ({ page }) => {
   await mount(page, ['planetary']);
   await showView(page, 'teeth');
+  // Cliquer une roue désigne LA ROUE — la fiche d'étage est à un bouton de là.
   await page.locator('.train-wheel[data-stage="0"]').first().click();
   const inspector = page.locator('#stageInspector');
   await expect(inspector).toBeVisible();
+  await inspector.getByRole('button', { name: 'Voir l’étage' }).click();
   // §20 : la relation qui EXPLIQUE le rapport, et le rapport de base — pas
   // seulement « 24 → 24 → 72 », qui ne dit pas qui mène.
   await expect(inspector).toContainText('Rapport de base');
@@ -2618,5 +2620,118 @@ test('the view cube changes the point of view by showing it (§ cube de vue)', a
   await expect(cube).toBeHidden();
   await showView(page, 'geometry');
   await expect(cube).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('clicking designates a part, a shaft or a mesh — not always its stage (§ sélection)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['spur', 'planetary']);
+  await showView(page, 'teeth');
+  const state = () => page.evaluate(() => ({
+    selection: window.__viewer.selection,
+    stage: window.__viewer.selectedStage,
+    title: (document.querySelector('#stageInspector .type-badge') || {}).textContent,
+    rows: Array.from(document.querySelectorAll('#stageInspector .inspector-grid > div')).map(d => d.textContent),
+    marked: Array.from(document.querySelectorAll('#svgContainer .is-selected'))
+      .map(el => el.dataset.member || el.dataset.shaft || el.dataset.mesh),
+    lit: document.querySelectorAll('#svgContainer .rigid-highlight').length
+  }));
+
+  // UNE ROUE. Le dessin répondait « étage 2 » quand la question était
+  // « quelle roue, et à quelle vitesse ? ».
+  await page.locator('#svgContainer .train-wheel[data-member="s0-input"] .tooth-profile')
+    .first().click({ force: true });
+  const wheel = await state();
+  expect(wheel.selection.type).toBe('member');
+  expect(wheel.selection.id).toBe('s0-input');
+  // Désigner une roue désigne aussi l'étage où elle se trouve : les commandes
+  // qui ne connaissent qu'un étage continuent de fonctionner.
+  expect(wheel.stage).toBe(0);
+  expect(wheel.marked).toEqual(['s0-input']);
+  expect(wheel.rows.join(' ')).toContain('Dents');
+  expect(wheel.rows.join(' ')).toContain('15');
+  // Et tout ce qui tourne avec elle s'allume, sans qu'on ait à survoler.
+  expect(wheel.lit).toBeGreaterThan(0);
+
+  // UN ENGRÈNEMENT. La ligne d'action n'existe qu'au plus fin niveau de
+  // détail et seulement vu de face ; la poignée, elle, existe toujours.
+  await page.locator('#svgContainer .mesh-handle').first().click({ force: true });
+  const mesh = await state();
+  expect(mesh.selection.type).toBe('mesh');
+  expect(mesh.title).toContain('Engrènement');
+  expect(mesh.rows.join(' ')).toContain('Rapport');
+  expect(mesh.rows.join(' ')).toContain('Entraxe');
+
+  // UN ARBRE. Aucune fiche n'en parlait, alors que c'est l'objet qu'on
+  // dimensionne. Vu en bout il est caché par sa roue : on le désigne alors
+  // depuis la fiche de l'organe.
+  await page.evaluate(() => window.__viewer.setProjection('front'));
+  const spot = await page.evaluate(() => {
+    for (const shaft of document.querySelectorAll('#svgContainer .train-shaft')) {
+      for (const target of shaft.querySelectorAll('.shaft-hit, .shaft-hit-point')) {
+        const box = target.getBoundingClientRect();
+        if (!box.width && !box.height) continue;
+        for (const t of [0.5, 0.25, 0.75]) {
+          const x = box.x + box.width * t, y = box.y + box.height * 0.5;
+          const hit = document.elementFromPoint(x, y);
+          if (hit && shaft.contains(hit)) return { x, y };
+        }
+      }
+    }
+    return null;
+  });
+  expect(spot, 'un arbre doit pouvoir être désigné : un trait fin ne s’attrape pas').not.toBeNull();
+  // À CÔTÉ du trait, pas dessus. Un arbre se dessine en trait fin — c'est ce
+  // qu'il doit être — et à l'échelle d'un train entier ce trait fait moins
+  // d'un pixel : sans zone de prise, le curseur tombe toujours à côté.
+  await page.mouse.click(spot.x, spot.y + 2.5);
+  const shaft = await state();
+  expect(shaft.selection.type).toBe('shaft');
+  expect(shaft.title).toContain('Arbre');
+  expect(shaft.rows.join(' ')).toContain('rpm');
+  // Un arbre traverse plusieurs étages : il peut n'en désigner aucun, et
+  // prétendre le contraire ferait cadrer sur un étage choisi au hasard.
+  expect(shaft.selection.stageIndex).toBeNull();
+  // Tous ses organes sont marqués, pas seulement un.
+  expect(shaft.marked.length).toBeGreaterThan(0);
+
+  // LE VIDE, c'est l'ensemble : la fiche se referme. Un coin du dessin, où il
+  // n'y a rien — pas hors du dessin, qui ne serait plus le viewer du tout.
+  await page.locator('#svgContainer svg').click({ position: { x: 4, y: 4 } });
+  const empty = await page.evaluate(() => ({
+    type: window.__viewer.selection.type,
+    hidden: document.getElementById('stageInspector').hidden
+  }));
+  expect(empty.type).toBeNull();
+  expect(empty.hidden).toBe(true);
+
+  // La sélection TRAVERSE le re-rendu : changer de point de vue ne fait pas
+  // perdre la pièce qu'on lisait.
+  await page.locator('#svgContainer .train-wheel[data-member="s0-output"] .tooth-profile')
+    .first().click({ force: true });
+  await page.evaluate(() => window.__viewer.setProjection('iso'));
+  const kept = await state();
+  expect(kept.selection.id).toBe('s0-output');
+  expect(kept.marked).toEqual(['s0-output']);
+  expect(errors).toEqual([]);
+});
+
+test('one satellite of five is one satellite, not five (§ sélection)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mount(page, ['planetary']);
+  await showView(page, 'teeth');
+  // Cinq satellites portent le même identifiant de membre : sans le numéro
+  // d'exemplaire, en désigner un les allumerait tous.
+  const planets = page.locator('#svgContainer .train-wheel.planet[data-instance]');
+  await expect(planets).toHaveCount(5);
+  await planets.nth(2).locator('.tooth-profile').first().click({ force: true });
+  const seen = await page.evaluate(() => ({
+    selection: window.__viewer.selection,
+    marked: Array.from(document.querySelectorAll('#svgContainer .train-wheel.is-selected'))
+      .map(el => el.dataset.instance)
+  }));
+  expect(seen.selection.type).toBe('member');
+  expect(seen.selection.instance).toBe(2);
+  expect(seen.marked).toEqual(['2']);
   expect(errors).toEqual([]);
 });

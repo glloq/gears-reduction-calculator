@@ -342,6 +342,11 @@
   /* Sur un écran étroit, le cube prend une place que le dessin réclame. */
   .view-cube { width: 68px; }
 }
+/* L'inspecteur parle de quatre objets — étage, organe, arbre, engrènement.
+   Le titre dit lequel ; la ligne de tête, sous l'en-tête, dit son rôle dans le
+   mécanisme, qui est la première chose qu'on cherche. */
+.inspector-lead { margin: 0 0 var(--sp-2); color: var(--muted); font-size: var(--font-sm); }
+
 .stage-inspector {
   flex: 0 0 clamp(210px, 22%, 270px);
   align-self: stretch;
@@ -495,6 +500,44 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 .planet-carrier.rigid-highlight path { stroke-width: 1.8; }
 .train-shaft.rigid-highlight .shaft-body { stroke-width: 1.8; opacity: 1; }
 .train-shaft.rigid-highlight .shaft-centre { stroke-width: .9; opacity: 1; }
+
+/* ----- Ce que l'on a DÉSIGNÉ -----
+   `selected` marque la région — l'étage —, `is-selected` la pièce elle-même.
+   Les deux coexistent : cliquer une roue désigne aussi l'étage où elle est, et
+   perdre le cadre de l'étage ferait clignoter tout l'habillage. */
+.train-wheel.is-selected .tooth-profile,
+.train-wheel.is-selected .gear-profile,
+.train-wheel.is-selected .oblique-body,
+.train-wheel.is-selected .worm-body,
+.train-wheel.is-selected .cone-oblique-body,
+.train-wheel.is-selected .ring-oblique-body {
+  stroke: var(--accent); stroke-width: 1.6;
+}
+.train-shaft.is-selected .shaft-body { stroke: var(--accent); stroke-width: 2.2; opacity: 1; }
+.train-shaft.is-selected .shaft-centre { stroke: var(--accent); opacity: 1; }
+
+/* La zone de prise d'un arbre : invisible, et large. Le trait qui la porte
+   fait moins d'un pixel à l'échelle d'un train entier — le dessiner ainsi est
+   juste, mais il faut pouvoir le désigner. */
+.shaft-hit { stroke: transparent; stroke-width: 7; fill: none; pointer-events: stroke; cursor: pointer; }
+.shaft-hit-point { fill: transparent; stroke: none; pointer-events: fill; cursor: pointer; }
+.train-shaft:hover .shaft-body { stroke-width: 1.4; }
+
+/* La poignée d'engrènement : une cible, pas un décor. Invisible tant qu'on ne
+   la cherche pas — la ligne d'action et le point primitif disent déjà ce qui
+   s'y passe —, elle se révèle au survol et une fois choisie. */
+.mesh-handle { cursor: pointer; }
+.mesh-handle-target { fill: transparent; stroke: none; }
+.mesh-handle:hover .mesh-handle-target,
+.mesh-handle:focus-visible .mesh-handle-target {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: var(--accent); stroke-width: .5; stroke-dasharray: 2 2;
+}
+.mesh-handle:focus-visible { outline: none; }
+.mesh-handle.is-selected .mesh-handle-target {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+  stroke: var(--accent); stroke-width: .8;
+}
 
 /* ===== Style de dessin : visuel ou technique =====
 
