@@ -568,7 +568,11 @@
     // soit la vue. C'est vrai de la vue dépliée, et faux d'une projection, qui
     // raccourcit justement ce qui a de la profondeur : c'est `_systemFidelity`
     // qui le dit maintenant, et lui seul.
-    teeth: 'Dentures à l’échelle réelle.',
+    // Ce que la VUE promet. Ce que chaque FAMILLE y tient est déclaré par le
+    // contrat de fidélité, et lu par `_contractFidelity` : la phrase générale
+    // affirmait « dentures à l'échelle réelle » même devant une chaîne dont les
+    // maillons sont des repères.
+    teeth: 'Vue d’ensemble : les organes sont à leur place et à leur taille.',
     geometry: 'Vue cotée : diamètres, entraxes et courses sont ceux du calcul.',
     kinematic: 'Schéma symbolique : les positions et les tailles ne sont pas à l’échelle, seuls les liens et les vitesses ont un sens.'
   };
@@ -642,6 +646,43 @@
     return ' L’écartement des organes sur leurs arbres est celui du calcul.';
   };
 
+  /**
+   * CE QUE LE DESSIN COURANT AFFIRME, d'après le contrat de fidélité.
+   *
+   * La phrase était écrite en dur, une par vue, et valait pour toutes les
+   * familles. Or ce n'est pas la vue qui décide de ce qu'on peut lire, c'est le
+   * couple FAMILLE × PRÉSENTATION : un cône vu de face se trace exactement, vu
+   * de biais son contour est approché ; les maillons d'une chaîne sont
+   * conventionnels partout. Le contrat le déclare, une fois, et cette phrase le
+   * lit — au lieu que trois endroits du code racontent trois choses.
+   *
+   * C'est le MOINS bon niveau du dessin qui est annoncé : c'est lui qui borne
+   * ce qu'on a le droit d'y relever.
+   */
+  ViewerToolbar.prototype._contractFidelity = function (rendered) {
+    var Contract = window.GearFidelityContract;
+    var model = rendered && (rendered.model || rendered.layout);
+    if (!Contract || !model || !model.stages) return '';
+    var seen = {}, drawn = [];
+    model.stages.forEach(function (entry) {
+      var family = entry.type === 'epicyclic' ? 'planetary' : entry.type;
+      (entry.wheels || []).forEach(function (wheel) {
+        drawn.push({ family: family, presentation: wheel.presentation || 'oblique' });
+      });
+      if (!(entry.wheels || []).length) drawn.push({ family: family, presentation: 'oblique' });
+      seen[family] = true;
+    });
+    var level = Contract.ofDrawing(this.currentView, drawn);
+    if (!level) return '';
+    var text = ' Représentation ' + Contract.label(level) + ' : ' + Contract.describe(level);
+    // Les conventions PROPRES à chaque famille présente : c'est là que se
+    // trouve ce qu'un lecteur risquerait de prendre pour une cote.
+    var notes = Object.keys(seen).map(function (family) { return Contract.noteOf(family); })
+      .filter(Boolean);
+    if (notes.length) text += ' ' + notes.join(' ');
+    return text;
+  };
+
   ViewerToolbar.prototype._renderFidelity = function (rendered) {
     var host = document.getElementById('viewerFidelity');
     if (!host) return;
@@ -649,6 +690,7 @@
     // dessin absent parlerait du précédent.
     if (!rendered) { host.textContent = ''; host.title = ''; host.hidden = true; host.classList.remove('has-derived'); return; }
     var text = FIDELITY[this.currentView] || '';
+    text += this._contractFidelity(rendered);
     text += this._systemFidelity(rendered);
     text += this._explodeFidelity(rendered);
     text += this._axialFidelity(rendered);

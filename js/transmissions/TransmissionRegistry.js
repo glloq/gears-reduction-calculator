@@ -203,12 +203,20 @@
     var input = s.inputMember || 'S', output = s.outputMember || 'C', fixed = s.fixed || 'R';
     return input !== output && input !== fixed && output !== fixed;
   }
+  // CE QUE LE REGISTRE DÉCLARE, ET CE QU'IL NE DÉCLARE PLUS.
+  //
+  // `geometricView` et `kinematicView` vivaient ici. Personne ne les lisait, et
+  // ils avaient fini par mentir : la chaîne y était marquée « unsupported »
+  // pendant que le visualiseur la dessinait dans les trois vues. Un registre de
+  // MÉCANIQUE n'a pas à dire ce qu'un dessin sait montrer — c'est le contrat de
+  // fidélité qui le déclare, à un seul endroit, et il est lu.
+  // Voir js/visualization/core/FidelityContract.js.
   var CAPABILITIES={
     spur:['evaluated','evaluated','evaluated',true],helical:['evaluated','evaluated','evaluated',true],internal:['evaluated','evaluated','evaluated',true],
     bevel:['evaluated','partial','partial',true],worm:['evaluated','unsupported','unsupported',true],planetary:['partial','partial','partial',true],
     belt:['unsupported','unsupported','unsupported',false],chain:['unsupported','unsupported','unsupported',false],rack:['evaluated','unsupported','unsupported',true]
   };
-  function register(definition) { if (!definition || !definition.id) throw new Error('Transmission id required');var c=CAPABILITIES[definition.id]||['unsupported','unsupported','unsupported',false];definition.capabilities=Object.freeze({ratio:'evaluated',geometry:'evaluated',forces:c[0],bending:c[1],contact:c[2],usesModule:c[3],manufacturing:'partial',geometricView:definition.id==='chain'?'unsupported':'partial',kinematicView:'evaluated'}); types[definition.id] = Object.freeze(definition); return definition; }
+  function register(definition) { if (!definition || !definition.id) throw new Error('Transmission id required');var c=CAPABILITIES[definition.id]||['unsupported','unsupported','unsupported',false];definition.capabilities=Object.freeze({ratio:'evaluated',geometry:'evaluated',forces:c[0],bending:c[1],contact:c[2],usesModule:c[3],manufacturing:'partial'}); types[definition.id] = Object.freeze(definition); return definition; }
   register(pair('spur', 'Engrenage droit', { minInput: 6, maxInput: 200, minOutput: 6, maxOutput: 200, maxRatio: 8 }, 0.97));
   register(pair('helical', 'Engrenage hélicoïdal', { minInput: 8, maxInput: 200, minOutput: 8, maxOutput: 200, maxRatio: 10 }, 0.98));
   register(pair('internal', 'Engrenage intérieur', { minInput: 10, maxInput: 80, minOutput: 20, maxOutput: 300, maxRatio: 12 }, 0.98, function () { return 1; }));

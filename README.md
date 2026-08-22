@@ -16,19 +16,21 @@ Application d'ingénierie statique pour rechercher, comparer et visualiser des t
 
 ## Supported transmissions
 
-| Transmission | Ratio | Geometry | Forces | Bending | Contact | Manufacturing | Geometric view | Kinematic view |
-|---|---|---|---|---|---|---|---|---|
-| Spur | evaluated | evaluated | evaluated | evaluated | evaluated | partial | partial | evaluated |
-| Helical | evaluated | evaluated | evaluated | evaluated | evaluated | partial | partial | evaluated |
-| Internal | evaluated | evaluated | evaluated | evaluated | evaluated | partial | partial | evaluated |
-| Bevel | evaluated | evaluated | evaluated | partial | partial | partial | partial | evaluated |
-| Worm | evaluated | evaluated | evaluated | unsupported | unsupported | partial | partial | evaluated |
-| Planetary (Willis) | evaluated | evaluated | partial | partial | partial | partial | partial | evaluated |
-| Belt | evaluated | evaluated | unsupported | unsupported | unsupported | partial | partial | evaluated |
-| Chain | evaluated | evaluated | unsupported | unsupported | unsupported | partial | unsupported | evaluated |
-| Rack and pinion | evaluated | evaluated | evaluated | unsupported | unsupported | partial | partial | evaluated |
+| Transmission | Ratio | Geometry | Forces | Bending | Contact | Manufacturing |
+|---|---|---|---|---|---|---|
+| Spur | evaluated | evaluated | evaluated | evaluated | evaluated | partial |
+| Helical | evaluated | evaluated | evaluated | evaluated | evaluated | partial |
+| Internal | evaluated | evaluated | evaluated | evaluated | evaluated | partial |
+| Bevel | evaluated | evaluated | evaluated | partial | partial | partial |
+| Worm | evaluated | evaluated | evaluated | unsupported | unsupported | partial |
+| Planetary (Willis) | evaluated | evaluated | partial | partial | partial | partial |
+| Belt | evaluated | evaluated | unsupported | unsupported | unsupported | partial |
+| Chain | evaluated | evaluated | unsupported | unsupported | unsupported | partial |
+| Rack and pinion | evaluated | evaluated | evaluated | unsupported | unsupported | partial |
 
-`partial` signifie qu'une méthode simplifiée ou une vue schématique est disponible avec des limites explicites. `unsupported` ne produit ni zéro fictif, ni `Infinity`, ni marge de sécurité implicite. Une contrainte SF/SH explicite rejette donc toute famille dont le contrôle correspondant n'est pas `evaluated`.
+`partial` signifie qu'une méthode simplifiée est disponible avec des limites explicites. `unsupported` ne produit ni zéro fictif, ni `Infinity`, ni marge de sécurité implicite. Une contrainte SF/SH explicite rejette donc toute famille dont le contrôle correspondant n'est pas `evaluated`.
+
+Ce tableau ne dit plus rien du DESSIN. Il l'a fait, et il avait fini par mentir : la chaîne y était déclarée non représentable pendant que le visualiseur la dessinait dans les trois vues. Ce qu'un dessin montre, et à quel titre, est déclaré par le contrat de fidélité — voir plus bas.
 
 La formulation de Willis accepte les membres solaire `S`, couronne `R` et porte-satellites `C` comme entrée, sortie et élément fixe; elle valide aussi `Zr = Zs + 2 Zp` et la condition d'espacement des satellites. Les filets de vis (1–6) sont une variable indépendante des plages de dents.
 
@@ -40,9 +42,27 @@ La recherche trie les candidats par proximité logarithmique avec la cible et ap
 
 Le mode automatique essaie les modules normalisés par ordre croissant et conserve le premier qui respecte les contraintes simplifiées. Il ne fait pas varier un module d'engrenage pour les courroies ou les chaînes. Les règles `standard`, `CNC`, `laser`, `printing3d` et `custom` sont appliquées selon la famille et publient les règles appliquées, échecs et recommandations; elles restent des recommandations de pré-dimensionnement.
 
-## Kinematic diagrams
+## Les trois vues, et ce que chacune promet
 
-Le renderer vectoriel local ne charge aucune ressource distante au runtime. Il possède des symboles distincts pour les transmissions et un modèle spatial d'arbres X/Y/Z partagé entre étages. Les relations parallèle, coaxiale, perpendiculaire et linéaire sont projetées en vues principale et orthogonale; sélection, zoom et déplacement restent disponibles. Ce schéma demeure une représentation cinématique et non une projection CAO.
+Le même mécanisme est représenté de trois façons, qui ne répondent pas à la même question.
+
+| Vue | Question | Point de vue |
+|---|---|---|
+| **Transmission** | À quoi ressemble réellement le mécanisme ? | onze états spatiaux |
+| **Dimensions** | Où sont les axes, diamètres, entraxes et encombrements ? | onze états spatiaux |
+| **Cinématique** | Qui entraîne quoi, à quelle vitesse, dans quel sens ? | aucun — c'est un schéma |
+
+Les onze états spatiaux sont la vue dépliée, six projections orthographiques (face et arrière, dessus et dessous, bout d'arbre et son opposé) et quatre isométries à 0°, 90°, 180° et 270°. La caméra isométrique tourne autour de la verticale du monde : elle ne passe jamais sous le mécanisme.
+
+La **cinématique n'a délibérément pas de point de vue**. C'est un schéma fonctionnel, pas une caméra : lui en donner un ferait croire qu'on peut y mesurer quelque chose.
+
+### Contrat de fidélité
+
+Un dessin technique n'a de valeur que si l'on sait ce qu'on a le droit d'y lire. Chaque famille déclare, pour chaque vue et chaque présentation, l'un de cinq niveaux — `exact`, `derived`, `conventional`, `schematic`, `unsupported`. La déclaration vit dans `js/visualization/core/FidelityContract.js`, la barre du visualiseur la lit, et les tests exigent qu'aucune famille n'y manque.
+
+Trois approximations sont ainsi nommées plutôt que tues : le contour apparent d'un cône vu de biais, la hauteur de dent d'une crémaillère vue de biais, et les maillons d'une chaîne — conventionnels partout, sur des pignons et un trajet qui, eux, sont ceux du calcul. L'hélice d'une roue hélicoïdale n'est figurée que dans la vue de face.
+
+Le renderer vectoriel local ne charge aucune ressource distante au runtime.
 
 ## Architecture
 
@@ -71,6 +91,13 @@ Les modèles de résistance sont des **engineering estimates**: Lewis et Hertz s
 
 ## Roadmap
 
-Priorités d'intégration restantes: tests navigateur avec un moteur graphique réel. Un test de fumée exécute déjà le script Worker de production, ses `importScripts` et les recherches rotative et linéaire dans un contexte Web Worker isolé. La crémaillère possède un solveur dédié et le layout maintient désormais des axes spatiaux partagés.
+Les tests navigateur existent : une suite Playwright couvre les trois vues, les onze états spatiaux, les deux styles de tracé, l'éclatement et l'animation, et une régression visuelle compare une quarantaine d'images de référence. Un test de fumée exécute le script Worker de production, ses `importScripts` et les recherches rotative et linéaire dans un contexte Web Worker isolé.
+
+    npm test              # tests unitaires
+    npm run test:e2e      # suite navigateur complète
+    npm run test:visual   # références visuelles seules
+    npm run test:visual:update   # réenregistrer après un changement VOULU
+
+Les références visuelles sont enregistrées par plateforme. Après un changement de dessin délibéré, il faut les réenregistrer ET les regarder : une référence mise à jour sans être vue ne prouve plus rien.
 
 À plus long terme: sélection catalogue de roulements, modèle thermique avec température, ISO 6336 vérifiée avec données normatives, longueurs catalogue étendues, export DXF/OpenSCAD autonome et macros FreeCAD, ainsi que cycloïdal, strain-wave et planétaires composés. STEP/STL restent différés: une géométrie de fabrication fiable dans le navigateur exige davantage qu'une extrusion illustrative.
