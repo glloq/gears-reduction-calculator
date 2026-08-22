@@ -76,8 +76,72 @@ test('every member carries how it is seen, in every view', () => {
       assert.ok(['face', 'profile', 'oblique'].includes(member.presentation), view + ' : ' + id);
       assert.ok([-1, 0, 1].includes(member.facing), view + ' : côté de ' + id);
       assert.ok(member.basis && member.basis.first && member.basis.second, view + ' : repère de ' + id);
-      // Un organe vu de face n'a pas d'inclinaison à l'écran.
-      if (member.presentation === 'face') assert.equal(member.axisAngleDeg, undefined, view + ' : ' + id);
+      // Un organe vu de face n'a pas d'inclinaison à l'écran — DANS UNE
+      // PROJECTION, où son axe pointe vers l'œil et n'a donc aucune image.
+      //
+      // La vue dépliée est un autre système : elle donne à chaque arbre une
+      // direction de tracé, y compris quand l'axe est vu en bout, pour que les
+      // organes qu'il porte s'étalent au lieu de se superposer en un point. Ce
+      // qu'elle publie alors est cette direction de RANGEMENT, dont un sommet
+      // de cône ou une course de crémaillère ont besoin pour se placer. La
+      // présentation continue de dire, elle, que l'organe se voit en disque.
+      if (view !== 'unfolded' && member.presentation === 'face') {
+        assert.equal(member.axisAngleDeg, undefined, view + ' : ' + id);
+      }
+    });
+  });
+});
+
+test('the unfolded view never leaves a shaft without a direction to lie along', () => {
+  // Le premier arbre n'avait aucun repli : vu en bout, il recevait la direction
+  // NULLE et tous ses organes se posaient au même point. Le renvoi qui le
+  // suivait, lui, gardait sa direction projetée — un renvoi conique à 90°
+  // dessinait donc ses deux arbres PARALLÈLES, et se lisait comme un montage
+  // coaxial. Le défaut n'apparaissait que dans un train COMPOSÉ, parce que
+  // c'est là que la vue choisie regarde l'entrée dans l'axe.
+  const scene = sceneOf([SPUR(15, 45), BEVEL()], 'unfolded');
+  Object.keys(scene.shafts).forEach(id => {
+    const along = scene.shaft(id).along;
+    assert.ok(Math.hypot(along[0], along[1]) > 1e-9, 'arbre ' + id + ' sans direction');
+  });
+  // Les vues `auto` et éclatée choisissent leur regard autrement : elles
+  // doivent tenir la même promesse, sans quoi le défaut reviendrait par là.
+  const solution = Engineering.analyzeSolution([SPUR(15, 45), BEVEL()]
+    .map(s => JSON.parse(JSON.stringify(s))), 6, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+  const graph = Graph.build(solution);
+  [{ view: 'auto' }, { view: 'unfolded', explode: 1 }].forEach(options => {
+    const seats = Spatial.frame(graph, options).seats.shafts;
+    Object.keys(seats).forEach(id => {
+      const along = seats[id].along;
+      assert.ok(Math.hypot(along[0], along[1]) > 1e-9,
+        JSON.stringify(options) + ' : arbre ' + id + ' sans direction');
+    });
+  });
+  // Et les deux axes du renvoi ne sont pas parallèles : c'est un renvoi.
+  const cones = Object.keys(scene.members).filter(id => /s1-/.test(id)).map(id => scene.member(id));
+  const angles = cones.map(m => Math.round(m.axisAngleDeg || 0));
+  assert.notEqual(angles[0], angles[1], 'le renvoi se dessine coaxial : ' + angles.join(' / '));
+});
+
+test('with nothing to unfold, a train seen end-on stays stacked', () => {
+  // L'autre moitié de la règle, et elle compte autant. Quand TOUS les axes sont
+  // parallèles, regarder dans l'axe est une vue de bout parfaitement honnête :
+  // deux roues d'un même arbre y sont concentriques parce qu'elles le sont
+  // vraiment. Leur inventer un écartement latéral pour « déplier » quelque
+  // chose qui n'est pas plié serait un mensonge de plus, pas un de moins.
+  const scene = sceneOf([SPUR(15, 45), SPUR(18, 54)], 'unfolded');
+  const perShaft = {};
+  Object.keys(scene.members).forEach(id => {
+    const member = scene.member(id);
+    (perShaft[member.shaftId] = perShaft[member.shaftId] || []).push(member);
+  });
+  const shared = Object.keys(perShaft).filter(id => perShaft[id].length > 1);
+  assert.ok(shared.length, 'aucun arbre ne porte deux roues');
+  shared.forEach(id => {
+    const seats = perShaft[id];
+    seats.slice(1).forEach(seat => {
+      assert.ok(Math.hypot(seat.x - seats[0].x, seat.y - seats[0].y) < 1e-9,
+        'arbre ' + id + ' : deux roues concentriques écartées de force');
     });
   });
 });

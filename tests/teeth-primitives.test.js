@@ -335,6 +335,50 @@ test('the level of detail follows the apparent size, not the true diameter', () 
   assert.equal(Primitives.levelFor(big, 1.6), face);
 });
 
+test('a helical gear looks helical from every side, and its hand can be read', () => {
+  // C'est ce qui NOMME la famille. L'hélice n'était figurée que dans la vue de
+  // FACE : de profil ou de biais — neuf des onze points de vue — la roue était
+  // dessinée exactement comme une roue droite, et deux mains opposées donnaient
+  // deux dessins identiques au pixel près.
+  const helical = hand => wheel({ kind: 'gear', teeth: 20, pitchD: 40, module: 2,
+    faceWidth: 20, helixAngle: 25, handedness: hand });
+  const stripes = (hand, presentation) => {
+    const built = Primitives.build(helical(hand),
+      { lod: LEVELS.INVOLUTE, presentation: presentation, apparent: { major: 1, minor: 0.577 } });
+    return built.rotor.filter(s => s.attrs && s.attrs.class === 'helix-stripe').map(s => s.attrs.d);
+  };
+  ['face', 'profile', 'oblique'].forEach(presentation => {
+    const right = stripes('right', presentation), left = stripes('left', presentation);
+    assert.ok(right.length, 'aucune marque d’hélice en présentation ' + presentation);
+    assert.notDeepEqual(right, left,
+      'les deux mains se dessinent pareil en présentation ' + presentation);
+  });
+  // Et une roue DROITE n'en porte aucune : la marque dit quelque chose, elle
+  // n'est pas un décor de toutes les roues.
+  const spur = Primitives.build(wheel({ kind: 'gear', teeth: 20, pitchD: 40, module: 2, faceWidth: 20 }),
+    { lod: LEVELS.INVOLUTE, presentation: 'oblique', apparent: { major: 1, minor: 0.577 } });
+  assert.equal(spur.rotor.filter(s => s.attrs && s.attrs.class === 'helix-stripe').length, 0);
+});
+
+test('the helix shows at the zoom where the wheel is already legible', () => {
+  // La pente des flancs n'était tracée qu'au zoom TECHNIQUE, c'est-à-dire
+  // jamais au cadrage où l'on regarde un train : la roue restait une roue
+  // droite tant qu'on ne l'avait pas isolée.
+  const helical = wheel({ kind: 'gear', teeth: 20, pitchD: 40, module: 2,
+    faceWidth: 20, helixAngle: 25, handedness: 'right' });
+  ['profile', 'oblique'].forEach(presentation => {
+    const built = Primitives.build(helical,
+      { lod: LEVELS.SIMPLIFIED, presentation: presentation, apparent: { major: 1, minor: 0.577 } });
+    assert.ok(built.rotor.some(s => s.attrs && s.attrs.class === 'helix-stripe'),
+      'hélice absente au zoom simplifié, en présentation ' + presentation);
+  });
+  // À la silhouette, en revanche, il n'y a plus que le contour : c'est le
+  // niveau où l'on dessine cent roues, et trois traits par roue les noieraient.
+  const silhouette = Primitives.build(helical,
+    { lod: LEVELS.SILHOUETTE, presentation: 'oblique', apparent: { major: 1, minor: 0.577 } });
+  assert.equal(silhouette.rotor.filter(s => s.attrs && s.attrs.class === 'helix-stripe').length, 0);
+});
+
 test('the helix hand reaches the drawing, for gears and for worms', () => {
   // La primitive lisait `helixHand`, que rien ne posait jamais : une hélice à
   // gauche se dessinait exactement comme une hélice à droite.

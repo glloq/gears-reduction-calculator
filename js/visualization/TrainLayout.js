@@ -367,11 +367,19 @@
     return [vector[0] * factor, vector[1] * factor, vector[2] * factor];
   }
 
-  function screenOffset(frame, direction, distance) {
+  function screenOffset(frame, direction, distance, fallback) {
     if (!direction) return [0, 0];
     var xy = Projection.project(direction, frame.view);
     var length = Math.hypot(xy[0], xy[1]);
-    if (!(length > 1e-9)) return [0, 0];
+    // Une direction sans image à l'écran ne dit plus de quel côté aller. En vue
+    // DÉPLIÉE, l'arbre en porte pourtant une : c'est celle le long de laquelle
+    // ses organes sont rangés, et c'est donc elle qui vaut. Sans ce repli, le
+    // sommet d'un cône dont l'axe pointe vers l'œil retombait sur le centre de
+    // la roue — à quarante millimètres de là où les deux axes se coupent.
+    if (!(length > 1e-9)) {
+      if (!fallback || frame.mode !== 'unfolded') return [0, 0];
+      return [fallback[0] * distance, fallback[1] * distance];
+    }
     var factor = frame.mode === 'unfolded' ? distance / length : distance;
     return [xy[0] * factor, xy[1] * factor];
   }
@@ -408,7 +416,9 @@
     var sign = sides && sides.sideA < 0 ? -1 : 1;
     var placed = frame.spatial.byId[input.id];
     var seat = seatOf(frame, input.id);
-    var reach = screenOffset(frame, placed ? scaled(placed.axis, sign) : [1, 0, 0], back1);
+    var drawn = alongOf(frame, input.id);
+    var reach = screenOffset(frame, placed ? scaled(placed.axis, sign) : [1, 0, 0], back1,
+      [drawn[0] * sign, drawn[1] * sign]);
     return { x: seat.x + reach[0], y: seat.y + reach[1],
       back1: back1, back2: back2,
       // Les DEMI-LONGUEURS d'axe à tracer, chacune dans son propre raccourci :

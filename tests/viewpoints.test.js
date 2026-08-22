@@ -268,3 +268,47 @@ test('two members of one shaft read alike from every azimuth', () => {
     });
   });
 });
+
+test('the unfolded view of a bent train never looks down its driving shaft', () => {
+  // La vue dépliée choisissait le regard qui montre le plus de DENTURE. Pour
+  // un train à axes parallèles c'est sans danger : ils sont tous vus en bout
+  // ensemble, et le dessin dit vrai — ils sont bien parallèles. Dès qu'il y a
+  // un RENVOI, le même compte élisait le regard aligné sur l'axe menant : deux
+  // roues y montraient leur denture, l'arbre qui les porte n'avait plus de
+  // direction, et le renvoi se dessinait parallèle à un axe invisible —
+  // c'est-à-dire lu comme un montage coaxial. Ce qu'on gagnait en denture, on
+  // le perdait en architecture.
+  const bent = [
+    { name: 'renvoi conique', axes: [{ direction: [1, 0, 0] }, { direction: [1, 0, 0] }, { direction: [0, 0, -1] }] },
+    { name: 'vis sans fin', axes: [{ direction: [1, 0, 0] }, { direction: [0, 1, 0] }] },
+    { name: 'renvoi à 45°', axes: [{ direction: [1, 0, 0] }, { direction: [0.7071, 0, -0.7071] }] }
+  ];
+  bent.forEach(({ name, axes }) => {
+    const view = Projection.engagement(axes);
+    assert.notEqual(Projection.presentation(axes[0].direction, view), 'face',
+      name + ' : la vue dépliée regarde dans l’axe menant (' + view.id + ')');
+  });
+
+  // Et l'inverse reste vrai : sans rien à déplier, la vue de bout garde tout
+  // son sens, et c'est celle qui montre le mieux les dentures.
+  const parallel = [{ direction: [1, 0, 0] }, { direction: [1, 0, 0] }, { direction: [1, 0, 0] }];
+  assert.equal(Projection.presentation(parallel[0].direction, Projection.engagement(parallel)), 'face');
+});
+
+test('a bent train draws its right angle as a right angle, unfolded', () => {
+  // Le bout du bout : ce que l'utilisateur voit. Deux étages, un renvoi à 90°,
+  // vue dépliée par défaut — les deux arbres doivent être perpendiculaires à
+  // l'écran, pas confondus.
+  const frame = SpatialLayout.frame(
+    MechanicalGraph.build({ stages: chain(), mechanical: MECH },
+      SceneBuilder.build({ inputRpm: 1, stages: chain() })), { view: 'unfolded' });
+  const alongs = Object.keys(frame.seats.shafts).map(id => frame.seats.shafts[id].along);
+  alongs.forEach(along => assert.ok(Math.hypot(along[0], along[1]) > 1e-9, 'arbre sans direction'));
+  const angle = (a, b) => {
+    const d = Math.abs(Math.atan2(a[1], a[0]) - Math.atan2(b[1], b[0])) * 180 / Math.PI % 180;
+    return d > 90 ? 180 - d : d;
+  };
+  const spread = alongs.map(a => angle(alongs[0], a));
+  assert.ok(Math.max.apply(null, spread) > 89.9,
+    'le renvoi à 90° se dessine à ' + Math.max.apply(null, spread).toFixed(1) + '°');
+});

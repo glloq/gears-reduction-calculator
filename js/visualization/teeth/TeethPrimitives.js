@@ -381,6 +381,79 @@
    * largeur de denture donne la longueur — les deux cotes que la vue de face ne
    * pouvait pas montrer.
    */
+  /**
+   * LA PENTE DES FLANCS d'une denture hélicoïdale, tracée par la tranche.
+   *
+   * C'est la convention du dessin d'ensemble : trois traits inclinés en travers
+   * de la largeur de denture disent l'angle d'hélice ET son sens, là où la
+   * roue est vue autrement que de face et où les stries du disque n'ont plus
+   * de place.
+   *
+   * Sans eux, une roue hélicoïdale vue de profil ou de biais est dessinée
+   * exactement comme une roue droite : ce qui NOMME la famille disparaît, et
+   * deux mains opposées donnent la même image. C'était le cas dans neuf des
+   * onze états spatiaux — la pente n'était tracée qu'au zoom le plus fort.
+   *
+   * @param {number} half   demi-largeur de denture, dans le repère local
+   * @param {number} reach  demi-hauteur apparente de la roue
+   */
+  /**
+   * L'hélice VUE PAR LA TRANCHE : la roue est un rectangle, et la convention
+   * du dessin technique y trace trois traits en travers de la hauteur,
+   * inclinés dans le sens de l'hélice. C'est un symbole, pas une génératrice
+   * — mais c'est CE symbole que lit un mécanicien, et il donne la main.
+   */
+  function helixAcross(wheel, half, reach) {
+    if (!Number.isFinite(wheel.helixAngle) || !wheel.helixAngle || !(half > 0.2)) return [];
+    var shear = Math.min(half * 0.8, handOf(wheel) * Math.tan(rad(wheel.helixAngle)) * half);
+    var stripes = '';
+    for (var i = -1; i <= 1; i++) {
+      var x = i * half * 0.62;
+      stripes += ' M ' + fixed(x - shear / 2) + ' ' + fixed(-reach) +
+        ' L ' + fixed(x + shear / 2) + ' ' + fixed(reach);
+    }
+    return [node('path', { class: 'helix-stripe', d: stripes.trim() })];
+  }
+
+  /**
+   * L'hélice VUE DE BIAIS.
+   *
+   * Une roue oblique montre deux choses : sa face avant, et le croissant de
+   * surface latérale qui reste visible derrière elle. L'hélice est sur la
+   * SURFACE LATÉRALE, pas sur la face — un trait posé au milieu de la face se
+   * lit comme une rainure, et c'est exactement l'erreur qu'on avait faite.
+   *
+   * Le croissant visible est celui que trace `obliqueCylinder` : du côté OPPOSÉ
+   * à la face avant, soit θ ≈ π autour de l'axe. On y échantillonne la vraie
+   * génératrice hélicoïdale — un point du rayon r à l'angle θ(t) qui avance de
+   * tan(β)·b/r sur la largeur de denture — et on la projette dans l'ellipse
+   * apparente. Ce n'est donc plus un symbole plaqué : c'est la ligne de flanc,
+   * en raccourci, et sa courbure s'inverse avec la main.
+   */
+  function helixOblique(wheel, r, thickness, seen) {
+    if (!Number.isFinite(wheel.helixAngle) || !wheel.helixAngle) return [];
+    var half = thickness / 2;
+    if (!(half > 0.2)) return [];
+    var flat = Math.max(0.2, r.tip * finite(seen.minor, 0.5));
+    var reach = r.tip * finite(seen.major, 1);
+    // L'avance angulaire sur la largeur de denture, telle qu'elle est vraiment :
+    // sur une roue large et petite elle dépasserait le demi-tour, où la
+    // génératrice passerait derrière — on s'arrête avant.
+    var span = Math.max(faceWidthOf(wheel, r), 1e-6) / Math.max(r.pitch, 1e-6);
+    var twist = Math.max(-2, Math.min(2, handOf(wheel) * Math.tan(rad(wheel.helixAngle)) * span));
+    var stripes = '';
+    for (var k = -1; k <= 1; k++) {
+      var base = Math.PI + k * 0.62;
+      for (var step = 0; step <= 6; step++) {
+        var s = -1 + step / 3;                       // −1 → +1 le long de l'axe
+        var angle = base + twist * s / 2;
+        stripes += (step ? ' L ' : ' M ') +
+          fixed(s * half + flat * Math.cos(angle)) + ' ' + fixed(reach * Math.sin(angle));
+      }
+    }
+    return [node('path', { class: 'helix-stripe', d: stripes.trim() })];
+  }
+
   function gearProfile(wheel, lod) {
     var r = radii(wheel);
     var b = faceWidthOf(wheel, r);
@@ -393,18 +466,10 @@
     // endroits pour un même trait, c'étaient deux occasions de diverger.
     // Le repère d'indexation fixe disparaît aussi : la phase d'une roue vue
     // autrement que de face est portée par le repère mobile de la pose.
-    if (lod >= LEVELS.TECHNICAL && Number.isFinite(wheel.helixAngle) && wheel.helixAngle) {
-      // Les flancs d'une denture hélicoïdale sont obliques, et leur pente donne
-      // le sens de l'hélice.
-      var shear = handOf(wheel) * Math.tan(rad(wheel.helixAngle)) * r.tip;
-      var stripes = '';
-      for (var i = -1; i <= 1; i++) {
-        var x = i * b / 3;
-        stripes += ' M ' + fixed(x - shear / 4) + ' ' + fixed(-r.tip) + ' L ' + fixed(x + shear / 4) + ' ' + fixed(r.tip);
-      }
-      shapes.push(node('path', { class: 'helix-stripe', d: stripes.trim() }));
-    }
-    return shapes;
+    // La pente des flancs se trace dès que la roue est lisible, et non au seul
+    // zoom technique : c'est elle qui distingue une roue hélicoïdale d'une roue
+    // droite, et trois traits n'encombrent rien.
+    return shapes.concat(helixAcross(wheel, b / 2, r.tip));
   }
 
   /**
@@ -583,8 +648,12 @@
     // pas, et se lisait indifféremment comme un axe, un diamètre ou un sens de
     // rotation. La phase d'une roue oblique est portée par son repère mobile,
     // celui que la pose pilote — et lui seul.
-    return obliqueCylinder(r.tip, thickness, seen,
+    var shapes = obliqueCylinder(r.tip, thickness, seen,
       { body: 'tooth-profile oblique-body', face: 'tooth-profile oblique-face', back: 'oblique-back' }, lod);
+    if (lod <= LEVELS.SILHOUETTE) return shapes;
+    // De biais aussi, la pente des flancs dit l'hélice et son sens. Sans elle,
+    // une roue hélicoïdale en isométrie est une roue droite.
+    return shapes.concat(helixOblique(wheel, r, thickness, seen));
   }
 
   /**

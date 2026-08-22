@@ -104,7 +104,9 @@
     }
 
     var rows = [
-      row('Score (coût)', 'min', 3, '', function (s) { return s.score && s.score.value; })
+      // La colonne porte déjà sa flèche de sens : « (coût) » n'ajoutait qu'une
+      // ambiguïté de plus sur ce qu'il fallait lire vers le haut.
+      row('Score global', 'min', 3, '', function (s) { return s.score && s.score.value; })
     ];
     if (anyRotary) {
       rows.push(row('Rapport', null, 4, ':1', function (s) { return s.mode === 'rotationTranslation' ? null : s.ratio; }));
@@ -232,6 +234,21 @@
       tools.className = 'compare-tools';
       tools.append(view, unpin);
       th.append(name, tools);
+      // §12 : la SILHOUETTE, au-dessus des nombres.
+      // Deux colonnes de chiffres proches peuvent décrire deux mécanismes qui
+      // n'ont rien de commun — un train à deux étages parallèles et un
+      // planétaire coaxial ont le même rapport et le même rendement. La forme
+      // le dit d'un coup d'œil, le tableau non. La vignette vient de la même
+      // chaîne de dessin que le visualiseur : elle ne peut pas le contredire.
+      var thumbnail = GearApp.visualization && GearApp.visualization.SolutionThumbnail
+        ? GearApp.visualization.SolutionThumbnail.markup(pin.solution) : '';
+      if (thumbnail) {
+        var figure = document.createElement('span');
+        figure.className = 'compare-thumb';
+        figure.title = 'Silhouette : surfaces primitives et trajets, aux positions du calcul. Sans denture — c’est une vignette, pas un plan.';
+        figure.innerHTML = thumbnail;
+        th.appendChild(figure);
+      }
       headRow.appendChild(th);
     });
     thead.appendChild(headRow);

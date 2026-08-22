@@ -335,11 +335,32 @@
    * la denture est visible, et l'on départage par ce qu'`auto` sait déjà : ne
    * rien confondre.
    */
+  /** Un axe peut arriver comme { direction } ou comme un vecteur nu. */
+  function directionOf(axis) { return (axis && axis.direction) || axis; }
+
   function engagement(axes) {
     var list = (axes || []).filter(Boolean);
     if (!list.length) return view('front');
+    // UN TRAIN COUDÉ NE SE REGARDE PAS DANS SON AXE MENANT.
+    //
+    // Le compte ci-dessous récompense les organes vus de FACE, où la denture se
+    // lit le mieux. Pour un train à axes parallèles c'est sans danger : ils
+    // sont tous vus en bout ensemble, et le dessin dit la vérité — ils sont
+    // coaxiaux ou parallèles. Dès qu'il y a un RENVOI, le même compte élit le
+    // regard qui aligne l'axe menant sur l'œil : deux roues y montrent leur
+    // denture, l'arbre qui les porte n'a plus de direction, et le renvoi qui
+    // suit se retrouve dessiné parallèle à un axe qu'on ne voit pas — c'est-à-
+    // dire lu comme un montage coaxial. Ce qu'on gagne en denture, on le perd
+    // en architecture, et l'architecture est ce qu'un dessin d'ensemble doit
+    // dire en premier.
+    var lead = directionOf(list[0]);
+    var bent = list.some(function (axis) {
+      var d = directionOf(axis);
+      return Math.abs(dot(unit(d), unit(lead))) < 1 - 1e-6;
+    });
     var best = null, score = null;
     VIEWS.forEach(function (candidate) {
+      if (bent && presentation(lead, candidate) === 'face') return;
       var exact = 0, faces = 0;
       list.forEach(function (axis) {
         var how = presentation(axis.direction || axis, candidate);

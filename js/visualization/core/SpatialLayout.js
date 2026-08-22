@@ -198,6 +198,23 @@
       return length < 1e-9 ? (fallback || [0, 0]) : [xy[0] / length, xy[1] / length];
     }
 
+    /** Y a-t-il seulement quelque chose à déplier ? Deux axes non parallèles. */
+    function bent(graph) {
+      var axes = graph.axes || [];
+      for (var i = 1; i < axes.length; i++) {
+        var a = axes[0].direction, b = axes[i].direction;
+        var dot = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
+        if (dot < 1 - 1e-6) return true;
+      }
+      return false;
+    }
+
+    /** Un axe vu EN BOUT : sa projection n'a plus de direction à l'écran. */
+    function flat(direction) {
+      var xy = Projection.project(direction, view);
+      return Math.hypot(xy[0], xy[1]) < 1e-9;
+    }
+
     /**
      * La direction de repli d'un axe vu en bout.
      *
@@ -237,7 +254,26 @@
 
     var first = graph.shafts[0];
     if (!first) return { view: view, byId: byId, shafts: shafts };
-    draw(first, [0, 0], direction2d(graph.byAxis[first.axisId].direction));
+    // LE PREMIER ARBRE VU EN BOUT : replier, ou empiler ?
+    //
+    // Il n'avait aucun repli : vu en bout il recevait la direction NULLE, et
+    // tous les organes qu'il porte se posaient au même point. Les deux réponses
+    // possibles sont justes, chacune dans son cas :
+    //
+    // — si TOUS les axes sont parallèles, regarder dans l'axe est une vue de
+    //   bout parfaitement honnête. Deux roues d'un même arbre y sont
+    //   concentriques parce qu'elles le sont vraiment, et leur inventer un
+    //   écartement latéral serait un mensonge.
+    // — s'il y a un RENVOI, empiler efface ce qu'on est venu voir : le second
+    //   axe, lui, garde son image, et les deux se retrouvent parallèles à
+    //   l'écran. Un renvoi à 90° se lit alors comme un montage coaxial.
+    //
+    // La vraie réponse au second cas est en amont, dans le choix du regard :
+    // `Projection.engagement` ne retient plus une vue prise dans l'axe menant
+    // d'un train coudé. Ce repli est la ceinture qui va avec cette bretelle —
+    // les vues `auto` et éclatée choisissent, elles, autrement.
+    draw(first, [0, 0], direction2d(graph.byAxis[first.axisId].direction,
+      bent(graph) ? [1, 0] : [0, 0]));
 
     graph.mechanisms.forEach(function (mechanism) {
       var input = mechanism.inputPort, output = mechanism.outputPort;
@@ -248,11 +284,22 @@
 
       var inAxis = graph.byAxis[graph.byShaft[input.shaftId].axisId];
       var outAxis = graph.byAxis[target.axisId];
-      // Si l'axe mené est vu en bout, ses organes se superposent ; s'il est
-      // visible mais que l'axe MENANT ne l'est pas, on garde tout de même
-      // l'angle vrai entre les deux, faute de quoi un renvoi à 90° se lirait
-      // comme un montage coaxial.
-      var along = direction2d(outAxis.direction, turned(host.along, inAxis, outAxis));
+      // L'ANGLE VRAI PRIME SUR L'IMAGE DÈS QUE L'IMAGE MANQUE.
+      //
+      // La vue dépliée prend ses directions de la projection — c'est ce qui la
+      // rend lisible — mais elle promet les ANGLES VRAIS. Or il suffit qu'un
+      // seul des deux axes soit vu en bout pour que la projection cesse de
+      // pouvoir tenir cette promesse : elle ne donne plus qu'une direction sur
+      // deux, et l'autre est prise ailleurs. Les deux se retrouvaient alors
+      // parallèles à l'écran, et un renvoi conique à 90° se lisait comme un
+      // montage coaxial — exactement le défaut que le repli devait empêcher,
+      // et qui revenait par l'autre bout dès qu'un étage précédait le renvoi.
+      //
+      // Dès que l'un des deux manque à l'appel, on reprend donc l'angle vrai à
+      // partir de l'arbre amont, pour les deux.
+      var along = flat(inAxis.direction)
+        ? turned(host.along, inAxis, outAxis)
+        : direction2d(outAxis.direction, turned(host.along, inAxis, outAxis));
 
       // L'écart entre les deux axes se lit en DEUX termes, et les confondre
       // était une erreur : l'un dit à quelle hauteur de l'arbre amont le

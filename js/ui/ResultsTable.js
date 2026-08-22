@@ -1,8 +1,14 @@
 // Structured Solution table: sorting, filtering, pagination, configurable columns and CSV.
 (function (GearApp) {
   'use strict';
+  // « Score (coût) » demandait au lecteur de deviner lequel des deux mots
+  // l'emportait : un score se lit vers le haut, un coût vers le bas. C'est un
+  // COÛT — moyenne pondérée de huit pénalités entre 0 et 1 —, et le sens est
+  // dit une fois, en toutes lettres, plutôt que sous-entendu par un mot entre
+  // parenthèses.
+  var SCORE_HINT = 'Score global : moyenne pondérée des huit critères (écart, taille, pertes, risque mécanique, étages, bruit, fabrication, coût). Plus bas = mieux.';
   var COLUMNS = [
-    { id: 'score', label: 'Score (coût)' }, { id: 'architecture', label: 'Architecture' },
+    { id: 'score', label: 'Score global', hint: SCORE_HINT }, { id: 'architecture', label: 'Architecture' },
     { id: 'ratio', label: 'Rapport' }, { id: 'error', label: 'Erreur %' },
     { id: 'stages', label: 'Étages' }, { id: 'efficiency', label: 'Rendement' },
     { id: 'dimensions', label: 'Dimensions' }, { id: 'rpm', label: 'RPM sortie' },
@@ -35,6 +41,7 @@
     if (!this._table) return; var row = this._table.querySelector('thead tr'), self = this; if (!row) return; row.innerHTML = '';
     COLUMNS.filter(function (column) { return self._isVisible(column.id); }).forEach(function (column) {
       var th = document.createElement('th'); th.textContent = column.label; th.dataset.col = column.id;
+      if (column.hint) th.title = column.hint;
       if (column.sortable !== false) { th.className = 'sortable-th'; th.onclick = function () { self._sortDirection = self._sortColumn === column.id && self._sortDirection === 'asc' ? 'desc' : 'asc'; self._sortColumn = column.id; self._render(); }; }
       row.appendChild(th);
     });

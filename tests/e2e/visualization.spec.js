@@ -266,7 +266,12 @@ test('each view says what it draws to scale, and what it only suggests (§22, §
   await expect(badge).toContainText('pas à l’échelle');
 
   await showView(page, 'teeth');
-  await expect(badge).toContainText('à l’échelle réelle');
+  // La phrase ne dit plus « à l'échelle réelle » d'autorité : elle NOMME le
+  // niveau que le contrat de fidélité déclare pour ce qui est réellement
+  // dessiné. Une roue droite vue de biais est `exact` — c'est donc « à
+  // l'échelle », et la phrase qui va avec dit ce qu'on a le droit d'y mesurer.
+  await expect(badge).toContainText('Représentation à l’échelle');
+  await expect(badge).toContainText('ce qui s’y mesure est la pièce');
   await expect(badge).not.toHaveClass(/has-derived/);
   // §54 : la phrase disait une bonne fois « la longueur des arbres est
   // schématique ». Elle l'était faute d'abscisses ; elle ne l'est plus
@@ -620,6 +625,7 @@ test('the dimensioned view draws what it sees, not always a circle (§7 de l’a
       // toutes les deux : c'est ce que la vue affirmait en les dessinant
       // toutes deux en cercle.
       wheel: shape('.geometry-stage[data-stage="1"] .role-output'),
+      worm: shape('.geometry-stage[data-stage="1"] .role-input'),
       pinion: shape('.geometry-stage[data-stage="0"] .role-input'),
       needles: svg.querySelectorAll('.index-rotor').length,
       phases: svg.querySelectorAll('.phase-mark').length,
@@ -637,9 +643,15 @@ test('the dimensioned view draws what it sees, not always a circle (§7 de l’a
     // segment, et un arbre vu en bout est une croix — jamais un trait mort.
     seen[view].axes.forEach(length => expect(length, view + ' : axe de longueur nulle').toBeGreaterThan(0.5));
   }
-  // Vue dépliée : la vis est vue de côté, donc sa roue est vue par la tranche.
-  expect(seen.unfolded.wheel).toBe('profile');
-  expect(seen.unfolded.pinion).toBe('circle');
+  // Vue dépliée : la vis et sa roue ont des axes PERPENDICULAIRES, elles ne
+  // peuvent donc pas se présenter de la même façon. Laquelle des deux se voit
+  // de face dépend du regard retenu — et ce regard a changé le jour où la vue
+  // dépliée a cessé de se placer dans l'axe menant d'un train coudé. Ce qui ne
+  // change pas, et qui est le sujet de ce test, c'est qu'elles diffèrent : les
+  // dessiner toutes deux en cercle était l'erreur d'origine.
+  expect(seen.unfolded.wheel).not.toBe(seen.unfolded.worm);
+  expect([seen.unfolded.wheel, seen.unfolded.worm].filter(shape => shape === 'circle').length,
+    'la vis et sa roue toutes les deux de face').toBeLessThan(2);
   // De biais, plus un seul cercle : des ellipses, et le repère radial cède la
   // place à un repère de phase.
   expect(seen.iso.wheel).toBe('ellipse');
