@@ -730,8 +730,11 @@
     // §17 : le vocabulaire des badges suit la question posée — « couple
     // maximum » quand c'est le couple qu'on poussait, pas « recommandée ».
     var intent = this.session ? this.session.intent : null;
-    var annotation = Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences,
-      this.session ? this.session.technologySelection : null);
+    // L'explorateur a déjà rendu le verdict sur le vivier entier — c'est lui
+    // qui trie avec. Le recalculer ici, c'est risquer d'en obtenir un autre.
+    var annotation = (info && info.decision) ||
+      Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences,
+        this.session ? this.session.technologySelection : null);
     // La bande d'identité, au-dessus du dessin, doit porter le MÊME badge que la
     // carte : deux calculs donneraient deux verdicts pour une seule solution.
     this._annotation = annotation;

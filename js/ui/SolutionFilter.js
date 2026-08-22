@@ -51,8 +51,32 @@
 
   // Comparateurs de tri. Chacun reçoit des paires {solution, index} ;
   // l'égalité retombe sur l'index d'origine pour un ordre déterministe.
+  //
+  // DEUX CLASSEMENTS COHABITAIENT, ET L'ÉCRAN MONTRAIT LE MAUVAIS.
+  //
+  // `solution.score.value` est l'indice ABSOLU d'Engineering : une moyenne
+  // pondérée de huit pénalités, calculée solution par solution, sans rien
+  // savoir du vivier ni de ce qui a été demandé. `SolutionEvaluator`, lui,
+  // construit le classement DÉCISIONNEL : normalisé sur le vivier courant,
+  // pondéré par les priorités, restreint au front de Pareto pour élire la
+  // recommandée. Ce sont deux grandeurs, et « Trier par → Recommandé »
+  // utilisait la première pour nommer la seconde. La première carte de la
+  // liste pouvait donc ne pas être celle qui portait le badge ★.
+  //
+  // Le tri « recommandé » lit maintenant le rang décisionnel, transmis par
+  // l'explorateur dans `criteria.decision`. L'indice technique reste
+  // disponible, sous son nom.
   var comparators = {
-    score: function (a, b) { return a.solution.score.value - b.solution.score.value; },
+    recommended: function (a, b, decision) {
+      var rank = decision && decision.rank;
+      if (!rank) return technicalIndex(a.solution) - technicalIndex(b.solution);
+      var ra = rank[a.index], rb = rank[b.index];
+      if (!Number.isFinite(ra) && !Number.isFinite(rb)) return 0;
+      if (!Number.isFinite(ra)) return 1;
+      if (!Number.isFinite(rb)) return -1;
+      return ra - rb;
+    },
+    technical: function (a, b) { return technicalIndex(a.solution) - technicalIndex(b.solution); },
     error: function (a, b) { return a.solution.errorPercent - b.solution.errorPercent; },
     efficiency: function (a, b) { return b.solution.efficiency - a.solution.efficiency; },
     compactness: function (a, b) { return volume(a.solution) - volume(b.solution); },
@@ -72,6 +96,12 @@
     torque: function (a, b) { return highestFirst(a.solution.outputTorqueNm, b.solution.outputTorqueNm); },
     ratio: function (a, b) { return highestFirst(a.solution.ratio, b.solution.ratio); }
   };
+
+  /** L'indice technique, quand il existe : une solution sans note passe après. */
+  function technicalIndex(solution) {
+    var value = solution && solution.score && solution.score.value;
+    return Number.isFinite(value) ? value : Infinity;
+  }
 
   /** Plus grand d'abord ; les valeurs non calculées ferment la marche. */
   function highestFirst(a, b) {
@@ -119,8 +149,11 @@
       return true;
     });
 
-    var comparator = comparators[criteria.sort] || comparators.score;
-    view.sort(function (a, b) { return comparator(a, b) || a.index - b.index; });
+    // `score` reste accepté : c'est le nom qu'a porté le tri « Recommandé »
+    // avant qu'il ne désigne réellement le classement décisionnel.
+    var wanted = criteria.sort === 'score' ? 'recommended' : criteria.sort;
+    var comparator = comparators[wanted] || comparators.recommended;
+    view.sort(function (a, b) { return comparator(a, b, criteria.decision) || a.index - b.index; });
     return view;
   }
 

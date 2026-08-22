@@ -108,7 +108,7 @@
     var self = this;
     // Une exploration classe par la performance poursuivie : « recommandé »
     // répondrait à une autre question que celle qui a été posée.
-    this._defaultSort = (options && options.sort) || 'score';
+    this._defaultSort = (options && options.sort) || 'recommended';
     this._pool = solutions || [];
     this._pool.forEach(function (solution) {
       if (solution.uid === undefined) {
@@ -271,7 +271,7 @@
   SolutionExplorer.prototype._resetCriteria = function () {
     NUMERIC_FIELDS.forEach(function (id) { var input = el(id); if (input) input.value = ''; });
     var sort = el('refine_sort');
-    if (sort) sort.value = this._defaultSort || 'score';
+    if (sort) sort.value = this._defaultSort || 'recommended';
     this._disabledTypes = {};
     if (this.filters) this.filters.render();
   };
@@ -290,7 +290,7 @@
       maxLength: optionalNumber('refine_length_max'),
       maxStages: optionalNumber('refine_stages_max'),
       types: enabled.length === allTypes.length ? null : enabled,
-      sort: (el('refine_sort') && el('refine_sort').value) || 'score'
+      sort: (el('refine_sort') && el('refine_sort').value) || 'recommended'
     };
   };
 
@@ -338,16 +338,36 @@
     this._debounce = setTimeout(function () { self._publish(false); }, 120);
   };
 
+  /**
+   * LE VERDICT, CALCULÉ UNE FOIS, SUR LE VIVIER ENTIER.
+   *
+   * Il l'était deux fois : ici pour trier — par l'indice technique — et dans
+   * l'espace de travail pour poser les badges, par le classement décisionnel.
+   * Deux calculs, deux réponses, une seule question. Il est fait une fois, sur
+   * le vivier complet (un badge ne doit pas dépendre des filtres actifs), et
+   * les deux consommateurs lisent le même objet.
+   */
+  SolutionExplorer.prototype._assess = function () {
+    var Evaluator = GearApp.requirements && GearApp.requirements.SolutionEvaluator;
+    if (!Evaluator || !this._pool.length) return null;
+    var session = this.workbench && this.workbench.session;
+    return Evaluator.evaluate(this._pool, session ? session.preferences : null,
+      session ? session.technologySelection : null);
+  };
+
   SolutionExplorer.prototype._publish = function (fresh) {
     var self = this;
-    var view = GearSolutionFilter.apply(this._pool, this._criteria());
+    var decision = this._assess();
+    var criteria = this._criteria();
+    criteria.decision = decision;
+    var view = GearSolutionFilter.apply(this._pool, criteria);
     var solutions = view.map(function (item) { return item.solution; });
     var indices = view.map(function (item) { return item.index; });
 
     // keepResults : un affinage qui vide la vue ne doit pas masquer l'espace
     // de travail (la barre de filtres doit rester accessible).
-    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, diagnosis: this._diagnosis, session: this.session, keepResults: this._pool.length > 0 });
-    if (this.resultsTable) this.resultsTable.display(solutions, this._params, indices);
+    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, diagnosis: this._diagnosis, session: this.session, decision: decision, keepResults: this._pool.length > 0 });
+    if (this.resultsTable) this.resultsTable.display(solutions, this._params, indices, decision);
 
     var count = el('refineCount');
     if (count) {

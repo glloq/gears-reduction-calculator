@@ -461,7 +461,11 @@
             <div class="refine-head">
               <span class="refine-title">Affiner les résultats</span>
               <label class="sub refine-sort-label">Trier par<select id="refine_sort">
-                <option value="score">Recommandé</option>
+                <!-- « Recommandé » désigne le classement DÉCISIONNEL, celui qui
+                     élit la carte ★ : normalisé sur le vivier, pondéré par les
+                     priorités. L'indice technique d'Engineering est une autre
+                     grandeur — absolue, sans priorités —, et il a son entrée. -->
+                <option value="recommended">Recommandé</option>
                 <option value="error">Précision</option>
                 <option value="efficiency">Rendement</option>
                 <option value="compactness">Encombrement</option>
@@ -469,6 +473,7 @@
                 <option value="stages">Simplicité</option>
                 <option value="torque">Couple de sortie</option>
                 <option value="ratio">Rapport</option>
+                <option value="technical">Indice technique</option>
               </select></label>
               <button id="refineResetBtn" class="btn-small" type="button" title="Réinitialiser les filtres">Réinitialiser</button>
             </div>

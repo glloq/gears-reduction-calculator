@@ -53,8 +53,12 @@
       metric: function (s) { return (s.stages || []).length; } },
     { key: 'outputForce', label: 'Force de sortie', unit: 'N', category: 'performance', better: 'higher', defaultKind: 'min', linear: true,
       metric: function (s) { return s.outputForceN; } },
+    // `linearSpeedMmMin` est le nom que porte la GÉOMÉTRIE d'un étage ; une
+    // solution, elle, publie `outputLinearSpeedMmMin`. Le critère lisait le
+    // premier sur la seconde et ne récoltait donc jamais qu'`undefined` : la
+    // préférence de vitesse linéaire était sans effet, silencieusement.
     { key: 'linearSpeed', label: 'Vitesse linéaire', unit: 'mm/min', category: 'performance', better: null, defaultKind: 'range', linear: true,
-      metric: function (s) { return s.linearSpeedMmMin; } },
+      metric: function (s) { return s.outputLinearSpeedMmMin; } },
     { key: 'centerDistance', label: 'Entraxe', unit: 'mm', category: 'architecture', better: null, defaultKind: 'range',
       metric: function (s) { return s.dimensions && s.dimensions.maxCenterDistance; } },
 
