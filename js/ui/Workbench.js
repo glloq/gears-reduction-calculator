@@ -735,6 +735,10 @@
     var annotation = (info && info.decision) ||
       Evaluator.evaluate(info && info.pool ? info.pool : this.solutions, preferences,
         this.session ? this.session.technologySelection : null);
+    // Le verdict COMPLET — gains, sacrifices, incertitude, alertes triées —
+    // vient de la même couche. La carte ne calcule plus rien elle-même.
+    var assessment = (info && info.assessment) || null;
+    this._assessment = assessment;
     // La bande d'identité, au-dessus du dessin, doit porter le MÊME badge que la
     // carte : deux calculs donneraient deux verdicts pour une seule solution.
     this._annotation = annotation;
@@ -794,6 +798,7 @@
 
       var deltas = reference && s !== reference ? deltaMarkup(s, reference, linear) : {};
       var referenceMark = s === reference ? '<span class="solution-reference">— référence —</span>' : '';
+      var verdict = assessment ? assessment.byIndex[poolIndexOf(position)] : null;
 
       tile.innerHTML =
         '<header class="solution-card-head">' + badgeMarkup + origin +
@@ -807,7 +812,8 @@
         // §22 : la carte est entièrement cliquable, au clavier compris. Un
         // bouton « Voir » en pied faisait exactement la même chose, et une
         // seconde action pour un seul geste se lit comme deux choix possibles.
-        (why ? '<p class="solution-why">' + why + '</p>' : '');
+        (why ? '<p class="solution-why">' + why + '</p>' : '') +
+        tradeMarkup(verdict) + alertMarkup(verdict) + uncertaintyMarkup(verdict);
 
       function select() {
         self.selected = index;
@@ -852,6 +858,62 @@
     'Force': { read: function (s) { return s.outputForceN; }, digits: 1, unit: ' N', better: 'up' },
     'Ø pignon': { read: function (s) { return s.dimensions && s.dimensions.maxDiameter; }, digits: 1, unit: ' mm', better: 'down' }
   };
+
+  /**
+   * §9 : CE QU'ON GAGNE, ET CE QU'ON PERD.
+   *
+   * La carte disait « Plus compacte. » et s'arrêtait là. Une aide au choix doit
+   * répondre à deux questions : pourquoi la prendre, et qu'est-ce qu'on perd en
+   * la prenant. Les deux viennent du même endroit — l'évaluation —, la carte
+   * ne fait que les écrire.
+   */
+  function tradeMarkup(verdict) {
+    if (!verdict || (!verdict.strengths.length && !verdict.compromises.length)) return '';
+    function line(items, css, title) {
+      if (!items.length) return '';
+      return '<span class="' + css + '"><small>' + title + '</small>' +
+        items.slice(0, 3).map(function (item) { return '<em>' + escapeText(item.text) + '</em>'; }).join('') + '</span>';
+    }
+    return '<p class="solution-trades">' +
+      line(verdict.strengths, 'trade-gain', 'Gagne') +
+      line(verdict.compromises, 'trade-loss', 'Perd') + '</p>';
+  }
+
+  /**
+   * §13/§20 : trois alertes s'affichaient, sans dire qu'il en existait
+   * d'autres, et un compteur ne distingue pas un refus d'une réserve. Les plus
+   * graves d'abord, et le reste est annoncé.
+   */
+  function alertMarkup(verdict) {
+    var alerts = verdict && verdict.alerts;
+    if (!alerts || !alerts.list.length) return '';
+    var shown = alerts.list.slice(0, 3).map(function (entry) {
+      return '<span class="solution-alert level-' + entry.level + '" title="' +
+        escapeText(entry.advice || '') + '">' + entry.mark + ' ' + escapeText(entry.label) + '</span>';
+    }).join('');
+    var rest = alerts.list.length - 3;
+    return '<p class="solution-alerts">' + shown +
+      (rest > 0 ? '<span class="solution-alert-more">+ ' + rest + ' autre' + (rest > 1 ? 's' : '') + '</span>' : '') +
+      '</p>';
+  }
+
+  /**
+   * §5/§11 : ce qui n'a PAS été vérifié. Une courroie sans contrôle de flexion
+   * valait 0,5 dans le front — ni avantage ni pénalité, et surtout invisible.
+   */
+  function uncertaintyMarkup(verdict) {
+    var uncertainty = verdict && verdict.uncertainty;
+    if (!uncertainty || !uncertainty.mechanical.length) return '';
+    return '<p class="solution-uncertainty" title="Non vérifié n’est pas conforme.">· ' +
+      escapeText(uncertainty.mechanical.slice(0, 2).join(', ')) +
+      (uncertainty.mechanical.length > 2 ? ' (+' + (uncertainty.mechanical.length - 2) + ')' : '') +
+      ' non évalué' + (uncertainty.mechanical.length > 1 ? 's' : '') + '</p>';
+  }
+
+  function escapeText(text) {
+    return String(text == null ? '' : text)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
 
   function deltaMarkup(solution, reference) {
     var out = {};

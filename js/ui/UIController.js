@@ -4,6 +4,27 @@
 (function (GearApp) {
 
   /**
+   * §21 : la classe visuelle d'un rendement.
+   *
+   * Une couleur de résultat doit dépendre des LIMITES du moteur quand il existe
+   * une limite physique, de la DEMANDE quand il existe une contrainte, et
+   * rester neutre sinon. Le barème 95/90 codé en dur faisait passer pour
+   * excellente une solution qui ratait l'exigence de l'utilisateur.
+   */
+  function efficiencyClass(efficiency, asked) {
+    if (!Number.isFinite(efficiency)) return 'unknown';
+    var wanted = asked && asked.constraints && asked.constraints.minimumEfficiency;
+    if (Number.isFinite(wanted)) {
+      if (efficiency < wanted) return 'warning';
+      return efficiency >= wanted * 1.02 ? 'excellent' : 'good';
+    }
+    var floor = (window.GearEngineering && GearEngineering.LIMITS && GearEngineering.LIMITS.efficiency) || 0.8;
+    if (efficiency < floor) return 'warning';
+    return efficiency > 0.95 ? 'excellent' : efficiency > 0.90 ? 'good' : 'neutral';
+  }
+
+
+  /**
    * Une valeur de service peut être NON RENSEIGNÉE : une chaîne analysée sans
    * régime n'a ni vitesse de sortie ni couple. `toFixed` sur un `null` faisait
    * tomber la carte entière, et avec elle tout ce qui suivait dans la page.
@@ -201,7 +222,14 @@
       return '<span class="type-badge ' + id + '">' + registry.get(id).nomCourt + '</span>';
     }).join(' ');
 
-    var rendClass = solution.efficiency > 0.95 ? 'excellent' : solution.efficiency > 0.90 ? 'good' : 'warning';
+    // §21 : LA COULEUR SUIT LA DEMANDE, PAS UN BARÈME MAISON.
+    //
+    // 95 % était « excellent » et 90 % « bon », quoi qu'on ait demandé. Un
+    // utilisateur qui impose 98 % voyait donc en vert une solution à 96 % qui
+    // ne répond pas à sa demande. Quand une exigence existe, c'est elle qui
+    // décide ; sinon on retombe sur les seuils du moteur, qui, eux, décrivent
+    // une physique et non une intention.
+    var rendClass = efficiencyClass(solution.efficiency, this._lastSearchParams);
 
     var sf = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.bending&&stage.bending.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
     var sh = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.contact&&stage.contact.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);

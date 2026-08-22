@@ -121,7 +121,8 @@ test('the first result is the recommended one, in the cards and in the table (§
   const forced = await page.evaluate(() => {
     const explorer = window.GearApp._explorer;
     const pool = explorer._pool;
-    const decision = explorer._assess();
+    const assessment = explorer._assess();
+    const decision = assessment && assessment.decision;
     if (!decision || pool.length < 2) return null;
     // Rang 1 → pire indice, dernier rang → meilleur indice.
     pool.forEach((solution, index) => {
@@ -145,4 +146,89 @@ test('the first result is the recommended one, in the cards and in the table (§
   // Et les cartes disent la même chose que le tableau.
   await page.locator('#cardsViewBtn').click();
   await expect(page.locator('.solution-card').first()).toHaveClass(/recommended/);
+});
+
+test('a card says what it gains AND what it costs, with its alerts ranked (§9, §13, §20)', async ({ page }) => {
+  await search(page);
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
+
+  const seen = await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll('.solution-card'));
+    return cards.map(card => ({
+      recommended: card.classList.contains('recommended'),
+      gains: Array.from(card.querySelectorAll('.trade-gain em')).map(node => node.textContent),
+      losses: Array.from(card.querySelectorAll('.trade-loss em')).map(node => node.textContent),
+      alerts: Array.from(card.querySelectorAll('.solution-alert')).map(node => ({
+        level: (node.className.match(/level-(\w+)/) || [])[1], text: node.textContent.trim() })),
+      more: !!card.querySelector('.solution-alert-more'),
+      unknown: !!card.querySelector('.solution-uncertainty')
+    }));
+  });
+
+  // La référence ne se compare pas à elle-même ; les autres, si.
+  const reference = seen.filter(card => card.recommended);
+  expect(reference.length).toBe(1);
+  expect(reference[0].gains.length + reference[0].losses.length).toBe(0);
+  const others = seen.filter(card => !card.recommended);
+  expect(others.length).toBeGreaterThan(0);
+  expect(others.some(card => card.gains.length || card.losses.length),
+    'aucune alternative ne dit ce qu’elle gagne ni ce qu’elle perd').toBe(true);
+  // Un écart porte un signe et une unité, pas un nombre nu.
+  others.forEach(card => card.gains.concat(card.losses).forEach(text => {
+    expect(text).toMatch(/^[+−]/);
+  }));
+
+  // Les alertes se lisent par gravité : un danger ne peut pas suivre une réserve.
+  seen.forEach(card => {
+    const levels = card.alerts.map(alert => alert.level);
+    const lastDanger = levels.lastIndexOf('danger');
+    const firstWarning = levels.indexOf('warning');
+    if (lastDanger >= 0 && firstWarning >= 0) expect(lastDanger).toBeLessThan(firstWarning);
+    // Jamais plus de trois, et le reste est annoncé plutôt que tu.
+    expect(card.alerts.length).toBeLessThanOrEqual(3);
+  });
+
+  // Ce qui n'a pas été vérifié se lit : la recherche par défaut ne fournit pas
+  // de couple, donc aucun contrôle mécanique n'a eu lieu.
+  expect(seen.some(card => card.unknown), 'aucune carte ne signale ses contrôles manquants').toBe(true);
+});
+
+test('an alternative keeps its badge all the way to the drawing (§25)', async ({ page }) => {
+  // Le badge d'alternative ne s'affichait au-dessus du dessin que pour la
+  // recommandée : on cliquait « Meilleur rendement », on arrivait sur le
+  // dessin, et plus rien ne disait POURQUOI on regardait celle-là.
+  //
+  // Une recherche ordinaire ne produit pas toujours d'alternative — un front
+  // de Pareto peut n'avoir qu'un point. On pose donc le badge dans le verdict
+  // lui-même, puis on redessine : ce qui est vérifié ici, c'est que la bande
+  // d'identité LIT le même verdict que la carte, pas que le moteur l'ait
+  // produit — cela, les tests unitaires s'en chargent.
+  await search(page);
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
+
+  const label = await page.evaluate(() => {
+    const explorer = window.GearApp._explorer;
+    const workbench = window.GearApp._workbench;
+    if (explorer._pool.length < 2) return null;
+    const assessment = explorer._assess();
+    // La deuxième du vivier devient « Meilleur rendement ».
+    const target = assessment.decision.recommended === 1 ? 0 : 1;
+    assessment.decision.byIndex[target] = ['efficient'];
+    assessment.byIndex[target].badges = ['efficient'];
+    workbench.renderSolutions(explorer._pool, explorer._pool.map((_, i) => i),
+      { pool: explorer._pool, decision: assessment.decision, assessment: assessment });
+    window.__target = target;
+    return null;
+  });
+  void label;
+
+  const alternative = page.locator('.solution-card:not(.recommended)')
+    .filter({ has: page.locator('.recommendation-badge') }).first();
+  await expect(alternative).toHaveCount(1);
+  const text = (await alternative.locator('.recommendation-badge').first().textContent()).trim();
+  expect(text).toBe('Meilleur rendement');
+
+  await alternative.click();
+  // La bande d'identité, au-dessus du dessin, rappelle ce qu'on était venu voir.
+  await expect(page.locator('.identity-badge')).toHaveText(text);
 });

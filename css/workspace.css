@@ -519,3 +519,29 @@ body.single-transmission .solution-cards { grid-template-columns: 1fr; }
 .solution-thumbnail .thumb-input { stroke: var(--ok, #15803d); }
 .solution-thumbnail .thumb-output { stroke: var(--danger, #b91c1c); }
 .solution-thumbnail .thumb-fixed { stroke: var(--muted); stroke-dasharray: 3 2; }
+
+/* ----- Ce qu'une solution gagne et ce qu'elle coûte (§9, §13, §5) ----- */
+
+/* Une carte répondait à « pourquoi la prendre ? » et jamais à « qu'est-ce que
+   je perds ? ». Les deux tiennent sur deux lignes, et évitent d'ouvrir le
+   comparateur pour la moitié des choix. */
+.solution-trades { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0 0; font-size: var(--font-xs); }
+.solution-trades > span { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.solution-trades small { color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.solution-trades em { font-style: normal; font-weight: 600; }
+.trade-gain em { color: var(--ok, #15803d); }
+.trade-loss em { color: var(--danger, #b91c1c); }
+
+/* Les alertes, les plus graves d'abord : un compteur ne distingue pas un refus
+   d'une réserve, et une coupe à trois cachait justement le refus. */
+.solution-alerts { display: flex; flex-wrap: wrap; gap: 4px; margin: var(--sp-1) 0 0; font-size: var(--font-xs); }
+.solution-alert { padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-3); }
+.solution-alert.level-danger { color: var(--danger, #b91c1c); font-weight: 600; }
+.solution-alert.level-warning { color: var(--warn, #b45309); }
+.solution-alert-more { color: var(--muted); align-self: center; }
+
+/* Non vérifié n'est pas conforme : ce qui n'a pas été contrôlé se lit. */
+.solution-uncertainty { margin: var(--sp-1) 0 0; color: var(--muted); font-size: var(--font-xs); font-style: italic; }
+
+/* La configuration, à côté de la famille, dans le tableau groupé. */
+.group-configuration { color: var(--muted); font-size: var(--font-xs); }

@@ -348,16 +348,21 @@
    * les deux consommateurs lisent le même objet.
    */
   SolutionExplorer.prototype._assess = function () {
-    var Evaluator = GearApp.requirements && GearApp.requirements.SolutionEvaluator;
-    if (!Evaluator || !this._pool.length) return null;
+    var Assessment = GearApp.requirements && GearApp.requirements.DecisionAssessment;
+    if (!Assessment || !this._pool.length) return null;
     var session = this.workbench && this.workbench.session;
-    return Evaluator.evaluate(this._pool, session ? session.preferences : null,
-      session ? session.technologySelection : null);
+    return Assessment.build(this._pool, {
+      preferences: session ? session.preferences : null,
+      selection: session ? session.technologySelection : null,
+      constraints: this._workerParams && this._workerParams.constraints ? this._workerParams.constraints : {},
+      stats: this._stats
+    });
   };
 
   SolutionExplorer.prototype._publish = function (fresh) {
     var self = this;
-    var decision = this._assess();
+    var assessment = this._assess();
+    var decision = assessment ? assessment.decision : null;
     var criteria = this._criteria();
     criteria.decision = decision;
     var view = GearSolutionFilter.apply(this._pool, criteria);
@@ -366,7 +371,7 @@
 
     // keepResults : un affinage qui vide la vue ne doit pas masquer l'espace
     // de travail (la barre de filtres doit rester accessible).
-    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, diagnosis: this._diagnosis, session: this.session, decision: decision, keepResults: this._pool.length > 0 });
+    if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, diagnosis: this._diagnosis, session: this.session, decision: decision, assessment: assessment, keepResults: this._pool.length > 0 });
     if (this.resultsTable) this.resultsTable.display(solutions, this._params, indices, decision);
 
     var count = el('refineCount');

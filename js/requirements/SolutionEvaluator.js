@@ -247,8 +247,20 @@
       metric: function (s) { return certifiedSafety(s); } },
     { id: 'precise', label: 'Plus précise', reason: 'l’écart le plus faible au rapport demandé',
       metric: function (s) { return finite(s.errorPercent) ? -Math.abs(s.errorPercent) : null; } },
-    { id: 'quiet', label: 'Plus silencieuse', reason: 'les familles les moins bruyantes',
-      metric: function (s) { return familyTrait(s, 'quiet'); } }
+    // §11 : bruit, coût et fabricabilité ne sont pas CALCULÉS. Ce sont des
+    // aptitudes moyennes par famille, et le libellé le dit — « potentiellement
+    // plus silencieuse » n'est pas « plus silencieuse », qui laisserait croire
+    // à un calcul acoustique.
+    { id: 'quiet', label: 'Potentiellement plus silencieuse', reason: 'les familles les moins bruyantes',
+      estimated: true, metric: function (s) { return familyTrait(s, 'quiet'); } },
+    // §12 : l'utilisateur peut demander « économique » ou « fabricable » dans
+    // ses priorités, et aucune alternative ne répondait jamais à ces mots-là.
+    // Elles ne sont proposées que si la question a été posée : sinon, une
+    // alternative « moins chère » répondrait à une question qu'on n'a pas.
+    { id: 'manufacturable', label: 'Plus facile à fabriquer', reason: 'les familles les plus simples à produire',
+      estimated: true, axis: 'manufacturable', metric: function (s) { return familyTrait(s, 'printable'); } },
+    { id: 'cheap', label: 'Plus économique', reason: 'les familles les moins coûteuses',
+      estimated: true, axis: 'cheap', metric: function (s) { return familyTrait(s, 'cost'); } }
   ];
 
   /** Normalisation min-max d'un objectif sur le vivier ; 0 quand tout est égal. */
@@ -326,7 +338,15 @@
     }, null);
     if (recommended != null) best.recommended = recommended;
 
+    // Les axes que l'utilisateur a réellement exprimés : une catégorie liée à
+    // une priorité ne se propose que si cette priorité existe.
+    var wanted = {};
+    if (preferences && preferences.activeAxes) {
+      preferences.activeAxes().forEach(function (axis) { wanted[axis.id] = true; });
+    }
+
     CATEGORIES.forEach(function (category) {
+      if (category.axis && !wanted[category.axis]) return;
       var winner = null, winnerValue = null;
       frontOnly.forEach(function (index) {
         var value = category.metric(solutions[index]);

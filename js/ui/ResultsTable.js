@@ -173,6 +173,19 @@
         cell.appendChild(pin);
       } else if (column.id === 'architecture' && settings.group) {
         cell.appendChild(document.createTextNode(self._displayValue(item.solution, column.id, item.index)));
+        // La CONFIGURATION, à côté de la famille : « Épicycloïdal » réunissait
+        // deux montages qui n'ont ni le même rapport ni le même sens.
+        var shape = typeof GearSolutionGrouping !== 'undefined'
+          ? GearSolutionGrouping.describeAll(item.solution, function (code) {
+            return GearTransmissionRegistry && GearTransmissionRegistry.memberName
+              ? GearTransmissionRegistry.memberName(code) : code;
+          }) : '';
+        if (shape) {
+          var note = document.createElement('span');
+          note.className = 'group-configuration';
+          note.textContent = ' · ' + shape;
+          cell.appendChild(note);
+        }
         var entry = settings.group;
         if (entry.count > 1) {
           var toggle = document.createElement('button');
