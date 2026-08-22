@@ -302,3 +302,94 @@ test('the expert table shows the decision it used to hide (§13, §14)', async (
   // §13 : les alertes disent leur gravité, pas seulement leur nombre.
   expect(first.alerts).toMatch(/^(—|[✕⚠] \d+( · [✕⚠] \d+)?)$/);
 });
+
+test('the same solution gets the same verdict in the card, the table and the detail (§30)', async ({ page }) => {
+  // C'est l'invariant qui résume tout le reste : trois vues du même réducteur
+  // ne doivent pas rendre trois jugements. Chacune peignait le sien.
+  await search(page);
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
+
+  const fromCards = await page.evaluate(() => {
+    const card = document.querySelector('.solution-card.recommended');
+    return {
+      index: Number(card.dataset.index),
+      alerts: Array.from(card.querySelectorAll('.solution-alert')).map(node => node.textContent.trim()),
+      unknown: !!card.querySelector('.solution-uncertainty')
+    };
+  });
+
+  // La fiche détaillée, ouverte sur la même solution.
+  await page.locator('.solution-card.recommended').click();
+  const fromDetail = await page.evaluate(() => ({
+    badges: Array.from(document.querySelectorAll('#solutionCard .status-badge, .solution-detail .status-badge'))
+      .map(node => ({ state: (node.className.match(/state-(\w+)/) || [])[1], text: node.textContent.trim() }))
+  }));
+
+  await page.locator('#tableViewBtn').click();
+  const fromTable = await page.evaluate(index => {
+    const row = Array.from(document.querySelectorAll('#resultats tr'))
+      .filter(node => node.querySelector('td[data-col="rank"]'))[0];
+    return { rank: row.querySelector('td[data-col="rank"]').textContent.trim(),
+      checks: row.querySelector('td[data-col="checks"]').textContent.trim(),
+      alerts: row.querySelector('td[data-col="warnings"]').textContent.trim(), index: index };
+  }, fromCards.index);
+
+  // La carte ★ et la ligne de rang 1 désignent la même solution.
+  expect(fromTable.rank).toBe('★ 1');
+  // Le compte d'alertes du tableau est celui des alertes de la carte, gravité
+  // comprise : la carte en montre trois au plus, le tableau les résume tous.
+  const cardDangers = fromCards.alerts.filter(text => text.startsWith('✕')).length;
+  if (cardDangers) expect(fromTable.alerts).toContain('✕');
+  // Un contrôle non vérifié se lit partout de la même façon — jamais comme
+  // « conforme » quelque part et « inconnu » ailleurs.
+  const detailUnknown = fromDetail.badges.some(badge => badge.state === 'unknown');
+  const tableUnknown = fromTable.checks.indexOf('·') >= 0;
+  expect(detailUnknown).toBe(tableUnknown);
+  expect(fromCards.unknown || !detailUnknown).toBe(true);
+});
+
+test('pinning across two different searches is flagged, not silently compared (§19)', async ({ page }) => {
+  // Les épingles survivent aux recherches : deux colonnes peuvent avoir été
+  // calculées sous un couple ou un régime différents, et comparer leurs SF
+  // revient à comparer deux mesures prises avec deux étalons.
+  await search(page);
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
+  await page.locator('.solution-card').nth(0).locator('.tile-pin').click();
+
+  // Une seconde solution, calculée sous d'AUTRES hypothèses. On la fabrique
+  // plutôt que de relancer une recherche : ce qui est vérifié ici, c'est que
+  // la différence est DÉTECTÉE et dite, pas la façon dont elle est survenue.
+  await page.evaluate(() => {
+    const other = JSON.parse(JSON.stringify(window.GearApp._explorer._pool[1]));
+    other.inputSpeedRpm = 3000;
+    other.inputTorqueNm = 42;
+    GearApp.eventBus.emit('solution:pin-toggled', { solution: other });
+  });
+  await page.locator('.detail-tabs [data-detail="comparer"]').click();
+
+  const warning = page.locator('.compare-context-warning');
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText('mêmes hypothèses');
+  await expect(warning).toContainText('régime d’entrée');
+  await expect(warning).toContainText('couple d’entrée');
+});
+
+test('a phone is not handed the whole pool as cards (§16)', async ({ page }) => {
+  // Sur téléphone, le tableau est désactivé : les cartes sont la SEULE
+  // représentation, et le vivier peut en compter quatre cents.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await search(page);
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
+  const pane = page.locator('#mobilePanes [data-pane="results"]');
+  if (await pane.isVisible().catch(() => false)) await pane.click();
+
+  const pool = await page.evaluate(() => window.GearApp._explorer._pool.length);
+  expect(pool).toBeGreaterThan(12);
+  const cards = await page.locator('.solution-card').count();
+  expect(cards).toBeLessThan(pool);
+  expect(cards).toBeLessThanOrEqual(8);
+  // Et le vivier complet reste à un geste, avec son compte.
+  await expect(page.locator('#resultsScopeBar')).toBeVisible();
+  await page.locator('#resultsScope [data-scope="all"]').click();
+  expect(await page.locator('.solution-card').count()).toBe(pool);
+});
