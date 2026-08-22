@@ -64,6 +64,12 @@ test('the three known approximations are declared, not hidden', () => {
   assert.equal(Contract.of('bevel', 'teeth', 'face'), 'exact');
   assert.equal(Contract.of('bevel', 'teeth', 'oblique'), 'derived');
   assert.equal(Contract.of('bevel', 'geometry', 'oblique'), 'derived');
+  // Une roue hélicoïdale, elle, ne fait PLUS partie de la liste : sa pente de
+  // flancs est tracée dans les trois présentations depuis qu'elle y a été
+  // ajoutée, et la déclarer approchée serait devenu faux dans l'autre sens.
+  Contract.PRESENTATIONS.forEach(p => {
+    assert.equal(Contract.of('helical', 'teeth', p), 'exact', 'hélicoïdal ' + p);
+  });
   // Une crémaillère vue de biais : sa hauteur de dent reste en vraie grandeur.
   assert.equal(Contract.of('rack', 'teeth', 'face'), 'exact');
   assert.equal(Contract.of('rack', 'teeth', 'oblique'), 'derived');

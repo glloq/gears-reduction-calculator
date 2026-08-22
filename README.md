@@ -60,7 +60,7 @@ La **cinématique n'a délibérément pas de point de vue**. C'est un schéma fo
 
 Un dessin technique n'a de valeur que si l'on sait ce qu'on a le droit d'y lire. Chaque famille déclare, pour chaque vue et chaque présentation, l'un de cinq niveaux — `exact`, `derived`, `conventional`, `schematic`, `unsupported`. La déclaration vit dans `js/visualization/core/FidelityContract.js`, la barre du visualiseur la lit, et les tests exigent qu'aucune famille n'y manque.
 
-Trois approximations sont ainsi nommées plutôt que tues : le contour apparent d'un cône vu de biais, la hauteur de dent d'une crémaillère vue de biais, et les maillons d'une chaîne — conventionnels partout, sur des pignons et un trajet qui, eux, sont ceux du calcul. L'hélice d'une roue hélicoïdale n'est figurée que dans la vue de face.
+Trois approximations sont ainsi nommées plutôt que tues : le contour apparent d'un cône vu de biais, la hauteur de dent d'une crémaillère vue de biais, et les maillons d'une chaîne — conventionnels partout, sur des pignons et un trajet qui, eux, sont ceux du calcul.
 
 Le renderer vectoriel local ne charge aucune ressource distante au runtime.
 

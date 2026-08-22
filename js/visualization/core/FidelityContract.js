@@ -94,15 +94,10 @@
       note: 'La denture n’est tracée en développante vraie qu’au zoom qui la rend lisible ; en dessous, la roue est bornée par ses cercles.'
     },
     helical: {
-      // Le corps et les cercles sont exacts partout. L'HÉLICE, elle, n'est
-      // figurée que dans la vue de face : de profil ou de biais, la roue est
-      // dessinée comme une roue droite, et son sens d'hélice n'est pas lisible.
-      // C'est une convention de dessin — mais une convention qui efface ce qui
-      // nomme la famille, et il faut donc le dire.
-      teeth: { face: 'exact', profile: 'conventional', oblique: 'conventional' },
-      geometry: { face: 'exact', profile: 'conventional', oblique: 'conventional' },
+      teeth: { face: 'exact', profile: 'exact', oblique: 'exact' },
+      geometry: { face: 'exact', profile: 'exact', oblique: 'exact' },
       kinematic: 'schematic',
-      note: 'Les stries d’hélice indiquent le sens et l’inclinaison sans être la projection de l’hélice réelle, et ne sont tracées que dans la vue de face : ailleurs, la roue se dessine comme une roue droite.'
+      note: 'Le sens et l’inclinaison de l’hélice se lisent sous les trois présentations. De biais, les marques sont la génératrice hélicoïdale réelle échantillonnée sur la surface latérale et projetée ; par la tranche, ce sont les trois traits inclinés du dessin technique, une convention. Corps, cercles et largeur de denture sont à l’échelle dans les deux cas.'
     },
     internal: {
       teeth: { face: 'exact', profile: 'exact', oblique: 'exact' },

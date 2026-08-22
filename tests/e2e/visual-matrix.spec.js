@@ -402,3 +402,86 @@ test('the animation advances without ever jumping (§ matrice)', async ({ page }
   expect(found, found.slice(0, 10).join('\n')).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+// ===== LES SIX TOPOLOGIES D'UN PLANÉTAIRE =====
+//
+// Un train épicycloïdal n'est pas UN mécanisme : c'est six, selon lequel des
+// trois corps entre, lequel sort et lequel est bloqué. Le mouvement des trois
+// autres change du tout au tout, et deux d'entre elles inversent le sens de
+// sortie. Toute la validation graphique reposait pourtant sur la seule
+// configuration classique — solaire menant, couronne bloquée.
+
+const TOPOLOGIES = [
+  { input: 'S', fixed: 'R', output: 'C' },
+  { input: 'S', fixed: 'C', output: 'R' },
+  { input: 'R', fixed: 'S', output: 'C' },
+  { input: 'R', fixed: 'C', output: 'S' },
+  { input: 'C', fixed: 'S', output: 'R' },
+  { input: 'C', fixed: 'R', output: 'S' }
+];
+
+test('the six planetary topologies each hold together, everywhere (§ matrice)', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await prepare(page);
+  const found = await page.evaluate(({ topologies, cameras }) => {
+    const out = [];
+    topologies.forEach(topology => {
+      const label = topology.input + '→' + topology.output + ' (' + topology.fixed + ' bloqué)';
+      window.__solution = GearEngineering.analyzeSolution([{ type: 'planetary',
+        sunTeeth: 24, ringTeeth: 72, planetTeeth: 24, planetCount: 4,
+        inputMember: topology.input, outputMember: topology.output, fixed: topology.fixed,
+        parameters: { module: 2, faceWidth: 20 } }], 4, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+
+      ['teeth', 'geometry'].forEach(view => {
+        window.__viewer.setView(view);
+        cameras.forEach(camera => {
+          window.__viewer.setProjection(camera);
+          window.__viewer.render(window.__solution);
+          window.__inspect(view).forEach(p => out.push(label + ' · ' + view + ' · ' + camera + ' — ' + p));
+        });
+      });
+      window.__viewer.setView('kinematic');
+      window.__viewer.render(window.__solution);
+      window.__inspect('kinematic').forEach(p => out.push(label + ' · kinematic — ' + p));
+
+      // L'ORGANE BLOQUÉ porte les hachures de bâti, et lui seul : c'est ce qui
+      // distingue les six topologies à l'œil. Les poser sur le mauvais corps —
+      // ou sur aucun — rendrait les six dessins indiscernables.
+      window.__viewer.setView('teeth');
+      window.__viewer.setProjection('side');
+      window.__viewer.render(window.__solution);
+      const svg = document.querySelector('#svgContainer svg');
+      const grounded = Array.from(svg.querySelectorAll('[data-member]'))
+        .filter(g => g.querySelector('.ground-hatch, .ground-symbol, [class*="ground"]'))
+        .map(g => g.dataset.member.replace(/^s\d+-/, ''));
+      if (grounded.indexOf(topology.fixed) < 0) {
+        out.push(label + ' — le corps bloqué ne porte pas les hachures de bâti (trouvé : ' +
+          (grounded.join(', ') || 'aucun') + ')');
+      }
+      grounded.forEach(id => {
+        if (id !== topology.fixed) out.push(label + ' — ' + id + ' est hachuré alors qu’il tourne');
+      });
+
+      // Et le MODÈLE dit qui tourne : le bloqué à zéro, les deux autres non.
+      // Le porte-satellites n'est pas une roue : il est dessiné par ses BRAS, et
+      // sa vitesse vit sur l'étage. La chercher parmi les roues la donnerait
+      // toujours absente — c'est-à-dire toujours immobile.
+      const speeds = {};
+      window.__viewer.teeth.model.wheels.forEach(w => {
+        if (w.memberCode) speeds[w.memberCode] = w.speed;
+      });
+      window.__viewer.teeth.model.stages.forEach(entry => {
+        if (entry.carrier) speeds.C = entry.carrier.speed;
+      });
+      if (Math.abs(speeds[topology.fixed] || 0) > 1e-9) {
+        out.push(label + ' — le corps bloqué tourne à ' + speeds[topology.fixed]);
+      }
+      [topology.input, topology.output].forEach(role => {
+        if (!(Math.abs(speeds[role] || 0) > 1e-9)) out.push(label + ' — ' + role + ' ne tourne pas');
+      });
+    });
+    return out;
+  }, { topologies: TOPOLOGIES, cameras: CAMERAS });
+  expect(found, found.slice(0, 10).join('\n')).toEqual([]);
+  expect(errors).toEqual([]);
+});

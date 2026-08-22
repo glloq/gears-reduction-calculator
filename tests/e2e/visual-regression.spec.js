@@ -55,14 +55,20 @@ const SHOTS = [
   { name: 'spur-iso', stages: ['spur'], camera: 'iso' },
   { name: 'spur-technique-iso', stages: ['spur'], camera: 'iso', style: 'technical' },
   { name: 'spur-eclate-iso', stages: ['spur'], camera: 'iso', explode: true },
-  // L'hélice n'est figurée que dans la vue de face : c'est LÀ que les deux
-  // mains doivent se distinguer, et c'est de là qu'on les surveille. Les prendre
-  // de biais donnerait deux images identiques, qui ne prouveraient rien.
+  // L'hélice se lit maintenant sous les trois présentations, et la main doit
+  // s'y distinguer partout : de face (arcs sur la denture), par la tranche
+  // (traits en travers de la hauteur), de biais (traits sur la surface
+  // latérale). D'où six références et non deux : deux mains × trois façons de
+  // regarder la même roue. Une paire qui deviendrait identique signalerait que
+  // la main a cessé d'être figurée de ce côté-là.
   { name: 'helical-droite-face', stages: ['helical'], camera: 'side' },
   { name: 'helical-gauche-face', stages: ['helicalLeft'], camera: 'side' },
   { name: 'helical-droite-face-opposee', stages: ['helical'], camera: 'side-far' },
   { name: 'helical-gauche-face-opposee', stages: ['helicalLeft'], camera: 'side-far' },
+  { name: 'helical-droite-tranche', stages: ['helical'], camera: 'front' },
+  { name: 'helical-gauche-tranche', stages: ['helicalLeft'], camera: 'front' },
   { name: 'helical-iso', stages: ['helical'], camera: 'iso' },
+  { name: 'helical-gauche-iso', stages: ['helicalLeft'], camera: 'iso' },
   { name: 'internal-face', stages: ['internal'], camera: 'side' },
   { name: 'internal-iso', stages: ['internal'], camera: 'iso' },
   { name: 'internal-iso-180', stages: ['internal'], camera: 'iso-180' },

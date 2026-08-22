@@ -266,7 +266,12 @@ test('each view says what it draws to scale, and what it only suggests (§22, §
   await expect(badge).toContainText('pas à l’échelle');
 
   await showView(page, 'teeth');
-  await expect(badge).toContainText('à l’échelle réelle');
+  // La phrase ne dit plus « à l'échelle réelle » d'autorité : elle NOMME le
+  // niveau que le contrat de fidélité déclare pour ce qui est réellement
+  // dessiné. Une roue droite vue de biais est `exact` — c'est donc « à
+  // l'échelle », et la phrase qui va avec dit ce qu'on a le droit d'y mesurer.
+  await expect(badge).toContainText('Représentation à l’échelle');
+  await expect(badge).toContainText('ce qui s’y mesure est la pièce');
   await expect(badge).not.toHaveClass(/has-derived/);
   // §54 : la phrase disait une bonne fois « la longueur des arbres est
   // schématique ». Elle l'était faute d'abscisses ; elle ne l'est plus
