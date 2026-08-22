@@ -91,7 +91,7 @@ Les modèles de résistance sont des **engineering estimates**: Lewis et Hertz s
 
 ## Roadmap
 
-Les tests navigateur existent : une suite Playwright couvre les trois vues, les onze états spatiaux, les deux styles de tracé, l'éclatement et l'animation, et une régression visuelle compare une quarantaine d'images de référence. Un test de fumée exécute le script Worker de production, ses `importScripts` et les recherches rotative et linéaire dans un contexte Web Worker isolé.
+Les tests navigateur existent : une suite Playwright couvre les trois vues, les onze états spatiaux, les deux styles de tracé, l'éclatement et l'animation, et une régression visuelle compare une quarantaine d'images de référence. Cinq largeurs d'écran — 360, 390, 768, 1000 et 1440 px — sont vérifiées de bout en bout : pas de débordement horizontal, aucun contrôle hors de l'écran, des cibles tactiles au-dessus de 32 px, et un mécanisme réellement visible et cadré quand on demande à le voir. Un test de fumée exécute le script Worker de production, ses `importScripts` et les recherches rotative et linéaire dans un contexte Web Worker isolé.
 
     npm test              # tests unitaires
     npm run test:e2e      # suite navigateur complète

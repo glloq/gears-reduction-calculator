@@ -389,7 +389,36 @@ body.dark-theme .geometry-envelope { opacity: .7; }
 
 /* ===================== Responsive ===================== */
 
+/* Une tablette en portrait fait 768 px : elle est TACTILE, et la règle
+   générale qui agrandit les boutons s'arrête à 600. Les 26 px des contrôles
+   segmentés y sont une cible qu'on rate. Portée à la seule barre du
+   visualiseur — c'est elle qu'on manipule le dessin à la main. */
+@media (max-width: 768px) {
+  .viz-controls button, .viz-controls select, .viz-controls summary {
+    min-height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  }
+}
+
 @media (max-width: 700px) {
+  /* LA BARRE D'OUTILS MANGEAIT LE PREMIER ÉCRAN.
+     Sur un téléphone de 360 x 800, elle occupait 508 px : on ouvrait « Vue »
+     et on ne voyait pas un millimètre de mécanisme. Rien n'est masqué ici —
+     un contrôle qu'on ne trouve plus vaut moins qu'un contrôle qu'on doit
+     faire défiler —, mais chaque groupe tient sur UNE ligne, qui défile
+     horizontalement si elle est trop longue, et l'intitulé du point de vue
+     rejoint son menu au lieu de coûter une ligne à lui seul. */
+  .viz-controls { gap: var(--sp-1); }
+  /* Moins de marge HORIZONTALE seulement : la hauteur reste une cible
+     tactile, c'est la largeur qui décide du nombre de lignes. Les groupes
+     continuent de se REPLIER et non de défiler : un contrôle segmenté à
+     quatre choix dont le quatrième est hors écran vaut moins qu'un contrôle
+     sur deux lignes. */
+  .viz-controls > .segmented button { padding: 4px 7px; }
+  .viz-controls > .btn-small, .viz-controls > .display-menu > summary { padding-left: 8px; padding-right: 8px; }
+  /* Le menu du point de vue prend la place qui reste sur la ligne de son
+     intitulé, au lieu de s'étendre sur toute la largeur et de le pousser. */
+  .viz-controls > .viewer-speed { flex: 1 1 8rem; min-width: 0; }
+
   /* Trop étroit pour deux colonnes : l'inspecteur passe sous le dessin, où il
      reste lu d'un coup d'œil sans lui voler sa largeur. */
   .viewer-stage { flex-direction: column; }

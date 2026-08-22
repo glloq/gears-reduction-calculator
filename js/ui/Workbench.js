@@ -603,6 +603,16 @@
       button.classList.toggle('active', active);
       button.setAttribute('aria-selected', String(active));
     });
+    // DEMANDER LA VUE ET NE VOIR QUE DES BOUTONS.
+    // Sur un téléphone de 360 x 800, la barre d'outils du visualiseur occupe
+    // le premier écran : on touchait « Vue » et le mécanisme était sous la
+    // ligne de flottaison. Rien n'est masqué pour autant — la barre reste
+    // au-dessus, on y remonte d'un geste —, mais ce qu'on vient de demander à
+    // voir est amené à l'écran.
+    if (pane === 'viewer') {
+      var scene = document.querySelector('.viewer-scene');
+      if (scene && scene.scrollIntoView) scene.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    }
   };
 
   Workbench.prototype._bindResultsView = function () {

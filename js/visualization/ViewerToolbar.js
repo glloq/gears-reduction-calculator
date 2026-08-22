@@ -164,6 +164,11 @@
     // sens que pour le dessin qui l'a produit.
     if (solution !== this._cameraOwner) { this.camera = {}; this._cameraOwner = solution; }
     this.solution = solution;
+    // Ce dessin a-t-il été cadré sur une taille RÉELLE ? Voir plus bas
+    // `_watchContainer` : sous 1000 px, le volet du visualiseur est masqué
+    // pendant que la recherche aboutit, et un dessin cadré sur un conteneur de
+    // largeur nulle sort du cadre dès qu'on l'ouvre.
+    this._renderedWidth = this.container.clientWidth || 0;
     var rendered = this.renderer().render(solution);
     // L'inspecteur lit la scène de la vue courante : mêmes vitesses, même
     // instant, quelle que soit la vue affichée.
@@ -903,8 +908,38 @@
       { detail: { overlay: name, enabled: !!enabled, view: this.currentView } }));
   };
 
+  /**
+   * LE DESSIN QU'ON N'A PAS ENCORE REGARDÉ.
+   *
+   * Sous 1000 px, l'espace de travail montre un volet à la fois : la recherche
+   * aboutit pendant que « Solutions » est affiché, et le visualiseur rend son
+   * dessin dans un conteneur de largeur NULLE. Il n'y a alors rien à mesurer —
+   * `getBBox` ne renvoie rien dans un sous-arbre masqué, la boîte de cadrage
+   * tombe sur son repli `0 0 800 400`, et l'échelle d'écran des textes se
+   * rabat sur 900 px. Quand l'utilisateur ouvre enfin « Vue », le mécanisme
+   * est hors cadre — coupé sur la gauche — et ses étiquettes font quatre
+   * pixels. C'est le cas de TOUS les téléphones et de toutes les tablettes.
+   *
+   * On surveille donc la taille du conteneur, et on redessine dès qu'elle
+   * devient mesurable alors qu'elle ne l'était pas au moment du rendu. Le
+   * cadrage de l'utilisateur n'est pas volé au passage : à largeur nulle, il
+   * n'avait rien pu cadrer.
+   */
+  ViewerToolbar.prototype._watchContainer = function () {
+    if (this._sizeWatch || typeof ResizeObserver !== 'function') return;
+    var self = this;
+    this._sizeWatch = new ResizeObserver(function () {
+      var width = self.container.clientWidth || 0;
+      if (!width || !self.solution) return;
+      if (self._renderedWidth > 0) return;
+      self.render(self.solution);
+    });
+    this._sizeWatch.observe(this.container);
+  };
+
   ViewerToolbar.prototype.bind = function () {
     var self = this, controls = document.querySelector('.viz-controls');
+    this._watchContainer();
     // §4 : lire une roue au survol, tout de suite. L'information est déjà dans
     // les `<title>` ; seule sa consultation était lente.
     if (GearApp.visualization.ViewerHUD && !this.hud) {
