@@ -519,3 +519,64 @@ body.single-transmission .solution-cards { grid-template-columns: 1fr; }
 .solution-thumbnail .thumb-input { stroke: var(--ok, #15803d); }
 .solution-thumbnail .thumb-output { stroke: var(--danger, #b91c1c); }
 .solution-thumbnail .thumb-fixed { stroke: var(--muted); stroke-dasharray: 3 2; }
+
+/* ----- Ce qu'une solution gagne et ce qu'elle coûte (§9, §13, §5) ----- */
+
+/* Une carte répondait à « pourquoi la prendre ? » et jamais à « qu'est-ce que
+   je perds ? ». Les deux tiennent sur deux lignes, et évitent d'ouvrir le
+   comparateur pour la moitié des choix. */
+.solution-trades { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0 0; font-size: var(--font-xs); }
+.solution-trades > span { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.solution-trades small { color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.solution-trades em { font-style: normal; font-weight: 600; }
+.trade-gain em { color: var(--ok, #15803d); }
+.trade-loss em { color: var(--danger, #b91c1c); }
+
+/* Les alertes, les plus graves d'abord : un compteur ne distingue pas un refus
+   d'une réserve, et une coupe à trois cachait justement le refus. */
+.solution-alerts { display: flex; flex-wrap: wrap; gap: 4px; margin: var(--sp-1) 0 0; font-size: var(--font-xs); }
+.solution-alert { padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-3); }
+.solution-alert.level-danger { color: var(--danger, #b91c1c); font-weight: 600; }
+.solution-alert.level-warning { color: var(--warn, #b45309); }
+.solution-alert-more { color: var(--muted); align-self: center; }
+
+/* Non vérifié n'est pas conforme : ce qui n'a pas été contrôlé se lit. */
+.solution-uncertainty { margin: var(--sp-1) 0 0; color: var(--muted); font-size: var(--font-xs); font-style: italic; }
+
+/* La configuration, à côté de la famille, dans le tableau groupé. */
+.group-configuration { color: var(--muted); font-size: var(--font-xs); }
+
+/* ----- Trois niveaux de lecture (§16, §17) ----- */
+
+.results-scope { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.results-scope[hidden] { display: none; }
+.results-scope-note { margin: 0; color: var(--muted); font-size: var(--font-xs); }
+/* Un domaine tronqué n'est pas un détail d'info-bulle : une recommandation
+   calculée sur les 400 conservées n'a pas la portée d'un optimum exhaustif. */
+.results-scope-note.is-truncated { color: var(--warn, #b45309); font-weight: 600; }
+
+/* ----- Comparateur : référence explicite et hypothèses (§18, §19) ----- */
+
+.compare-table th.is-reference, .compare-table td.is-reference { background: var(--accent-soft); }
+.compare-reference { font-size: var(--font-xs); font-weight: 700; color: var(--accent); white-space: nowrap; }
+.compare-set-reference { font-size: var(--font-xs); }
+/* Deux colonnes calculées sous des hypothèses différentes ne se comparent pas
+   membre à membre : le dire vaut mieux que laisser lire un écart faux. */
+.compare-context-warning {
+  margin: 0 0 var(--sp-2); padding: var(--sp-2);
+  border: 1px solid var(--warn, #b45309); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn, #b45309) 10%, var(--surface-1));
+  color: var(--ink); font-size: var(--font-sm);
+}
+
+/* ----- D'où vient l'indice technique (§22) ----- */
+
+.score-breakdown .score-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); }
+.score-breakdown .score-table th, .score-breakdown .score-table td { padding: 3px 6px; text-align: right; }
+.score-breakdown .score-table th:first-child, .score-breakdown .score-table thead th { text-align: left; }
+.score-breakdown tbody tr.score-dominant { background: var(--accent-soft); font-weight: 600; }
+/* Bruit, coût et fabrication ne sont pas calculés : la colonne le dit, plutôt
+   que de les laisser passer pour des mesures. */
+.score-source.is-estimated { color: var(--warn, #b45309); font-style: italic; }
+.score-dominant-note { margin: var(--sp-1) 0 0; font-size: var(--font-xs); }
+.score-breakdown tfoot th, .score-breakdown tfoot td { border-top: 1px solid var(--line); font-weight: 700; }

@@ -36,11 +36,53 @@
     return null;
   }
 
-  function minSafety(solution) {
-    var values = (solution.mechanical || []).map(function (entry) {
-      return entry && entry.bending && entry.bending.safetyFactor;
-    }).filter(finite);
-    return values.length ? Math.min.apply(Math, values) : null;
+  /**
+   * LA ROBUSTESSE, C'EST LE MAILLON LE PLUS PROCHE DE SA LIMITE.
+   *
+   * On ne lisait que le coefficient de FLEXION. « Plus robuste » désignait donc
+   * le meilleur SF de Lewis, et ignorait le contact — au point qu'une solution
+   * à SF 3,0 / SH 1,12 pouvait être annoncée plus robuste qu'une SF 2,2 /
+   * SH 2,0, alors que la première est à un cheveu de sa limite de pression.
+   *
+   * Deux nombres qui n'ont ni la même échelle ni le même seuil ne se comparent
+   * pas tels quels : on les rapporte chacun à SON minimum, ce qui donne des
+   * MARGES sans unité, et la robustesse est la plus faible des marges.
+   *
+   * Reste ce qui n'a pas été vérifié — une courroie n'a ni SF ni SH. Deux
+   * réponses différentes pour deux questions différentes :
+   *
+   *   — pour CLASSER, la marge porte sur les contrôles qui ont eu lieu. Une
+   *     solution partiellement vérifiée garde ainsi sa place sur le front.
+   *   — pour DÉCERNER LE BADGE « plus robuste », non : `unknown` disqualifie.
+   *     Une grandeur non vérifiée ne gagne jamais le titre de la grandeur
+   *     qu'elle n'a pas vérifiée. Non vérifié n'est pas conforme.
+   */
+  var SAFETY_FLOOR = { bending: 1.3, contact: 1.1 };
+  var SAFETY_LABEL = { bending: 'flexion', contact: 'contact' };
+
+  function robustness(solution) {
+    var stages = solution.mechanical || [];
+    var worst = { margin: null, bending: null, contact: null, critical: null, unknown: [] };
+    if (!stages.length) { worst.unknown.push('mécanique'); return worst; }
+    stages.forEach(function (entry, index) {
+      Object.keys(SAFETY_FLOOR).forEach(function (kind) {
+        var value = entry && entry[kind] && entry[kind].safetyFactor;
+        if (!finite(value)) { worst.unknown.push(SAFETY_LABEL[kind] + ' étage ' + (index + 1)); return; }
+        var margin = value / SAFETY_FLOOR[kind];
+        if (worst[kind] == null || margin < worst[kind]) worst[kind] = margin;
+        if (worst.margin == null || margin < worst.margin) { worst.margin = margin; worst.critical = kind; }
+      });
+    });
+    return worst;
+  }
+
+  /** Pour CLASSER : la marge sur ce qui a été vérifié. */
+  function minSafety(solution) { return robustness(solution).margin; }
+
+  /** Pour DÉCERNER : la même marge, mais seulement si rien ne manque. */
+  function certifiedSafety(solution) {
+    var seen = robustness(solution);
+    return seen.unknown.length ? null : seen.margin;
   }
 
   /** Trait moyen de la chaîne, lu sur le savoir du conseiller — une seule source. */
@@ -81,7 +123,12 @@
     velocity: { key: 'velocity', label: 'vitesse périphérique', weight: 'noise',
       lower: function (s) { return pitchLineVelocity(s); } },
     torque: { key: 'torque', label: 'couple de sortie', weight: 'stress',
-      lower: function (s) { return finite(s.outputTorqueNm) ? -s.outputTorqueNm : null; } }
+      lower: function (s) { return finite(s.outputTorqueNm) ? -s.outputTorqueNm : null; } },
+    // Le pendant linéaire du couple. Sans lui, une transmission rotation →
+    // translation n'avait aucun axe de PERFORMANCE sur le front : elle n'y
+    // était classée que par son encombrement et son écart de course.
+    force: { key: 'force', label: 'force de sortie', weight: 'stress',
+      lower: function (s) { return finite(s.outputForceN) ? -s.outputForceN : null; } }
   };
 
   /** Vitesse au primitif maximale, recalculée ici pour rester sans dépendance. */
@@ -109,8 +156,55 @@
   /** Ce qu'un critère posé ajoute au front : on ne classe que ce qui compte. */
   var CRITERION_OBJECTIVE = {
     bendingSafety: 'robust', contactSafety: 'robust', outputTorque: 'torque',
-    powerLoss: 'loss', pitchLineVelocity: 'velocity'
+    powerLoss: 'loss', pitchLineVelocity: 'velocity', outputForce: 'force'
   };
+
+  /**
+   * Les axes que le front DÉDUIT du cahier des charges.
+   *
+   * Le front ne connaissait que des axes nommés à l'avance, tous rotatifs. Une
+   * demande de force de sortie ou de vitesse linéaire n'en faisait donc pas
+   * partie : la préférence pesait bien sur le score final, mais la solution qui
+   * la servait pouvait avoir été écartée AVANT, comme dominée sur les autres
+   * axes. On classait sur ce qu'on savait nommer, pas sur ce qui était demandé.
+   *
+   * Tout critère posé par l'utilisateur devient donc un axe :
+   *   — s'il a un sens d'amélioration, l'axe est la grandeur elle-même ;
+   *   — s'il désigne une PLAGE, l'axe est la distance à cette plage, que
+   *     `Quantity.shortfall` sait déjà mesurer. Zéro quand elle est tenue.
+   *
+   * Les grandeurs déjà portées par un axe de base — encombrement, rendement,
+   * écart, étages — ne sont pas dédoublées : deux axes qui disent la même chose
+   * gonflent le front sans rien y ajouter.
+   */
+  var COVERED_BY_BASE = {
+    maxDiameter: true, maxLength: true, maxWidth: true,
+    efficiency: true, ratioError: true, stages: true
+  };
+
+  function objectiveFromCriterion(entry) {
+    var meta = entry.meta, quantity = entry.quantity;
+    if (!meta || !meta.metric) return null;
+    if (meta.better === 'lower') {
+      return { key: 'req:' + entry.key, label: meta.label.toLowerCase(), weight: 'ratio',
+        lower: function (s) { var v = meta.metric(s); return finite(v) ? v : null; } };
+    }
+    if (meta.better === 'higher') {
+      return { key: 'req:' + entry.key, label: meta.label.toLowerCase(), weight: 'ratio',
+        lower: function (s) { var v = meta.metric(s); return finite(v) ? -v : null; } };
+    }
+    // Une PLAGE n'a pas de direction : ce qui se minimise, c'est l'écart à la
+    // plage demandée. Sans quantité déclarée, il n'y a rien à mesurer.
+    if (!quantity || !quantity.isKnown || !quantity.isKnown()) return null;
+    return { key: 'req:' + entry.key, label: 'écart ' + meta.label.toLowerCase(), weight: 'ratio',
+      lower: function (s) {
+        var v = meta.metric(s);
+        if (!finite(v)) return null;
+        if (meta.scale) v *= meta.scale;
+        var gap = quantity.shortfall ? quantity.shortfall(v) : null;
+        return finite(gap) ? Math.abs(gap) : 0;
+      } };
+  }
 
   /**
    * Les axes du front pour CE cahier des charges.
@@ -129,7 +223,12 @@
     }
     if (!preferences) return objectives;
     preferences.activeAxes().forEach(function (axis) { add(AXIS_OBJECTIVE[axis.id]); });
-    preferences.list().forEach(function (entry) { add(CRITERION_OBJECTIVE[entry.key]); });
+    preferences.list().forEach(function (entry) {
+      if (CRITERION_OBJECTIVE[entry.key]) { add(CRITERION_OBJECTIVE[entry.key]); return; }
+      if (COVERED_BY_BASE[entry.key] || seen['req:' + entry.key]) return;
+      var derived = objectiveFromCriterion(entry);
+      if (derived) { seen[derived.key] = true; objectives.push(derived); }
+    });
     return objectives;
   }
 
@@ -144,12 +243,24 @@
       metric: function (s) { return finite(s.efficiency) ? s.efficiency : null; } },
     { id: 'simple', label: 'Plus simple', reason: 'le moins d’étages et de pièces',
       metric: function (s) { var n = (s.stages || []).length; return n ? -n : null; } },
-    { id: 'robust', label: 'Plus robuste', reason: 'la plus grande marge de sécurité',
-      metric: function (s) { return minSafety(s); } },
+    { id: 'robust', label: 'Plus robuste', reason: 'la plus grande marge sur son contrôle le plus juste',
+      metric: function (s) { return certifiedSafety(s); } },
     { id: 'precise', label: 'Plus précise', reason: 'l’écart le plus faible au rapport demandé',
       metric: function (s) { return finite(s.errorPercent) ? -Math.abs(s.errorPercent) : null; } },
-    { id: 'quiet', label: 'Plus silencieuse', reason: 'les familles les moins bruyantes',
-      metric: function (s) { return familyTrait(s, 'quiet'); } }
+    // §11 : bruit, coût et fabricabilité ne sont pas CALCULÉS. Ce sont des
+    // aptitudes moyennes par famille, et le libellé le dit — « potentiellement
+    // plus silencieuse » n'est pas « plus silencieuse », qui laisserait croire
+    // à un calcul acoustique.
+    { id: 'quiet', label: 'Potentiellement plus silencieuse', reason: 'les familles les moins bruyantes',
+      estimated: true, metric: function (s) { return familyTrait(s, 'quiet'); } },
+    // §12 : l'utilisateur peut demander « économique » ou « fabricable » dans
+    // ses priorités, et aucune alternative ne répondait jamais à ces mots-là.
+    // Elles ne sont proposées que si la question a été posée : sinon, une
+    // alternative « moins chère » répondrait à une question qu'on n'a pas.
+    { id: 'manufacturable', label: 'Plus facile à fabriquer', reason: 'les familles les plus simples à produire',
+      estimated: true, axis: 'manufacturable', metric: function (s) { return familyTrait(s, 'printable'); } },
+    { id: 'cheap', label: 'Plus économique', reason: 'les familles les moins coûteuses',
+      estimated: true, axis: 'cheap', metric: function (s) { return familyTrait(s, 'cost'); } }
   ];
 
   /** Normalisation min-max d'un objectif sur le vivier ; 0 quand tout est égal. */
@@ -182,7 +293,10 @@
    */
   function evaluate(pool, preferences, selection) {
     var solutions = Array.isArray(pool) ? pool : [];
-    if (!solutions.length) return { front: [], best: {}, order: [], byIndex: {}, scores: [], compliance: [], objectives: [] };
+    if (!solutions.length) {
+      return { front: [], best: {}, order: [], byIndex: {}, scores: [], recommended: null,
+        ranking: [], rank: {}, compliance: [], objectives: [] };
+    }
 
     var objectives = objectivesFor(preferences);
     var readers = objectives.map(function (objective) { return normalizer(solutions, objective.lower); });
@@ -224,7 +338,15 @@
     }, null);
     if (recommended != null) best.recommended = recommended;
 
+    // Les axes que l'utilisateur a réellement exprimés : une catégorie liée à
+    // une priorité ne se propose que si cette priorité existe.
+    var wanted = {};
+    if (preferences && preferences.activeAxes) {
+      preferences.activeAxes().forEach(function (axis) { wanted[axis.id] = true; });
+    }
+
     CATEGORIES.forEach(function (category) {
+      if (category.axis && !wanted[category.axis]) return;
       var winner = null, winnerValue = null;
       frontOnly.forEach(function (index) {
         var value = category.metric(solutions[index]);
@@ -256,7 +378,25 @@
       return preferences ? preferences.violations(solution) : [];
     });
 
+    // LE CLASSEMENT DÉCISIONNEL, publié.
+    //
+    // Il existait déjà — c'est lui qui élit la recommandée — mais il restait
+    // enfermé ici : l'écran triait par le score ABSOLU d'Engineering, qui est
+    // une autre grandeur, calculée sur d'autres axes, sans les priorités et
+    // sans le vivier. La première carte et la carte ★ pouvaient donc être deux
+    // cartes différentes. Le rang sort maintenant avec le reste, et c'est lui
+    // que l'on trie.
+    var ranking = solutions.map(function (_, index) { return index; }).sort(function (a, b) {
+      if (a === recommended) return -1;
+      if (b === recommended) return 1;
+      return scores[a] - scores[b] || a - b;
+    });
+    var rank = {};
+    ranking.forEach(function (index, position) { rank[index] = position + 1; });
+
     return { front: front, best: best, order: order, byIndex: byIndex, scores: scores,
+      recommended: recommended == null ? null : recommended,
+      ranking: ranking, rank: rank,
       compliance: compliance, objectives: objectives.map(function (o) { return o.key; }) };
   }
 
@@ -324,6 +464,7 @@
 
   return {
     evaluate: evaluate, explain: explain, label: label, leadLabel: leadLabel,
+    robustness: robustness, certifiedSafety: certifiedSafety, SAFETY_FLOOR: SAFETY_FLOOR,
     LEAD_LABELS: LEAD_LABELS,
     CATEGORIES: CATEGORIES, PARETO_OBJECTIVES: PARETO_OBJECTIVES, MEANINGFUL_GAIN: MEANINGFUL_GAIN,
     objectivesFor: objectivesFor, BASE_OBJECTIVES: BASE_OBJECTIVES, OPTIONAL_OBJECTIVES: OPTIONAL_OBJECTIVES

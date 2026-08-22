@@ -2,30 +2,52 @@
 (function (GearApp) {
   'use strict';
   // « Score (coût) » demandait au lecteur de deviner lequel des deux mots
-  // l'emportait : un score se lit vers le haut, un coût vers le bas. C'est un
-  // COÛT — moyenne pondérée de huit pénalités entre 0 et 1 —, et le sens est
-  // dit une fois, en toutes lettres, plutôt que sous-entendu par un mot entre
-  // parenthèses.
-  var SCORE_HINT = 'Score global : moyenne pondérée des huit critères (écart, taille, pertes, risque mécanique, étages, bruit, fabrication, coût). Plus bas = mieux.';
+  // l'emportait ; « Score global » laissait croire qu'il répondait à « laquelle
+  // choisir ? ». Ce n'est ni l'un ni l'autre : c'est un indice ABSOLU, calculé
+  // solution par solution, sans rien savoir du vivier ni des priorités. Le
+  // classement qui répond à « laquelle choisir ? » est le rang décisionnel, et
+  // il a sa propre colonne. Deux grandeurs, deux noms.
+  var SCORE_HINT = 'Indice technique : moyenne pondérée de huit pénalités (écart, taille, pertes, risque mécanique, étages, bruit, fabrication, coût), calculée pour cette solution seule. Plus bas = mieux. Ce n’est pas le classement : voir la colonne Rang.';
+  var RANK_HINT = 'Rang décisionnel : la place de cette solution dans le classement qui tient compte du vivier, de vos priorités et du front de Pareto. C’est lui qui élit la solution recommandée.';
+  // §14 : la vue « expert » n'affichait que des données brutes et l'indice du
+  // moteur. Les cartes, elles, portaient le Pareto, les badges, la
+  // justification et la conformité — d'où deux vues qui semblaient donner deux
+  // résultats. Trois colonnes suffisent à les réconcilier : le rang, le front,
+  // et l'état des contrôles.
+  var PARETO_HINT = 'Front de Pareto : aucune autre solution du vivier n’est meilleure sur TOUS les critères à la fois.';
+  var CHECK_HINT = 'Contrôles : ✓ conforme · ⚠ limite · ✕ insuffisant · · non vérifié. « Non vérifié » n’est pas « conforme ».';
   var COLUMNS = [
-    { id: 'score', label: 'Score global', hint: SCORE_HINT }, { id: 'architecture', label: 'Architecture' },
+    { id: 'rank', label: 'Rang', hint: RANK_HINT },
+    { id: 'pareto', label: 'Pareto', hint: PARETO_HINT },
+    { id: 'checks', label: 'Contrôles', hint: CHECK_HINT },
+    { id: 'score', label: 'Indice technique', hint: SCORE_HINT }, { id: 'architecture', label: 'Architecture' },
     { id: 'ratio', label: 'Rapport' }, { id: 'error', label: 'Erreur %' },
     { id: 'stages', label: 'Étages' }, { id: 'efficiency', label: 'Rendement' },
     { id: 'dimensions', label: 'Dimensions' }, { id: 'rpm', label: 'RPM sortie' },
     { id: 'torque', label: 'Couple sortie' }, { id: 'sf', label: 'SF' },
-    { id: 'sh', label: 'SH' }, { id: 'warnings', label: 'Warnings' },
+    // « Warnings : 3 » ne disait pas si l'une d'elles était un refus.
+    { id: 'sh', label: 'SH' }, { id: 'warnings', label: 'Alertes', hint: 'Gravité d’abord : ✕ refus, ⚠ réserve. Trois réserves ne valent pas un refus.' },
     { id: 'action', label: 'Action', sortable: false }
   ];
   var PAGE_SIZE = 25, STORAGE_KEY = 'gearCalcResultColumns';
   function ids() { return COLUMNS.map(function (column) { return column.id; }); }
   function types(solution) { return solution.stages.map(function (stage) { return stage.type; }); }
+  /** Les NOMS des familles : « worm → belt » ne se lit qu'en anglais et en interne. */
+  function familyNames(solution) {
+    return types(solution).map(function (type) {
+      return typeof GearTransmissionRegistry !== 'undefined'
+        ? GearTransmissionRegistry.familyName(type, 'short') : type;
+    });
+  }
   function minFactor(solution, key) { return solution.mechanical.reduce(function (value, stage) { return Math.min(value, stage[key] ? stage[key].safetyFactor : Infinity); }, Infinity); }
   function number(value, digits) { return Number.isFinite(value) ? value.toFixed(digits) : '—'; }
 
   function ResultsTable(tbodyId, eventBus) {
     this._tbody = document.getElementById(tbodyId); this._table = this._tbody && this._tbody.closest('table');
     this._eventBus = eventBus || GearApp.eventBus; this._solutions = []; this._filtered = [];
-    this._sortColumn = 'score'; this._sortDirection = 'asc'; this._currentPage = 0; this._searchText = ''; this._selectedIndex = 0;
+    // Le tableau s'ouvre sur le RANG, comme les cartes : deux vues d'un même
+    // vivier ne doivent pas proposer deux premières lignes différentes.
+    this._sortColumn = 'rank'; this._sortDirection = 'asc'; this._currentPage = 0; this._searchText = ''; this._selectedIndex = 0;
     // Regroupement par architecture. Une recherche rend couramment quatre-vingts
     // solutions dont soixante sont « Droit → Droit » à quelques dents près :
     // les lire une à une ne dit rien de plus que la première.
@@ -51,20 +73,67 @@
       error: solution.errorPercent, stages: solution.stages.length, efficiency: solution.efficiency,
       dimensions: solution.dimensions.x * solution.dimensions.y * Math.max(1, solution.dimensions.z),
       rpm: solution.outputSpeedRpm, torque: solution.outputTorqueNm, sf: minFactor(solution, 'bending'),
-      sh: minFactor(solution, 'contact'), warnings: solution.warnings.length }[id];
+      sh: minFactor(solution, 'contact'), warnings: alertSeverity(solution) }[id];
   };
-  ResultsTable.prototype._displayValue = function (solution, id) {
+
+  /** L'état des contrôles, dans les marques que tout l'écran partage. */
+  function checkSummary(entry) {
+    var order = { danger: 0, warning: 1, unknown: 2, ok: 3 };
+    var counts = {};
+    (entry.compliance.checks || []).forEach(function (check) {
+      counts[check.state] = (counts[check.state] || 0) + 1;
+    });
+    var marks = { ok: '✓', warning: '⚠', danger: '✕', unknown: '·' };
+    return Object.keys(counts).sort(function (a, b) { return order[a] - order[b]; })
+      .map(function (state) { return marks[state] + ' ' + counts[state]; }).join(' ') || '—';
+  }
+
+  /**
+   * §13 : trier sur `warnings.length` mettait trois réserves devant un refus.
+   * On trie sur la GRAVITÉ, et l'affichage la montre de la même façon.
+   */
+  function alertSeverity(solution) {
+    var counts = { danger: 0, warning: 0, unknown: 0 };
+    ((solution && solution.warnings) || []).forEach(function (entry) {
+      var level = (entry && entry.level) || 'warning';
+      if (counts[level] != null) counts[level]++;
+    });
+    return counts.danger * 1e6 + counts.warning * 1e3 + counts.unknown;
+  }
+
+  function alertText(solution) {
+    var counts = { danger: 0, warning: 0 };
+    ((solution && solution.warnings) || []).forEach(function (entry) {
+      var level = (entry && entry.level) || 'warning';
+      if (counts[level] != null) counts[level]++;
+    });
+    var parts = [];
+    if (counts.danger) parts.push('✕ ' + counts.danger);
+    if (counts.warning) parts.push('⚠ ' + counts.warning);
+    return parts.join(' · ') || '—';
+  }
+  /** Le rang décisionnel se lit sur la POSITION dans le vivier, pas sur la solution. */
+  ResultsTable.prototype._rankOf = function (index) {
+    var rank = this._decision && this._decision.rank ? this._decision.rank[index] : null;
+    return Number.isFinite(rank) ? rank : Infinity;
+  };
+  ResultsTable.prototype._displayValue = function (solution, id, index) {
     var linear=solution.mode==='rotationTranslation';
-    var values = { score: number(solution.score.value, 3), architecture: types(solution).join(' → '), ratio: linear ? number(solution.travelPerRevolutionMm,2)+' mm/tr' : number(solution.ratio, 4),
+    var rank = this._decision && this._decision.rank ? this._decision.rank[index] : null;
+    var entry = this._assessment && this._assessment.byIndex ? this._assessment.byIndex[index] : null;
+    var values = { rank: Number.isFinite(rank) ? (rank === 1 ? '★ 1' : String(rank)) : '—',
+      pareto: entry ? (entry.decision.pareto ? '✓' : '') : '—',
+      checks: entry ? checkSummary(entry) : '—',
+      score: number(solution.score.value, 3), architecture: familyNames(solution).join(' → '), ratio: linear ? number(solution.travelPerRevolutionMm,2)+' mm/tr' : number(solution.ratio, 4),
       error: number(solution.errorPercent, 3), stages: solution.stages.length, efficiency: number(solution.efficiency * 100, 1) + '%',
       dimensions: number(solution.dimensions.length, 0) + '×' + number(solution.dimensions.maxDiameter, 0) + '×' + number(solution.dimensions.width, 0),
       rpm: linear ? number(solution.outputLinearSpeedMmMin,0)+' mm/min' : number(solution.outputSpeedRpm, 1), torque: linear ? number(solution.outputForceN,1)+' N' : number(solution.outputTorqueNm, 2), sf: number(minFactor(solution, 'bending'), 2),
-      sh: number(minFactor(solution, 'contact'), 2), warnings: solution.warnings.length };
+      sh: number(minFactor(solution, 'contact'), 2), warnings: alertText(solution) };
     return values[id];
   };
   // baseIndices[i] = position de solutions[i] dans le vivier d'origine (contrat
   // de sélection de SolutionExplorer) ; omis, l'index local fait foi.
-  ResultsTable.prototype.display = function (solutions, params, baseIndices) { this._solutions = solutions || []; this._params = params; this._baseIndices = baseIndices || null; this._currentPage = 0; this._buildToolbar(); this._render(); };
+  ResultsTable.prototype.display = function (solutions, params, baseIndices, decision, assessment) { this._solutions = solutions || []; this._params = params; this._baseIndices = baseIndices || null; this._decision = decision || null; this._assessment = assessment || null; this._currentPage = 0; this._buildToolbar(); this._render(); };
   ResultsTable.prototype.setSelectedIndex = function (index) { this._selectedIndex = index; this._render(); };
   ResultsTable.prototype._buildColumnMenu = function () {
     var self = this, details = document.createElement('details'); details.className = 'column-picker';
@@ -146,6 +215,10 @@
     row.addEventListener('keydown', function (event) { if (event.key === 'Enter') select(); });
     COLUMNS.filter(function (column) { return self._isVisible(column.id); }).forEach(function (column) {
       var cell = document.createElement('td');
+      // Une cellule dit à quelle colonne elle appartient. Sans cela, tout ce
+      // qui la vise le fait par sa POSITION — et la position change dès qu'une
+      // colonne est ajoutée, masquée ou réordonnée.
+      cell.dataset.col = column.id;
       if (column.id === 'action') {
         var button = document.createElement('button');
         button.className = 'btn-small'; button.textContent = 'Voir';
@@ -156,7 +229,20 @@
         pin.addEventListener('click', function (event) { event.stopPropagation(); self._eventBus.emit('solution:pin-toggled', { solution: item.solution }); });
         cell.appendChild(pin);
       } else if (column.id === 'architecture' && settings.group) {
-        cell.appendChild(document.createTextNode(self._displayValue(item.solution, column.id)));
+        cell.appendChild(document.createTextNode(self._displayValue(item.solution, column.id, item.index)));
+        // La CONFIGURATION, à côté de la famille : « Épicycloïdal » réunissait
+        // deux montages qui n'ont ni le même rapport ni le même sens.
+        var shape = typeof GearSolutionGrouping !== 'undefined'
+          ? GearSolutionGrouping.describeAll(item.solution, function (code) {
+            return GearTransmissionRegistry && GearTransmissionRegistry.memberName
+              ? GearTransmissionRegistry.memberName(code) : code;
+          }) : '';
+        if (shape) {
+          var note = document.createElement('span');
+          note.className = 'group-configuration';
+          note.textContent = ' · ' + shape;
+          cell.appendChild(note);
+        }
         var entry = settings.group;
         if (entry.count > 1) {
           var toggle = document.createElement('button');
@@ -169,8 +255,8 @@
         }
       } else if (column.id === 'architecture' && settings.variant) {
         cell.className = 'variant-cell';
-        cell.textContent = self._displayValue(item.solution, column.id);
-      } else cell.textContent = self._displayValue(item.solution, column.id);
+        cell.textContent = self._displayValue(item.solution, column.id, item.index);
+      } else cell.textContent = self._displayValue(item.solution, column.id, item.index);
       row.appendChild(cell);
     });
     return row;
@@ -192,7 +278,15 @@
 
   ResultsTable.prototype._render = function () {
     var self = this; this._filtered = this._solutions.map(function (solution, i) { return { solution: solution, index: self._baseIndices ? self._baseIndices[i] : i }; }).filter(function (item) { return !self._searchText || types(item.solution).join(' ').toLowerCase().indexOf(self._searchText) >= 0; });
-    this._filtered.sort(function (a, b) { var av = self._rawValue(a.solution, self._sortColumn), bv = self._rawValue(b.solution, self._sortColumn), result = typeof av === 'string' ? av.localeCompare(bv) : av - bv; return self._sortDirection === 'asc' ? result : -result; });
+    this._filtered.sort(function (a, b) {
+      var result;
+      if (self._sortColumn === 'rank') result = self._rankOf(a.index) - self._rankOf(b.index);
+      else {
+        var av = self._rawValue(a.solution, self._sortColumn), bv = self._rawValue(b.solution, self._sortColumn);
+        result = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+      }
+      return self._sortDirection === 'asc' ? result : -result;
+    });
     if (!this._tbody) return;
     if (this._grouped && typeof GearSolutionGrouping !== 'undefined') return this._renderGrouped(this._filtered);
     var pages = Math.max(1, Math.ceil(this._filtered.length / PAGE_SIZE)); this._currentPage = Math.min(this._currentPage, pages - 1); if (this._pageStatus) this._pageStatus.textContent = 'Page ' + (this._currentPage + 1) + ' / ' + pages + ' · ' + this._filtered.length + ' résultats'; if (this._previousButton) this._previousButton.disabled = this._currentPage === 0; if (this._nextButton) this._nextButton.disabled = this._currentPage >= pages - 1; this._tbody.innerHTML = '';

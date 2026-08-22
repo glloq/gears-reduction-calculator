@@ -4,7 +4,11 @@
   else root.ResultsColumnPreferences = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  var REQUIRED = ['action'];
+  // `rank` est ce qui empêche le tableau de contredire les cartes : sans lui,
+  // rien n'y dit quelle solution est la recommandée, et l'ordre des lignes
+  // dépend de la colonne triée. Il ne se masque donc pas — pas plus que la
+  // colonne d'action.
+  var REQUIRED = ['action', 'rank'];
 
   function sanitize(value, available) {
     var known = {};

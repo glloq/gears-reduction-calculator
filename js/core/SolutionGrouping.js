@@ -32,6 +32,103 @@
     return ((solution && solution.stages) || []).map(function (stage) { return stage.type; });
   }
 
+  // ===== FAMILLE ET CONFIGURATION SONT DEUX CHOSES =====
+  //
+  // On regroupait sur la seule suite des TYPES. « Épicycloïdal » réunissait
+  // donc, dans une même ligne, un train solaire-entrée / couronne-fixe /
+  // porte-satellites-sortie et un porte-satellites-entrée / solaire-fixe /
+  // couronne-sortie : mêmes dentures, rapports différents, parfois de signe
+  // opposé. Ce ne sont pas deux variantes l'une de l'autre, ce sont deux
+  // mécanismes. Même chose pour une courroie ouverte et une courroie croisée —
+  // qui tournent en sens inverse — et pour deux renvois coniques d'angles
+  // différents.
+  //
+  // Deux niveaux, donc : la FAMILLE dit de quoi c'est fait, la CONFIGURATION
+  // dit comment c'est monté. On regroupe sur la seconde.
+
+  function familySignature(stage) {
+    var type = stage && stage.type;
+    return type === 'epicyclic' ? 'planetary' : String(type || '?');
+  }
+
+  /** Ce qui, à famille égale, fait un AUTRE mécanisme. */
+  function configurationSignature(stage) {
+    var family = familySignature(stage);
+    if (!stage) return family;
+    // Une signature ne s'invente pas : quand ce qui distinguerait deux montages
+    // n'est pas renseigné, on s'en tient à la famille. Un « ? » dans la clé
+    // séparerait des solutions sur une ABSENCE d'information.
+    if (family === 'planetary') {
+      // Qui mène, qui est tenu, qui sort : c'est cela le mécanisme.
+      if (!stage.inputMember && !stage.fixed && !stage.outputMember) return family;
+      return family + ':' + [stage.inputMember || '?', stage.fixed || '?', stage.outputMember || '?'].join('');
+    }
+    if (family === 'belt') {
+      // Croisée, la poulie menée tourne à l'envers : ce n'est pas une variante.
+      var crossed = stage.crossed || (stage.parameters && stage.parameters.crossed);
+      // Ouverte est le montage par défaut : seule la courroie CROISÉE se
+      // distingue, sans quoi toute courroie ordinaire changerait de clé.
+      return crossed ? family + ':croisee' : family;
+    }
+    if (family === 'bevel') {
+      // Un renvoi à 45° et un renvoi à 90° n'occupent pas le même volume et ne
+      // se montent pas de la même façon.
+      var angle = (stage.parameters && stage.parameters.shaftAngle) ||
+        (stage.geometry && stage.geometry.shaftAngleDeg);
+      // 90° est le renvoi par défaut : il garde la clé de sa famille, et seuls
+      // les autres angles s'en détachent.
+      if (!Number.isFinite(angle) || Math.round(angle) === 90) return family;
+      return family + ':' + Math.round(angle) + '°';
+    }
+    if (family === 'worm') {
+      // Ce qui change le MÉCANISME, c'est l'irréversibilité : une vis à un
+      // seul filet ne se laisse pas entraîner par sa roue, les autres si. Le
+      // nombre exact de filets, lui, est un réglage de rapport comme un nombre
+      // de dents — le prendre dans la signature éclaterait en six groupes ce
+      // que le regroupement est justement là pour réunir.
+      return stage.wormStarts === 1 ? family + ':1f' : family;
+    }
+    // Le sens d'hélice reste une variante : il change la poussée axiale, pas la
+    // façon dont le mécanisme est monté ni ce qu'il rend. Le distinguer ici
+    // doublerait chaque groupe hélicoïdal sans répondre à une question posée.
+    return family;
+  }
+
+  /** La signature de configuration d'une solution entière. */
+  function configuration(solution) {
+    return ((solution && solution.stages) || []).map(configurationSignature);
+  }
+
+  /** Ce qu'on écrit à côté du nom de famille, quand la configuration le mérite. */
+  function describe(stage, memberName) {
+    var family = familySignature(stage);
+    var name = memberName || function (code) { return code; };
+    if (family === 'planetary') {
+      var roles = [];
+      if (stage.inputMember) roles.push(name(stage.inputMember) + ' entrée');
+      if (stage.fixed) roles.push(name(stage.fixed) + ' fixe');
+      if (stage.outputMember) roles.push(name(stage.outputMember) + ' sortie');
+      return roles.join(' · ');
+    }
+    if (family === 'belt') {
+      return (stage.crossed || (stage.parameters && stage.parameters.crossed)) ? 'croisée' : '';
+    }
+    if (family === 'bevel') {
+      var angle = (stage.parameters && stage.parameters.shaftAngle) ||
+        (stage.geometry && stage.geometry.shaftAngleDeg);
+      return Number.isFinite(angle) && Math.round(angle) !== 90 ? Math.round(angle) + '°' : '';
+    }
+    if (family === 'worm') return stage.wormStarts === 1 ? 'irréversible' : '';
+    return '';
+  }
+
+  /** La description d'une solution entière, étage par étage. */
+  function describeAll(solution, memberName) {
+    return ((solution && solution.stages) || []).map(function (stage) {
+      return describe(stage, memberName);
+    }).filter(Boolean).join(' · ');
+  }
+
   /**
    * Le COÛT d'une solution, tel que le moteur l'a établi.
    *
@@ -64,9 +161,11 @@
     var order = [];
     list.forEach(function (solution, i) {
       var types = architecture(solution);
-      var key = types.join('>');
+      // La clé est la CONFIGURATION, pas la seule suite des familles.
+      var key = configuration(solution).join('>');
       if (!byKey[key]) {
-        byKey[key] = { key: key, types: types, members: [], count: 0, best: null, bestIndex: -1 };
+        byKey[key] = { key: key, types: types, family: types.join('>'),
+          configuration: configuration(solution), members: [], count: 0, best: null, bestIndex: -1 };
         order.push(byKey[key]);
       }
       var entry = byKey[key];
@@ -121,7 +220,13 @@
    * Le groupe auquel appartient une solution — pour retrouver sa famille quand
    * on l'a choisie ailleurs, et déplier celle-là plutôt qu'une autre.
    */
-  function keyOf(solution) { return architecture(solution).join('>'); }
+  function keyOf(solution) { return configuration(solution).join('>'); }
 
-  return { group: group, architecture: architecture, keyOf: keyOf, spreadOf: spreadOf, costOf: costOf };
+  /** La seule suite des familles — pour un regroupement plus grossier. */
+  function familyKeyOf(solution) { return architecture(solution).join('>'); }
+
+  return { group: group, architecture: architecture, configuration: configuration,
+    configurationSignature: configurationSignature, familySignature: familySignature,
+    describe: describe, describeAll: describeAll,
+    keyOf: keyOf, familyKeyOf: familyKeyOf, spreadOf: spreadOf, costOf: costOf };
 });

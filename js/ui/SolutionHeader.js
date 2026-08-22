@@ -249,9 +249,18 @@
     var annotation = workbench && workbench._annotation;
     var position = workbench && workbench._poolIndexOf ? workbench._poolIndexOf(this.index) : this.index;
     var badges = annotation && annotation.byIndex ? annotation.byIndex[position] || [] : [];
-    if (badges.indexOf('recommended') === -1) return null;
+    if (!badges.length) return null;
     var intent = workbench && workbench.session ? workbench.session.intent : null;
-    return Evaluator && Evaluator.leadLabel ? Evaluator.leadLabel(intent) : 'Recommandée';
+    if (badges.indexOf('recommended') >= 0) {
+      return Evaluator && Evaluator.leadLabel ? Evaluator.leadLabel(intent) : 'Recommandée';
+    }
+    // §25 : LE BADGE D'UNE ALTERNATIVE SURVIT AU PASSAGE AU DESSIN.
+    //
+    // Il ne s'affichait que pour la recommandée. On cliquait « Meilleur
+    // rendement », on arrivait sur le dessin, et plus rien ne disait POURQUOI
+    // on regardait celle-là plutôt qu'une autre — c'est-à-dire ce qu'on était
+    // venu vérifier.
+    return Evaluator && Evaluator.label ? Evaluator.label(badges[0], intent) : null;
   };
 
   SolutionHeader.prototype._markStages = function () {

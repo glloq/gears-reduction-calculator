@@ -4,6 +4,48 @@
 (function (GearApp) {
 
   /**
+   * §21 : la classe visuelle d'un rendement.
+   *
+   * Une couleur de résultat doit dépendre des LIMITES du moteur quand il existe
+   * une limite physique, de la DEMANDE quand il existe une contrainte, et
+   * rester neutre sinon. Le barème 95/90 codé en dur faisait passer pour
+   * excellente une solution qui ratait l'exigence de l'utilisateur.
+   */
+  /**
+   * Les alertes d'une solution : par gravité, coupées à trois, et le reste
+   * annoncé plutôt que tu.
+   */
+  function alertBadges(solution) {
+    var Assessment = GearApp.requirements && GearApp.requirements.DecisionAssessment;
+    var alerts = Assessment ? Assessment.alerts(solution) : null;
+    if (!alerts || !alerts.list.length) return '';
+    var shown = alerts.list.slice(0, 3).map(function (entry) {
+      return '<span class="status-badge state-' + entry.level + '" title="' +
+        escapeAttribute(entry.advice || '') + '">' + entry.mark + ' ' + escapeText(entry.label) + '</span>';
+    }).join('');
+    var rest = alerts.list.length - 3;
+    if (rest > 0) {
+      shown += '<span class="status-badge state-unknown" title="' +
+        escapeAttribute(alerts.list.slice(3).map(function (entry) { return entry.label; }).join(' · ')) +
+        '">+ ' + rest + ' autre' + (rest > 1 ? 's' : '') + '</span>';
+    }
+    return shown;
+  }
+
+  function efficiencyClass(efficiency, asked) {
+    if (!Number.isFinite(efficiency)) return 'unknown';
+    var wanted = asked && asked.constraints && asked.constraints.minimumEfficiency;
+    if (Number.isFinite(wanted)) {
+      if (efficiency < wanted) return 'warning';
+      return efficiency >= wanted * 1.02 ? 'excellent' : 'good';
+    }
+    var floor = (window.GearEngineering && GearEngineering.LIMITS && GearEngineering.LIMITS.efficiency) || 0.8;
+    if (efficiency < floor) return 'warning';
+    return efficiency > 0.95 ? 'excellent' : efficiency > 0.90 ? 'good' : 'neutral';
+  }
+
+
+  /**
    * Une valeur de service peut être NON RENSEIGNÉE : une chaîne analysée sans
    * régime n'a ni vitesse de sortie ni couple. `toFixed` sur un `null` faisait
    * tomber la carte entière, et avec elle tout ce qui suivait dans la page.
@@ -123,9 +165,25 @@
 
   // Graphiques calculés sur le vivier complet (appelé par SolutionExplorer à
   // chaque nouvelle recherche, jamais pendant l'affinage).
-  UIController.prototype.updatePoolCharts = function (solutions, searchParams) {
+  UIController.prototype.updatePoolCharts = function (solutions, searchParams, assessment) {
     this._lastSearchParams = searchParams;
+    this._assessment = assessment || null;
     this._updateComparisonCharts(solutions, searchParams);
+    // §23 : le front de Pareto décidait des alternatives sans jamais se
+    // montrer. Le voir, c'est comprendre le choix : « ces neuf-là ne sont
+    // battues par personne, les autres le sont. »
+    var charts = this._charts || window.GearCharts;
+    if (charts && assessment && document.getElementById('paretoChart')) {
+      charts.drawParetoScatter('paretoChart', assessment);
+    }
+  };
+
+  /** La contribution de chaque critère au classement de la solution ouverte. */
+  UIController.prototype.updateDecisionCharts = function (index) {
+    var charts = this._charts || window.GearCharts;
+    if (!charts || !document.getElementById('contributionChart')) return;
+    var entry = this._assessment && this._assessment.byIndex ? this._assessment.byIndex[index] : null;
+    charts.drawScoreContribution('contributionChart', entry);
   };
 
   /**
@@ -201,7 +259,14 @@
       return '<span class="type-badge ' + id + '">' + registry.get(id).nomCourt + '</span>';
     }).join(' ');
 
-    var rendClass = solution.efficiency > 0.95 ? 'excellent' : solution.efficiency > 0.90 ? 'good' : 'warning';
+    // §21 : LA COULEUR SUIT LA DEMANDE, PAS UN BARÈME MAISON.
+    //
+    // 95 % était « excellent » et 90 % « bon », quoi qu'on ait demandé. Un
+    // utilisateur qui impose 98 % voyait donc en vert une solution à 96 % qui
+    // ne répond pas à sa demande. Quand une exigence existe, c'est elle qui
+    // décide ; sinon on retombe sur les seuils du moteur, qui, eux, décrivent
+    // une physique et non une intention.
+    var rendClass = efficiencyClass(solution.efficiency, this._lastSearchParams);
 
     var sf = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.bending&&stage.bending.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
     var sh = (solution.mechanical || []).reduce(function(min, stage) { var value=stage.contact&&stage.contact.safetyFactor;return Number.isFinite(value)?Math.min(min,value):min; }, Infinity);
@@ -243,13 +308,14 @@
           return '<span class="status-badge state-' + badge.state + '" data-compliance="' + badge.key +
             '" title="' + escapeAttribute(badge.title) + '">' + badge.mark + ' ' + escapeText(badge.text) + '</span>';
         }).join('') +
-        // Les alertes sont libellées en français par le moteur ; le code interne
-        // n'a jamais rien dit à personne et ne paraît plus à l'écran.
-        warnings.slice(0, 3).map(function (w) {
-          var text = (w && w.message) || GearSolutionCompliance.label(w && w.code);
-          return '<span class="status-badge state-' + ((w && w.level) || 'warning') + '" title="' +
-            escapeAttribute((w && w.recommendation) || '') + '">⚠ ' + escapeText(text) + '</span>';
-        }).join('') + '</div>';
+        // §20 : LES PLUS GRAVES D'ABORD, ET LE RESTE ANNONCÉ.
+        //
+        // Trois alertes s'affichaient, dans l'ordre où le moteur les avait
+        // émises, et rien ne disait qu'il en existait d'autres. Une sécurité au
+        // contact insuffisante pouvait donc être la quatrième — c'est-à-dire
+        // invisible — derrière trois réserves. Les alertes sont libellées en
+        // français par le moteur ; le code interne ne paraît jamais à l'écran.
+        alertBadges(solution) + '</div>';
 
     card.hidden = false;
   };

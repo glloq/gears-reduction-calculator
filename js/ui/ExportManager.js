@@ -54,6 +54,83 @@
     this._download(new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8'}), 'gear-solution.csv');
   };
 
+  /**
+   * §P2.5 : LE RAPPORT DE DÉCISION.
+   *
+   * Les exports décrivaient une SOLUTION — géométrie, efforts, matériaux — et
+   * jamais le choix. Or ce qu'on doit pouvoir transmettre, archiver ou défendre
+   * en revue, c'est précisément le choix : quelle solution, à quel rang, sur
+   * quel domaine, avec quels contrôles vérifiés, ce qu'elle gagne et ce qu'elle
+   * coûte face aux autres, et ce qui n'a PAS été vérifié.
+   *
+   * Rien n'est recalculé ici : c'est le verdict de `DecisionAssessment`, mis en
+   * forme. Un rapport qui recalculerait pourrait contredire l'écran dont il
+   * prétend rendre compte.
+   */
+  ExportManager.prototype.exportDecisionReport = function (assessment, context) {
+    if (!assessment || !assessment.entries.length) return null;
+    var meta = context || {};
+    var report = {
+      schemaVersion: 1,
+      generatedBy: 'gears-reduction-calculator',
+      // La PORTÉE d'abord : un classement sur un domaine tronqué n'a pas la
+      // valeur d'un optimum, et un rapport doit le dire avant ses conclusions.
+      scope: assessment.scope,
+      requirement: meta.requirement || null,
+      priorities: meta.priorities || null,
+      objectives: assessment.objectives,
+      recommended: describeEntry(assessment.byIndex[assessment.recommended]),
+      alternatives: (assessment.decision.order || [])
+        .filter(function (index) { return index !== assessment.recommended; })
+        .map(function (index) { return describeEntry(assessment.byIndex[index]); }),
+      ranking: (assessment.decision.ranking || []).slice(0, 25).map(function (index) {
+        var entry = assessment.byIndex[index];
+        return { rank: entry.decision.rank, architecture: architectureOf(entry.solution),
+          pareto: entry.decision.pareto, engineeringIndex: entry.engineering,
+          compliance: entry.compliance.overall };
+      })
+    };
+    this._download(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }),
+      'gear-decision-report.json');
+    return report;
+  };
+
+  function architectureOf(solution) {
+    return ((solution && solution.stages) || []).map(function (stage) { return stage.type; }).join(' → ');
+  }
+
+  /** Une solution, telle que le verdict la décrit — sans rien y ajouter. */
+  function describeEntry(entry) {
+    if (!entry) return null;
+    return {
+      rank: entry.decision.rank,
+      recommended: entry.decision.recommended,
+      pareto: entry.decision.pareto,
+      badges: entry.badges,
+      architecture: architectureOf(entry.solution),
+      ratio: entry.solution.ratio,
+      errorPercent: entry.solution.errorPercent,
+      efficiency: entry.solution.efficiency,
+      dimensions: entry.solution.dimensions,
+      engineeringIndex: entry.engineering,
+      dominantFactor: entry.dominant ? entry.dominant.label : null,
+      contributions: entry.contributions,
+      compliance: { overall: entry.compliance.overall,
+        checks: entry.compliance.checks.map(function (check) {
+          return { key: check.key, state: check.state, text: check.text };
+        }) },
+      // Ce qui n'a pas été vérifié fait partie du rapport : un choix défendu
+      // sans ses angles morts n'est pas défendable.
+      unverified: entry.uncertainty.mechanical.concat(entry.uncertainty.checks),
+      strengths: entry.strengths.map(function (item) { return item.text; }),
+      compromises: entry.compromises.map(function (item) { return item.text; }),
+      alerts: entry.alerts.list.map(function (alert) {
+        return { level: alert.level, label: alert.label };
+      }),
+      assumptions: entry.context
+    };
+  }
+
   ExportManager.prototype._download = function (blob, filename) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");

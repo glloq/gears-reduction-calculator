@@ -529,6 +529,32 @@ test('two pinned solutions are compared with deltas, not raw columns (§26)', as
     expect(thumb.box).toMatch(/^-?[\d.]+ -?[\d.]+ [\d.]+ [\d.]+$/);
     expect(thumb.painted).toBe(true);
   });
+
+  // §18 : LA RÉFÉRENCE EST DÉSIGNÉE, pas héritée de l'ordre des clics.
+  //
+  // Tous les écarts se lisaient face à la première colonne épinglée, c'est-à-
+  // dire face à celle qu'on avait cliquée en premier — un ordre qui ne dit
+  // rien. On peut la choisir, et elle se voit.
+  await expect(table.locator('th.is-reference')).toHaveCount(1);
+  await expect(table.locator('.compare-reference')).toHaveText('★ Référence');
+  const firstReference = await table.locator('th.is-reference').textContent();
+  await table.locator('.compare-set-reference').first().click();
+  await expect(table.locator('th.is-reference')).toHaveCount(1);
+  expect(await table.locator('th.is-reference').textContent()).not.toBe(firstReference);
+  // La colonne de référence ne porte plus d'écart : elle EST l'écart zéro.
+  const referenceIndex = await table.evaluate(node =>
+    Array.from(node.querySelectorAll('thead th')).findIndex(th => th.classList.contains('is-reference')));
+  const deltasInReference = await table.evaluate((node, index) =>
+    Array.from(node.querySelectorAll('tbody tr'))
+      .filter(row => row.children[index] && row.children[index].querySelector('.metric-delta')).length,
+    referenceIndex);
+  expect(deltasInReference).toBe(0);
+
+  // §18 : et les grandeurs qu'on vient y chercher sont là.
+  const labels = await table.locator('tbody th').allTextContents();
+  ['Couple sortie', 'Pertes', 'Alertes', 'Largeur'].forEach(label => {
+    expect(labels).toContain(label);
+  });
 });
 
 test('a built chain survives a reload', async ({ page }) => {
