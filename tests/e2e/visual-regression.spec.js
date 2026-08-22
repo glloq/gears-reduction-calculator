@@ -93,6 +93,14 @@ const SHOTS = [
   { name: 'rack-face', stages: ['rack'], camera: 'front' },
   { name: 'rack-iso', stages: ['rack'], camera: 'iso' },
   { name: 'spur-bevel-iso', stages: ['spur', 'bevel'], camera: 'iso' },
+  // LA VUE DÉPLIÉE D'UN TRAIN COMPOSÉ, les deux cas de la même règle.
+  // Avec un renvoi, elle doit le DÉPLIER : le premier arbre était vu en bout,
+  // recevait la direction nulle, et le renvoi à 90° qui le suivait se dessinait
+  // parallèle — c'est-à-dire coaxial. Sans renvoi, elle doit au contraire
+  // laisser empilé ce qui l'est vraiment : deux roues d'un même arbre vues de
+  // bout sont concentriques, et les écarter serait un autre mensonge.
+  { name: 'spur-bevel-depliee', stages: ['spur', 'bevel'], camera: 'unfolded' },
+  { name: 'spur-helical-depliee', stages: ['spur', 'helical'], camera: 'unfolded' },
   { name: 'worm-spur-iso', stages: ['worm', 'spur'], camera: 'iso' },
   { name: 'planetary-spur-iso', stages: ['planetary', 'spur'], camera: 'iso' },
   { name: 'spur-bevel-dimensions', stages: ['spur', 'bevel'], camera: 'iso', view: 'geometry' },

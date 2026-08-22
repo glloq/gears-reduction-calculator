@@ -29,6 +29,11 @@ const STAGES = {
   internal: { type: 'internal', input: { teeth: 18 }, output: { teeth: 54 }, parameters: { module: 2, pressureAngle: 20 } },
   bevel: { type: 'bevel', input: { teeth: 20 }, output: { teeth: 40 }, parameters: { module: 2, shaftAngle: 90, faceWidth: 15 } },
   bevel60: { type: 'bevel', input: { teeth: 20 }, output: { teeth: 40 }, parameters: { module: 2, shaftAngle: 60, faceWidth: 15 } },
+  // Un renvoi ne se taille pas qu'à 90° ni qu'à 60°. 45° est un aigu franc ;
+  // 120° est OBTUS, et pousse le grand cône à 90° de demi-angle — une roue
+  // plate, cas limite où un cône cesse d'en être un.
+  bevel45: { type: 'bevel', input: { teeth: 20 }, output: { teeth: 40 }, parameters: { module: 2, shaftAngle: 45, faceWidth: 15 } },
+  bevel120: { type: 'bevel', input: { teeth: 20 }, output: { teeth: 40 }, parameters: { module: 2, shaftAngle: 120, faceWidth: 15 } },
   worm: { type: 'worm', wormStarts: 2, wheelTeeth: 40, parameters: { module: 2, leadAngle: 20, diameterQuotient: 10 } },
   belt: { type: 'belt', input: { teeth: 20 }, output: { teeth: 60 }, parameters: { pitch: 5, centerDistance: 150, profile: 'HTD-5M' } },
   beltCrossed: { type: 'belt', input: { teeth: 20 }, output: { teeth: 60 }, parameters: { pitch: 5, centerDistance: 150, profile: 'HTD-5M', crossed: true } },
@@ -42,9 +47,10 @@ const CAMERAS = ['unfolded', 'front', 'rear', 'top', 'bottom', 'side', 'side-far
   'iso', 'iso-90', 'iso-180', 'iso-270'];
 
 const ASSEMBLIES = [
-  ['spur'], ['helical'], ['helicalLeft'], ['internal'], ['bevel'], ['bevel60'], ['worm'],
+  ['spur'], ['helical'], ['helicalLeft'], ['internal'], ['bevel'], ['bevel60'], ['bevel45'], ['bevel120'], ['worm'],
   ['belt'], ['beltCrossed'], ['chain'], ['planetary'], ['rack'],
-  ['spur', 'bevel'], ['worm', 'spur'], ['belt', 'spur'], ['planetary', 'spur'], ['bevel', 'worm']
+  ['spur', 'bevel'], ['worm', 'spur'], ['belt', 'spur'], ['planetary', 'spur'], ['bevel', 'worm'],
+  ['spur', 'bevel45'], ['beltCrossed', 'spur'], ['chain', 'bevel']
 ];
 
 async function prepare(page) {
@@ -205,6 +211,84 @@ async function prepare(page) {
               }
             });
           });
+        });
+      });
+
+      // (7) UN RENVOI NE SE DESSINE JAMAIS COAXIAL.
+      //
+      //     Un couple conique ne se taille pas qu'à 90°, et l'angle dessiné
+      //     entre ses deux axes doit venir de quelque part de vérifiable :
+      //
+      //     — si les deux axes ont une image à l'écran, c'est l'angle de leurs
+      //       IMAGES. La vue dépliée prend ses orientations de la projection ;
+      //       une isométrie a le droit de montrer un angle droit à 60°, c'est
+      //       ce que fait une isométrie.
+      //     — s'il en manque une, la projection ne peut plus rien dire : on
+      //       reprend alors l'ANGLE VRAI, somme des deux demi-angles de cône.
+      //
+      //     Dans les deux cas les deux axes restent distincts. C'est le défaut
+      //     qui se cachait ici : dans un train COMPOSÉ, le premier arbre vu en
+      //     bout recevait la direction nulle et le renvoi qui le suivait gardait
+      //     sa direction projetée — les deux arbres se dessinaient PARALLÈLES,
+      //     et un renvoi à 90° se lisait comme un montage coaxial.
+      //
+      //     La question ne se pose QUE dans la vue dépliée. Une projection
+      //     orthographique prise dans l'axe d'un arbre montre légitimement
+      //     l'autre en bout, donc le renvoi de face : ce n'est pas un défaut,
+      //     c'est ce qu'on voit de là. C'est précisément pour ne pas être
+      //     réduit à ces vues que le dessin d'ensemble se déplie.
+      if (model.mode === 'unfolded') model.stages.forEach(entry => {
+        const cones = (entry.wheels || []).filter(w => w.kind === 'cone' && Number.isFinite(w.coneAngleDeg));
+        if (cones.length !== 2) return;
+        const image = w => {
+          const placed = frame.spatial.byId[w.memberId];
+          if (!placed || !placed.axis) return null;
+          const xy = GearProjectionEngine.project(placed.axis, frame.view);
+          return Math.hypot(xy[0], xy[1]) > 1e-9 ? Math.atan2(xy[1], xy[0]) * 180 / Math.PI : null;
+        };
+        const between = (a, b) => {
+          let d = Math.abs((a - b) % 180);
+          return d > 90 ? 180 - d : d;
+        };
+        const drawn = between(cones[0].axisAngleDeg || 0, cones[1].axisAngleDeg || 0);
+        const seen = [image(cones[0]), image(cones[1])];
+        const sigma = cones[0].coneAngleDeg + cones[1].coneAngleDeg;
+        const wanted = seen[0] === null || seen[1] === null
+          ? (sigma > 90 ? 180 - sigma : sigma) : between(seen[0], seen[1]);
+        if (Math.abs(drawn - wanted) > 0.5) {
+          problems.push('conique : arbres dessinés à ' + drawn.toFixed(2) + '° au lieu de ' +
+            wanted.toFixed(2) + '° (angle d’arbres ' + sigma.toFixed(2) + '°)');
+        }
+        if (sigma > 1 && Math.abs(180 - sigma) > 1 && drawn < 0.5 && (seen[0] !== null || seen[1] !== null)) {
+          problems.push('conique : renvoi de ' + sigma.toFixed(2) + '° dessiné coaxial');
+        }
+      });
+
+      // (8) UNE COURROIE CROISÉE SE CROISE, une courroie ouverte non.
+      //
+      //     C'est ce qui distingue les deux montages, et c'est ce qu'on vient
+      //     lire sur le dessin : croisée, la poulie menée tourne à l'envers.
+      //     Vue PAR LA TRANCHE, en revanche, le plan de la courroie se réduit à
+      //     une ligne et les deux brins se superposent au lieu de se couper :
+      //     là, la question n'a pas de sens et on ne la pose pas.
+      model.stages.forEach(entry => {
+        (entry.links || []).forEach(link => {
+          if (link.kind !== 'belt-span' && link.kind !== 'chain-span') return;
+          if ((entry.wheels || []).some(w => w.presentation === 'profile')) return;
+          const ends = ((link.geometry && link.geometry.parts) || [])
+            .filter(p => p.kind === 'line')
+            .map(p => /M\s*([-\d.]+)\s+([-\d.]+)\s*L\s*([-\d.]+)\s+([-\d.]+)/.exec(p.d || ''))
+            .filter(Boolean)
+            .map(m => [[Number(m[1]), Number(m[2])], [Number(m[3]), Number(m[4])]]);
+          if (ends.length !== 2) return;
+          const side = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+          const [a, b] = ends;
+          const meet = ((side(a[0], a[1], b[0]) > 0) !== (side(a[0], a[1], b[1]) > 0)) &&
+            ((side(b[0], b[1], a[0]) > 0) !== (side(b[0], b[1], a[1]) > 0));
+          if (!!link.crossed !== meet) {
+            problems.push(link.kind + (link.crossed ? ' croisée : les brins ne se coupent pas'
+              : ' ouverte : les brins se coupent'));
+          }
         });
       });
       return problems;
