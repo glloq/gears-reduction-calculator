@@ -232,3 +232,73 @@ test('an alternative keeps its badge all the way to the drawing (§25)', async (
   // La bande d'identité, au-dessus du dessin, rappelle ce qu'on était venu voir.
   await expect(page.locator('.identity-badge')).toHaveText(text);
 });
+
+test('the list opens on what helps decide, and says how far the ranking reaches (§16, §17)', async ({ page }) => {
+  // §16 : toutes les cartes de la vue étaient rendues, et le vivier peut en
+  // garder quatre cents. Personne ne compare correctement cent quatre-vingts
+  // cartes — et sur téléphone, elles sont la seule représentation.
+  await search(page);
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
+
+  const bar = page.locator('#resultsScopeBar');
+  await expect(bar).toBeVisible();
+  const cards = page.locator('.solution-card');
+
+  const shortlist = await cards.count();
+  const total = await page.evaluate(() => window.GearApp._explorer._pool.length);
+  expect(total).toBeGreaterThan(12);
+  expect(shortlist).toBeLessThan(total);
+  expect(shortlist).toBeGreaterThan(0);
+  // La recommandée est dans la sélection, et en tête : c'est le point de départ.
+  await expect(cards.first()).toHaveClass(/recommended/);
+
+  // Le front de Pareto, puis tout le vivier — les deux à un geste.
+  await page.locator('#resultsScope [data-scope="pareto"]').click();
+  const pareto = await cards.count();
+  expect(pareto).toBeGreaterThan(0);
+  await page.locator('#resultsScope [data-scope="all"]').click();
+  expect(await cards.count()).toBe(total);
+
+  // §17 : la portée du classement se lit, au lieu de dormir dans une
+  // info-bulle. Le moteur a validé bien plus de solutions que le vivier n'en
+  // garde ; une recommandation calculée sur les conservées doit le dire.
+  const note = page.locator('#resultsScopeNote');
+  await expect(note).toContainText('front de Pareto');
+  const text = await note.textContent();
+  const truncated = await page.evaluate(() => {
+    const stats = window.GearApp._explorer._stats;
+    return !!(stats && stats.valid > window.GearApp._explorer._pool.length);
+  });
+  if (truncated) {
+    expect(text).toMatch(/tronqué/);
+    await expect(note).toHaveClass(/is-truncated/);
+  }
+});
+
+test('the expert table shows the decision it used to hide (§13, §14)', async ({ page }) => {
+  // La vue tableau ne montrait que des données brutes et l'indice du moteur,
+  // pendant que les cartes portaient le Pareto, les badges et la conformité :
+  // deux vues d'un même vivier qui semblaient donner deux résultats.
+  await search(page);
+  await expect(page.locator('.solution-card')).not.toHaveCount(0, { timeout: 20000 });
+  await page.locator('#tableViewBtn').click();
+
+  const headers = await page.locator('#resultats').locator('xpath=ancestor::table').locator('th').allTextContents();
+  ['Rang', 'Pareto', 'Contrôles', 'Indice technique', 'Alertes'].forEach(label => {
+    expect(headers).toContain(label);
+  });
+
+  const first = await page.evaluate(() => {
+    const row = document.querySelector('#resultats tr');
+    const cell = name => (row.querySelector('td[data-col="' + name + '"]') || {}).textContent;
+    return { rank: cell('rank'), pareto: cell('pareto'), checks: cell('checks'), alerts: cell('warnings') };
+  });
+  // La première ligne est la recommandée : rang 1, et sur le front.
+  expect(first.rank).toBe('★ 1');
+  expect(first.pareto).toBe('✓');
+  // Les contrôles se lisent dans les mêmes marques que partout ailleurs, et
+  // « non vérifié » (·) n'y est pas confondu avec « conforme » (✓).
+  expect(first.checks).toMatch(/[✓⚠✕·]/);
+  // §13 : les alertes disent leur gravité, pas seulement leur nombre.
+  expect(first.alerts).toMatch(/^(—|[✕⚠] \d+( · [✕⚠] \d+)?)$/);
+});

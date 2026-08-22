@@ -9,14 +9,24 @@
   // il a sa propre colonne. Deux grandeurs, deux noms.
   var SCORE_HINT = 'Indice technique : moyenne pondérée de huit pénalités (écart, taille, pertes, risque mécanique, étages, bruit, fabrication, coût), calculée pour cette solution seule. Plus bas = mieux. Ce n’est pas le classement : voir la colonne Rang.';
   var RANK_HINT = 'Rang décisionnel : la place de cette solution dans le classement qui tient compte du vivier, de vos priorités et du front de Pareto. C’est lui qui élit la solution recommandée.';
+  // §14 : la vue « expert » n'affichait que des données brutes et l'indice du
+  // moteur. Les cartes, elles, portaient le Pareto, les badges, la
+  // justification et la conformité — d'où deux vues qui semblaient donner deux
+  // résultats. Trois colonnes suffisent à les réconcilier : le rang, le front,
+  // et l'état des contrôles.
+  var PARETO_HINT = 'Front de Pareto : aucune autre solution du vivier n’est meilleure sur TOUS les critères à la fois.';
+  var CHECK_HINT = 'Contrôles : ✓ conforme · ⚠ limite · ✕ insuffisant · · non vérifié. « Non vérifié » n’est pas « conforme ».';
   var COLUMNS = [
     { id: 'rank', label: 'Rang', hint: RANK_HINT },
+    { id: 'pareto', label: 'Pareto', hint: PARETO_HINT },
+    { id: 'checks', label: 'Contrôles', hint: CHECK_HINT },
     { id: 'score', label: 'Indice technique', hint: SCORE_HINT }, { id: 'architecture', label: 'Architecture' },
     { id: 'ratio', label: 'Rapport' }, { id: 'error', label: 'Erreur %' },
     { id: 'stages', label: 'Étages' }, { id: 'efficiency', label: 'Rendement' },
     { id: 'dimensions', label: 'Dimensions' }, { id: 'rpm', label: 'RPM sortie' },
     { id: 'torque', label: 'Couple sortie' }, { id: 'sf', label: 'SF' },
-    { id: 'sh', label: 'SH' }, { id: 'warnings', label: 'Warnings' },
+    // « Warnings : 3 » ne disait pas si l'une d'elles était un refus.
+    { id: 'sh', label: 'SH' }, { id: 'warnings', label: 'Alertes', hint: 'Gravité d’abord : ✕ refus, ⚠ réserve. Trois réserves ne valent pas un refus.' },
     { id: 'action', label: 'Action', sortable: false }
   ];
   var PAGE_SIZE = 25, STORAGE_KEY = 'gearCalcResultColumns';
@@ -56,8 +66,45 @@
       error: solution.errorPercent, stages: solution.stages.length, efficiency: solution.efficiency,
       dimensions: solution.dimensions.x * solution.dimensions.y * Math.max(1, solution.dimensions.z),
       rpm: solution.outputSpeedRpm, torque: solution.outputTorqueNm, sf: minFactor(solution, 'bending'),
-      sh: minFactor(solution, 'contact'), warnings: solution.warnings.length }[id];
+      sh: minFactor(solution, 'contact'), warnings: alertSeverity(solution) }[id];
   };
+
+  /** L'état des contrôles, dans les marques que tout l'écran partage. */
+  function checkSummary(entry) {
+    var order = { danger: 0, warning: 1, unknown: 2, ok: 3 };
+    var counts = {};
+    (entry.compliance.checks || []).forEach(function (check) {
+      counts[check.state] = (counts[check.state] || 0) + 1;
+    });
+    var marks = { ok: '✓', warning: '⚠', danger: '✕', unknown: '·' };
+    return Object.keys(counts).sort(function (a, b) { return order[a] - order[b]; })
+      .map(function (state) { return marks[state] + ' ' + counts[state]; }).join(' ') || '—';
+  }
+
+  /**
+   * §13 : trier sur `warnings.length` mettait trois réserves devant un refus.
+   * On trie sur la GRAVITÉ, et l'affichage la montre de la même façon.
+   */
+  function alertSeverity(solution) {
+    var counts = { danger: 0, warning: 0, unknown: 0 };
+    ((solution && solution.warnings) || []).forEach(function (entry) {
+      var level = (entry && entry.level) || 'warning';
+      if (counts[level] != null) counts[level]++;
+    });
+    return counts.danger * 1e6 + counts.warning * 1e3 + counts.unknown;
+  }
+
+  function alertText(solution) {
+    var counts = { danger: 0, warning: 0 };
+    ((solution && solution.warnings) || []).forEach(function (entry) {
+      var level = (entry && entry.level) || 'warning';
+      if (counts[level] != null) counts[level]++;
+    });
+    var parts = [];
+    if (counts.danger) parts.push('✕ ' + counts.danger);
+    if (counts.warning) parts.push('⚠ ' + counts.warning);
+    return parts.join(' · ') || '—';
+  }
   /** Le rang décisionnel se lit sur la POSITION dans le vivier, pas sur la solution. */
   ResultsTable.prototype._rankOf = function (index) {
     var rank = this._decision && this._decision.rank ? this._decision.rank[index] : null;
@@ -66,17 +113,20 @@
   ResultsTable.prototype._displayValue = function (solution, id, index) {
     var linear=solution.mode==='rotationTranslation';
     var rank = this._decision && this._decision.rank ? this._decision.rank[index] : null;
+    var entry = this._assessment && this._assessment.byIndex ? this._assessment.byIndex[index] : null;
     var values = { rank: Number.isFinite(rank) ? (rank === 1 ? '★ 1' : String(rank)) : '—',
+      pareto: entry ? (entry.decision.pareto ? '✓' : '') : '—',
+      checks: entry ? checkSummary(entry) : '—',
       score: number(solution.score.value, 3), architecture: types(solution).join(' → '), ratio: linear ? number(solution.travelPerRevolutionMm,2)+' mm/tr' : number(solution.ratio, 4),
       error: number(solution.errorPercent, 3), stages: solution.stages.length, efficiency: number(solution.efficiency * 100, 1) + '%',
       dimensions: number(solution.dimensions.length, 0) + '×' + number(solution.dimensions.maxDiameter, 0) + '×' + number(solution.dimensions.width, 0),
       rpm: linear ? number(solution.outputLinearSpeedMmMin,0)+' mm/min' : number(solution.outputSpeedRpm, 1), torque: linear ? number(solution.outputForceN,1)+' N' : number(solution.outputTorqueNm, 2), sf: number(minFactor(solution, 'bending'), 2),
-      sh: number(minFactor(solution, 'contact'), 2), warnings: solution.warnings.length };
+      sh: number(minFactor(solution, 'contact'), 2), warnings: alertText(solution) };
     return values[id];
   };
   // baseIndices[i] = position de solutions[i] dans le vivier d'origine (contrat
   // de sélection de SolutionExplorer) ; omis, l'index local fait foi.
-  ResultsTable.prototype.display = function (solutions, params, baseIndices, decision) { this._solutions = solutions || []; this._params = params; this._baseIndices = baseIndices || null; this._decision = decision || null; this._currentPage = 0; this._buildToolbar(); this._render(); };
+  ResultsTable.prototype.display = function (solutions, params, baseIndices, decision, assessment) { this._solutions = solutions || []; this._params = params; this._baseIndices = baseIndices || null; this._decision = decision || null; this._assessment = assessment || null; this._currentPage = 0; this._buildToolbar(); this._render(); };
   ResultsTable.prototype.setSelectedIndex = function (index) { this._selectedIndex = index; this._render(); };
   ResultsTable.prototype._buildColumnMenu = function () {
     var self = this, details = document.createElement('details'); details.className = 'column-picker';

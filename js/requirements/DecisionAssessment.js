@@ -337,6 +337,68 @@
     };
   }
 
+  /**
+   * §16 : LA SÉLECTION — ce qui sert vraiment à décider.
+   *
+   * Le vivier peut garder quatre cents solutions, et l'espace de travail les
+   * rendait toutes. Ce n'est pas seulement une question de performance :
+   * personne ne compare correctement cent quatre-vingts cartes, et sur
+   * téléphone elles sont la seule représentation disponible.
+   *
+   * Ce qui aide à choisir tient en une poignée :
+   *   — la recommandée ;
+   *   — la meilleure alternative de chaque compromis significatif ;
+   *   — puis, s'il reste de la place, la meilleure de chaque ARCHITECTURE
+   *     encore absente : c'est là que se trouvent les solutions réellement
+   *     différentes, pas dans la trois-centième variante de denture.
+   *
+   * @returns {number[]} des positions dans le vivier, la recommandée en tête
+   */
+  function shortlist(assessment, options) {
+    options = options || {};
+    var limit = finite(options.limit) ? options.limit : 8;
+    var grouping = options.grouping || null;
+    var out = [], seen = {};
+    function take(index) {
+      if (index == null || seen[index]) return;
+      seen[index] = true; out.push(index);
+    }
+    var decision = assessment && assessment.decision;
+    if (!decision) return out;
+    take(decision.recommended);
+    // `order` range déjà les porteurs de badge par mérite décisionnel.
+    (decision.order || []).forEach(take);
+
+    if (grouping && grouping.keyOf && out.length < limit) {
+      var families = {};
+      out.forEach(function (index) {
+        var solution = assessment.entries[index] && assessment.entries[index].solution;
+        if (solution) families[grouping.keyOf(solution)] = true;
+      });
+      // Le vivier est parcouru dans l'ordre du CLASSEMENT : la meilleure de
+      // chaque architecture, et non la première venue.
+      (decision.ranking || []).forEach(function (index) {
+        if (out.length >= limit || seen[index]) return;
+        var solution = assessment.entries[index] && assessment.entries[index].solution;
+        if (!solution) return;
+        var key = grouping.keyOf(solution);
+        if (families[key]) return;
+        families[key] = true;
+        take(index);
+      });
+    }
+    // Une sélection de deux cartes devant un vivier de trois cents donne
+    // l'impression que la recherche n'a rien trouvé. On complète par les
+    // suivantes du CLASSEMENT — ce sont des variantes proches, et c'est
+    // assumé : elles disent où va la suite de la liste.
+    var floor = finite(options.minimum) ? options.minimum : 5;
+    (decision.ranking || []).forEach(function (index) {
+      if (out.length >= Math.min(floor, limit)) return;
+      take(index);
+    });
+    return out.slice(0, limit);
+  }
+
   function scopeOf(solutions, stats) {
     var kept = solutions.length;
     var valid = stats && finite(stats.valid) ? stats.valid : null;
@@ -350,6 +412,7 @@
   return {
     build: build, contributions: contributions, dominantFactor: dominantFactor,
     trades: trades, uncertainty: uncertainty, alerts: alerts, complexity: complexity,
+    shortlist: shortlist,
     fingerprint: fingerprint, contextDifferences: contextDifferences, scopeOf: scopeOf,
     METRIC_LABELS: METRIC_LABELS, TRADE_METRICS: TRADE_METRICS, SEVERITY: SEVERITY,
     CONTEXT_LABELS: CONTEXT_LABELS, MEANINGFUL: MEANINGFUL

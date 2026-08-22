@@ -506,6 +506,21 @@
             <span id="analysedSummary" class="analysed-summary"></span>
             <button type="button" class="btn-small btn-primary" id="editTransmissionBtn">Modifier la transmission</button>
           </div>
+          <!-- §16 : PERSONNE NE COMPARE CORRECTEMENT CENT QUATRE-VINGTS CARTES.
+               Le vivier peut en garder quatre cents, et sur téléphone les
+               cartes sont la seule représentation. Trois niveaux de lecture :
+               ce qui sert à décider, les non-dominées, puis tout.
+               §17 : et la PORTÉE du classement se lit, au lieu de dormir dans
+               une info-bulle — une recommandation calculée sur 400 solutions
+               retenues parmi 8 000 n'a pas la portée d'un optimum exhaustif. -->
+          <div id="resultsScopeBar" class="results-scope" hidden>
+            <span class="segmented" id="resultsScope" role="group" aria-label="Étendue de la liste">
+              <button type="button" class="btn-small active" data-scope="shortlist" aria-pressed="true">Sélection</button>
+              <button type="button" class="btn-small" data-scope="pareto" aria-pressed="false">Front de Pareto</button>
+              <button type="button" class="btn-small" data-scope="all" aria-pressed="false">Toutes</button>
+            </span>
+            <p id="resultsScopeNote" class="results-scope-note" aria-live="polite"></p>
+          </div>
           <div id="solutionCards" class="solution-cards" aria-live="polite"></div>
           <div class="results-body">
             <div class="table-scroll">

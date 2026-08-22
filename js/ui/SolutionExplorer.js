@@ -124,6 +124,9 @@
     var notice = el('refineNotice');
     if (notice) { notice.textContent = ''; notice.hidden = true; }
     this._resetCriteria();
+    // Une nouvelle recherche rouvre sur la sélection : c'est la lecture qui
+    // aide à décider, et l'utilisateur garde les deux autres à un geste.
+    this._scope = 'shortlist';
     this._renderChips();
 
     var linear = this._pool.length > 0 && this._pool[0].mode === 'rotationTranslation';
@@ -359,6 +362,62 @@
     });
   };
 
+  /**
+   * §16 : TROIS NIVEAUX DE LECTURE.
+   *
+   * Toutes les cartes de la vue filtrée étaient rendues, et le vivier peut en
+   * garder quatre cents. Personne ne compare correctement cent quatre-vingts
+   * cartes — et sur téléphone, où le tableau est désactivé, elles sont la
+   * seule représentation. La liste s'ouvre donc sur ce qui sert à décider ; le
+   * front de Pareto et le vivier complet restent à un geste.
+   */
+  SolutionExplorer.prototype._scopeIndices = function (assessment) {
+    if (!assessment) return null;
+    var scope = this._scope || 'shortlist';
+    if (scope === 'all') return null;
+    if (scope === 'pareto') return assessment.decision.front.slice();
+    var Assessment = GearApp.requirements && GearApp.requirements.DecisionAssessment;
+    return Assessment.shortlist(assessment, {
+      grouping: typeof GearSolutionGrouping !== 'undefined' ? GearSolutionGrouping : null
+    });
+  };
+
+  /** Le bandeau d'étendue : combien on montre, sur combien, et de quel domaine. */
+  SolutionExplorer.prototype._renderScope = function (assessment, shown) {
+    var bar = el('resultsScopeBar'), note = el('resultsScopeNote'), self = this;
+    if (!bar) return;
+    var pool = this._pool.length;
+    // Sous une douzaine de solutions, il n'y a rien à réduire : les trois
+    // niveaux donneraient la même liste, et un contrôle sans effet est pire
+    // qu'un contrôle absent.
+    bar.hidden = pool <= 12 || this._isSingleTransmission();
+    if (bar.hidden) return;
+    var host = el('resultsScope');
+    if (host && !host.dataset.bound) {
+      host.dataset.bound = '1';
+      host.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-scope]');
+        if (!button) return;
+        self._scope = button.dataset.scope;
+        self._publish(false);
+      });
+    }
+    if (host) {
+      Array.prototype.forEach.call(host.querySelectorAll('[data-scope]'), function (button) {
+        var active = button.dataset.scope === (self._scope || 'shortlist');
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+    }
+    if (note) {
+      var front = assessment ? assessment.decision.front.length : 0;
+      note.textContent = shown + ' affichée' + (shown > 1 ? 's' : '') + ' · ' +
+        front + ' sur le front de Pareto · ' +
+        (assessment ? assessment.scope.label : pool + ' solutions');
+      note.classList.toggle('is-truncated', !!(assessment && assessment.scope.truncated));
+    }
+  };
+
   SolutionExplorer.prototype._publish = function (fresh) {
     var self = this;
     var assessment = this._assess();
@@ -366,13 +425,22 @@
     var criteria = this._criteria();
     criteria.decision = decision;
     var view = GearSolutionFilter.apply(this._pool, criteria);
+    // L'étendue s'applique APRÈS les filtres : la sélection est celle du vivier
+    // qu'on regarde, pas d'un vivier qu'on a écarté.
+    var keep = this._scopeIndices(assessment);
+    if (keep) {
+      var allowed = {};
+      keep.forEach(function (index) { allowed[index] = true; });
+      view = view.filter(function (item) { return allowed[item.index]; });
+    }
+    this._renderScope(assessment, view.length);
     var solutions = view.map(function (item) { return item.solution; });
     var indices = view.map(function (item) { return item.index; });
 
     // keepResults : un affinage qui vide la vue ne doit pas masquer l'espace
     // de travail (la barre de filtres doit rester accessible).
     if (this.workbench) this.workbench.renderSolutions(solutions, indices, { stats: this._stats, pool: this._pool, diagnosis: this._diagnosis, session: this.session, decision: decision, assessment: assessment, keepResults: this._pool.length > 0 });
-    if (this.resultsTable) this.resultsTable.display(solutions, this._params, indices, decision);
+    if (this.resultsTable) this.resultsTable.display(solutions, this._params, indices, decision, assessment);
 
     var count = el('refineCount');
     if (count) {

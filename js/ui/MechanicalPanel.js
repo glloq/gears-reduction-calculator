@@ -3,6 +3,44 @@
   // Les codes internes restent des identifiants dans le code et n'atteignent
   // jamais l'écran : un même catalogue les nomme pour tous les panneaux.
   var catalogue = GearSolutionCompliance;
+  /**
+   * §22 : POURQUOI CETTE SOLUTION EST CLASSÉE LÀ.
+   *
+   * Le mode expert affichait `JSON.stringify(solution.score)`. Le moteur
+   * fournit pourtant tout ce qu'il faut pour l'expliquer : la pénalité de
+   * chaque critère, son poids, sa source et sa confiance. On rend donc la
+   * CONTRIBUTION de chacun — pénalité × poids / somme des poids — dont la somme
+   * vaut exactement l'indice affiché, et l'on nomme le facteur qui pèse le
+   * plus. Un utilisateur voit alors pourquoi deux solutions sont classées
+   * différemment, au lieu de le deviner dans une accolade.
+   */
+  function scoreBreakdown(solution) {
+    var Assessment = GearApp.requirements && GearApp.requirements.DecisionAssessment;
+    if (!Assessment || !solution || !solution.score) return '';
+    var rows = Assessment.contributions(solution);
+    if (!rows.length) return '';
+    var dominant = Assessment.dominantFactor(rows);
+    var body = rows.map(function (row) {
+      var estimated = row.confidence === 'low';
+      return '<tr' + (row === dominant ? ' class="score-dominant"' : '') + '>' +
+        '<th>' + row.label + '</th>' +
+        '<td>' + (row.penalty == null ? '—' : row.penalty.toFixed(3)) + '</td>' +
+        '<td>' + row.weight + '</td>' +
+        '<td>' + (row.contribution == null ? '—' : row.contribution.toFixed(3)) + '</td>' +
+        '<td class="score-source' + (estimated ? ' is-estimated' : '') + '">' +
+          (estimated ? 'estimation faible' : 'calcul') + '</td></tr>';
+    }).join('');
+    var total = rows.reduce(function (sum, row) { return sum + (row.contribution || 0); }, 0);
+    return '<details open class="score-breakdown"><summary>Détail de l’indice technique</summary>' +
+      '<table class="score-table"><thead><tr><th>Critère</th><th>Pénalité</th><th>Poids</th>' +
+      '<th>Contribution</th><th>Source</th></tr></thead><tbody>' + body + '</tbody>' +
+      '<tfoot><tr><th>Indice</th><td colspan="2"></td><td>' + total.toFixed(3) + '</td><td></td></tr></tfoot>' +
+      '</table>' +
+      (dominant ? '<p class="score-dominant-note">Principal facteur pénalisant : <strong>' +
+        dominant.label.toLowerCase() + '</strong>.</p>' : '') +
+      '</details>';
+  }
+
   function MechanicalPanel(id){this._container=document.getElementById(id);}
   function n(v,d){return Number.isFinite(v)?v.toFixed(d==null?2:d):'—';}
   function familyName(type){return GearTransmissionRegistry.familyName(type,'short');}
@@ -44,11 +82,11 @@
   // dans le DOM — alors qu'aucune solution n'est sélectionnée.
   MechanicalPanel.prototype.hide=function(){if(!this._container)return;this._container.innerHTML='';this._container.style.display='none';this._container.hidden=true;};
   MechanicalPanel.prototype.show=function(solution,unused,proMode){if(!this._container||!solution||!solution.mechanical)return null;var linear=solution.mode==='rotationTranslation',html='<h3>Analyse mécanique — estimation d’ingénierie</h3><div class="mechanical-summary">'+
-    (linear?'<div><strong>Course</strong> '+n(solution.travelPerRevolutionMm,2)+' mm/tr</div><div><strong>Vitesse linéaire</strong> '+n(solution.outputLinearSpeedMmMin,0)+' mm/min</div><div><strong>Effort sortie</strong> '+n(solution.outputForceN,1)+' N</div>':'<div><strong>Rapport</strong> '+n(solution.ratio,4)+'</div><div><strong>RPM</strong> '+n(solution.inputSpeedRpm,0)+' → '+n(solution.outputSpeedRpm,1)+'</div><div><strong>Couple</strong> '+n(solution.inputTorqueNm)+' → '+n(solution.outputTorqueNm)+' N·m</div>')+'<div><strong>Rendement</strong> '+n(solution.efficiency*100,1)+' %</div><div><strong>Puissance</strong> '+n(solution.outputPowerW,0)+' W</div><div><strong>Pertes</strong> '+n(solution.lossPowerW,0)+' W</div><div><strong>Dimensions</strong> '+n(solution.dimensions.length,0)+' × '+n(solution.dimensions.maxDiameter,0)+' × '+n(solution.dimensions.width,0)+' mm</div><div title="Moyenne pondérée des huit critères — écart, taille, pertes, risque mécanique, étages, bruit, fabrication, coût. Plus bas = mieux."><strong>Score global</strong> '+n(solution.score.value,3)+'</div></div>';
+    (linear?'<div><strong>Course</strong> '+n(solution.travelPerRevolutionMm,2)+' mm/tr</div><div><strong>Vitesse linéaire</strong> '+n(solution.outputLinearSpeedMmMin,0)+' mm/min</div><div><strong>Effort sortie</strong> '+n(solution.outputForceN,1)+' N</div>':'<div><strong>Rapport</strong> '+n(solution.ratio,4)+'</div><div><strong>RPM</strong> '+n(solution.inputSpeedRpm,0)+' → '+n(solution.outputSpeedRpm,1)+'</div><div><strong>Couple</strong> '+n(solution.inputTorqueNm)+' → '+n(solution.outputTorqueNm)+' N·m</div>')+'<div><strong>Rendement</strong> '+n(solution.efficiency*100,1)+' %</div><div><strong>Puissance</strong> '+n(solution.outputPowerW,0)+' W</div><div><strong>Pertes</strong> '+n(solution.lossPowerW,0)+' W</div><div><strong>Dimensions</strong> '+n(solution.dimensions.length,0)+' × '+n(solution.dimensions.maxDiameter,0)+' × '+n(solution.dimensions.width,0)+' mm</div><div title="Indice technique : moyenne pondérée de huit pénalités, calculée pour cette solution seule. Plus bas = mieux. Ce n’est pas le classement."><strong>Indice technique</strong> '+n(solution.score.value,3)+'</div></div>';
     html+='<table class="stages-table"><thead><tr><th>Étage</th><th>Type</th><th>Rapport</th><th>η</th><th>Ft / Fr / Fa (N)</th><th>Lewis simplifié SF</th><th>Hertz simplifié SH</th><th>Conduite</th></tr></thead><tbody>';
     solution.mechanical.forEach(function(m,i){var f=m.forces||{},g=m.geometry||{};html+='<tr id="mechanical-stage-'+i+'"><td>'+(i+1)+'</td><td>'+familyName(m.type)+'</td><td>'+n(m.ratio,3)+'</td><td>'+n(m.efficiency*100,1)+'%</td><td>'+n(f.tangentialN,0)+' / '+n(f.radialN,0)+' / '+n(f.axialN,0)+'</td><td>'+n(m.bending&&m.bending.safetyFactor,2)+'</td><td>'+n(m.contact&&m.contact.safetyFactor,2)+'</td><td>'+n(g.totalContactRatio,2)+'</td></tr>';});html+='</tbody></table>';
     html+=planetaryBlock(solution);
-    if(proMode)html+='<details open><summary>Détail du score</summary><pre>'+JSON.stringify(solution.score,null,2)+'</pre></details>';
+    if(proMode)html+=scoreBreakdown(solution);
     if(proMode&&solution.fatigue)html+='<details><summary>Fatigue — estimation d’ingénierie</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Cycles</th><th>Heures</th><th>Facteur usage</th></tr></thead><tbody>'+solution.fatigue.map(function(f,i){return '<tr><td>'+(i+1)+'</td><td>'+n(f.cycles,0)+'</td><td>'+n(f.operatingHours,0)+'</td><td>'+n(f.usageFactor,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation de fatigue, non conforme ISO 6336-6.</p></details>';
     if(proMode&&solution.shaft)html+='<details><summary>Arbres — estimation d’ingénierie</summary><table class="stages-table"><thead><tr><th>Étage</th><th>Moment (N·mm)</th><th>Couple (N·mm)</th><th>Ø minimum (mm)</th></tr></thead><tbody>'+solution.shaft.map(function(s,i){return '<tr><td>'+(i+1)+'</td><td>'+n(s&&s.bendingMomentNmm,0)+'</td><td>'+n(s&&s.torqueNmm,0)+'</td><td>'+n(s&&s.minimumDiameterMm,2)+'</td></tr>';}).join('')+'</tbody></table><p>Estimation combinée flexion/torsion.</p></details>';
     // Constructibilité : règles appliquées et sélection du module (mode standard, pas expert)

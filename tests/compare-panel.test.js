@@ -87,3 +87,31 @@ test('two planetaries with the same teeth but different roles never look alike',
   // Une topologie inconnue se réduit aux dentures plutôt que d'inventer des rôles.
   assert.equal(ComparePanel.stageLabel(teeth), 'S20 / P30×3 / R80');
 });
+
+// ===== §13/§18 : LA GRAVITÉ, ET CE QUE LE COMPARATEUR NE DISAIT PAS =====
+
+test('the comparison ranks alerts by severity, not by count', () => {
+  // Trois réserves ne valent pas un refus, et « Avertissements : 3 » les
+  // confondait. La ligne trie sur la gravité et se LIT dans les mêmes termes.
+  const three = { warnings: [{ level: 'warning' }, { level: 'warning' }, { level: 'warning' }] };
+  const one = { warnings: [{ level: 'danger' }] };
+  assert.ok(H.alertSeverity(one) > H.alertSeverity(three));
+  assert.equal(H.alertSummary(one), '✕ 1');
+  assert.equal(H.alertSummary(three), '⚠ 3');
+  assert.equal(H.alertSummary({ warnings: [] }), '—');
+  assert.equal(H.alertSummary({ warnings: [{ level: 'danger' }, { level: 'warning' }, { level: 'warning' }] }), '✕ 1 · ⚠ 2');
+});
+
+test('the comparison carries what one comes to it for', () => {
+  // §18 : vitesse et couple de sortie, puissance, pertes, largeur et risque
+  // thermique manquaient — c'est-à-dire l'essentiel de ce qu'on vient y lire.
+  const rows = H.buildRows([{ solution: solution('a') }, { solution: solution('b') }]);
+  const labels = rows.map(row => row.label);
+  ['Indice technique', 'Rendement', 'Vitesse sortie', 'Couple sortie', 'Puissance sortie',
+    'Pertes', 'Largeur', 'Alertes', 'Risque thermique'].forEach(label => {
+    assert.ok(labels.indexOf(label) >= 0, 'ligne manquante : ' + label);
+  });
+  // Et l'indice technique ne s'appelle plus « Score global » : ce n'est pas le
+  // classement, et le comparateur ne doit pas le laisser croire.
+  assert.equal(labels.indexOf('Score global'), -1);
+});
