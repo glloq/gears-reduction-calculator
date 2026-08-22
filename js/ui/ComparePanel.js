@@ -164,7 +164,10 @@
     rows.push({ label: 'Alertes', direction: 'min', digits: 0, unit: '',
       values: solutions.map(function (s) { return alertSeverity(s); }),
       display: solutions.map(function (s) { return alertSummary(s); }) });
-    rows.push(row('Risque thermique', null, null, '', function (s) { return s.thermalRisk || null; }));
+    // Le moteur classe le risque en `low`/`medium`/`high` : ce sont des
+    // identifiants, et ils n'ont jamais rien dit à personne à l'écran.
+    var THERMAL = { low: 'faible', medium: 'moyen', high: 'élevé' };
+    rows.push(row('Risque thermique', null, null, '', function (s) { return THERMAL[s.thermalRisk] || null; }));
     rows.push(row('Échecs fabrication', 'min', 0, '', function (s) { return s.manufacturing ? (s.manufacturing.failures || []).length : null; }));
 
     // Lignes d'architecture (une par position d'étage)

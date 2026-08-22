@@ -645,6 +645,10 @@
               <button data-export="exporterPNG">PNG</button>
               <button data-export="exporterJSON">JSON</button>
               <button data-export="exporterCSV">CSV</button>
+              <!-- Les exports décrivaient une solution, jamais le CHOIX : ni le
+                   rang, ni le domaine, ni ce qui n'a pas été vérifié. C'est
+                   pourtant cela qu'on transmet et qu'on défend en revue. -->
+              <button data-export="exporterDecision" title="Le choix, son rang, sa portée, ses contrôles et ses angles morts">Rapport de décision</button>
             </div>
           </details>
         </div>
@@ -727,7 +731,14 @@
           <div class="detail-panel" data-detail-panel="graphiques">
             <div class="charts-header">
               <div class="chart-tabs" id="chartTabs">
-                <button data-chart="ratioChart" class="active">Rapports</button>
+                <!-- §23 : les graphiques étaient analytiques — ils décrivaient
+                     une solution. Ces deux-là aident à CHOISIR : le compromis
+                     rend le front de Pareto visible au lieu de le laisser à
+                     l'état de logique interne, et la contribution dit d'où
+                     vient le classement. -->
+                <button data-chart="paretoChart" class="active">Compromis</button>
+                <button data-chart="contributionChart">Contribution</button>
+                <button data-chart="ratioChart">Rapports</button>
                 <button data-chart="radarChart">Multicritère</button>
                 <button data-chart="cascadeChart">Couple / vitesse</button>
                 <button data-chart="powerLossChart">Pertes</button>
@@ -736,7 +747,9 @@
               <button id="exportChartsBtn" class="btn-small" title="Exporter tous les graphiques">Exporter</button>
             </div>
             <div class="charts-grid">
-              <div class="chart-container active" data-chart-panel="ratioChart"><canvas id="ratioChart" aria-label="Graphique de comparaison des rapports"></canvas></div>
+              <div class="chart-container active" data-chart-panel="paretoChart"><canvas id="paretoChart" aria-label="Diagramme de compromis : encombrement contre rendement, front de Pareto marqué"></canvas></div>
+              <div class="chart-container" data-chart-panel="contributionChart"><canvas id="contributionChart" aria-label="Contribution de chaque critère au classement"></canvas></div>
+              <div class="chart-container" data-chart-panel="ratioChart"><canvas id="ratioChart" aria-label="Graphique de comparaison des rapports"></canvas></div>
               <div class="chart-container" data-chart-panel="radarChart"><canvas id="radarChart" aria-label="Graphique radar multicritères"></canvas></div>
               <div class="chart-container" data-chart-panel="cascadeChart"><canvas id="cascadeChart" aria-label="Graphique cascade couple/vitesse"></canvas></div>
               <div class="chart-container" data-chart-panel="powerLossChart"><canvas id="powerLossChart" aria-label="Graphique des pertes de puissance"></canvas></div>

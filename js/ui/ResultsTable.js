@@ -32,6 +32,13 @@
   var PAGE_SIZE = 25, STORAGE_KEY = 'gearCalcResultColumns';
   function ids() { return COLUMNS.map(function (column) { return column.id; }); }
   function types(solution) { return solution.stages.map(function (stage) { return stage.type; }); }
+  /** Les NOMS des familles : « worm → belt » ne se lit qu'en anglais et en interne. */
+  function familyNames(solution) {
+    return types(solution).map(function (type) {
+      return typeof GearTransmissionRegistry !== 'undefined'
+        ? GearTransmissionRegistry.familyName(type, 'short') : type;
+    });
+  }
   function minFactor(solution, key) { return solution.mechanical.reduce(function (value, stage) { return Math.min(value, stage[key] ? stage[key].safetyFactor : Infinity); }, Infinity); }
   function number(value, digits) { return Number.isFinite(value) ? value.toFixed(digits) : '—'; }
 
@@ -117,7 +124,7 @@
     var values = { rank: Number.isFinite(rank) ? (rank === 1 ? '★ 1' : String(rank)) : '—',
       pareto: entry ? (entry.decision.pareto ? '✓' : '') : '—',
       checks: entry ? checkSummary(entry) : '—',
-      score: number(solution.score.value, 3), architecture: types(solution).join(' → '), ratio: linear ? number(solution.travelPerRevolutionMm,2)+' mm/tr' : number(solution.ratio, 4),
+      score: number(solution.score.value, 3), architecture: familyNames(solution).join(' → '), ratio: linear ? number(solution.travelPerRevolutionMm,2)+' mm/tr' : number(solution.ratio, 4),
       error: number(solution.errorPercent, 3), stages: solution.stages.length, efficiency: number(solution.efficiency * 100, 1) + '%',
       dimensions: number(solution.dimensions.length, 0) + '×' + number(solution.dimensions.maxDiameter, 0) + '×' + number(solution.dimensions.width, 0),
       rpm: linear ? number(solution.outputLinearSpeedMmMin,0)+' mm/min' : number(solution.outputSpeedRpm, 1), torque: linear ? number(solution.outputForceN,1)+' N' : number(solution.outputTorqueNm, 2), sf: number(minFactor(solution, 'bending'), 2),

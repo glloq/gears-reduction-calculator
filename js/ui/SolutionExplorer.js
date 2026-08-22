@@ -481,7 +481,7 @@
     }
 
     if (fresh) {
-      if (this.ui && this.ui.updatePoolCharts) this.ui.updatePoolCharts(this._pool, this._params);
+      if (this.ui && this.ui.updatePoolCharts) this.ui.updatePoolCharts(this._pool, this._params, assessment);
       if (view.length) this._select(view[0]);
       else if (this.ui && this.ui.clearDetail) this.ui.clearDetail();
       return;
@@ -505,6 +505,7 @@
 
   SolutionExplorer.prototype._select = function (item) {
     this._selectedIndex = item.index;
+    if (this.ui && this.ui.updateDecisionCharts) this.ui.updateDecisionCharts(item.index);
     this.bus.emit('solution:selected', { index: item.index, solution: item.solution });
     if (this.resultsTable && this.resultsTable.setSelectedIndex) this.resultsTable.setSelectedIndex(item.index);
   };

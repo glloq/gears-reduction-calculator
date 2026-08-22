@@ -60,6 +60,21 @@ body.has-results .hero-viewer { display: block; }
   align-items: start;
 }
 body.has-results .design-workspace { display: grid; }
+
+/* LA VUE TABLEAU DEMANDE DE LA LARGEUR.
+   Elle vivait dans la colonne étroite des solutions : seize colonnes dans
+   323 px, soit quatre visibles et le reste à faire défiler à l'horizontale.
+   Une vue « expert » qu'on ne peut pas lire n'est pas une vue. Quand on la
+   demande, elle prend toute la ligne ; le dessin et l'analyse passent
+   dessous, où ils gardent leur pleine largeur. */
+body.has-results .design-workspace:has(.results-pane.results-table-mode) {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Une seule colonne veut trois LIGNES : sans elles, les trois volets se
+   posent dans la même cellule et le dessin recouvre le tableau. */
+.design-workspace:has(.results-pane.results-table-mode) > .results-pane { grid-column: 1; grid-row: 1; }
+.design-workspace:has(.results-pane.results-table-mode) > .hero-viewer { grid-column: 1; grid-row: 2; }
+.design-workspace:has(.results-pane.results-table-mode) > .detail-pane { grid-column: 1; grid-row: 3; }
 body.has-results .workspace-empty { display: none; }
 
 /* ----- Adaptatif ----- */

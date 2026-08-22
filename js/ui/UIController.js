@@ -165,9 +165,25 @@
 
   // Graphiques calculés sur le vivier complet (appelé par SolutionExplorer à
   // chaque nouvelle recherche, jamais pendant l'affinage).
-  UIController.prototype.updatePoolCharts = function (solutions, searchParams) {
+  UIController.prototype.updatePoolCharts = function (solutions, searchParams, assessment) {
     this._lastSearchParams = searchParams;
+    this._assessment = assessment || null;
     this._updateComparisonCharts(solutions, searchParams);
+    // §23 : le front de Pareto décidait des alternatives sans jamais se
+    // montrer. Le voir, c'est comprendre le choix : « ces neuf-là ne sont
+    // battues par personne, les autres le sont. »
+    var charts = this._charts || window.GearCharts;
+    if (charts && assessment && document.getElementById('paretoChart')) {
+      charts.drawParetoScatter('paretoChart', assessment);
+    }
+  };
+
+  /** La contribution de chaque critère au classement de la solution ouverte. */
+  UIController.prototype.updateDecisionCharts = function (index) {
+    var charts = this._charts || window.GearCharts;
+    if (!charts || !document.getElementById('contributionChart')) return;
+    var entry = this._assessment && this._assessment.byIndex ? this._assessment.byIndex[index] : null;
+    charts.drawScoreContribution('contributionChart', entry);
   };
 
   /**

@@ -301,3 +301,57 @@ test('the pool filter applies the catalogue without knowing any metric by name',
   const efficient = Filter.apply(pool, { metrics: [{ entry: byKey.efficiency, value: 95 }] });
   assert.deepEqual(efficient.map(item => item.index), [0]);
 });
+
+// ===== P2.5 : LE RAPPORT DE DÉCISION =====
+
+test('the decision report carries the choice, not just the solution', () => {
+  // Les exports décrivaient une SOLUTION — géométrie, efforts, matériaux — et
+  // jamais le choix. Or c'est le choix qu'on transmet, qu'on archive et qu'on
+  // défend en revue : quel rang, sur quel domaine, avec quels contrôles, ce
+  // qu'il gagne, ce qu'il coûte, et ce qui n'a PAS été vérifié.
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  const saved = [];
+  const context = {
+    window: {}, GearApp: { ui: {} },
+    Blob: function (parts) { this.text = parts.join(''); },
+    URL: { createObjectURL: () => 'blob:', revokeObjectURL: () => {} },
+    document: { createElement: () => ({ click: () => {}, style: {} }),
+      body: { appendChild: () => {}, removeChild: () => {} } }
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(require.resolve('../js/ui/ExportManager.js'), 'utf8'), context);
+  const Manager = context.GearApp.ui.ExportManager;
+  const manager = new Manager();
+  manager._download = blob => saved.push(blob.text);
+
+  const built = Assessment.build([spur([15, 45], 2), spur([18, 54], 1.5), spur([20, 60], 3)],
+    { preferences: new Preferences.PreferenceModel(), constraints: { tolerancePercent: 1 }, stats: { valid: 900 } });
+  const report = manager.exportDecisionReport(built, { priorities: { primary: 'balanced' } });
+
+  assert.ok(report, 'aucun rapport produit');
+  assert.equal(saved.length, 1, 'le rapport n’a pas été téléchargé');
+  const parsed = JSON.parse(saved[0]);
+
+  // La portée d'abord : un classement sur un domaine tronqué n'a pas la valeur
+  // d'un optimum, et cela doit se lire avant les conclusions.
+  assert.equal(parsed.scope.truncated, true);
+  assert.match(parsed.scope.label, /900/);
+
+  // Le choix, avec ce qui le fonde.
+  assert.equal(parsed.recommended.rank, 1);
+  assert.equal(parsed.recommended.recommended, true);
+  assert.ok(parsed.recommended.contributions.length, 'l’indice n’est pas décomposé');
+  assert.ok(parsed.recommended.dominantFactor, 'le facteur dominant n’est pas nommé');
+  assert.ok(parsed.recommended.compliance.checks.length, 'les contrôles ne sont pas rapportés');
+  // Et ses angles morts : un choix défendu sans eux n'est pas défendable.
+  assert.ok(Array.isArray(parsed.recommended.unverified));
+  assert.ok(parsed.recommended.assumptions, 'les hypothèses de calcul manquent');
+
+  // Le classement, pour situer le reste.
+  assert.ok(parsed.ranking.length >= 3);
+  assert.deepEqual(parsed.ranking.map(row => row.rank), [1, 2, 3]);
+  // Un rapport vide ne s'écrit pas.
+  assert.equal(manager.exportDecisionReport(null), null);
+});

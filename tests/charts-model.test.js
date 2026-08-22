@@ -106,3 +106,99 @@ test('the structured charts read Solution and mechanical, and say when data is m
   charts.drawStructuredLosses('powerLossChart', solution({ inputPowerW: null }));
   assert.match(drawn.powerLossChart.placeholder, /non renseigné/);
 });
+
+// ===== §23/§24 : DES GRAPHIQUES QUI AIDENT À CHOISIR =====
+
+const Assessment = require('../js/requirements/DecisionAssessment.js');
+const Preferences = require('../js/requirements/PreferenceModel.js');
+const Engineering = require('../js/core/Engineering.js');
+
+function analysed(teeth, module) {
+  return Engineering.analyzeSolution(
+    [{ type: 'spur', input: { teeth: teeth[0] }, output: { teeth: teeth[1] },
+       parameters: { module: module, pressureAngle: 20, faceWidth: 20 } }],
+    3, { inputSpeedRpm: 1500, inputTorqueNm: 10 });
+}
+
+test('the trade-off chart makes the Pareto front visible instead of internal', () => {
+  // Le front décidait quelles alternatives proposer et ne se montrait jamais.
+  // C'est pourtant l'image qui fait comprendre un choix : « ces neuf-là ne
+  // sont battues par personne, les autres le sont. »
+  const { charts, drawn } = load();
+  // Un vivier où les solutions se BATTENT : l'une est plus compacte, l'autre a
+  // un meilleur rendement, la troisième est battue par les deux. Sans cela le
+  // front n'a qu'un point, et le graphique n'aurait rien à montrer de son
+  // intérêt — ni le test rien à vérifier.
+  const trade = (efficiency, diameter, stages) => ({
+    stages: new Array(stages).fill({ type: 'spur' }), efficiency: efficiency, errorPercent: 0.2,
+    dimensions: { x: diameter, y: diameter, z: 20, maxDiameter: diameter },
+    mechanical: [{ bending: { safetyFactor: 2 }, contact: { safetyFactor: 2 } }],
+    warnings: [], score: { value: 0.3, metrics: {} }
+  });
+  const built = Assessment.build([trade(0.98, 140, 1), trade(0.90, 55, 1), trade(0.89, 150, 2)],
+    { preferences: new Preferences.PreferenceModel() });
+  assert.ok(built.decision.front.length >= 2, 'le vivier de test ne présente aucun compromis');
+
+  charts.drawParetoScatter('paretoChart', built);
+
+  const sets = drawn.paretoChart.data.datasets;
+  assert.equal(sets.length, 3, 'recommandée, front, dominées');
+  assert.ok(sets[1].data.length >= 1, 'le front non recommandé n’apparaît pas sur le diagramme');
+  assert.ok(sets[2].data.length >= 1, 'aucune solution dominée n’est située');
+  assert.match(sets[0].label, /Recommandée/);
+  assert.match(sets[1].label, /Pareto/);
+  assert.match(sets[2].label, /Dominées/);
+  // Chaque solution est placée une fois et une seule.
+  const placed = sets.reduce((total, set) => total + set.data.length, 0);
+  assert.equal(placed, 3);
+  // Les axes sont les grandeurs annoncées, et les points portent de quoi les lire.
+  assert.match(drawn.paretoChart.options.scales.x.title.text, /Ø/);
+  assert.match(drawn.paretoChart.options.scales.y.title.text, /Rendement/);
+  sets.forEach(set => set.data.forEach(point => {
+    assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), JSON.stringify(point));
+    assert.ok(Number.isFinite(point.rank), 'un point sans rang ne se relit pas');
+  }));
+  // Rien à situer : on le dit, plutôt qu'un cadre vide.
+  charts.drawParetoScatter('paretoChart', { entries: [] });
+  assert.match(drawn.paretoChart.placeholder, /aucune solution/);
+});
+
+test('the contribution chart adds up to the index it explains, and marks estimates', () => {
+  const { charts, drawn } = load();
+  const built = Assessment.build([analysed([15, 45], 2)], {});
+  const entry = built.entries[0];
+  charts.drawScoreContribution('contributionChart', entry);
+
+  const set = drawn.contributionChart.data.datasets[0];
+  const total = set.data.reduce((sum, value) => sum + value, 0);
+  assert.ok(Math.abs(total - entry.engineering) < 1e-9,
+    'les barres ne recomposent pas l’indice : ' + total + ' vs ' + entry.engineering);
+  assert.match(drawn.contributionChart.options.plugins.title.text, /total/);
+  // §11 : ce qui est estimé ne se peint pas comme ce qui est calculé.
+  const labels = drawn.contributionChart.data.labels;
+  const estimatedColour = set.backgroundColor[labels.indexOf('Bruit')];
+  const computedColour = set.backgroundColor[labels.indexOf('Encombrement')];
+  assert.notEqual(estimatedColour, computedColour);
+});
+
+test('the safety chart carries its limits, and colours what falls under them', () => {
+  // §24 : des barres sans ligne de minimum obligent à savoir de tête ce
+  // qu'exige le calcul. C'est le seuil qui dit si la barre est acceptable.
+  const { charts, drawn } = load();
+  charts.drawStructuredSafety('safetyChart', { mechanical: [
+    { bending: { safetyFactor: 0.9 }, contact: { safetyFactor: 2.4 } },   // flexion insuffisante
+    { bending: { safetyFactor: 3.0 }, contact: null }                     // contact non évalué
+  ] });
+  const sets = drawn.safetyChart.data.datasets;
+  const lines = sets.filter(set => set.type === 'line');
+  assert.equal(lines.length, 2, 'les deux seuils doivent être tracés');
+  assert.match(lines[0].label, /SF minimal 1\.30/);
+  assert.match(lines[1].label, /SH minimal 1\.10/);
+  lines.forEach(line => assert.ok(line.borderDash, 'un seuil se trace en pointillés, pas en barre'));
+
+  // Un facteur sous sa limite, un facteur non évalué et un facteur conforme ne
+  // portent pas la même couleur : c'est ce qui se lit d'un coup d'œil.
+  const bending = sets[0].backgroundColor, contact = sets[1].backgroundColor;
+  assert.notEqual(bending[0], bending[1], 'insuffisant et conforme se peignent pareil');
+  assert.notEqual(contact[0], contact[1], 'évalué et non évalué se peignent pareil');
+});

@@ -674,7 +674,18 @@
     exporterSVGTechnique: function () { ui.exportManager.exportTechnicalSVG(); },
     exporterPNG: function () { ui.exportManager.exportPNG(); },
     exporterJSON: function () { ui.exportManager.exportJSON({ input: ui._lastSearchParams || {}, constraints: (ui._lastSearchParams && ui._lastSearchParams.constraints) || {}, solution: GearApp.currentSolution || null, materials: { input: ui._lastSearchParams && ui._lastSearchParams.inputMaterial, output: ui._lastSearchParams && ui._lastSearchParams.outputMaterial } }); },
-    exporterCSV: function () { ui.exportManager.exportCSV(GearApp.currentSolution || []); }
+    exporterCSV: function () { ui.exportManager.exportCSV(GearApp.currentSolution || []); },
+    // Le verdict tel qu'il a été rendu à l'écran : l'explorateur le détient,
+    // l'export le met en forme, personne ne le recalcule.
+    exporterDecision: function () {
+      var assessment = explorer && explorer._assess ? explorer._assess() : null;
+      var session = GearApp._workbench && GearApp._workbench.session;
+      ui.exportManager.exportDecisionReport(assessment, {
+        requirement: session && session.requirement ? session.requirement.describe && session.requirement.describe() : null,
+        priorities: session && session.preferences
+          ? { primary: session.preferences.primary, secondary: session.preferences.secondary } : null
+      });
+    }
   };
 
   document.addEventListener('DOMContentLoaded', init);

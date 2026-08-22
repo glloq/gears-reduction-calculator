@@ -10,7 +10,10 @@ Application d'ingénierie statique pour rechercher, comparer et visualiser des t
 - Géométrie involute (diamètres primitif/base/tête/pied, pas, entraxe, déport, jeu et rapports de conduite), forces `Ft/Fr/Fa`, rendement, puissance et estimation thermique.
 - Estimations **Lewis simplifié** et **Hertz simplifié**, matériaux et déclassement additif. Les estimations facultatives de fatigue et d'arbre sont calculées par étage et ne constituent pas une certification.
 - Vues géométrique SVG, cinématique vectorielle expérimentale et linéaire Canvas sans relancer la recherche.
-- Export SVG, PNG, JSON et CSV; comparaison et graphiques de score, rapports, cascade, pertes et sécurité, tous alimentés par le modèle `Solution` — aucun n'y recalcule sa propre valeur. Chaque colonne comparée porte la silhouette du mécanisme, tracée par la même chaîne que le visualiseur.
+- Export SVG, PNG, JSON, CSV et **rapport de décision** — le choix, son rang, sa portée, ses contrôles et ses angles morts, pas seulement la géométrie retenue.
+- Une seule vérité décisionnelle : `DecisionAssessment` assemble le rang, le front de Pareto, la conformité, l'incertitude, les gains et les sacrifices ; l'écran ne rend plus aucun verdict de son côté. Le tri « Recommandé », la carte ★, la première ligne du tableau et la comparaison disent donc la même chose.
+- Trois niveaux de lecture des résultats — sélection, front de Pareto, vivier complet — et la portée du classement affichée quand le domaine est tronqué.
+- Comparaison et graphiques de compromis, contribution, rapports, cascade, pertes et sécurité, tous alimentés par le modèle `Solution` — aucun n'y recalcule sa propre valeur. Chaque colonne comparée porte la silhouette du mécanisme, tracée par la même chaîne que le visualiseur.
 - Paramètres experts persistés dans `localStorage` et liens partageables compatibles avec les anciens paramètres.
 - Progression détaillée avec branches évaluées, profondeur, rapport courant et causes de rejet.
 
@@ -97,6 +100,10 @@ Les tests navigateur existent : une suite Playwright couvre les trois vues, les 
     npm run test:e2e      # suite navigateur complète
     npm run test:visual   # références visuelles seules
     npm run test:visual:update   # réenregistrer après un changement VOULU
+
+Les références visuelles couvrent le DESSIN (familles, points de vue, styles)
+et l'INTERFACE DE RÉSULTATS (carte recommandée, alternative, bandeau d'étendue,
+tableau expert, tableau groupé, comparaison, et la carte à 390 px).
 
 Les références visuelles sont enregistrées par plateforme. Après un changement de dessin délibéré, il faut les réenregistrer ET les regarder : une référence mise à jour sans être vue ne prouve plus rien.
 

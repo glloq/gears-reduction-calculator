@@ -120,6 +120,102 @@ class GearCharts {
   // `Solution` ; ils ne faisaient que doubler les mêmes courbes à partir d'un
   // modèle qui n'était plus tenu à jour.
 
+  /**
+   * §23 : LE DIAGRAMME DE COMPROMIS — le front de Pareto, enfin visible.
+   *
+   * Le front était une logique interne : il décidait quelles alternatives
+   * proposer, et l'utilisateur n'en voyait jamais la forme. Or c'est
+   * exactement l'image qui fait comprendre un choix — « ces neuf-là ne sont
+   * battues par personne, les autres le sont ».
+   *
+   * En abscisse l'encombrement, en ordonnée le rendement, la taille du point
+   * dit le nombre d'étages, ★ la recommandée, ● le front, · le reste.
+   */
+  drawParetoScatter(canvasId, assessment) {
+    if (!assessment || !assessment.entries.length) {
+      return this._placeholder(canvasId, 'Compromis — aucune solution à situer');
+    }
+    var points = assessment.entries.map(function (entry) {
+      var size = entry.solution.dimensions && entry.solution.dimensions.maxDiameter;
+      var efficiency = entry.solution.efficiency;
+      if (!Number.isFinite(size) || !Number.isFinite(efficiency)) return null;
+      return { x: size, y: efficiency * 100, r: 3 + Math.min(6, (entry.solution.stages || []).length * 2),
+        rank: entry.decision.rank, pareto: entry.decision.pareto,
+        recommended: entry.decision.recommended, index: entry.index };
+    }).filter(Boolean);
+    if (!points.length) return this._placeholder(canvasId, 'Compromis — encombrement ou rendement non calculés');
+
+    var groups = [
+      { label: '★ Recommandée', color: '#2563eb', pick: function (p) { return p.recommended; }, radius: 9 },
+      { label: '● Front de Pareto', color: '#15803d', pick: function (p) { return p.pareto && !p.recommended; }, radius: 6 },
+      { label: 'Dominées', color: 'rgba(120,130,145,.45)', pick: function (p) { return !p.pareto; }, radius: 4 }
+    ];
+    this._updateOrCreate(canvasId, {
+      type: 'scatter',
+      data: { datasets: groups.map(function (group) {
+        var subset = points.filter(group.pick);
+        return { label: group.label + ' (' + subset.length + ')', data: subset,
+          backgroundColor: group.color, borderColor: group.color,
+          pointRadius: subset.map(function (p) { return Math.max(group.radius, p.r); }),
+          pointHoverRadius: 12 };
+      }) },
+      options: {
+        responsive: true,
+        plugins: {
+          title: { display: true, text: 'Compromis encombrement / rendement — la taille du point dit les étages' },
+          tooltip: { callbacks: { label: function (item) {
+            var point = item.raw;
+            return 'Rang ' + point.rank + ' — Ø ' + point.x.toFixed(0) + ' mm · ' + point.y.toFixed(1) + ' %';
+          } } }
+        },
+        scales: {
+          x: { title: { display: true, text: 'Ø hors-tout (mm)' } },
+          y: { title: { display: true, text: 'Rendement (%)' } }
+        }
+      }
+    });
+  }
+
+  /**
+   * §23/§22 : D'OÙ VIENT LE CLASSEMENT.
+   *
+   * Le radar montrait les pénalités brutes, toutes à la même échelle, sans
+   * dire laquelle pèse. Ce sont les CONTRIBUTIONS — pénalité × poids — qui
+   * expliquent un rang, et leur somme vaut l'indice affiché.
+   */
+  drawScoreContribution(canvasId, entry) {
+    if (!entry || !entry.contributions || !entry.contributions.length) {
+      return this._placeholder(canvasId, 'Contribution — aucune décomposition disponible');
+    }
+    var rows = entry.contributions.filter(function (row) { return Number.isFinite(row.contribution); });
+    if (!rows.length) return this._placeholder(canvasId, 'Contribution — critères non chiffrés');
+    var estimated = rows.map(function (row) { return row.confidence === 'low'; });
+    this._updateOrCreate(canvasId, {
+      type: 'bar',
+      data: { labels: rows.map(function (row) { return row.label; }),
+        datasets: [{ label: 'Contribution à l’indice',
+          data: rows.map(function (row) { return row.contribution; }),
+          // Ce qui est ESTIMÉ se distingue de ce qui est calculé : une barre
+          // hachurée de bruit ne se lit pas comme une barre d'encombrement.
+          backgroundColor: estimated.map(function (low) { return low ? 'rgba(180,83,9,.55)' : '#2563eb'; }) }] },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: {
+          title: { display: true, text: 'Contribution au classement — total ' +
+            rows.reduce(function (sum, row) { return sum + row.contribution; }, 0).toFixed(3) },
+          tooltip: { callbacks: { afterLabel: function (item) {
+            var row = rows[item.dataIndex];
+            return 'pénalité ' + row.penalty.toFixed(3) + ' × poids ' + row.weight +
+              (row.confidence === 'low' ? ' · estimation qualitative' : ' · calcul');
+          } } },
+          legend: { display: false }
+        },
+        scales: { x: { beginAtZero: true, title: { display: true, text: 'Contribution (plus bas = mieux)' } } }
+      }
+    });
+  }
+
   /** Render-only charts for the structured Engineering Solution model. */
   drawStructuredCascade(canvasId, solution) {
     var speed = solution.inputSpeedRpm, torque = solution.inputTorqueNm;
@@ -162,10 +258,28 @@ class GearCharts {
   }
 
   drawStructuredSafety(canvasId, solution) {
-    this._updateOrCreate(canvasId, { type: 'bar', data: { labels: solution.mechanical.map(function (_, i) { return 'Étage ' + (i + 1); }), datasets: [
-      { label: 'SF Lewis simplifié', data: solution.mechanical.map(function (m) { return m.bending ? m.bending.safetyFactor : null; }), backgroundColor: '#2563eb' },
-      { label: 'SH Hertz simplifié', data: solution.mechanical.map(function (m) { return m.contact ? m.contact.safetyFactor : null; }), backgroundColor: '#f97316' }
-    ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Facteurs de sécurité — Engineering estimate' } }, scales: { y: { beginAtZero: true } } } });
+    // §24 : LES SEUILS SE VOIENT. Des barres sans ligne de minimum obligent à
+    // savoir de tête ce qu'exige le calcul ; c'est le seuil qui dit si la barre
+    // est acceptable, et c'est lui qu'on venait chercher.
+    var floors = { bending: 1.3, contact: 1.1 };
+    var stages = solution.mechanical.map(function (_, i) { return 'Étage ' + (i + 1); });
+    var below = function (value, floor) {
+      if (!Number.isFinite(value)) return 'rgba(120,130,145,.35)';   // non évalué
+      if (value < floor) return '#b91c1c';                            // insuffisant
+      return value < floor * 1.25 ? '#b45309' : '#15803d';            // limite / conforme
+    };
+    this._updateOrCreate(canvasId, { type: 'bar', data: { labels: stages, datasets: [
+      { label: 'SF Lewis simplifié', data: solution.mechanical.map(function (m) { return m.bending ? m.bending.safetyFactor : null; }),
+        backgroundColor: solution.mechanical.map(function (m) { return below(m.bending && m.bending.safetyFactor, floors.bending); }) },
+      { label: 'SH Hertz simplifié', data: solution.mechanical.map(function (m) { return m.contact ? m.contact.safetyFactor : null; }),
+        backgroundColor: solution.mechanical.map(function (m) { return below(m.contact && m.contact.safetyFactor, floors.contact); }) },
+      { label: 'SF minimal ' + floors.bending.toFixed(2), type: 'line', borderColor: '#2563eb', borderDash: [6, 3],
+        borderWidth: 2, pointRadius: 0, data: stages.map(function () { return floors.bending; }) },
+      { label: 'SH minimal ' + floors.contact.toFixed(2), type: 'line', borderColor: '#f97316', borderDash: [2, 3],
+        borderWidth: 2, pointRadius: 0, data: stages.map(function () { return floors.contact; }) }
+    ] }, options: { responsive: true, plugins: { title: { display: true,
+      text: 'Facteurs de sécurité — vert conforme, orange limite, rouge insuffisant, gris non évalué' } },
+      scales: { y: { beginAtZero: true } } } });
   }
 
   drawStructuredScore(canvasId, solution) {
