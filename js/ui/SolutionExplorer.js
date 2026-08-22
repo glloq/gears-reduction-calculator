@@ -11,10 +11,6 @@
   // §19 : le nom d'une famille vient du registre, pas d'une table locale.
   var familyName = GearTransmissionRegistry.familyName;
 
-  var NUMERIC_FIELDS = [
-    'refine_error_max', 'refine_efficiency_min', 'refine_sf_min', 'refine_sh_min',
-    'refine_diameter_max', 'refine_length_max', 'refine_stages_max'
-  ];
 
   function el(id) { return document.getElementById(id); }
   function optionalNumber(id) {
@@ -40,26 +36,55 @@
     this._debounce = null;
   }
 
-  // Catalogue des filtres : mêmes chips que les contraintes de recherche, mais
-  // appliqués au vivier déjà calculé — jamais de nouvelle recherche.
-  var FILTERS = [
-    { category: 'precision', field: 'refine_error_max', label: 'Écart ≤', name: 'écart maximum', unit: '%', suggest: 1, step: 0.01 },
-    { category: 'performance', field: 'refine_efficiency_min', label: 'Rendement ≥', name: 'rendement minimum', unit: '%', suggest: 90 },
-    { category: 'performance', field: 'refine_sf_min', label: 'SF ≥', name: 'facteur de sécurité en flexion minimum', unit: '', suggest: 1.5, step: 0.1 },
-    { category: 'performance', field: 'refine_sh_min', label: 'SH ≥', name: 'facteur de sécurité au contact minimum', unit: '', suggest: 1.2, step: 0.1 },
-    { category: 'dimensions', field: 'refine_diameter_max', label: 'Ø ≤', name: 'diamètre maximum', unit: 'mm', suggest: 80 },
-    { category: 'dimensions', field: 'refine_length_max', label: 'Longueur ≤', name: 'longueur maximum', unit: 'mm', suggest: 150 },
-    { category: 'architecture', field: 'refine_stages_max', label: 'Étages ≤', name: "nombre maximum d'étages", unit: '', suggest: 2 }
-  ];
-  var FILTER_CATEGORIES = [
-    { id: 'precision', label: 'Précision' },
-    { id: 'performance', label: 'Performance' },
-    { id: 'dimensions', label: 'Dimensions' },
-    { id: 'architecture', label: 'Architecture' }
-  ];
+  // §15 : LE CATALOGUE DES FILTRES N'EST PLUS ÉCRIT ICI.
+  //
+  // Il l'était : sept champs, recopiés à la main, à côté des seize grandeurs
+  // que `PreferenceModel` décrit déjà — avec leur unité, leur sens et la façon
+  // de les LIRE sur une solution. Deux listes pour une même notion, c'est une
+  // divergence programmée : ce qu'on peut demander avant la recherche finissait
+  // par ne plus correspondre à ce qu'on peut filtrer après. Une seule liste,
+  // et ajouter une grandeur au catalogue commun la rend filtrable sans toucher
+  // à ce fichier.
+  function filterCatalog() {
+    return (GearMetricRegistry ? GearMetricRegistry.filters() : []).map(function (entry) {
+      return {
+        category: entry.category, field: entry.field, label: entry.label,
+        name: entry.name, unit: entry.unit, suggest: entry.suggest, step: entry.step
+      };
+    });
+  }
+
+  /**
+   * Les champs que le catalogue réclame et que le markup ne porte pas : ils
+   * sont créés au vol, dans le même conteneur. Sans cela, ajouter une grandeur
+   * au catalogue commun ne suffirait pas — il faudrait encore l'écrire dans le
+   * HTML, c'est-à-dire retomber dans deux listes.
+   */
+  function ensureFields() {
+    var host = document.querySelector('.refine-fields');
+    if (!host || !GearMetricRegistry) return;
+    GearMetricRegistry.filters().forEach(function (entry) {
+      if (document.getElementById(entry.field)) return;
+      var label = document.createElement('label');
+      label.className = 'sub' + (entry.linear ? ' refine-linear' : ' refine-rotary');
+      if (entry.note) label.title = entry.note;
+      label.appendChild(document.createTextNode(entry.label + (entry.unit ? ' ' + entry.unit : '')));
+      var input = document.createElement('input');
+      input.id = entry.field;
+      input.type = 'number';
+      input.min = '0';
+      if (entry.step) input.step = String(entry.step);
+      input.placeholder = '—';
+      label.appendChild(input);
+      host.appendChild(label);
+    });
+  }
 
   SolutionExplorer.prototype.bind = function () {
     var self = this;
+    ensureFields();
+    var FILTERS = filterCatalog();
+    var FILTER_CATEGORIES = GearMetricRegistry ? GearMetricRegistry.CATEGORIES : [];
     // Les filtres deviennent des chips : seuls les critères réellement posés
     // occupent de la place.
     this.filters = new GearConstraintManager.Manager({
@@ -72,8 +97,8 @@
       onChange: function () { self._schedulePublish(); }
     }).bind();
 
-    NUMERIC_FIELDS.forEach(function (id) {
-      var input = el(id);
+    FILTERS.forEach(function (entry) {
+      var input = el(entry.field);
       if (!input) return;
       input.addEventListener('input', function () { self._schedulePublish(); });
     });
@@ -272,7 +297,9 @@
   // ===== Critères =====
 
   SolutionExplorer.prototype._resetCriteria = function () {
-    NUMERIC_FIELDS.forEach(function (id) { var input = el(id); if (input) input.value = ''; });
+    (GearMetricRegistry ? GearMetricRegistry.filters() : []).forEach(function (entry) {
+      var input = el(entry.field); if (input) input.value = '';
+    });
     var sort = el('refine_sort');
     if (sort) sort.value = this._defaultSort || 'recommended';
     this._disabledTypes = {};
@@ -280,18 +307,19 @@
   };
 
   SolutionExplorer.prototype._criteria = function () {
-    var efficiencyPercent = optionalNumber('refine_efficiency_min');
     var disabled = this._disabledTypes;
     var allTypes = GearSolutionFilter.bounds(this._pool).types;
     var enabled = allTypes.filter(function (type) { return !disabled[type]; });
+    // Les bornes sont lues GRANDEUR PAR GRANDEUR sur le catalogue commun : il
+    // n'y a plus de liste de champs à tenir à jour ici, ni de traduction
+    // manuelle vers les clés du filtre.
+    var metrics = [];
+    (GearMetricRegistry ? GearMetricRegistry.filters() : []).forEach(function (entry) {
+      var value = optionalNumber(entry.field);
+      if (value != null) metrics.push({ entry: entry, value: value });
+    });
     return {
-      maxErrorPercent: optionalNumber('refine_error_max'),
-      minEfficiency: efficiencyPercent == null ? null : efficiencyPercent / 100,
-      minSF: optionalNumber('refine_sf_min'),
-      minSH: optionalNumber('refine_sh_min'),
-      maxDiameter: optionalNumber('refine_diameter_max'),
-      maxLength: optionalNumber('refine_length_max'),
-      maxStages: optionalNumber('refine_stages_max'),
+      metrics: metrics,
       types: enabled.length === allTypes.length ? null : enabled,
       sort: (el('refine_sort') && el('refine_sort').value) || 'recommended'
     };

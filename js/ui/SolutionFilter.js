@@ -128,6 +128,17 @@
       return { solution: solution, index: index };
     }).filter(function (item) {
       var s = item.solution, d = s.dimensions || {};
+      // §15 : les bornes viennent du catalogue commun, grandeur par grandeur.
+      // Chaque entrée sait se LIRE sur une solution et de quel côté elle borne ;
+      // ce fichier n'a plus à connaître le nom de chacune.
+      if (criteria.metrics) {
+        for (var m = 0; m < criteria.metrics.length; m++) {
+          var bound = criteria.metrics[m];
+          if (!bound.entry.accepts(s, bound.value)) return false;
+        }
+      }
+      // Les clés nommées restent acceptées : elles servent aux tests unitaires
+      // et à tout appelant qui borne une grandeur sans passer par le catalogue.
       if (criteria.maxErrorPercent != null && !(s.errorPercent <= criteria.maxErrorPercent)) return false;
       if (criteria.minEfficiency != null && !(s.efficiency >= criteria.minEfficiency)) return false;
       if (criteria.maxDiameter != null && !(d.maxDiameter <= criteria.maxDiameter)) return false;

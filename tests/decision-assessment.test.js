@@ -244,3 +244,60 @@ test('an estimated quality does not pretend to be a measurement', () => {
     assert.ok(category && !category.estimated, id + ' ne devrait pas être une estimation');
   });
 });
+
+// ===== §15 : UN SEUL CATALOGUE DE GRANDEURS =====
+
+const Metrics = require('../js/requirements/MetricRegistry.js');
+const Filter = require('../js/ui/SolutionFilter.js');
+
+test('every filter comes from the preference catalogue, and reads what it claims', () => {
+  // Deux listes existaient : seize grandeurs décrites par les préférences, et
+  // sept champs recopiés à la main dans la barre d'affinage. Ce qu'on pouvait
+  // demander AVANT la recherche finissait par ne plus correspondre à ce qu'on
+  // pouvait filtrer APRÈS, et rien ne le signalait.
+  const filters = Metrics.filters();
+  assert.ok(filters.length > 7, 'le catalogue n’a pas dépassé les sept champs d’origine');
+  filters.forEach(entry => {
+    assert.ok(Metrics.criterion(entry.key), entry.key + ' n’existe pas dans le catalogue commun');
+    assert.equal(typeof entry.metric, 'function', entry.key + ' ne sait pas se lire');
+    assert.ok(entry.bound === 'min' || entry.bound === 'max', entry.key + ' ne borne aucun côté');
+    assert.ok(entry.field && entry.label, entry.key);
+  });
+  // Les identifiants de champ restent uniques : deux entrées qui partagent un
+  // champ se marcheraient dessus dans le formulaire.
+  const fields = filters.map(entry => entry.field);
+  assert.equal(new Set(fields).size, fields.length);
+});
+
+test('a bound refuses what it cannot verify', () => {
+  // « Non vérifié » n'est pas « conforme » : sous « SF ≥ 1,5 », une solution
+  // dont le SF est inconnu ne doit pas s'afficher comme si elle passait.
+  const bending = Metrics.filters().filter(entry => entry.key === 'bendingSafety')[0];
+  const verified = { mechanical: [{ bending: { safetyFactor: 2 } }] };
+  const unknown = { mechanical: [{}] };
+  assert.equal(bending.accepts(verified, 1.5), true);
+  assert.equal(bending.accepts(unknown, 1.5), false);
+  // Sans borne demandée, tout passe — y compris l'inconnu.
+  assert.equal(bending.accepts(unknown, null), true);
+});
+
+test('the pool filter applies the catalogue without knowing any metric by name', () => {
+  const pool = [
+    { stages: [{ type: 'spur' }], efficiency: 0.97, errorPercent: 0.1, outputTorqueNm: 30,
+      dimensions: { maxDiameter: 60, length: 80, y: 20 }, mechanical: [{}], score: { value: 0.2 }, warnings: [] },
+    { stages: [{ type: 'spur' }], efficiency: 0.92, errorPercent: 0.9, outputTorqueNm: 90,
+      dimensions: { maxDiameter: 140, length: 200, y: 40 }, mechanical: [{}], score: { value: 0.4 }, warnings: [] }
+  ];
+  const byKey = {};
+  Metrics.filters().forEach(entry => { byKey[entry.key] = entry; });
+
+  // Un couple minimum — une grandeur que la barre d'affinage ne connaissait pas.
+  const strong = Filter.apply(pool, { metrics: [{ entry: byKey.outputTorque, value: 50 }] });
+  assert.deepEqual(strong.map(item => item.index), [1]);
+  // Un diamètre maximum — et le sens est bien l'inverse.
+  const small = Filter.apply(pool, { metrics: [{ entry: byKey.maxDiameter, value: 100 }] });
+  assert.deepEqual(small.map(item => item.index), [0]);
+  // Le rendement est mis à l'échelle du pourcentage saisi, pas de la fraction.
+  const efficient = Filter.apply(pool, { metrics: [{ entry: byKey.efficiency, value: 95 }] });
+  assert.deepEqual(efficient.map(item => item.index), [0]);
+});

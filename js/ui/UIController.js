@@ -11,6 +11,27 @@
    * rester neutre sinon. Le barème 95/90 codé en dur faisait passer pour
    * excellente une solution qui ratait l'exigence de l'utilisateur.
    */
+  /**
+   * Les alertes d'une solution : par gravité, coupées à trois, et le reste
+   * annoncé plutôt que tu.
+   */
+  function alertBadges(solution) {
+    var Assessment = GearApp.requirements && GearApp.requirements.DecisionAssessment;
+    var alerts = Assessment ? Assessment.alerts(solution) : null;
+    if (!alerts || !alerts.list.length) return '';
+    var shown = alerts.list.slice(0, 3).map(function (entry) {
+      return '<span class="status-badge state-' + entry.level + '" title="' +
+        escapeAttribute(entry.advice || '') + '">' + entry.mark + ' ' + escapeText(entry.label) + '</span>';
+    }).join('');
+    var rest = alerts.list.length - 3;
+    if (rest > 0) {
+      shown += '<span class="status-badge state-unknown" title="' +
+        escapeAttribute(alerts.list.slice(3).map(function (entry) { return entry.label; }).join(' · ')) +
+        '">+ ' + rest + ' autre' + (rest > 1 ? 's' : '') + '</span>';
+    }
+    return shown;
+  }
+
   function efficiencyClass(efficiency, asked) {
     if (!Number.isFinite(efficiency)) return 'unknown';
     var wanted = asked && asked.constraints && asked.constraints.minimumEfficiency;
@@ -271,13 +292,14 @@
           return '<span class="status-badge state-' + badge.state + '" data-compliance="' + badge.key +
             '" title="' + escapeAttribute(badge.title) + '">' + badge.mark + ' ' + escapeText(badge.text) + '</span>';
         }).join('') +
-        // Les alertes sont libellées en français par le moteur ; le code interne
-        // n'a jamais rien dit à personne et ne paraît plus à l'écran.
-        warnings.slice(0, 3).map(function (w) {
-          var text = (w && w.message) || GearSolutionCompliance.label(w && w.code);
-          return '<span class="status-badge state-' + ((w && w.level) || 'warning') + '" title="' +
-            escapeAttribute((w && w.recommendation) || '') + '">⚠ ' + escapeText(text) + '</span>';
-        }).join('') + '</div>';
+        // §20 : LES PLUS GRAVES D'ABORD, ET LE RESTE ANNONCÉ.
+        //
+        // Trois alertes s'affichaient, dans l'ordre où le moteur les avait
+        // émises, et rien ne disait qu'il en existait d'autres. Une sécurité au
+        // contact insuffisante pouvait donc être la quatrième — c'est-à-dire
+        // invisible — derrière trois réserves. Les alertes sont libellées en
+        // français par le moteur ; le code interne ne paraît jamais à l'écran.
+        alertBadges(solution) + '</div>';
 
     card.hidden = false;
   };
