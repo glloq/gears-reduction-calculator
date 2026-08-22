@@ -10,7 +10,7 @@ Application d'ingénierie statique pour rechercher, comparer et visualiser des t
 - Géométrie involute (diamètres primitif/base/tête/pied, pas, entraxe, déport, jeu et rapports de conduite), forces `Ft/Fr/Fa`, rendement, puissance et estimation thermique.
 - Estimations **Lewis simplifié** et **Hertz simplifié**, matériaux et déclassement additif. Les estimations facultatives de fatigue et d'arbre sont calculées par étage et ne constituent pas une certification.
 - Vues géométrique SVG, cinématique vectorielle expérimentale et linéaire Canvas sans relancer la recherche.
-- Export SVG, PNG, JSON et CSV; comparaison et graphiques de score, cascade, pertes et sécurité alimentés par le modèle `Solution`.
+- Export SVG, PNG, JSON et CSV; comparaison et graphiques de score, rapports, cascade, pertes et sécurité, tous alimentés par le modèle `Solution` — aucun n'y recalcule sa propre valeur. Chaque colonne comparée porte la silhouette du mécanisme, tracée par la même chaîne que le visualiseur.
 - Paramètres experts persistés dans `localStorage` et liens partageables compatibles avec les anciens paramètres.
 - Progression détaillée avec branches évaluées, profondeur, rapport courant et causes de rejet.
 

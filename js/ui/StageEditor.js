@@ -130,7 +130,7 @@
     push('SH min', minFactor(original, 'contact'), minFactor(edited, 'contact'), 'up', 2);
     push('Ø max', original.dimensions.maxDiameter, edited.dimensions.maxDiameter, 'down', 0, ' mm');
     push('Longueur', original.dimensions.length, edited.dimensions.length, 'down', 0, ' mm');
-    push('Score (coût)', original.score.value, edited.score.value, 'down', 3);
+    push('Score global', original.score.value, edited.score.value, 'down', 3);
     push('Avertissements', (original.warnings || []).length, (edited.warnings || []).length, 'down', 0);
     return rows;
   }

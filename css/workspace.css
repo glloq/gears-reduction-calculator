@@ -499,3 +499,23 @@ body.single-transmission .results-body,
 body.single-transmission .solution-badge,
 body.single-transmission .solution-reference { display: none; }
 body.single-transmission .solution-cards { grid-template-columns: 1fr; }
+
+/* ----- Vignettes de comparaison (§12) ----- */
+
+/* Une silhouette au-dessus de chaque colonne : deux mécanismes qui donnent les
+   mêmes nombres n'ont pas la même forme, et c'est la forme qu'on reconnaît. */
+.compare-thumb {
+  display: block; margin-top: var(--sp-2);
+  padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.compare-thumb .solution-thumbnail { display: block; width: 100%; height: 62px; overflow: visible; }
+.solution-thumbnail .thumb-ellipse { fill: none; stroke: var(--muted); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.solution-thumbnail .thumb-line { stroke: var(--muted); stroke-width: 2.4; vector-effect: non-scaling-stroke; stroke-linecap: round; }
+.solution-thumbnail .thumb-path { fill: none; stroke: var(--muted); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+/* Entrée et sortie portent les mêmes couleurs que partout ailleurs : le vert
+   entre, le rouge sort, et le bâti est hachuré de gris dans le dessin comme
+   il est éteint ici. */
+.solution-thumbnail .thumb-input { stroke: var(--ok, #15803d); }
+.solution-thumbnail .thumb-output { stroke: var(--danger, #b91c1c); }
+.solution-thumbnail .thumb-fixed { stroke: var(--muted); stroke-dasharray: 3 2; }

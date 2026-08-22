@@ -512,6 +512,23 @@ test('two pinned solutions are compared with deltas, not raw columns (§26)', as
   // §21 : la famille est nommée, pas identifiée.
   const architecture = await table.locator('.type-badge').first().textContent();
   expect(architecture).not.toMatch(/^(spur|planetary|worm|helical|bevel|internal|belt|chain)$/);
+
+  // §12 : la SILHOUETTE au-dessus de chaque colonne. Deux colonnes de chiffres
+  // proches peuvent décrire deux mécanismes sans rapport ; la forme le dit.
+  const thumbs = table.locator('.compare-thumb .solution-thumbnail');
+  await expect(thumbs).toHaveCount(2);
+  const drawn = await thumbs.evaluateAll(nodes => nodes.map(svg => ({
+    shapes: svg.querySelectorAll('ellipse, line, path').length,
+    box: svg.getAttribute('viewBox'),
+    // Ce que le navigateur dessine vraiment, une fois la feuille appliquée.
+    painted: Array.from(svg.querySelectorAll('ellipse, line, path'))
+      .every(node => node.getBoundingClientRect().width > 0 || node.getBoundingClientRect().height > 0)
+  })));
+  drawn.forEach(thumb => {
+    expect(thumb.shapes).toBeGreaterThan(1);
+    expect(thumb.box).toMatch(/^-?[\d.]+ -?[\d.]+ [\d.]+ [\d.]+$/);
+    expect(thumb.painted).toBe(true);
+  });
 });
 
 test('a built chain survives a reload', async ({ page }) => {

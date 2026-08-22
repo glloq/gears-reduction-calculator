@@ -55,299 +55,70 @@ class GearCharts {
   }
 
   /**
-   * Graphique de comparaison des rapports obtenus vs cible.
+   * COMPARAISON DES RAPPORTS — LUE SUR LE MODÈLE, PLUS RECALCULÉE.
+   *
+   * Ce graphique reconstruisait le rapport de chaque solution à partir d'un
+   * triplet hérité `[A, B, type]`, en repassant par `calculerRapportEtage` et,
+   * à défaut, par un `B / A`. Or `B / A` n'est le rapport d'un étage que pour
+   * les familles à deux roues : une vis sans fin réduit de Z2 / filets, un
+   * planétaire suit Willis, une crémaillère n'a pas de rapport du tout. La
+   * barre tracée pouvait donc contredire le chiffre affiché deux centimètres
+   * plus haut, dans la même page.
+   *
+   * `Engineering.analyzeSolution` a déjà calculé `ratio` et `errorPercent`,
+   * famille par famille. On les LIT. Une valeur affichée n'a qu'une source.
    */
   drawRatioComparison(canvasId, solutions, rapportCible) {
-    const labels = solutions.map((_, i) => `Solution ${i + 1}`);
-    const rapports = solutions.map(sol => sol.reduce((acc, stage) => {
-      const A = stage[0], B = stage[1], typeId = stage[2] || 'spur';
-      if (typeof calculerRapportEtage === 'function') {
-        return acc * calculerRapportEtage(typeId, A, B);
-      }
-      return acc * (B / A);
-    }, 1));
-    const ecarts = rapports.map(r => Math.abs((r - rapportCible) / rapportCible * 100));
+    // Une transmission rotation → translation n'a pas de rapport de réduction :
+    // elle a une course. Elle n'appartient pas à cette comparaison, et l'y
+    // porter à zéro écraserait l'échelle des autres.
+    var rotary = (solutions || []).filter(function (solution) {
+      return solution && solution.mode !== 'rotationTranslation' && Number.isFinite(solution.ratio);
+    });
+    if (!rotary.length) return this._placeholder(canvasId,
+      'Comparaison des rapports — aucune solution rotative à comparer');
 
-    // Ligne cible simulée via un dataset constant (pas besoin du plugin annotation)
-    const cibleData = rapports.map(() => rapportCible);
+    var labels = rotary.map(function (_, index) { return 'Solution ' + (index + 1); });
+    var ratios = rotary.map(function (solution) { return solution.ratio; });
+    var errors = rotary.map(function (solution) {
+      return Number.isFinite(solution.errorPercent) ? solution.errorPercent : null;
+    });
+    var target = Number.isFinite(rapportCible) ? rapportCible : null;
 
-    var config = {
+    var datasets = [
+      { label: 'Rapport obtenu', data: ratios, backgroundColor: 'rgba(54, 162, 235, 0.7)',
+        borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1, yAxisID: 'y' }
+    ];
+    // La cible ne se dessine que si on en a une : une ligne à `NaN` laisserait
+    // croire qu'il n'y avait pas d'objectif.
+    if (target !== null) {
+      datasets.push({ label: 'Cible : ' + target, data: ratios.map(function () { return target; }),
+        type: 'line', borderColor: 'rgba(0, 200, 0, 0.8)', backgroundColor: 'transparent',
+        borderWidth: 2, borderDash: [6, 3], pointRadius: 0, yAxisID: 'y' });
+    }
+    datasets.push({ label: 'Écart (%)', data: errors, backgroundColor: 'rgba(255, 99, 132, 0.7)',
+      borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1, type: 'line', yAxisID: 'y1' });
+
+    this._updateOrCreate(canvasId, {
       type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Rapport obtenu',
-            data: rapports,
-            backgroundColor: 'rgba(54, 162, 235, 0.7)',
-            borderColor: 'rgba(54, 162, 235, 1)',
-            borderWidth: 1,
-            yAxisID: 'y'
-          },
-          {
-            label: 'Cible: ' + rapportCible,
-            data: cibleData,
-            type: 'line',
-            borderColor: 'rgba(0, 200, 0, 0.8)',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            borderDash: [6, 3],
-            pointRadius: 0,
-            yAxisID: 'y'
-          },
-          {
-            label: 'Écart (%)',
-            data: ecarts,
-            backgroundColor: 'rgba(255, 99, 132, 0.7)',
-            borderColor: 'rgba(255, 99, 132, 1)',
-            borderWidth: 1,
-            type: 'line',
-            yAxisID: 'y1'
-          }
-        ]
-      },
+      data: { labels: labels, datasets: datasets },
       options: {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
-        plugins: {
-          title: { display: true, text: 'Comparaison des rapports de réduction' }
-        },
+        plugins: { title: { display: true, text: 'Comparaison des rapports de réduction' } },
         scales: {
           y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Rapport' } },
           y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Écart (%)' }, grid: { drawOnChartArea: false } }
         }
       }
-    };
-
-    this._updateOrCreate(canvasId, config);
-  }
-
-  /**
-   * Graphique radar comparant les propriétés mécaniques des solutions.
-   */
-  drawMechanicalRadar(canvasId, analysesArray, rapportCible) {
-    const labels = ['Rendement', 'Compacité', 'Rapport conduite', 'Sécurité dent', 'Précision ratio'];
-
-    const datasets = analysesArray.slice(0, 5).map((analyse, i) => {
-      const rendement = analyse.rendementTotal * 100;
-      const compacite = Math.max(0, 100 - analyse.nombreEtages * 20);
-
-      // Gérer les étages sans rapport de conduite (courroie, vis sans fin)
-      var sommeConduite = 0, countConduite = 0;
-      analyse.etages.forEach(function (e) {
-        if (e.rapportConduite !== null && e.rapportConduite !== undefined) {
-          sommeConduite += e.rapportConduite;
-          countConduite++;
-        }
-      });
-      const rapportConduite = countConduite > 0 ? Math.min(100, (sommeConduite / countConduite) * 50) : 50;
-
-      const securite = Math.min(100, analyse.etages.reduce((sum, e) => {
-        var secA = e.resistanceMenante.facteurSecurite;
-        var secB = e.resistanceMenee.facteurSecurite;
-        if (secA === Infinity) secA = 10;
-        if (secB === Infinity) secB = 10;
-        return sum + Math.min(secA, secB);
-      }, 0) / analyse.etages.length * 25);
-
-      const precision = rapportCible ? Math.max(0, 100 - Math.abs((analyse.rapportTotal - rapportCible) / rapportCible * 100) * 10) : 50;
-
-      const colors = [
-        'rgba(54, 162, 235, 0.5)',
-        'rgba(255, 99, 132, 0.5)',
-        'rgba(75, 192, 192, 0.5)',
-        'rgba(255, 206, 86, 0.5)',
-        'rgba(153, 102, 255, 0.5)'
-      ];
-
-      return {
-        label: `Solution ${i + 1}`,
-        data: [rendement, compacite, rapportConduite, securite, precision],
-        backgroundColor: colors[i],
-        borderColor: colors[i].replace('0.5', '1'),
-        borderWidth: 2,
-        pointRadius: 3
-      };
     });
-
-    var config = {
-      type: 'radar',
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        plugins: {
-          title: { display: true, text: 'Comparaison multicritères des solutions' }
-        },
-        scales: {
-          r: { min: 0, max: 100, ticks: { stepSize: 20 } }
-        }
-      }
-    };
-
-    this._updateOrCreate(canvasId, config);
   }
 
-  /**
-   * Graphique de cascade couple/vitesse à travers les étages.
-   */
-  drawTorqueSpeedCascade(canvasId, analyse) {
-    const labels = ['Entrée', ...analyse.etages.map((_, i) => `Étage ${i + 1}`)];
-    const vitesses = [analyse.vitesseEntree, ...analyse.etages.map(e => e.vitesseSortie)];
-    const couples = [analyse.coupleEntree, ...analyse.etages.map(e => e.coupleSortie)];
-    const rendements = [100, ...analyse.etages.map((e, i) => {
-      let r = 1;
-      for (let j = 0; j <= i; j++) r *= analyse.etages[j].rendement;
-      return r * 100;
-    })];
-
-    var config = {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Vitesse (tr/min)',
-            data: vitesses,
-            borderColor: 'rgba(54, 162, 235, 1)',
-            backgroundColor: 'rgba(54, 162, 235, 0.1)',
-            fill: true,
-            tension: 0.3,
-            yAxisID: 'y'
-          },
-          {
-            label: 'Couple (N.m)',
-            data: couples,
-            borderColor: 'rgba(255, 99, 132, 1)',
-            backgroundColor: 'rgba(255, 99, 132, 0.1)',
-            fill: true,
-            tension: 0.3,
-            yAxisID: 'y1'
-          },
-          {
-            label: 'Rendement cumulé (%)',
-            data: rendements,
-            borderColor: 'rgba(75, 192, 192, 1)',
-            borderDash: [5, 5],
-            fill: false,
-            tension: 0.3,
-            yAxisID: 'y2'
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          title: { display: true, text: 'Évolution couple / vitesse / rendement par étage' }
-        },
-        scales: {
-          y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Vitesse (tr/min)' } },
-          y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Couple (N.m)' }, grid: { drawOnChartArea: false } },
-          y2: { type: 'linear', display: true, position: 'right', min: 0, max: 100, title: { display: true, text: 'Rendement (%)' }, grid: { drawOnChartArea: false } }
-        }
-      }
-    };
-
-    this._updateOrCreate(canvasId, config);
-  }
-
-  /**
-   * Graphique en barres horizontales pour la répartition des pertes.
-   */
-  drawPowerLossBreakdown(canvasId, analyse) {
-    const labels = analyse.etages.map((_, i) => `Étage ${i + 1}`);
-    const pertes = analyse.etages.map(e => e.pertePuissance);
-    const puissancesUtiles = analyse.etages.map(e => e.puissanceSortie);
-
-    var config = {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Puissance utile (W)',
-            data: puissancesUtiles,
-            backgroundColor: 'rgba(75, 192, 192, 0.7)',
-            borderColor: 'rgba(75, 192, 192, 1)',
-            borderWidth: 1
-          },
-          {
-            label: 'Pertes (W)',
-            data: pertes,
-            backgroundColor: 'rgba(255, 99, 132, 0.7)',
-            borderColor: 'rgba(255, 99, 132, 1)',
-            borderWidth: 1
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        indexAxis: 'y',
-        plugins: {
-          title: { display: true, text: 'Répartition puissance utile / pertes par étage' }
-        },
-        scales: {
-          x: { stacked: true, title: { display: true, text: 'Puissance (W)' } },
-          y: { stacked: true }
-        }
-      }
-    };
-
-    this._updateOrCreate(canvasId, config);
-  }
-
-  /**
-   * Graphique des facteurs de sécurité par étage (Lewis + Hertz).
-   */
-  drawSafetyFactors(canvasId, analyse) {
-    const labels = analyse.etages.map((_, i) => `Étage ${i + 1}`);
-    const lewisMin = analyse.etages.map(e => {
-      var a = e.resistanceMenante.facteurSecurite;
-      var b = e.resistanceMenee.facteurSecurite;
-      if (a === Infinity) a = 10;
-      if (b === Infinity) b = 10;
-      return Math.min(a, b);
-    });
-    var hasHertz = analyse.etages.some(function (e) { return e.hertzContact !== null; });
-    var hertzFactors = analyse.etages.map(function (e) {
-      return e.hertzContact ? e.hertzContact.facteurSecuriteContact : null;
-    });
-
-    var datasets = [
-      {
-        label: 'Sécurité Lewis (flexion)',
-        data: lewisMin,
-        backgroundColor: 'rgba(54, 162, 235, 0.7)',
-        borderColor: 'rgba(54, 162, 235, 1)',
-        borderWidth: 1
-      }
-    ];
-    if (hasHertz) {
-      datasets.push({
-        label: 'Sécurité Hertz (contact)',
-        data: hertzFactors,
-        backgroundColor: 'rgba(255, 159, 64, 0.7)',
-        borderColor: 'rgba(255, 159, 64, 1)',
-        borderWidth: 1
-      });
-    }
-
-    var config = {
-      type: 'bar',
-      data: { labels: labels, datasets: datasets },
-      options: {
-        responsive: true,
-        plugins: {
-          title: { display: true, text: 'Facteurs de sécurité par étage' }
-        },
-        scales: {
-          y: { beginAtZero: true, title: { display: true, text: 'Facteur de sécurité' } }
-        }
-      }
-    };
-
-    this._updateOrCreate(canvasId, config);
-  }
+  // Quatre tracés hérités vivaient ici — radar mécanique, cascade, pertes et
+  // facteurs de sécurité — sur un objet `analyse` à étages français. Plus
+  // personne ne les appelait depuis que les `drawStructured*` lisent la
+  // `Solution` ; ils ne faisaient que doubler les mêmes courbes à partir d'un
+  // modèle qui n'était plus tenu à jour.
 
   /** Render-only charts for the structured Engineering Solution model. */
   drawStructuredCascade(canvasId, solution) {

@@ -286,8 +286,12 @@
     var target = searchParams ? searchParams.rapportCible : parseFloat(document.getElementById("rapport").value);
 
     if (solutions.length&&solutions[0].mode==='rotationTranslation') { if(document.getElementById('radarChart'))charts.drawStructuredScore('radarChart',solutions[0]); return; }
+    // Les solutions telles quelles : le graphique lit `ratio` et `errorPercent`
+    // du modèle. Il recevait auparavant des triplets `[A, B, type]` et
+    // recalculait le rapport lui-même, ce qui le faisait diverger du chiffre
+    // affiché à côté dès qu'un étage n'était pas un simple couple de roues.
     if (document.getElementById("ratioChart")) {
-      charts.drawRatioComparison("ratioChart", solutions.map(function(s){return s.stages.map(GearTransmissionRegistry.toLegacy);}), target);
+      charts.drawRatioComparison("ratioChart", solutions, target);
     }
 
     var modValue = this.paramForm.getModuleValue();
