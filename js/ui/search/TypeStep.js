@@ -564,13 +564,21 @@
     plan.textContent = this._buildPlanText();
     section.appendChild(plan);
 
+    // Le pignon déjà monté sur le moteur vient AVANT les étages, la roue déjà
+    // taillée sur l'arbre de sortie APRÈS : la carte se lit dans l'ordre où la
+    // puissance traverse le mécanisme.
+    section.appendChild(this._renderEndWheel('input', words));
+
     var list = document.createElement('ol');
     list.className = 'build-stages';
     list.id = 'buildStages';
+    var resolved = build.resolved();
     build.stages.forEach(function (stage, index) {
-      list.appendChild(self._buildStage(stage, index, words));
+      list.appendChild(self._buildStage(stage, resolved[index], index, words));
     });
     section.appendChild(list);
+
+    section.appendChild(this._renderEndWheel('output', words));
 
     var add = button('btn-small btn-primary', '+ Ajouter un étage', function () {
       build.addStage(null);
@@ -592,7 +600,10 @@
       box.id = 'buildErrors';
       errors.forEach(function (entry) {
         var item = document.createElement('li');
-        item.textContent = 'Étage ' + entry.stage + ' : ' + entry.text;
+        // Une contradiction de roue ne se corrige pas dans l'étage : la ranger
+        // sous « Étage 1 » enverrait modifier la mauvaise pièce.
+        item.textContent = (entry.label || 'Étage ' + entry.stage) + ' : ' + entry.text;
+        if (entry.wheel) item.dataset.wheel = entry.wheel;
         box.appendChild(item);
       });
       section.appendChild(box);
@@ -605,26 +616,156 @@
     var build = this.draft.build, words = this._buildWords();
     var observing = this.draft.workspace.mode === 'analyze';
     if (build.isEmpty()) return 'Ajoutez un étage pour commencer. ' + words.hint;
+    var wheels = build.describedEndWheels().length;
+    var pinned = wheels
+      ? ' ' + (wheels > 1 ? 'Les deux roues d’extrémité sont imposées' : 'Une roue d’extrémité est imposée') +
+        ' : la transmission s’y raccorde, elle ne les rechoisit pas.'
+      : '';
     var unknown = build.unknownCount();
     if (!unknown) {
       var ratio = build.ratio();
       return (observing ? 'Mécanisme entièrement décrit' : 'Chaîne entièrement décrite') +
         (ratio ? ', rapport ' + (Math.round(ratio * 100) / 100) + ':1' : '') +
-        ' — il sera calculé directement, sans recherche.';
+        ' — il sera calculé directement, sans recherche.' + pinned;
     }
     // En Étudier, il n'y a rien à « compléter » : ce qui manque restera non
     // évalué, et c'est cela qu'il faut annoncer.
     if (observing) {
       return unknown + (unknown > 1 ? ' étages sont incomplets' : ' étage est incomplet') +
-        ' : le rapport et la géométrie ne seront pas calculés tant qu’il manque des valeurs.';
+        ' : le rapport et la géométrie ne seront pas calculés tant qu’il manque des valeurs.' + pinned;
     }
-    return unknown + (unknown > 1 ? ' étages restent' : ' étage reste') + ' à compléter : le solveur ne cherchera qu’eux.';
+    return unknown + (unknown > 1 ? ' étages restent' : ' étage reste') +
+      ' à compléter : le solveur ne cherchera qu’eux.' + pinned;
   };
 
-  TypeStep.prototype._buildStage = function (stage, index, words) {
+  /**
+   * Une roue d'extrémité : la pièce qui existait AVANT le réducteur.
+   *
+   * Elle n'est pas un étage, et la carte le dit — elle annonce l'étage qu'elle
+   * touche et l'organe qu'elle y est. Sans cela, « 12 dents » saisi ici et
+   * « 12 dents menantes » saisi dans l'étage 1 paraîtraient deux demandes
+   * différentes, alors que c'est la même contrainte.
+   */
+  TypeStep.prototype._renderEndWheel = function (role, words) {
+    var self = this, build = this.draft.build, model = GearApp.requirements.build;
+    var wheel = build.endWheel(role), definition = model.endWheelRole(role);
+    var index = build.endStageIndex(role), family = build.endFamily(role);
+    var described = !wheel.isEmpty();
+
+    var card = document.createElement('div');
+    card.className = 'build-end-wheel';
+    card.dataset.role = role;
+    card.dataset.state = described ? 'described' : 'free';
+
+    var head = document.createElement('header');
+    head.className = 'build-end-wheel-head';
+    var title = document.createElement('strong');
+    title.textContent = definition.label;
+    head.appendChild(title);
+
+    var mark = document.createElement('span');
+    mark.className = 'build-level';
+    mark.dataset.level = described ? 'fixed' : 'auto';
+    // Ce qu'elle est dans la chaîne, pas seulement qu'elle est décrite : c'est
+    // le lien entre la pièce qu'on tient dans la main et le calcul.
+    mark.textContent = described
+      ? '🔒 ' + (wheel.describe() || 'décrite')
+      : '· ' + (role === 'input' ? 'le système choisit la roue menante' : 'le système choisit la roue menée');
+    head.appendChild(mark);
+
+    var select = document.createElement('select');
+    select.className = 'build-family';
+    select.id = 'endWheelFamily' + (role === 'input' ? 'Input' : 'Output');
+    var free = document.createElement('option');
+    free.value = ''; free.textContent = words.emptyFamily;
+    select.appendChild(free);
+    buildFamilies().forEach(function (id) {
+      var option = document.createElement('option');
+      option.value = id;
+      option.textContent = GearTransmissionRegistry.familyName(id, 'short');
+      select.appendChild(option);
+    });
+    select.value = wheel.family || '';
+    select.addEventListener('change', function () {
+      wheel.setFamily(select.value || null);
+      self._changed();
+    });
+    head.appendChild(select);
+
+    if (described) {
+      var clear = button('btn-small build-remove', '✕', function () {
+        wheel.clear();
+        self._changed();
+      });
+      clear.setAttribute('aria-label', 'Effacer la ' + definition.label.toLowerCase());
+      head.appendChild(clear);
+    }
+    card.appendChild(head);
+
+    var hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = index == null
+      ? definition.help + ' Ajoutez un étage pour qu’elle ait un engrènement.'
+      : definition.help.replace(/premier étage/, 'l’étage 1')
+          .replace(/dernier étage/, 'l’étage ' + (index + 1));
+    card.appendChild(hint);
+
+    var fields = document.createElement('div');
+    fields.className = 'build-fields';
+    var teethPath = wheel.teethPath(family);
+    wheel.fields(family).forEach(function (field) {
+      // La denture porte le nom de l'organe qu'elle est — « Menante »,
+      // « Filets », « Solaire » — plutôt qu'un « Dents » qui laisserait
+      // deviner de quelle roue on parle.
+      var spec = { label: field.label, unit: field.unit, min: field.min, max: field.max, step: field.step };
+      if (field.key === 'teeth' && teethPath) spec.label = fieldSpec(teethPath).label;
+      var host = buildField('wheel.' + field.key, field.value, spec, function (value) {
+        wheel.set(field.key, value);
+        self._changed();
+      }, 'endWheel' + (role === 'input' ? 'Input' : 'Output') + '_' + field.key, words);
+      if (field.key !== 'teeth' && field.key !== 'module') host.classList.add('build-field-optional');
+      fields.appendChild(host);
+    });
+    if (!family) {
+      var need = document.createElement('p');
+      need.className = 'hint';
+      need.textContent = 'Choisissez sa famille pour décrire sa denture et sa largeur.';
+      fields.appendChild(need);
+    }
+    card.appendChild(fields);
+    return card;
+  };
+
+  /**
+   * Les dentures qu'une roue réelle a déjà décidées à cet étage. Les rendre
+   * modifiables ici donnerait deux endroits pour une seule valeur, et donc tôt
+   * ou tard deux valeurs.
+   */
+  TypeStep.prototype._wheelPaths = function (index) {
+    var build = this.draft.build, out = {};
+    GearApp.requirements.build.END_WHEEL_ROLES.forEach(function (entry) {
+      var role = entry.role, wheel = build.endWheel(role);
+      if (wheel.isEmpty() || build.endStageIndex(role) !== index) return;
+      var path = wheel.teethPath(build.endFamily(role));
+      if (path && wheel.get('teeth') != null) out[path] = entry.label;
+      if (wheel.family) out['@family'] = entry.label;
+    });
+    return out;
+  };
+
+  /**
+   * Un cran de la chaîne. `resolved` est le MÊME étage, roues d'extrémité
+   * comprises : c'est lui qui dit ce qui est encore inconnu, tandis que les
+   * saisies vont dans l'étage brut. Lire l'un et écrire dans l'autre est
+   * exactement ce qui évite qu'une roue déjà décrite se laisse recontredire
+   * champ par champ.
+   */
+  TypeStep.prototype._buildStage = function (stage, resolved, index, words) {
     var self = this, build = this.draft.build;
-    var level = stage.level(), badge = words[level];
-    var missing = stage.missingFields();
+    resolved = resolved || stage;
+    var level = resolved.level(), badge = words[level];
+    var missing = resolved.missingFields();
+    var imposed = this._wheelPaths(index);
     var item = document.createElement('li');
     item.className = 'build-stage';
     item.dataset.stage = String(index);
@@ -662,6 +803,14 @@
       family.appendChild(option);
     });
     family.value = stage.family || '';
+    // La famille d'une roue réelle vaut pour l'étage qu'elle touche : la
+    // recopier dans ce sélecteur ferait croire à une seconde décision, qu'on
+    // pourrait alors contredire.
+    if (!stage.family && resolved.family && imposed['@family']) {
+      family.disabled = true;
+      family.title = 'Imposée par la ' + imposed['@family'].toLowerCase();
+      family.value = resolved.family;
+    }
     family.addEventListener('change', function () {
       stage.setFamily(family.value || null);
       self._changed();
@@ -689,20 +838,26 @@
 
     var fields = document.createElement('div');
     fields.className = 'build-fields';
-    if (!stage.family) {
+    if (!resolved.family) {
       var hint = document.createElement('p');
       hint.className = 'hint';
       hint.textContent = words.stageHint;
       fields.appendChild(hint);
     } else {
-      stage.fields().forEach(function (field) {
+      resolved.fields().forEach(function (field) {
+        var source = imposed[field.path];
         var host = buildField(field.path, field.value, fieldSpec(field.path), function (value) {
           stage.set(field.path, value);
           self._changed();
         }, 'buildStage' + index + '_' + field.path.replace(/\./g, '_'), words);
         // Un champ requis encore vide se distingue d'un champ facultatif laissé
         // libre : le premier retient le calcul, le second non.
-        if (!field.required) host.classList.add('build-field-optional');
+        if (source) {
+          host.classList.add('build-field-locked');
+          host.title = 'Imposé par la ' + source.toLowerCase();
+          var control = host.querySelector('input, select');
+          if (control) control.disabled = true;
+        } else if (!field.required) host.classList.add('build-field-optional');
         else if (field.value == null) host.classList.add('build-field-missing');
         fields.appendChild(host);
       });

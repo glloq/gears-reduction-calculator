@@ -544,8 +544,8 @@
       return notes;
     }
     build.errors().forEach(function (entry) {
-      notes.push({ level: 'error', code: 'build-stage', section: 'type',
-        text: 'Étage ' + entry.stage + ' : ' + entry.text });
+      notes.push({ level: 'error', code: entry.wheel ? 'build-end-wheel' : 'build-stage', section: 'type',
+        text: (entry.label || 'Étage ' + entry.stage) + ' : ' + entry.text });
     });
     var counts = { fixed: 0, partial: 0, auto: 0 };
     build.levels().forEach(function (level) { counts[level] += 1; });
@@ -672,11 +672,17 @@
       Object.keys(counts).filter(function (key) { return counts[key]; })
         .map(function (key) { return counts[key] + ' ' + LABELS[key].label.toLowerCase(); }).join(' · ') || null,
       build.families().length
-        ? build.stages.map(function (stage) {
+        ? build.resolved().map(function (stage) {
           return stage.family ? GearTransmissionRegistry.familyName(stage.family, 'short') : '?';
         }).join(' → ')
         : null,
-      build.module != null ? 'module ' + build.module + ' mm' : null
+      build.module != null ? 'module ' + build.module + ' mm' : null,
+      // Une roue déjà taillée n'est pas un réglage de plus : c'est ce à quoi la
+      // transmission doit se raccorder, et le récapitulatif doit le porter.
+      R.build.END_WHEEL_ROLES.map(function (entry) {
+        var described = build.endWheel(entry.role).describe();
+        return described ? entry.label.toLowerCase() + ' ' + described : null;
+      }).filter(Boolean).join(' · ') || null
     ]);
 
     function say(quantity, suffix) {
@@ -805,10 +811,12 @@
   SearchSession.prototype._summariseChain = function () {
     var build = this.build, bits = [this.workspace.describe()];
     if (build.isEmpty()) return bits.concat(['aucun étage décrit']);
-    bits.push(build.stages.map(function (stage) {
+    bits.push(build.resolved().map(function (stage) {
       return stage.family ? GearTransmissionRegistry.familyName(stage.family, 'short') : '?';
     }).join(' → '));
     bits.push(build.stages.length + (build.stages.length > 1 ? ' étages' : ' étage'));
+    var wheels = build.describedEndWheels().length;
+    if (wheels) bits.push(wheels + (wheels > 1 ? ' roues imposées' : ' roue imposée'));
     var unknown = build.unknownCount();
     if (unknown) bits.push(unknown + ' à compléter');
     else {
