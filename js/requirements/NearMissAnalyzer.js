@@ -71,8 +71,26 @@
    *
    * @param {object} [context] `{ chain: true, unknownStages, teethRange }`
    */
+  /** « 24 dents en entrée » / « 24 dents en entrée et 120 en sortie ». */
+  function imposedTeethText(context) {
+    var imposed = (context && context.imposedTeeth) || [];
+    if (!imposed.length) return '';
+    return imposed.map(function (entry) {
+      return entry.teeth + ' dents ' + (entry.role === 'input' ? 'en entrée' : 'en sortie');
+    }).join(' et ');
+  }
+
   function infeasibleText(context) {
     if (!context || !context.chain) {
+      // Une denture imposée est un suspect de premier ordre, et le taire
+      // envoyait chercher ailleurs : « élargissez les technologies » ne sert à
+      // rien quand c'est le nombre de dents demandé qui ferme le domaine.
+      var imposed = imposedTeethText(context);
+      if (imposed) {
+        return 'Même sans vos contraintes de dimensions et de performance, aucune architecture n’atteint ce rapport ' +
+          'avec les ' + imposed + ' que vous imposez. Libérez cette denture, ou élargissez les technologies, ' +
+          'le nombre d’étages ou la tolérance sur le rapport.';
+      }
       return 'Même sans vos contraintes de dimensions et de performance, aucune architecture n’atteint ce rapport. ' +
         'Élargissez les technologies, le nombre d’étages ou la tolérance sur le rapport.';
     }
@@ -80,7 +98,9 @@
     var span = range && Number.isFinite(range.min) && Number.isFinite(range.max)
       ? ' La plage de dentures balayée va de ' + range.min + ' à ' + range.max + ' dents.'
       : '';
+    var imposedInChain = imposedTeethText(context);
     return 'Aucune denture de cette plage ne complète la chaîne au rapport demandé.' + span +
+      (imposedInChain ? ' Vous imposez ' + imposedInChain + '.' : '') +
       ' Élargissez la plage de dentures, changez le module, ou libérez une des valeurs que vous avez imposées.';
   }
 

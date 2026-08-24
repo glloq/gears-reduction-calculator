@@ -397,3 +397,28 @@ test('an unreachable chain blames the range, not the decisions', () => {
   // Sans plage connue, on n'invente pas de bornes.
   assert.doesNotMatch(NearMiss.analyze([], null, { chain: true }).text, /\d+ à \d+/);
 });
+
+test('an imposed tooth count is named among the suspects', () => {
+  const NearMiss = require('../js/requirements/NearMissAnalyzer.js');
+  // « Élargissez les technologies, le nombre d'étages ou la tolérance » : trois
+  // pistes dont aucune ne débloque quoi que ce soit quand c'est le nombre de
+  // dents demandé qui ferme le domaine. Le taire envoyait chercher ailleurs.
+  const imposed = NearMiss.analyze([], null,
+    { imposedTeeth: [{ role: 'output', teeth: 120 }] });
+  assert.match(imposed.text, /120 dents en sortie/);
+  assert.match(imposed.text, /Libérez cette denture/);
+
+  const both = NearMiss.analyze([], null,
+    { imposedTeeth: [{ role: 'input', teeth: 24 }, { role: 'output', teeth: 120 }] });
+  assert.match(both.text, /24 dents en entrée et 120 dents en sortie/);
+
+  // Rien d'imposé : le message d'origine, mot pour mot.
+  const plain = NearMiss.analyze([], null, null);
+  assert.doesNotMatch(plain.text, /dents/);
+
+  // Sur une chaîne construite, la plage reste le sujet, la denture s'ajoute.
+  const chain = NearMiss.analyze([], null,
+    { chain: true, teethRange: { min: 10, max: 50 }, imposedTeeth: [{ role: 'input', teeth: 24 }] });
+  assert.match(chain.text, /10 à 50 dents/);
+  assert.match(chain.text, /24 dents en entrée/);
+});
