@@ -7,6 +7,7 @@ Application d'ingénierie statique pour rechercher, comparer et visualiser des t
 - Recherche rapide par rapport ou solveur inverse par vitesse cible, jusqu'à huit étages, dans un Web Worker annulable.
 - Modèle explicite des étages et registre extensible unique, partagé entre page, worker et tests.
 - Modes minimum d'étages et exploration globale; contraintes d'encombrement et base d'un score multicritère explicable.
+- **Roues d'extrémité imposées** : le pignon déjà monté sur le moteur et la roue déjà taillée sur l'arbre de sortie se décrivent en mode Construire — famille, denture, module, largeur, angles. Elles ne forment pas d'étage de plus : elles sont la roue menante du premier étage et la roue menée du dernier, et le solveur ne cherche que ce qui les relie.
 - Géométrie involute (diamètres primitif/base/tête/pied, pas, entraxe, déport, jeu et rapports de conduite), forces `Ft/Fr/Fa`, rendement, puissance et estimation thermique.
 - Estimations **Lewis simplifié** et **Hertz simplifié**, matériaux et déclassement additif. Les estimations facultatives de fatigue et d'arbre sont calculées par étage et ne constituent pas une certification.
 - Vues géométrique SVG, cinématique vectorielle expérimentale et linéaire Canvas sans relancer la recherche.
@@ -43,6 +44,8 @@ Les unités internes sont mm, N, N·m, rpm, W, MPa et radians. Le calcul de forc
 
 La recherche trie les candidats par proximité logarithmique avec la cible et applique avant la récursion des bornes de rapport minimal/maximal atteignable avec les étages restants. `maxIterations` compte les branches effectivement évaluées; les branches mathématiquement incapables d'atteindre la tolérance sont rejetées immédiatement et apparaissent dans les statistiques de rapport.
 
+Le module de la chaîne est celui appliqué partout où rien ne l'impose : une roue d'extrémité réelle garde le sien, sur l'étage qu'elle touche. Un pignon moteur en module 0,8 et une roue de sortie en module 1,5 décrivent donc deux engrènements distincts, ce qu'un module unique pour toute la chaîne rendait impossible à exprimer.
+
 Le mode automatique essaie les modules normalisés par ordre croissant et conserve le premier qui respecte les contraintes simplifiées. Il ne fait pas varier un module d'engrenage pour les courroies ou les chaînes. Les règles `standard`, `CNC`, `laser`, `printing3d` et `custom` sont appliquées selon la famille et publient les règles appliquées, échecs et recommandations; elles restent des recommandations de pré-dimensionnement.
 
 ## Les trois vues, et ce que chacune promet
@@ -74,6 +77,7 @@ Le renderer vectoriel local ne charge aucune ressource distante au runtime.
 - `js/core/Engineering.js`: analyse, matériaux, fatigue, arbres, contraintes et scoring.
 - `js/models/TransmissionTypeRegistry.js`: adaptateur de compatibilité pour l'ancienne UI, sans formule propre.
 - `js/visualization/kinematic/`: layout et rendu, sans calcul mécanique.
+- `js/requirements/BuildModel.js`: la chaîne en construction et ses deux roues d'extrémité; elle ne calcule rien elle-même.
 - `js/ui/`: formulaire, résultats, comparaison et exports.
 
 Tous les liens de production sont relatifs afin de fonctionner sous `/gears-reduction-calculator/`. Node sert seulement aux tests.

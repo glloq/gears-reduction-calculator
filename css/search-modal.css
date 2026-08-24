@@ -589,3 +589,23 @@ body.modal-open { overflow: hidden; }
 .build-field-optional { opacity: .82; }
 /* En Étudier, un champ vide est une donnée manquante, pas une délégation (§11). */
 .build-section[data-reading="observe"] .build-stage[data-level="auto"] { border-left-color: var(--line); }
+
+/* Les roues d'extrémité encadrent la liste des étages : elles se lisent comme
+   les bouts du mécanisme, pas comme des étages de plus — d'où le pointillé,
+   qui les distingue des crans pleins de la chaîne. */
+.build-end-wheel {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--sp-1);
+  margin: 0 0 var(--sp-1);
+  display: grid;
+  gap: var(--sp-1);
+}
+.build-end-wheel[data-state="described"] { border-style: solid; border-left: 3px solid var(--accent, var(--success)); }
+.build-end-wheel-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.build-end-wheel-head strong { font-size: var(--font-xs); }
+.build-end-wheel .hint { margin: 0; font-size: var(--font-xs); color: var(--muted); }
+.build-end-wheel .build-remove { margin-left: auto; }
+.build-field-locked { opacity: .7; }
+.build-field-locked input, .build-field-locked select { border-style: dotted; cursor: not-allowed; }
+

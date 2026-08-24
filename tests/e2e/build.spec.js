@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { watchConsoleErrors } = require('./console-errors.js');
-const { openModal, setQuantity, chooseMode, addBuildStage } = require('./flow.js');
+const { openModal, setQuantity, chooseMode, addBuildStage, describeEndWheel } = require('./flow.js');
 
 // Le mode « Construire » : choisir soi-même les étages, et ne faire chercher
 // que ce qu'on n'a pas fixé. La capacité existait — Technologie → Architecture
@@ -586,4 +586,87 @@ test('an abandoned chain edit leaves the displayed one untouched', async ({ page
   await expect(page.locator('.solution-card')).toHaveCount(1);
   const stages = await page.evaluate(() => window.GearApp._workbench.session.build.stages.length);
   expect(stages).toBe(1);
+});
+
+// ===== Les deux roues qui existaient avant le réducteur =====
+
+test('the two end wheels frame the chain without becoming stages', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  // Elles encadrent la liste : le pignon moteur avant, la roue de sortie après.
+  await expect(page.locator('.build-end-wheel[data-role="input"]')).toBeVisible();
+  await expect(page.locator('.build-end-wheel[data-role="output"]')).toBeVisible();
+  await expect(page.locator('.build-end-wheel[data-role="input"]')).toHaveAttribute('data-state', 'free');
+
+  await addBuildStage(page, 'spur');
+  await describeEndWheel(page, 'input', 'spur', { teeth: 12, module: 0.8 });
+  await expect(page.locator('.build-end-wheel[data-role="input"]')).toHaveAttribute('data-state', 'described');
+  // Une roue n'est pas un étage de plus : la chaîne en compte toujours un.
+  await expect(page.locator('.build-stage')).toHaveCount(1);
+  await expect(page.locator('#buildPlan')).toContainText('roue d’extrémité est imposée');
+
+  // Et la denture qu'elle décide n'est plus modifiable dans l'étage : deux
+  // endroits pour une valeur, c'est tôt ou tard deux valeurs.
+  const pinned = page.locator('#buildStage0_input_teeth');
+  await expect(pinned).toBeDisabled();
+  await expect(pinned).toHaveValue('12');
+  await expect(page.locator('.build-stage[data-stage="0"]')).toHaveAttribute('data-level', 'partial');
+  expect(errors).toEqual([]);
+});
+
+test('a chain closed by its two wheels is computed straight away', async ({ page }) => {
+  const errors = watchConsoleErrors(page);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur');
+  await describeEndWheel(page, 'input', 'spur', { teeth: 12, module: 1.5 });
+  await describeEndWheel(page, 'output', 'spur', { teeth: 48 });
+  await expect(page.locator('#buildPlan')).toContainText('sans recherche');
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card')).toHaveCount(1, { timeout: 20000 });
+  const stage = await page.evaluate(() => window.GearApp._workbench.solutions[0].stages[0]);
+  expect(stage.input.teeth).toBe(12);
+  expect(stage.output.teeth).toBe(48);
+  // Le module de la roue prime sur celui de la chaîne : elle a celui qu'elle a.
+  expect(stage.parameters.module).toBe(1.5);
+  expect(errors).toEqual([]);
+});
+
+test('a wheel that contradicts its stage is named, not arbitrated', async ({ page }) => {
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  await addBuildStage(page, 'spur');
+  await describeEndWheel(page, 'input', 'helical', { teeth: 12 });
+  await expect(page.locator('#buildErrors')).toBeVisible();
+  // L'erreur se corrige sur la ROUE ou sur l'étage : la ranger sous
+  // « Étage 1 » enverrait modifier la mauvaise pièce.
+  await expect(page.locator('#buildErrors')).toContainText('Roue d’entrée');
+  await expect(page.locator('#searchModalSubmit')).toBeDisabled();
+});
+
+test('the solver joins two real wheels with two different modules', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await chooseMode(page, 'build');
+  // Un pignon moteur en module 0,8 et une roue de sortie en module 1,5 : deux
+  // engrènements distincts, donc deux modules — ce qu'un module unique de
+  // chaîne rendait impossible à décrire.
+  await addBuildStage(page, 'spur');
+  await addBuildStage(page, 'spur');
+  await describeEndWheel(page, 'input', 'spur', { teeth: 12, module: 0.8 });
+  await describeEndWheel(page, 'output', 'spur', { teeth: 60, module: 1.5 });
+  await setQuantity(page, 'ratio', 20);
+  await page.locator('[data-step="type"]').click();
+  await expect(page.locator('#searchModalSubmit')).toBeEnabled();
+  await page.locator('#searchModalSubmit').click();
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 40000 });
+
+  const found = await page.evaluate(() => window.GearApp._workbench.solutions[0].stages
+    .map(s => ({ input: s.input && s.input.teeth, output: s.output && s.output.teeth, module: s.parameters.module })));
+  expect(found.length).toBe(2);
+  expect(found[0].input).toBe(12);
+  expect(found[0].module).toBe(0.8);
+  expect(found[1].output).toBe(60);
+  expect(found[1].module).toBe(1.5);
 });

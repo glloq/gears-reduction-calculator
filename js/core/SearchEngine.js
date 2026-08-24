@@ -72,6 +72,30 @@
     return out;
   }
   function applyModule(stages,m){stages.forEach(function(s){s.parameters=s.parameters||{};var def=Registry.get(s.type);if(def.capabilities.usesModule&&m!=null)s.parameters.module=m;else if(!def.capabilities.usesModule)delete s.parameters.module;});}
+  /**
+   * Les grandeurs IMPOSÉES à un cran : module, largeur, angles. Elles ne se
+   * filtrent pas comme une denture — un candidat engendré n'en porte aucune,
+   * puisque le module n'est choisi qu'après. On les écrit donc dans la chaîne
+   * retenue, APRÈS le module de chaîne, qu'elles priment : une roue déjà
+   * taillée a le module qu'elle a.
+   */
+  function applyStageParameters(stages,slots){
+    if(!slots||!slots.length)return;
+    stages.forEach(function(stage,index){
+      var imposed=slots[index]&&slots[index].parameters;
+      if(!imposed)return;
+      var def=Registry.get(stage.type);
+      stage.parameters=stage.parameters||{};
+      Object.keys(imposed).forEach(function(key){
+        var value=imposed[key];
+        if(value==null||value==='')return;
+        // Une poulie n'a pas de module : lui en écrire un ferait lire au
+        // dessin et à la géométrie une denture qui n'existe pas.
+        if(key==='module'&&(!def||!def.capabilities.usesModule))return;
+        stage.parameters[key]=value;
+      });
+    });
+  }
   function assessment(solution){var known=[],coverage='full';solution.mechanical.forEach(function(m){if(m.mechanicalStatus!=='evaluated'||m.bendingStatus!=='evaluated'||m.contactStatus!=='evaluated')coverage=coverage==='full'?'partial':coverage;if(m.mechanicalStatus==='unsupported')coverage='unsupported';if(m.bending&&Number.isFinite(m.bending.safetyFactor))known.push(m.bending.safetyFactor);if(m.contact&&Number.isFinite(m.contact.safetyFactor))known.push(m.contact.safetyFactor);});return {coverage:coverage,minimum:known.length?Math.min.apply(Math,known):null};}
   function manufacturingMetric(solution){return solution.stages.reduce(function(v,s){return v+({spur:1,helical:2,internal:2,bevel:3,worm:3,planetary:4,belt:1,chain:2}[s.type]||3);},0);}
   function compare(mode){return function(a,b){
@@ -96,7 +120,7 @@
     var stageConstraints=(p.stageConstraints||[]).map(function(slot){
       if(!slot)return null;
       var families=slot.families&&slot.families.length?slot.families.map(function(id){return id==='epicyclic'?'planetary':id;}):null;
-      return {families:families,fields:slot.fields||{}};
+      return {families:families,fields:slot.fields||{},parameters:slot.parameters||null};
     });
     // La longueur de la chaîne est alors une DÉCISION, pas une inconnue : on
     // n'explore ni plus court ni plus long que ce qui a été construit.
@@ -130,11 +154,17 @@
     candidates.sort(function(a,b){return Math.abs(Math.log(a.ratio/target))-Math.abs(Math.log(b.ratio/target));});
     function canReach(ratio,remaining){if(!remaining)return ratio>=targetMin&&ratio<=targetMax;var low=ratio*Math.pow(minCandidateRatio,remaining),high=ratio*Math.pow(maxCandidateRatio,remaining);return low<=targetMax&&high>=targetMin;}
     var modules=moduleChoices(p);
+    // Quand chaque cran porte déjà son module — une chaîne dont les deux bouts
+    // sont des roues réelles, par exemple — balayer les modules normalisés
+    // réanalyserait treize fois exactement la même chaîne pour le même verdict.
+    if(exactDepth&&modules.length>1&&stageConstraints.length===exactDepth&&stageConstraints.every(function(slot){
+      return slot&&slot.parameters&&Number.isFinite(slot.parameters.module);
+    }))modules=[modules[0]];
     function evaluate(chain,ratio){
       var error=Math.abs(ratio-target)/target*100;if(error>tolerance){rejections.ratio++;return;}
       var accepted=null,moduleSelection={selected:null,tested:[],rejected:[]};
       for(var mi=0;mi<modules.length;mi++){
-        var stages=clone(chain),reasons=[];moduleSelection.tested.push(modules[mi]);applyModule(stages,modules[mi]);
+        var stages=clone(chain),reasons=[];moduleSelection.tested.push(modules[mi]);applyModule(stages,modules[mi]);applyStageParameters(stages,stageConstraints);
         try{
           var solution=Engineering.analyzeSolution(stages,target,engineeringOptions(p));
           var dimensions=Engineering.validateDimensions(solution.dimensions,p.constraints||{});

@@ -109,6 +109,28 @@ async function chooseMode(page, mode) {
  * @param {string|null} family famille imposée, ou null pour la laisser libre
  * @param {object} [values] valeurs épinglées, par chemin (`input.teeth`…)
  */
+/**
+ * Décrit une roue d'extrémité : la pièce déjà en place à un bout de la chaîne.
+ * @param {'input'|'output'} role
+ * @param {string|null} family famille de la roue, ou null pour l'hériter de l'étage
+ * @param {object} [values] grandeurs connues, par clé (`teeth`, `module`…)
+ */
+async function describeEndWheel(page, role, family, values) {
+  const suffix = role === 'output' ? 'Output' : 'Input';
+  const card = page.locator(`.build-end-wheel[data-role="${role}"]`);
+  await card.waitFor();
+  if (family) {
+    await page.locator('#endWheelFamily' + suffix).selectOption(family);
+    await card.locator('.build-fields .build-field').first().waitFor();
+  }
+  for (const [key, value] of Object.entries(values || {})) {
+    const field = page.locator('#endWheel' + suffix + '_' + key);
+    await field.fill(value == null ? '' : String(value));
+    await field.dispatchEvent('change');
+    await page.locator('#buildPlan').waitFor();
+  }
+}
+
 async function addBuildStage(page, family, values) {
   const index = await page.locator('.build-stage').count();
   await page.locator('#addBuildStageBtn').click();
@@ -127,4 +149,4 @@ async function addBuildStage(page, family, values) {
 }
 
 module.exports = { openModal, setQuantity, defineSearch, search, openSetting, openOption,
-  chooseMode, addBuildStage };
+  chooseMode, addBuildStage, describeEndWheel };
