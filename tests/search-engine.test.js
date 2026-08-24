@@ -15,3 +15,38 @@ test('search pipeline carries optional fatigue and shaft estimates',()=>{const r
 test('ratio bounds prune unreachable branches without losing compound solutions',()=>{const bounded=Search.search(params({rapportCible:9,dentMenanteMin:10,dentMenanteMax:12,dentMeneeMin:28,dentMeneeMax:36,precisionToleree:.01,maxEtages:2,searchMode:'precision',maxIterations:100000}));assert.ok(bounded.solutions.some(s=>s.stages.length===2&&Math.abs(s.ratio-9)<1e-9));const theoretical=2*Math.pow((12-10+1)*(36-28+1),2);assert.ok(bounded.stats.tested<theoretical);assert.ok(bounded.stats.rejections.ratio>0);});
 test('fixed mode without a usable module reports NO_MODULES instead of failing silently',()=>{const r=Search.search(params({module:NaN}));assert.equal(r.solutions.length,0);assert.equal(r.stats.reason,'NO_MODULES');});
 test('center distance constraints reject stages outside the window',()=>{const r=Search.search(params({constraints:{maxCenterDistance:5}}));assert.equal(r.solutions.length,0);assert.ok(r.stats.rejections.dimensions>0);});
+
+// ===== Une denture imposée doit être atteignable, et le dire sinon =====
+
+test('an imposed tooth count widens the swept range, wherever it comes from', () => {
+  // « Dernier engrenage : 120 dents » avec une plage qui s'arrête à 50 ne
+  // renvoyait RIEN. Un cran de chaîne construite élargissait le balayage, les
+  // champs « premier / dernier engrenage » non : deux chemins pour la même
+  // demande, et un seul qui marchait.
+  const p = params({
+    rapportCible: 118.122356, precisionToleree: 5, maxEtages: 4,
+    dentMenanteMin: 10, dentMenanteMax: 30, dentMeneeMin: 20, dentMeneeMax: 50,
+    dentMeneeFixe: 120, searchMode: 'global'
+  });
+  const r = Search.search(p);
+  assert.ok(r.solutions.length, 'la denture imposée doit élargir le balayage');
+  for (const s of r.solutions) assert.equal(s.stages.at(-1).output.teeth, 120);
+});
+
+test('a tooth count no family can carry is named, not searched for in vain', () => {
+  // 400 dents sur un droit qui plafonne à 200 : la plage élargie n'y change
+  // rien. La recherche balayait tout le domaine pour finir bredouille, sans
+  // que rien ne dise que le domaine ne contenait pas la valeur demandée — et
+  // le diagnostic accusait alors la tolérance ou les technologies.
+  const r = Search.search(params({ rapportCible: 20, dentMeneeFixe: 400 }));
+  assert.equal(r.solutions.length, 0);
+  assert.equal(r.stats.reason, 'IMPOSED_TEETH_UNREACHABLE');
+  assert.deepEqual(r.stats.unreachableTeeth, [{ side: 'output', teeth: 400 }]);
+});
+
+test('a reachable imposed tooth count raises no such alarm', () => {
+  const r = Search.search(params({ rapportCible: 20, dentMeneeFixe: 120 }));
+  assert.ok(r.solutions.length);
+  assert.equal(r.stats.reason, undefined);
+  assert.equal(r.stats.unreachableTeeth, undefined);
+});

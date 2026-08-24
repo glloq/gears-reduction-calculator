@@ -135,10 +135,19 @@
     // Un inventaire ÉLARGIT le balayage à ce qu'il contient : sinon posséder
     // une roue de 80 dents ne servirait à rien tant que la plage s'arrête à 50.
     if(inventory.length){opts.inputMin=Math.min(opts.inputMin,Math.min.apply(Math,inventory));opts.inputMax=Math.max(opts.inputMax,Math.max.apply(Math,inventory));opts.outputMin=Math.min(opts.outputMin,Math.min.apply(Math,inventory));opts.outputMax=Math.max(opts.outputMax,Math.max.apply(Math,inventory));}
-    // Même raison pour une denture épinglée : demander « 54 dents menées »
-    // alors que la plage s'arrête à 50 ne renvoyait rien, sans expliquer que
-    // c'était la plage — et non la denture — qui posait problème.
+    // Même raison pour une denture IMPOSÉE : demander « 54 dents menées » alors
+    // que la plage s'arrête à 50 ne renvoyait rien, sans expliquer que c'était
+    // la plage — et non la denture — qui posait problème.
+    //
+    // Les dentures imposées venaient de DEUX endroits, et un seul élargissait :
+    // un cran de chaîne construite le faisait, les champs « premier / dernier
+    // engrenage » non. « 120 dents menées » avec une plage arrêtée à 50 ne
+    // renvoyait donc rien du tout, et le diagnostic accusait les technologies.
+    // Une seule liste, pour que les deux ne puissent plus diverger.
     var pinned=pinnedTeeth(stageConstraints);
+    [p.dentMenanteFixe,p.dentMeneeFixe].forEach(function(value){
+      if(Number.isFinite(value)&&value>0)pinned.push(value);
+    });
     if(pinned.length){var lowest=Math.min.apply(Math,pinned),highest=Math.max.apply(Math,pinned);
       opts.inputMin=Math.min(opts.inputMin,lowest);opts.inputMax=Math.max(opts.inputMax,highest);
       opts.outputMin=Math.min(opts.outputMin,lowest);opts.outputMax=Math.max(opts.outputMax,highest);}
@@ -147,6 +156,21 @@
       if(inventory.length&&!inInventory(stage,inventory)){rejections.geometry++;return;}
       try{var ratio=def.calculateRatio(stage);if(def.validateConfiguration(stage)&&isFinite(ratio)&&ratio!==0&&Math.abs(ratio)<=def.constraints.maxRatio)candidates.push({stage:stage,ratio:Math.abs(ratio)});else rejections.geometry++;}catch(e){rejections.geometry++;}
     });});
+    /**
+     * Une denture imposée que la famille elle-même interdit — 300 dents sur un
+     * droit qui plafonne à 200, 12 filets sur une vis qui en accepte 6 — reste
+     * introuvable même la plage élargie. La recherche balayait alors tout le
+     * domaine pour finir bredouille, et rien dans les statistiques ne disait
+     * que le domaine ne contenait pas la valeur demandée : le diagnostic
+     * accusait la tolérance ou les technologies, jamais la denture.
+     */
+    function unreachable(value,side){
+      if(!Number.isFinite(value)||value<=0)return false;
+      return !candidates.some(function(item){return teeth(item.stage,side)===value;});
+    }
+    var impossible=[];
+    if(unreachable(p.dentMenanteFixe,'input'))impossible.push({side:'input',teeth:p.dentMenanteFixe});
+    if(unreachable(p.dentMeneeFixe,'output'))impossible.push({side:'output',teeth:p.dentMeneeFixe});
     var maxIterations=Math.max(1,p.maxIterations||500000),target=p.rapportCible,tolerance=p.precisionToleree==null?.1:p.precisionToleree;
     var targetMin=target*(1-tolerance/100),targetMax=target*(1+tolerance/100);
     var minCandidateRatio=candidates.reduce(function(value,item){return Math.min(value,item.ratio);},Infinity);
@@ -205,7 +229,8 @@
       }
     }
     found.sort(compare(p.searchMode||'minimumStages'));
-    var stats={tested:tested,rejected:Object.keys(rejections).reduce(function(n,k){return n+rejections[k];},0),rejections:rejections,valid:found.length,elapsedMs:Date.now()-start};if(candidates.length===0)stats.reason='NO_CANDIDATES';else if(modules.length===0)stats.reason='NO_MODULES';
+    var stats={tested:tested,rejected:Object.keys(rejections).reduce(function(n,k){return n+rejections[k];},0),rejections:rejections,valid:found.length,elapsedMs:Date.now()-start};if(candidates.length===0)stats.reason='NO_CANDIDATES';else if(modules.length===0)stats.reason='NO_MODULES';else if(impossible.length)stats.reason='IMPOSED_TEETH_UNREACHABLE';
+    if(impossible.length)stats.unreachableTeeth=impossible;
     found.forEach(function(s){s.stats.search=stats;});
     return {solutions:found.slice(0,p.maxSolutions||10),stats:stats};
   }

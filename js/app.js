@@ -226,8 +226,13 @@
         // Choix 14C : « aucun résultat » déclenche une SONDE — la même
         // recherche, contraintes de qualification levées — pour pouvoir dire
         // de combien on rate et ce qu'un assouplissement débloquerait.
+        //
+        // Les statistiques rendues sont celles de LA RECHERCHE, saisies avant
+        // la sonde : celle-ci en publie de nouvelles, et l'écran aurait sinon
+        // commenté une recherche que l'utilisateur n'a jamais demandée.
+        var searchStats = ui.lastStats();
         return _probeForNearMiss(session, searchParams).then(function (diagnosis) {
-          explorer.setPool(resultats, searchParams, ui.lastStats(), diagnosis);
+          explorer.setPool(resultats, searchParams, searchStats, diagnosis);
           ui.logger.setStatus('Aucune solution trouvée');
           _resetButton();
         });
@@ -350,13 +355,26 @@
       .catch(function () { return null; });
   }
 
-  /** Ce qui reste réellement ajustable, pour que le diagnostic le nomme. */
+  /**
+   * Ce qui reste réellement ajustable, pour que le diagnostic le nomme.
+   *
+   * Une denture imposée n'était portée ici que par les parcours qui décrivent
+   * une chaîne. Ailleurs, « premier / dernier engrenage » restait invisible du
+   * diagnostic, qui accusait alors les technologies, les étages ou la
+   * tolérance — trois pistes que rien n'aurait débloquées.
+   */
   function _diagnosisContext(session, searchParams) {
-    if (!session || !session.workspace.editsChain() || session.build.isEmpty()) return null;
+    if (!session) return null;
     var gearing = session.technical.gearing;
+    var imposed = [];
+    if (gearing.drivingFixed != null) imposed.push({ role: 'input', teeth: gearing.drivingFixed });
+    if (gearing.drivenFixed != null) imposed.push({ role: 'output', teeth: gearing.drivenFixed });
+    var chain = session.workspace.editsChain() && !session.build.isEmpty();
+    if (!chain && !imposed.length) return null;
     return {
-      chain: true,
-      unknownStages: session.build.unknownCount(),
+      chain: chain,
+      unknownStages: chain ? session.build.unknownCount() : null,
+      imposedTeeth: imposed,
       teethRange: {
         min: Math.min(gearing.drivingMin, gearing.drivenMin),
         max: Math.max(gearing.drivingMax, gearing.drivenMax)

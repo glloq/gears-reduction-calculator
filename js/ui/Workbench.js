@@ -1036,7 +1036,13 @@
         ? 'Aucun candidat d’étage n’a pu être généré : les plages de dents ou les technologies autorisées sont trop étroites.'
         : reason === 'NO_MODULES'
           ? 'Aucun module à tester : renseignez un module fixe valide ou une plage de modules automatique.'
-          : 'La recherche a exploré le domaine autorisé sans trouver de solution valide.';
+          // Une denture qu'aucune famille active ne peut porter ferme le
+          // domaine à elle seule : chercher plus longtemps n'y changera rien.
+          : reason === 'IMPOSED_TEETH_UNREACHABLE'
+            ? 'Aucune famille active ne peut porter ' + (info.stats.unreachableTeeth || []).map(function (entry) {
+              return entry.teeth + ' dents ' + (entry.side === 'input' ? 'en entrée' : 'en sortie');
+            }).join(' ni ') + '. Changez cette denture, ou activez une famille qui l’accepte.'
+            : 'La recherche a exploré le domaine autorisé sans trouver de solution valide.';
     }
     var suspects = this.session ? this.session.preferences.constraints() : [];
     if (blockers && suspects.length) {
