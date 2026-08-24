@@ -163,6 +163,11 @@
     // Une exploration ne lance pas UNE recherche mais une série de recherches
     // bornées, dont on réunit les viviers. Les paramètres validés sont ceux de
     // la première bande : ce sont eux qui partiront réellement au moteur.
+    // Une analyse directe est instantanée : lui montrer un panneau de
+    // progression le ferait clignoter pour rien. Il ne s'ouvre donc qu'ici,
+    // une fois l'aiguillage passé, pour une recherche qui va réellement durer.
+    ui.searchProgress.start();
+
     var plan = session ? session.explorationPlan() : null;
     var searchParams = plan ? plan.runs[0] : (session ? session.toSearchParams() : ui.paramForm.getSearchParams());
     var validationMessage = document.getElementById('validationMessage');
@@ -321,6 +326,10 @@
           ' — rapports ' + _shortRatio(band.min) + ' à ' + _shortRatio(band.max) + ':1');
         var bar = document.getElementById('progress-bar');
         if (bar) bar.style.width = Math.round(index / total * 100) + '%';
+        // Une exploration n'émet pas de progression : elle enchaîne des
+        // recherches bornées, dont chacune repart de zéro. C'est la bande
+        // courante qui mesure l'avancement, pas les branches de l'une d'elles.
+        ui.searchProgress.setPercent(index / total * 100);
         return engine.rechercher(params).then(function (pool) { pools.push(pool || []); });
       });
     }, Promise.resolve());
@@ -389,6 +398,7 @@
   }
 
   function _resetButton() {
+    ui.searchProgress.stop();
     var btn = document.getElementById("startStopBtn");
     btn.innerText = "Rechercher";
     btn.setAttribute('aria-label', 'Rechercher');
@@ -625,6 +635,12 @@
   function _bindWorkspaceActions() {
     var start = document.getElementById('startStopBtn');
     if (start) start.addEventListener('click', lancerRecherche);
+
+    // Arrêter était possible — Échap, ou le bouton de la barre d'action — mais
+    // cette barre est masquée depuis la refonte : il ne restait qu'un raccourci
+    // clavier que rien n'annonce. Le bouton vit là où l'attente se voit.
+    var stop = document.getElementById('searchProgressStop');
+    if (stop) stop.addEventListener('click', arreterRecherche);
 
     var comparison = document.getElementById('toggleComparisonBtn');
     if (comparison) comparison.addEventListener('click', toggleComparison);

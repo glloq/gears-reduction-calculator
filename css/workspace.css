@@ -2,6 +2,41 @@
 
 /* ----- État vide ----- */
 
+/* Ce que fait la machine pendant qu'on attend. Il prend la place de l'état
+   vide : celui-ci dit « décrivez la transmission », ce qui, pendant que le
+   worker tourne, décrit un écran au repos — exactement le contraire. */
+.workspace-searching { display: none; }
+body.is-searching .workspace-searching {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-2); padding: var(--sp-5) var(--sp-3); text-align: center;
+  /* Occuper la place du travail qui s'y fera : collé en haut d'une page vide,
+     le panneau donne l'impression d'un écran abandonné plutôt qu'occupé. */
+  min-height: min(60vh, 28rem);
+}
+body.is-searching .workspace-empty { display: none; }
+.workspace-searching h2 { margin: 0; color: var(--ink); font-size: var(--font-lg); }
+.workspace-searching .progress-container { width: min(28rem, 100%); }
+#searchProgressBar {
+  height: 100%; width: 0;
+  background: var(--accent); border-radius: inherit;
+  transition: width .2s linear;
+}
+/* Une barre qui n'avance pas laisse croire à un blocage : le solveur, lui,
+   travaille. Le voile qui glisse dit « ça tourne » même à pourcentage figé. */
+#searchProgressBar::after {
+  content: ''; display: block; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .45), transparent);
+  animation: search-progress-sheen 1.1s linear infinite;
+}
+@keyframes search-progress-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  #searchProgressBar::after { animation: none; }
+  #searchProgressBar { transition: none; }
+}
+.search-progress-figures { margin: 0; font-size: var(--font-sm); color: var(--ink); }
+.search-progress-rejects { margin: 0; font-size: var(--font-xs); color: var(--muted); }
+.search-progress-actions { margin-top: var(--sp-1); }
+
 .workspace-empty {
   max-width: 520px;
   margin: clamp(2rem, 12vh, 6rem) auto;

@@ -405,6 +405,24 @@
         <button type="button" class="btn-small" id="newSearchBtn">Nouvelle recherche</button>
       </div>
 
+      <!-- Ce que fait la machine pendant qu'on attend. L'en-tête du panneau de
+           résultats porte déjà `#status`, la barre et les statistiques, mais ce
+           panneau n'existe que sous `body.has-results` : avant la première
+           solution, tout cela se mettait à jour sans jamais être visible. -->
+      <section id="workspaceSearching" class="workspace-searching" aria-live="polite">
+        <h2 id="searchProgressStatus">Calcul en cours…</h2>
+        <div class="progress-container" id="searchProgressGauge" role="progressbar"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+             aria-label="Progression de la recherche">
+          <div id="searchProgressBar"></div>
+        </div>
+        <p id="searchProgressFigures" class="search-progress-figures">Démarrage du solveur…</p>
+        <p id="searchProgressRejects" class="search-progress-rejects" hidden></p>
+        <div class="search-progress-actions">
+          <button type="button" id="searchProgressStop" class="btn-small">Arrêter la recherche</button>
+        </div>
+      </section>
+
       <section id="workspaceEmpty" class="workspace-empty empty-state">
         <div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div>
         <h2 id="workspaceEmptyTitle">Décrivez la transmission que vous recherchez</h2>
@@ -883,6 +901,7 @@
   <script src="js/ui/ParameterForm.js" defer></script>
   <script src="js/ui/ExportManager.js" defer></script>
   <script src="js/ui/ComparisonManager.js" defer></script>
+  <script src="js/ui/SearchProgress.js" defer></script>
   <script src="js/ui/UIController.js" defer></script>
   <script src="js/ui/SolutionExplorer.js" defer></script>
   <script src="js/ui/SolutionHeader.js" defer></script>

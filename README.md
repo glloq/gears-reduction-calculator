@@ -16,7 +16,7 @@ Application d'ingénierie statique pour rechercher, comparer et visualiser des t
 - Trois niveaux de lecture des résultats — sélection, front de Pareto, vivier complet — et la portée du classement affichée quand le domaine est tronqué.
 - Comparaison et graphiques de compromis, contribution, rapports, cascade, pertes et sécurité, tous alimentés par le modèle `Solution` — aucun n'y recalcule sa propre valeur. Chaque colonne comparée porte la silhouette du mécanisme, tracée par la même chaîne que le visualiseur.
 - Paramètres experts persistés dans `localStorage` et liens partageables compatibles avec les anciens paramètres.
-- Progression détaillée avec branches évaluées, profondeur, rapport courant et causes de rejet.
+- Progression détaillée pendant l'attente — branches évaluées, profondeur, rapport courant, solutions déjà retenues, causes de rejet — affichée à la place de l'état vide, avec un bouton d'arrêt.
 
 ## Supported transmissions
 

@@ -67,7 +67,8 @@
 
   function UIController(eventBus) {
     this._eventBus = eventBus || GearApp.eventBus;
-    this.logger = new GearApp.ui.Logger('logs', 'status');
+    this.logger = new GearApp.ui.Logger('logs', 'status', 'searchProgressStatus');
+    this.searchProgress = new GearApp.ui.SearchProgress(this._eventBus);
     this.resultsTable = new GearApp.ui.ResultsTable('resultats', this._eventBus);
     this.mechanicalPanel = new GearApp.ui.MechanicalPanel('mechanicalPanel');
     this.paramForm = new GearApp.ui.ParameterForm();

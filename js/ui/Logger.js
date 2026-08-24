@@ -2,9 +2,14 @@
 
 (function (GearApp) {
 
-  function Logger(logContainerId, statusElementId) {
+  function Logger(logContainerId, statusElementId, mirrorElementId) {
     this._logContainer = document.getElementById(logContainerId);
     this._statusElement = document.getElementById(statusElementId);
+    // Le même statut, à l'endroit où on le lit pendant l'attente. L'en-tête des
+    // résultats n'est affiché que sous `body.has-results` : avant la première
+    // solution, « Calcul en cours… » n'atteignait personne. Un second élément
+    // plutôt qu'un second message : deux textes finiraient par diverger.
+    this._mirrorElement = mirrorElementId ? document.getElementById(mirrorElementId) : null;
   }
 
   Logger.prototype.log = function (message) {
@@ -21,6 +26,7 @@
 
   Logger.prototype.setStatus = function (message) {
     if (this._statusElement) this._statusElement.innerText = message;
+    if (this._mirrorElement) this._mirrorElement.innerText = message;
   };
 
   Logger.prototype.toggle = function () {
