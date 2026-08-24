@@ -50,3 +50,46 @@ test('linear UI and constraints reach the rack solver',async({page})=>{
   await defineSearch(page,{constraints:{outputForce:force+100000}});
   await expect(page.locator('.solution-card')).toHaveCount(0,{timeout:30000});
 });
+
+// ===== Ce que fait la machine pendant qu'on attend =====
+
+test('a running search says so, and says what it is doing', async ({ page }) => {
+  await openModal(page);
+  await setQuantity(page, 'ratio', 118.122356);
+  // Une denture imposée hors de la plage par défaut : assez de branches pour
+  // que l'attente soit réelle, et le cas exact qui l'a fait remarquer.
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('.option-row-head[data-option="parts"]').click();
+  await page.locator('#part_gearing_drivenFixed').fill('120');
+  await page.locator('#part_gearing_drivenFixed').dispatchEvent('change');
+  await page.locator('#searchModalSubmit').click();
+
+  // L'état vide dit « décrivez la transmission que vous recherchez » : pendant
+  // que le worker tourne, c'est la description d'un écran au repos.
+  await expect(page.locator('#workspaceSearching')).toBeVisible();
+  await expect(page.locator('#workspaceEmpty')).toBeHidden();
+  await expect(page.locator('#searchProgressStatus')).toContainText('Calcul en cours');
+  // Le moteur publiait déjà tout cela ; rien n'atteignait l'écran.
+  await expect(page.locator('#searchProgressFigures')).toContainText('branches évaluées');
+  await expect(page.locator('#searchProgressStop')).toBeVisible();
+
+  await expect(page.locator('.solution-card').first()).toBeVisible({ timeout: 60000 });
+  await expect(page.locator('#workspaceSearching')).toBeHidden();
+});
+
+test('a search can be stopped from where the waiting is visible', async ({ page }) => {
+  await openModal(page);
+  await setQuantity(page, 'ratio', 118.122356);
+  await page.locator('[data-step="criteria"]').click();
+  await page.locator('.option-row-head[data-option="parts"]').click();
+  await page.locator('#part_gearing_drivenFixed').fill('120');
+  await page.locator('#part_gearing_drivenFixed').dispatchEvent('change');
+  await page.locator('#searchModalSubmit').click();
+
+  // Arrêter était possible — Échap — mais rien ne l'annonçait, et le bouton
+  // de la barre d'action est masqué depuis la refonte du plan de travail.
+  await page.locator('#searchProgressStop').click();
+  await expect(page.locator('#workspaceSearching')).toBeHidden();
+  await expect(page.locator('#status')).toContainText('Recherche interrompue');
+  await expect(page.locator('#workspaceEmpty')).toBeVisible();
+});
