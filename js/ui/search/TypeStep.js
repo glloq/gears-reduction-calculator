@@ -99,6 +99,9 @@
     this._open = {};
     // §11 : un seul étage du réducteur existant est déplié à la fois.
     this._openStage = null;
+    // Une roue d'extrémité dépliée à la main. Comme les réglages, elle s'ouvre
+    // seule dès qu'elle porte quelque chose, et doit pouvoir se replier.
+    this._openWheel = {};
   }
 
   TypeStep.prototype.setDraft = function (draft) { this.draft = draft; return this; };
@@ -566,8 +569,10 @@
 
     // Le pignon déjà monté sur le moteur vient AVANT les étages, la roue déjà
     // taillée sur l'arbre de sortie APRÈS : la carte se lit dans l'ordre où la
-    // puissance traverse le mécanisme.
-    section.appendChild(this._renderEndWheel('input', words));
+    // puissance traverse le mécanisme. Sur une chaîne vide, elles n'ont rien à
+    // dire : une roue est la moitié d'un engrènement, et il n'y en a aucun.
+    var hasChain = !build.isEmpty();
+    if (hasChain) section.appendChild(this._renderEndWheel('input', words));
 
     var list = document.createElement('ol');
     list.className = 'build-stages';
@@ -578,7 +583,7 @@
     });
     section.appendChild(list);
 
-    section.appendChild(this._renderEndWheel('output', words));
+    if (hasChain) section.appendChild(this._renderEndWheel('output', words));
 
     var add = button('btn-small btn-primary', '+ Ajouter un étage', function () {
       build.addStage(null);
@@ -641,16 +646,25 @@
   /**
    * Une roue d'extrémité : la pièce qui existait AVANT le réducteur.
    *
-   * Elle n'est pas un étage, et la carte le dit — elle annonce l'étage qu'elle
-   * touche et l'organe qu'elle y est. Sans cela, « 12 dents » saisi ici et
+   * Elle n'est pas un étage, et la carte le dit — elle annonce l'organe qu'elle
+   * est dans l'étage qu'elle touche. Sans cela, « 12 dents » saisi ici et
    * « 12 dents menantes » saisi dans l'étage 1 paraîtraient deux demandes
    * différentes, alors que c'est la même contrainte.
+   *
+   * §7, §8 : la plupart des transmissions ne se raccordent à aucune pièce
+   * imposée. Deux blocs de champs en permanence feraient donc payer à TOUS le
+   * prix d'un cas particulier — et sur un écran de 360 px, ils enterreraient
+   * les étages, qui sont le sujet. La roue se réduit à UNE LIGNE, dépliable, et
+   * déjà dépliée dès qu'elle porte quelque chose.
    */
   TypeStep.prototype._renderEndWheel = function (role, words) {
     var self = this, build = this.draft.build, model = GearApp.requirements.build;
     var wheel = build.endWheel(role), definition = model.endWheelRole(role);
     var index = build.endStageIndex(role), family = build.endFamily(role);
     var described = !wheel.isEmpty();
+    // Même règle que les réglages : personnalisé → ouvert, mais repliable.
+    var explicit = this._openWheel[role];
+    var open = explicit === undefined ? described : explicit;
 
     var card = document.createElement('div');
     card.className = 'build-end-wheel';
@@ -663,15 +677,47 @@
     title.textContent = definition.label;
     head.appendChild(title);
 
+    // Le vocabulaire est celui du parcours : en Étudier, rien n'est
+    // « automatique » — un champ vide y est une donnée manquante, et annoncer
+    // que le système choisira inviterait à ce que ce mode s'interdit.
+    var badge = described ? words.fixed : words.auto;
     var mark = document.createElement('span');
     mark.className = 'build-level';
     mark.dataset.level = described ? 'fixed' : 'auto';
-    // Ce qu'elle est dans la chaîne, pas seulement qu'elle est décrite : c'est
-    // le lien entre la pièce qu'on tient dans la main et le calcul.
-    mark.textContent = described
-      ? '🔒 ' + (wheel.describe() || 'décrite')
-      : '· ' + (role === 'input' ? 'le système choisit la roue menante' : 'le système choisit la roue menée');
+    mark.title = badge.help;
+    mark.textContent = badge.icon + ' ' + (described ? wheel.describe() : badge.label);
     head.appendChild(mark);
+
+    var toggle = button('setting-toggle', open ? 'Replier' : 'Décrire…', function () {
+      self._openWheel[role] = !open;
+      self._changed();
+    });
+    toggle.dataset.wheel = role;
+    toggle.setAttribute('aria-expanded', String(open));
+    head.appendChild(toggle);
+
+    if (described) {
+      var clear = button('btn-small build-remove', '✕', function () {
+        wheel.clear();
+        self._openWheel[role] = undefined;
+        self._changed();
+      });
+      clear.setAttribute('aria-label', 'Effacer la ' + definition.label.toLowerCase());
+      head.appendChild(clear);
+    }
+    card.appendChild(head);
+    if (!open) return card;
+
+    var hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = definition.help
+      .replace('le premier étage', 'l’étage 1')
+      .replace('le dernier étage', 'l’étage ' + (index + 1));
+    card.appendChild(hint);
+
+    var fields = document.createElement('div');
+    fields.className = 'build-fields';
+    fields.dataset.wheelBody = role;
 
     var select = document.createElement('select');
     select.className = 'build-family';
@@ -690,28 +736,12 @@
       wheel.setFamily(select.value || null);
       self._changed();
     });
-    head.appendChild(select);
+    var familyLabel = document.createElement('label');
+    familyLabel.className = 'build-field';
+    familyLabel.appendChild(document.createTextNode('Famille'));
+    familyLabel.appendChild(select);
+    fields.appendChild(familyLabel);
 
-    if (described) {
-      var clear = button('btn-small build-remove', '✕', function () {
-        wheel.clear();
-        self._changed();
-      });
-      clear.setAttribute('aria-label', 'Effacer la ' + definition.label.toLowerCase());
-      head.appendChild(clear);
-    }
-    card.appendChild(head);
-
-    var hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = index == null
-      ? definition.help + ' Ajoutez un étage pour qu’elle ait un engrènement.'
-      : definition.help.replace(/premier étage/, 'l’étage 1')
-          .replace(/dernier étage/, 'l’étage ' + (index + 1));
-    card.appendChild(hint);
-
-    var fields = document.createElement('div');
-    fields.className = 'build-fields';
     var teethPath = wheel.teethPath(family);
     wheel.fields(family).forEach(function (field) {
       // La denture porte le nom de l'organe qu'elle est — « Menante »,
@@ -817,6 +847,14 @@
     });
     head.appendChild(family);
 
+    // Les trois commandes forment UN bloc. Posées côte à côte dans la ligne,
+    // elles se répartissaient selon la longueur du texte du badge : « ◐ Partiel
+    // · 1 valeur à trouver » les repoussait proprement à la ligne suivante,
+    // « 🔒 Imposé » en laissait une seule remonter, et les deux autres se
+    // retrouvaient à chaque bout d'une ligne vide. Ce n'est pas au libellé de
+    // décider de la mise en page.
+    var actions = document.createElement('span');
+    actions.className = 'build-stage-actions';
     [['↑', -1], ['↓', 1]].forEach(function (entry) {
       var move = button('btn-small build-move', entry[0], function () {
         build.moveStage(index, entry[1]);
@@ -825,7 +863,7 @@
       move.dataset.move = String(entry[1]);
       move.setAttribute('aria-label', entry[1] < 0 ? 'Monter l’étage' : 'Descendre l’étage');
       move.disabled = index + entry[1] < 0 || index + entry[1] >= build.stages.length;
-      head.appendChild(move);
+      actions.appendChild(move);
     });
 
     var remove = button('btn-small build-remove', '✕', function () {
@@ -833,7 +871,8 @@
       self._changed();
     });
     remove.setAttribute('aria-label', 'Retirer l’étage ' + (index + 1));
-    head.appendChild(remove);
+    actions.appendChild(remove);
+    head.appendChild(actions);
     item.appendChild(head);
 
     var fields = document.createElement('div');

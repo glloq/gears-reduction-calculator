@@ -119,6 +119,11 @@ async function describeEndWheel(page, role, family, values) {
   const suffix = role === 'output' ? 'Output' : 'Input';
   const card = page.locator(`.build-end-wheel[data-role="${role}"]`);
   await card.waitFor();
+  // Repliée par défaut : la plupart des transmissions n'imposent aucune roue.
+  if (!(await card.locator(`[data-wheel-body="${role}"]`).count())) {
+    await card.locator(`.setting-toggle[data-wheel="${role}"]`).click();
+    await card.locator(`[data-wheel-body="${role}"]`).waitFor();
+  }
   if (family) {
     await page.locator('#endWheelFamily' + suffix).selectOption(family);
     await card.locator('.build-fields .build-field').first().waitFor();
