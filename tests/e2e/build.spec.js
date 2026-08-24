@@ -594,16 +594,28 @@ test('the two end wheels frame the chain without becoming stages', async ({ page
   const errors = watchConsoleErrors(page);
   await page.goto('/');
   await chooseMode(page, 'build');
-  // Elles encadrent la liste : le pignon moteur avant, la roue de sortie après.
+  // Une roue est la moitié d'un engrènement : sans étage, elle n'a rien à dire,
+  // et deux blocs de champs feraient payer à tous le prix d'un cas particulier.
+  await expect(page.locator('.build-end-wheel')).toHaveCount(0);
+
+  await addBuildStage(page, 'spur');
+  // Elles encadrent alors la liste : le pignon moteur avant, la roue de sortie
+  // après — et repliées, elles ne coûtent qu'une ligne chacune.
   await expect(page.locator('.build-end-wheel[data-role="input"]')).toBeVisible();
   await expect(page.locator('.build-end-wheel[data-role="output"]')).toBeVisible();
   await expect(page.locator('.build-end-wheel[data-role="input"]')).toHaveAttribute('data-state', 'free');
+  await expect(page.locator('[data-wheel-body="input"]')).toHaveCount(0);
+  await expect(page.locator('#buildStage0_input_teeth')).toBeEnabled();
 
-  await addBuildStage(page, 'spur');
   await describeEndWheel(page, 'input', 'spur', { teeth: 12, module: 0.8 });
   await expect(page.locator('.build-end-wheel[data-role="input"]')).toHaveAttribute('data-state', 'described');
   // Une roue n'est pas un étage de plus : la chaîne en compte toujours un.
   await expect(page.locator('.build-stage')).toHaveCount(1);
+  // Décrite, elle reste dépliée — et se replie sans rien perdre.
+  await expect(page.locator('[data-wheel-body="input"]')).toBeVisible();
+  await page.locator('.setting-toggle[data-wheel="input"]').click();
+  await expect(page.locator('[data-wheel-body="input"]')).toHaveCount(0);
+  await expect(page.locator('.build-end-wheel[data-role="input"] .build-level')).toContainText('12 dents');
   await expect(page.locator('#buildPlan')).toContainText('roue d’extrémité est imposée');
 
   // Et la denture qu'elle décide n'est plus modifiable dans l'étage : deux

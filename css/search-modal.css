@@ -556,20 +556,24 @@ body.modal-open { overflow: hidden; }
 .build-level { font-size: var(--font-xs); color: var(--muted); white-space: nowrap; }
 .build-level[data-level="fixed"] { color: var(--success); }
 .build-level[data-level="partial"] { color: var(--warning); }
-.build-family { flex: 0 1 10rem; font-size: var(--font-xs); }
+.build-family { flex: 1 1 8rem; max-width: 12rem; font-size: var(--font-xs); }
 .build-move, .build-remove {
   border: 1px solid var(--line); border-radius: var(--radius-sm);
   background: var(--surface-1); color: var(--muted);
   width: 1.75rem; height: 1.75rem; line-height: 1; padding: 0;
 }
-.build-remove { margin-left: auto; }
+/* Le bloc de commandes reste groupé et calé à droite, quelle que soit la
+   longueur du badge qui le précède. */
+.build-stage-actions { display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
 .build-remove:hover { border-color: var(--danger, #d33); color: var(--danger, #d33); }
 .build-move:disabled { opacity: .35; }
 .build-fields {
   display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2);
   margin-top: var(--sp-1);
 }
-.build-fields .hint { margin: 0; font-size: var(--font-xs); }
+/* Une consigne prend la ligne entière : en item de flex, elle se rangeait à
+   côté des champs et hachait la grille. */
+.build-fields .hint { margin: 0; font-size: var(--font-xs); flex: 1 0 100%; }
 .build-field {
   display: flex; align-items: center; gap: 4px;
   font-size: var(--font-xs); color: var(--muted);
@@ -591,21 +595,22 @@ body.modal-open { overflow: hidden; }
 .build-section[data-reading="observe"] .build-stage[data-level="auto"] { border-left-color: var(--line); }
 
 /* Les roues d'extrémité encadrent la liste des étages : elles se lisent comme
-   les bouts du mécanisme, pas comme des étages de plus — d'où le pointillé,
-   qui les distingue des crans pleins de la chaîne. */
+   les bouts du mécanisme, pas comme des étages de plus. Repliées, elles ne
+   coûtent qu'une ligne — la plupart des transmissions ne se raccordent à
+   aucune pièce imposée, et les étages doivent rester le sujet. */
 .build-end-wheel {
   border: 1px dashed var(--line);
-  border-radius: var(--radius-sm, 4px);
-  padding: var(--sp-1);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
   margin: 0 0 var(--sp-1);
-  display: grid;
-  gap: var(--sp-1);
 }
-.build-end-wheel[data-state="described"] { border-style: solid; border-left: 3px solid var(--accent, var(--success)); }
+.build-end-wheel[data-state="described"] { border-style: solid; border-left: 3px solid var(--success); }
 .build-end-wheel-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
 .build-end-wheel-head strong { font-size: var(--font-xs); }
-.build-end-wheel .hint { margin: 0; font-size: var(--font-xs); color: var(--muted); }
-.build-end-wheel .build-remove { margin-left: auto; }
+.build-end-wheel-head .build-level { flex: 1; min-width: 0; }
+.build-end-wheel .hint { margin: var(--sp-1) 0 0; font-size: var(--font-xs); color: var(--muted); }
+.build-end-wheel .build-remove { margin-left: 0; }
+/* Une valeur décidée par une roue réelle se lit dans l'étage, elle ne s'y
+   modifie pas : deux endroits pour une valeur, c'est deux valeurs. */
 .build-field-locked { opacity: .7; }
 .build-field-locked input, .build-field-locked select { border-style: dotted; cursor: not-allowed; }
-
