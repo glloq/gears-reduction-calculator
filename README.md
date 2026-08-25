@@ -70,6 +70,17 @@ Trois approximations sont ainsi nommées plutôt que tues : le contour apparent 
 
 Le renderer vectoriel local ne charge aucune ressource distante au runtime.
 
+## À quoi ça ressemble
+
+| | |
+|---|---|
+| ![Le premier écran : ce qu'on veut faire](img/01-recherche-intention.png)<br>**Décrire ce qu'on cherche** — le besoin se pose grandeur par grandeur, pas dans un formulaire à tout remplir. | ![L'espace de travail](img/05-espace-de-travail.png)<br>**Choisir** — les solutions à gauche, le mécanisme au centre, la décision et ses angles morts à droite. |
+| ![Vue Transmission](img/08-vue-transmission.png)<br>**Regarder** — trois vues du même mécanisme : Transmission, Dimensions, Cinématique. | ![Comparaison de deux solutions](img/14-comparaison.png)<br>**Comparer** — deux solutions épinglées, silhouette comprise, écart par écart. |
+
+Dix-sept captures — modal de recherche, mode Construire, tableau expert,
+inspecteur, éditeur, graphiques, écran de téléphone — sont dans
+[`img/`](img/README.md), avec la commande qui les régénère.
+
 ## Architecture
 
 - `js/transmissions/TransmissionRegistry.js`: source unique des contraintes, rapports, géométries, rendements, forces et candidats.
@@ -87,6 +98,7 @@ Tous les liens de production sont relatifs afin de fonctionner sous `/gears-redu
 ```bash
 npm test
 npm run check:pages
+npm run screenshots   # régénère img/ (voir img/README.md)
 python3 -m http.server 8000
 ```
 

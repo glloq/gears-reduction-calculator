@@ -8,7 +8,8 @@
     "check:pages": "node tests/pages-check.js",
     "test:e2e": "playwright test",
     "test:visual": "playwright test tests/e2e/visual-regression.spec.js tests/e2e/results-regression.spec.js",
-    "test:visual:update": "playwright test tests/e2e/visual-regression.spec.js tests/e2e/results-regression.spec.js --update-snapshots"
+    "test:visual:update": "playwright test tests/e2e/visual-regression.spec.js tests/e2e/results-regression.spec.js --update-snapshots",
+    "screenshots": "SHOTS=1 playwright test tests/e2e/screenshots.spec.js"
   },
-  "devDependencies": { "@playwright/test": "1.54.2" }
+  "devDependencies": { "@playwright/test": "1.54.2", "chart.js": "4.4.0", "nouislider": "15.7.1" }
 }
